@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { getState } from "@/lib/data";
 import { PageHead } from "@/components/Bits";
+import { Count } from "@/components/Motion";
 import { dayTime, int, short } from "@/lib/format";
 
 export const metadata: Metadata = { title: "$FACTOR" };
@@ -12,14 +13,14 @@ export default async function Token() {
       <PageHead kicker="$FACTOR" title="Trading fills the pool. Advances burn the token." lead="$FACTOR is launched on Pons, on Robinhood Chain. Every trade pays a fee. The token has two jobs, and both are done by contracts." />
       <section className="wrap" style={{ paddingTop: 30 }}>
         <div className="grid2">
-          <div className="card pad kind"><span className="num">01</span><div className="h3">It fills the pool</div><p>Part of every trading fee goes into the pool that advances agents. Nobody deposits into it, so nobody&apos;s deposit is at risk in it.</p></div>
-          <div className="card pad kind"><span className="num">02</span><div className="h3">It is burned by the work</div><p>Part of every trading fee, and every fee an agent pays on an advance, buys back $FACTOR and burns it. The supply only goes down.</p></div>
+          <div className="card pad kind lift"><span className="num">01</span><div className="h3">It fills the pool</div><p>Part of every trading fee goes into the pool that advances agents. Nobody deposits into it, so nobody&apos;s deposit is at risk in it.</p></div>
+          <div className="card pad kind lift"><span className="num">02</span><div className="h3">It is burned by the work</div><p>Part of every trading fee, and every fee an agent pays on an advance, buys back $FACTOR and burns it. The supply only goes down.</p></div>
         </div>
         <div className="stats" style={{ marginTop: 16 }}>
-          <div className="card stat"><span className="label">Burned so far</span><b>{(s.stats.burnedTokens / 1e6).toFixed(2)}<small>M</small></b></div>
-          <div className="card stat"><span className="label">Supply left</span><b>{(s.stats.supplyLeft / 1e6).toFixed(2)}<small>M</small></b></div>
-          <div className="card stat"><span className="label">In the pool</span><b>{s.stats.poolEth.toFixed(2)}<small>ETH</small></b></div>
-          <div className="card stat"><span className="label">Burns</span><b>{s.burns[0]?.n ?? 0}</b></div>
+          <div className="card stat lift"><span className="label">Burned so far</span><b><Count to={s.stats.burnedTokens / 1e6} places={2} /><small>M</small></b></div>
+          <div className="card stat lift"><span className="label">Supply left</span><b><Count to={s.stats.supplyLeft / 1e6} places={2} /><small>M</small></b></div>
+          <div className="card stat lift"><span className="label">In the pool</span><b><Count to={s.stats.poolEth} places={2} /><small>ETH</small></b></div>
+          <div className="card stat lift"><span className="label">Burns</span><b><Count to={s.burns[0]?.n ?? 0} /></b></div>
         </div>
       </section>
       <section className="wrap sec">

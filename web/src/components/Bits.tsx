@@ -2,6 +2,7 @@
 import Link from "next/link";
 import type { Agent, FactorState, Job, LedgerEvent } from "@/lib/types";
 import { ADVANCE_WORD, STATE_TONE, STATE_WORD, canDraw, clock, eth, initials, short } from "@/lib/format";
+import { LiveBlock } from "./Motion";
 
 export function Tag({ kind }: { kind: string }) {
   const tone = STATE_TONE[kind] ?? "";
@@ -93,5 +94,38 @@ export function Code({ lines }: { lines: string[] }) {
         <div key={i}>{line.split(/(\*[^*]+\*)/).map((part, k) => (part.startsWith("*") && part.endsWith("*") && part.length > 2 ? <b key={k}>{part.slice(1, -1)}</b> : part))}{line === "" ? "\u00a0" : null}</div>
       ))}
     </div>
+  );
+}
+
+/** The tape under the header: the block the figures are from, and the latest lines of the ledger going by. */
+export function Ticker({ events, block }: { events: LedgerEvent[]; block: number }) {
+  const lines = events.slice(0, 12);
+  return (
+    <div className="ticker" aria-hidden="true">
+      <LiveBlock from={block} />
+      <div className="tape"><div className="run">
+        {[...lines, ...lines].map((e, i) => {
+          const tone = STATE_TONE[e.kind] ?? "";
+          return <span className="tk" key={i}><b>{clock(e.at).slice(0, 5)}</b><em className={tone === "bad" ? "bad" : tone === "go" ? undefined : "plain"}>{(STATE_WORD[e.kind] ?? e.kind).toUpperCase()}</em>{e.jobId ? `job ${e.jobId} · ` : ""}{e.amount}</span>;
+        })}
+      </div></div>
+    </div>
+  );
+}
+
+/** A small line that draws itself: how a figure got to where it is. */
+export function Spark({ points }: { points: number[] }) {
+  const max = Math.max(...points), min = Math.min(...points), span = max - min || 1;
+  const d = points.map((v, i) => `${i === 0 ? "M" : "L"}${((i / (points.length - 1)) * 96).toFixed(1)} ${(31 - ((v - min) / span) * 28).toFixed(1)}`).join(" ");
+  return <svg className="spark" viewBox="0 0 96 34" aria-hidden="true"><path d={d} pathLength={1} /></svg>;
+}
+
+/** A score, as a ring that fills. */
+export function Ring({ value, of = 1000 }: { value: number; of?: number }) {
+  return (
+    <svg className="ring" viewBox="0 0 120 120" role="img" aria-label={`${value} of ${of}`} style={{ ["--v" as string]: Math.max(0, Math.min(100, (value / of) * 100)) }}>
+      <circle className="back" cx="60" cy="60" r="50" />
+      <circle className="fore" cx="60" cy="60" r="50" pathLength={100} />
+    </svg>
   );
 }

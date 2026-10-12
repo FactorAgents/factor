@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { agentOf, getState, jobOf } from "@/lib/data";
 import { JobBill, Tag } from "@/components/Bits";
+import { Reveal } from "@/components/Motion";
 import { clock, dayTime, short } from "@/lib/format";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> { return { title: `Job ${(await params).id}` }; }
@@ -22,8 +23,8 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
       </section>
       <section className="wrap" style={{ paddingTop: 28 }}>
         <div className="grid2">
-          <JobBill j={j} agent={a} />
-          <div style={{ display: "grid", gap: 16, alignContent: "start" }}>
+          <Reveal><JobBill j={j} agent={a} /></Reveal>
+          <Reveal delay={140} style={{ display: "grid", gap: 16, alignContent: "start" }}>
             <div className="card pad">
               <span className="label">Who is in it</span>
               <dl className="kv" style={{ marginTop: 16 }}>
@@ -42,7 +43,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                 )) : <p className="small" style={{ paddingTop: 8 }}>Its lines are further back in the ledger.</p>}
               </div>
             </div>
-          </div>
+          </Reveal>
         </div>
       </section>
     </>

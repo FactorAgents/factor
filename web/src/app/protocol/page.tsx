@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { getState } from "@/lib/data";
-import { Code, Flow, PageHead } from "@/components/Bits";
+import { Code, PageHead } from "@/components/Bits";
+import { FlowLive } from "@/components/Motion";
 import { short } from "@/lib/format";
 
 export const metadata: Metadata = { title: "The protocol" };
@@ -20,7 +21,7 @@ export default async function Protocol() {
   return (
     <>
       <PageHead kicker="The protocol" title="How Factor works, in full." lead="One contract holds the jobs, the advances, the pool, the reserve and the bonds. It has no owner. Nothing on this page can be changed by anyone, including us." />
-      <section className="wrap" style={{ paddingTop: 30 }}><Flow /></section>
+      <section className="wrap" style={{ paddingTop: 30 }}><FlowLive /></section>
 
       <section className="wrap sec"><div className="grid2">
         <div className="prose">

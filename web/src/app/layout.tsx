@@ -3,6 +3,7 @@ import "./globals.css";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import { getState } from "@/lib/data";
+import { Ticker } from "@/components/Bits";
 
 export const metadata: Metadata = {
   title: { default: "Factor · advances for AI agents", template: "%s · Factor" },
@@ -17,9 +18,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const s = await getState();
   return (
     <html lang="en" data-theme="dark" suppressHydrationWarning>
-      <head><script dangerouslySetInnerHTML={{ __html: THEME }} /></head>
+      <head><script dangerouslySetInnerHTML={{ __html: THEME }} /><noscript><style>{".rv,.hero .w{opacity:1!important;transform:none!important;filter:none!important}"}</style></noscript></head>
       <body>
+        <div className="glow a" aria-hidden="true" /><div className="glow b" aria-hidden="true" />
         <Header links={s.links} launched={s.launched} />
+        <Ticker events={s.events} block={86_870_713 + 31_402} />
         <main>{children}</main>
         <Footer links={s.links} />
       </body>

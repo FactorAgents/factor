@@ -19,6 +19,7 @@
   --go-ink: #07120d;      /* words on the accent */
   --go-soft: rgba(185, 255, 79, 0.08);
   --go-ring: rgba(185, 255, 79, 0.16);
+  --grid: rgba(234, 245, 238, 0.035);   /* the faint squares behind the page */
   /* states of a job, said in words first and in colour second */
   --warn: #ffd166;        /* waiting on somebody */
   --bad: #ff7b6b;         /* refunded, not repaid */
@@ -44,7 +45,7 @@
 [data-theme="light"] {
   --bg: #f4f7f2; --panel: #ffffff; --panel-2: #f0f4ed; --line: #d5dfd3; --line-2: #b4c4b3;
   --ink: #0a1811; --mid: #3f5a4b; --dim: #5f7a6b;
-  --go: #2f7d0b; --go-ink: #ffffff; --go-soft: rgba(47, 125, 11, 0.07); --go-ring: rgba(47, 125, 11, 0.16);
+  --go: #2f7d0b; --go-ink: #ffffff; --go-soft: rgba(47, 125, 11, 0.07); --go-ring: rgba(47, 125, 11, 0.16); --grid: rgba(10, 24, 17, 0.05);
   --warn: #8a5a00; --bad: #b3261e;
   --shadow: 0 30px 60px -40px rgba(10, 24, 17, 0.35);
 }
@@ -294,3 +295,111 @@ a.row { margin: 0 -26px; padding-left: 26px; padding-right: 26px; }
   .prose { max-width: 100%; }
 }
 .stats > * { min-width: 0; }
+
+/* ── motion ────────────────────────────────────────────────────────────────── */
+/* the ground: faint squares that drift, and two slow lights */
+body { position: relative; isolation: isolate; overflow-x: clip; }
+body::before { content: ""; position: fixed; inset: 0; z-index: -2; pointer-events: none; background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px); background-size: 64px 64px; -webkit-mask-image: radial-gradient(ellipse 90% 70% at 50% 0%, #000 25%, transparent 78%); mask-image: radial-gradient(ellipse 90% 70% at 50% 0%, #000 25%, transparent 78%); animation: drift 48s linear infinite; }
+@keyframes drift { to { background-position: 64px 64px; } }
+.glow { position: fixed; z-index: -1; width: 760px; height: 760px; border-radius: 50%; filter: blur(120px); background: var(--go); pointer-events: none; opacity: 0.13; animation: float 24s ease-in-out infinite alternate; }
+.glow.a { left: -280px; top: -380px; }
+.glow.b { right: -340px; top: 34vh; opacity: 0.07; animation-duration: 32s; animation-direction: alternate-reverse; }
+@keyframes float { to { transform: translate(140px, 90px) scale(1.18); } }
+[data-theme="light"] .glow { opacity: 0.09; } [data-theme="light"] .glow.b { opacity: 0.05; }
+
+/* a page coming in, and things coming up as they are reached */
+.page-in { animation: pagein 0.55s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+@keyframes pagein { from { opacity: 0; transform: translateY(12px); } }
+.rv { opacity: 0; transform: translateY(28px); filter: blur(7px); transition: opacity 0.85s cubic-bezier(0.2, 0.7, 0.2, 1) var(--d, 0ms), transform 0.85s cubic-bezier(0.2, 0.7, 0.2, 1) var(--d, 0ms), filter 0.85s ease var(--d, 0ms); }
+.rv.in { opacity: 1; transform: none; filter: none; }
+
+/* the headline: its words rise one after the other, and the word that matters is underlined */
+.hero .w { display: inline-block; opacity: 0; transform: translateY(0.55em) rotate(2.5deg); filter: blur(10px); animation: word 0.95s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; animation-delay: calc(var(--i) * 75ms + 120ms); }
+@keyframes word { to { opacity: 1; transform: none; filter: none; } }
+.hero em { position: relative; white-space: nowrap; }
+.hero em::after { content: ""; position: absolute; left: 0.02em; right: 0.02em; bottom: 0.02em; height: 0.07em; border-radius: 0.04em; background: var(--go); opacity: 0.55; transform: scaleX(0); transform-origin: left; animation: sweep 0.8s 0.95s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; }
+@keyframes sweep { to { transform: scaleX(1); } }
+.kicker i, .liveblock i, .flow-say i { animation: beat 2.2s ease-in-out infinite; }
+@keyframes beat { 50% { box-shadow: 0 0 0 9px transparent; opacity: 0.7; } }
+
+/* a light that follows the pointer across the top of a page */
+.spot { position: relative; }
+.spot::before { content: ""; position: absolute; inset: -120px 0 -40px; z-index: -1; pointer-events: none; background: radial-gradient(560px circle at var(--mx, 72%) var(--my, 30%), var(--go-soft), transparent 68%); }
+
+/* the tape under the header: the block, and the ledger going by */
+.ticker { height: 40px; display: flex; align-items: center; border-bottom: 1px solid var(--line); background: var(--bg); font-family: var(--mono); font-size: 12.5px; color: var(--mid); overflow: hidden; }
+.liveblock { flex: none; height: 100%; display: flex; align-items: center; gap: 10px; padding: 0 18px 0 var(--pad); border-right: 1px solid var(--line); color: var(--go); white-space: nowrap; letter-spacing: 0.04em; }
+.liveblock i { width: 8px; height: 8px; border-radius: 50%; background: var(--go); box-shadow: 0 0 0 5px var(--go-ring); }
+.liveblock span { font-variant-numeric: tabular-nums; }
+.tape { flex: 1; min-width: 0; overflow: hidden; -webkit-mask-image: linear-gradient(90deg, transparent, #000 5%, #000 95%, transparent); mask-image: linear-gradient(90deg, transparent, #000 5%, #000 95%, transparent); }
+.run { display: inline-flex; gap: 44px; padding-left: 28px; white-space: nowrap; animation: tape 80s linear infinite; }
+.ticker:hover .run { animation-play-state: paused; }
+@keyframes tape { to { transform: translateX(-50%); } }
+.tk b { color: var(--ink); font-weight: 500; } .tk em { font-style: normal; color: var(--go); margin: 0 8px; letter-spacing: 0.1em; } .tk em.bad { color: var(--bad); } .tk em.plain { color: var(--dim); }
+
+/* the flow, alive */
+.flow.live { position: relative; padding-bottom: 70px; overflow: hidden; }
+.flow.live .node { opacity: 0.5; transition: opacity 0.6s ease, transform 0.6s cubic-bezier(0.2, 0.7, 0.2, 1), box-shadow 0.6s ease, background 0.6s ease; }
+.flow.live .node.hot { opacity: 1; transform: translateY(-3px); }
+.flow.live .mid { opacity: 0.85; }
+.flow.live .mid.hot { box-shadow: 0 0 0 1px var(--go), 0 0 60px -10px var(--go); }
+.flow.live .arrow { overflow: visible; }
+.flow.live .arrow i { position: absolute; left: 0; top: -4px; width: 10px; height: 10px; border-radius: 50%; background: var(--go); box-shadow: 0 0 16px var(--go); opacity: 0; }
+.flow.live .arrow.run i { animation: travel 1.15s cubic-bezier(0.5, 0, 0.3, 1) infinite; }
+@keyframes travel { 0% { left: 0; opacity: 0; } 18% { opacity: 1; } 82% { opacity: 1; } 100% { left: calc(100% - 10px); opacity: 0; } }
+.flow.live .split i { transition: width 1.2s cubic-bezier(0.3, 0.8, 0.2, 1); box-shadow: 0 0 18px var(--go); }
+.flow-say { position: absolute; left: 34px; right: 34px; bottom: 20px; padding-top: 14px; border-top: 1px solid var(--line); display: flex; align-items: center; gap: 10px; font-family: var(--mono); font-size: 13px; color: var(--ink); animation: sayin 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+.flow-say i { width: 8px; height: 8px; border-radius: 50%; background: var(--go); box-shadow: 0 0 0 5px var(--go-ring); }
+.flow-say span { margin-left: auto; color: var(--dim); }
+@keyframes sayin { from { opacity: 0; transform: translateY(8px); } }
+
+/* a new line arriving in the ledger */
+.row.fresh { animation: fresh 2s ease both; }
+@keyframes fresh { 0% { opacity: 0; transform: translateY(-16px); background: var(--go-soft); } 25% { opacity: 1; transform: none; background: var(--go-soft); } 100% { background: transparent; } }
+
+/* cards that lift, buttons that catch the light, bars and lines that draw themselves */
+.lift { transition: transform 0.35s cubic-bezier(0.2, 0.7, 0.2, 1), border-color 0.3s ease, box-shadow 0.35s ease; }
+.lift:hover { transform: translateY(-5px); border-color: var(--line-2); box-shadow: 0 40px 70px -50px var(--go); }
+.btn { position: relative; overflow: hidden; transition: transform 0.15s ease, filter 0.2s ease, border-color 0.2s ease; }
+.btn:active { transform: scale(0.97); }
+.btn.go::after, .btn.ink::after { content: ""; position: absolute; inset: 0; background: linear-gradient(105deg, transparent 35%, rgba(255, 255, 255, 0.6) 50%, transparent 65%); transform: translateX(-130%); }
+.btn.go:hover::after, .btn.ink:hover::after { transform: translateX(130%); transition: transform 0.75s ease; }
+.btn.line:hover { border-color: var(--go); }
+.score i, .split i { transition: width 1.3s cubic-bezier(0.2, 0.7, 0.2, 1) 0.25s; }
+.rv:not(.in) .score i { width: 0 !important; }
+.count { font-variant-numeric: tabular-nums; }
+.stat { position: relative; overflow: hidden; }
+.spark { position: absolute; right: 16px; bottom: 16px; width: 96px; height: 34px; opacity: 0.9; }
+.spark path { fill: none; stroke: var(--go); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1; stroke-dashoffset: 1; }
+.rv.in .spark path { animation: draw 1.7s 0.35s cubic-bezier(0.3, 0.7, 0.2, 1) forwards; }
+@keyframes draw { to { stroke-dashoffset: 0; } }
+.ring { width: 150px; height: 150px; flex: none; }
+.ring circle { fill: none; stroke-width: 10; }
+.ring .back { stroke: var(--panel-2); }
+.ring .fore { stroke: var(--go); stroke-linecap: round; stroke-dasharray: 100; stroke-dashoffset: 100; transform: rotate(-90deg); transform-origin: 50% 50%; transition: stroke-dashoffset 1.6s cubic-bezier(0.2, 0.7, 0.2, 1) 0.3s; filter: drop-shadow(0 0 8px var(--go-ring)); }
+.rv.in .ring .fore { stroke-dashoffset: calc(100 - var(--v)); }
+.steps div { transition: border-color 0.6s ease, color 0.6s ease; }
+.agent, a.row { transition: background 0.2s ease; }
+.nav a { position: relative; transition: color 0.2s ease; }
+.nav a::after { content: ""; position: absolute; left: 0; right: 0; bottom: -25px; height: 2px; background: var(--go); transform: scaleX(0); transition: transform 0.3s cubic-bezier(0.2, 0.7, 0.2, 1); }
+.nav a.on::after, .nav a:hover::after { transform: scaleX(1); }
+
+@media (max-width: 900px) {
+  .flow.live { padding-bottom: 64px; }
+  .flow.live .arrow.run i { animation-name: travelY; left: -4px; top: 0; }
+  @keyframes travelY { 0% { top: 0; opacity: 0; } 18% { opacity: 1; } 82% { opacity: 1; } 100% { top: calc(100% - 10px); opacity: 0; } }
+  .flow-say { left: 20px; right: 20px; font-size: 12px; }
+  .flow-say span { display: none; }
+  .liveblock { padding-right: 12px; }
+  .spark { width: 70px; height: 26px; right: 12px; bottom: 12px; opacity: 0.6; }
+  .ring { width: 116px; height: 116px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  .rv, .hero .w { opacity: 1; transform: none; filter: none; }
+  .hero em::after { transform: scaleX(1); }
+  .spark path { stroke-dashoffset: 0; }
+  .ring .fore { stroke-dashoffset: calc(100 - var(--v)); }
+}
+.bigscore { white-space: nowrap; }
+@media (max-width: 900px) { .bigscore { font-size: 54px; } .bigscore small { font-size: 15px; margin-left: 6px; } }

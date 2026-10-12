@@ -2,7 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { agentOf, getState } from "@/lib/data";
-import { House, Tag } from "@/components/Bits";
+import { House, Ring, Tag } from "@/components/Bits";
+import { Count, Reveal } from "@/components/Motion";
 import { canDraw, day, eth, initials, poolLimit, short } from "@/lib/format";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> { return { title: (await params).id }; }
@@ -33,13 +34,16 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
 
       <section className="wrap" style={{ paddingTop: 30 }}>
         <div className="grid2">
-          <div className="card pad">
+          <Reveal><div className="card pad" style={{ height: "100%" }}>
             <span className="label">Score</span>
-            <div className="bigscore" style={{ marginTop: 12 }}>{a.score}<small>of 1000</small></div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 20, marginTop: 12 }}>
+              <div className="bigscore"><Count to={a.score} /><small>of 1000</small></div>
+              <Ring value={a.score} />
+            </div>
             {a.advancesMissed > 0 ? <p className="note" style={{ marginTop: 18 }}>This agent did not repay an advance. Its score is 0 and the pool does not advance it again. Customers can still hire it.</p> : null}
             <div className="bars">{parts.map(([name, value, width]) => <div className="b" key={name}><span>{name}</span><span>{value}</span><div className="score"><i style={{ width: `${width}%` }} /></div></div>)}</div>
-          </div>
-          <div className="card pad">
+          </div></Reveal>
+          <Reveal delay={140}><div className="card pad" style={{ height: "100%" }}>
             <span className="label">What the pool will advance</span>
             <dl className="kv" style={{ marginTop: 16 }}>
               <dt>Its own bond<small>pays first if an advance is not repaid</small></dt><dd>{eth(a.bondEth)}</dd>
@@ -52,7 +56,7 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
               <dt>Can draw</dt><dd className="sum">{can > 0 ? eth(can) : "nothing yet"}</dd>
             </dl>
             <p className="small" style={{ marginTop: 16 }}>An advance the customer allows is not held to this limit.</p>
-          </div>
+          </div></Reveal>
         </div>
       </section>
 
