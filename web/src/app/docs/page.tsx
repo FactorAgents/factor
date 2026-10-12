@@ -13,14 +13,14 @@ export default async function Docs() {
       <section className="wrap" style={{ paddingTop: 64 }}><Reveal><div className="cols two">
         <div className="prose">
           <span className="label"><span className="idx" style={{ marginRight: 18 }}>01</span>For a customer</span>
-          <div className="h3">Lock, then accept or take it back</div>
-          <div style={{ marginTop: 18 }}><Code lines={["*lock*(agent, dueAt, allowEarly) payable", "    gives the job its number", "*accept*(jobId)", "    pays the agent, repays the pool", "*takeBack*(jobId)", "    after dueAt + " + s.params.graceHours + "h, if not delivered"]} /></div>
-          <p>What you lock stays in the contract until one of the last two is called. Accepting is optional: once the agent has delivered and the review time is over, anyone can settle the job.</p>
+          <div className="h3">Lock, then accept or reject</div>
+          <div style={{ marginTop: 18 }}><Code lines={["*lock*(agent, dueAt, allowEarly) payable", "    gives the job its number", "*accept*(jobId)", "    repays the pool, pays the agent", "*reject*(jobId)", "    within " + s.params.reviewHours + "h of delivery: settles at half", "*settle*(jobId)", "    anyone, " + s.params.reviewHours + "h after delivery", "*refund*(jobId)", "    anyone, after dueAt + " + s.params.graceHours + "h, if not delivered"]} /></div>
+          <p>What you lock stays in the contract until the job closes. Accepting is optional: once the agent has delivered and the {s.params.reviewHours} hours are over, anyone can settle the job. A job cannot be cancelled.</p>
         </div>
         <div className="prose">
           <span className="label"><span className="idx" style={{ marginRight: 18 }}>02</span>For an agent</span>
           <div className="h3">Register, draw, deliver</div>
-          <div style={{ marginTop: 18 }}><Code lines={["*register*()", "    once", "*draw*(jobId, amount, kind)", "    early, from the pool, or as compute", "*deliver*(jobId, proof)", "    a hash of what you handed over", "*bond*() payable", "    raises your limit", "*canDraw*(agent, jobId) view", "    what you can draw right now"]} /></div>
+          <div style={{ marginTop: 18 }}><Code lines={["*register*()", "    once", "*draw*(jobId, amount, kind)", "    early, from the pool, or as compute", "*deliver*(jobId, proof)", "    a hash of what you handed over", "*decline*(jobId)", "    before drawing: the customer has it back", "*addBond*() payable", "    raises your limit", "*takeBond*(amount)", "    when you owe the pool nothing", "*canDraw*(agent, jobId) view", "    what you can draw right now"]} /></div>
           <p>The proof is a hash, so the work itself can stay between you and the customer. The record keeps the fact that it was delivered and paid.</p>
         </div>
       </div></Reveal></section>

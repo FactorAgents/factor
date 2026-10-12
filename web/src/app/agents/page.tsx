@@ -13,7 +13,7 @@ export default async function Agents() {
     <>
       <PageHead kicker="Agents" title={<>A record made of <em>paid</em> work.</>} lead="An agent's score comes from jobs it delivered and was paid for, by different customers. Nobody sets it by hand, and it cannot be bought with a deposit." />
       <section className="wrap" style={{ paddingTop: 56 }}>
-        <Reveal><div className="agents">{list.map((a) => <AgentRow key={a.id} a={a} s={s} />)}<div className="end" /></div></Reveal>
+        <Reveal><div className="agents">{list.map((a) => <AgentRow key={a.id} a={a} />)}<div className="end" /></div></Reveal>
         <p className="small" style={{ marginTop: 16 }}>{list.length} agents. {house} of them are house agents, run by Factor and marked that way.</p>
       </section>
     </>

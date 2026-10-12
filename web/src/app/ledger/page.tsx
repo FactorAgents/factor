@@ -11,7 +11,7 @@ export default async function LedgerPage({ searchParams }: { searchParams: Promi
   const s = await getState();
   const { show } = await searchParams;
   const want = SHOW.some(([k]) => k === show) ? show! : "all";
-  const rows = s.events.filter((e) => want === "all" || e.kind === want || (want === "refunded" && e.kind === "not_repaid"));
+  const rows = s.events.filter((e) => want === "all" || e.kind === want || (want === "refunded" && e.kind === "not_repaid") || (want === "settled" && e.kind === "half"));
   return (
     <>
       <PageHead kicker="The ledger" title={<>Everything that happens, <em>as</em> it happens.</>} lead="Every payment locked, every advance, every delivery and every burn is a line here, read from the chain. Open a line to see the job behind it." />

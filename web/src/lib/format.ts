@@ -1,5 +1,5 @@
 // Every number and time on the page goes through here, so they are written one way everywhere.
-import type { Agent, Params } from "./types";
+import type { Agent } from "./types";
 
 const whole = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 export const int = (n: number): string => whole.format(Math.round(n));
@@ -22,11 +22,28 @@ export const short = (a: string): string => (a.length > 12 ? `${a.slice(0, 6)}â€
 /** two letters for an agent's tile: lumen-07 becomes L7 */
 export const initials = (name: string): string => { const parts = name.split(/[-\s]+/).filter(Boolean); const a = parts[0]?.[0] ?? "?"; const last = parts.length > 1 ? parts[parts.length - 1] : parts[0].slice(1); const b = /\d/.test(last) ? last.replace(/\D/g, "").slice(-1) : last[0] ?? ""; return (a + b).toUpperCase(); };
 
-/** How far the pool will go for an agent: its own bond, plus a multiple of the fees its settled jobs paid in. */
-export const poolLimit = (a: Pick<Agent, "bondEth" | "feesPaidEth">, p: Pick<Params, "limitFeesMultiple">): number => a.bondEth + a.feesPaidEth * p.limitFeesMultiple;
+/** How far the pool will go for an agent: its own bond, plus the fees its settled jobs have paid in. Counted once:
+ *  an agent can then never take more out of the pool than it has put in. */
+export const poolLimit = (a: Pick<Agent, "bondEth" | "feesPaidEth">): number => a.bondEth + a.feesPaidEth;
 /** What it can still draw from the pool right now. */
-export const canDraw = (a: Pick<Agent, "bondEth" | "feesPaidEth" | "drawnEth" | "advancesMissed">, p: Pick<Params, "limitFeesMultiple">): number => (a.advancesMissed > 0 ? 0 : Math.max(0, poolLimit(a, p) - a.drawnEth));
+export const canDraw = (a: Pick<Agent, "bondEth" | "feesPaidEth" | "drawnEth" | "advancesMissed">): number => (a.advancesMissed > 0 ? 0 : Math.max(0, poolLimit(a) - a.drawnEth));
 
-export const STATE_WORD: Record<string, string> = { locked: "Locked", advanced: "Advanced", delivered: "Delivered", settled: "Settled", refunded: "Refunded", not_repaid: "Not repaid", burned: "Burned", bond: "Bond", pool_in: "Pool" };
-export const STATE_TONE: Record<string, "" | "go" | "warn" | "bad"> = { locked: "", advanced: "go", delivered: "warn", settled: "go", refunded: "bad", not_repaid: "bad", burned: "go", bond: "", pool_in: "" };
+/** The score, part by part, by the one public formula. Nobody sets it by hand, and it moves no money. */
+export type ScorePart = { name: string; value: string; points: number; max: number };
+type Scored = Pick<Agent, "feesPaidEth" | "customers" | "settled" | "since" | "advancesRepaid" | "advancesMissed" | "settledAtHalf" | "notDelivered">;
+export function scoreParts(a: Scored, asOf: string): ScorePart[] {
+  const days = a.settled ? Math.max(0, Math.floor((Date.parse(asOf) - Date.parse(a.since)) / 86_400_000)) : 0;
+  const part = (name: string, value: string, raw: number, max: number): ScorePart => ({ name, value, points: Math.min(max, Math.floor(raw + 1e-9)), max });
+  return [
+    part("Fees paid into the pool", eth(a.feesPaidEth), a.feesPaidEth / 0.0005, 350),
+    part("Different customers", String(a.customers), a.customers * 25, 250),
+    part("Jobs settled", String(a.settled), a.settled * 10, 200),
+    part("Days since its first job", String(days), days * 2, 100),
+    part("Advances repaid", `${a.advancesRepaid} of ${a.advancesRepaid + a.advancesMissed}`, a.advancesRepaid * 10, 100),
+  ];
+}
+export const scoreOf = (a: Scored, asOf: string): number => (a.advancesMissed > 0 ? 0 : Math.max(0, scoreParts(a, asOf).reduce((n, p) => n + p.points, 0) - 50 * a.settledAtHalf - 100 * a.notDelivered));
+
+export const STATE_WORD: Record<string, string> = { locked: "Locked", advanced: "Advanced", delivered: "Delivered", settled: "Settled", half: "Settled at half", declined: "Declined", refunded: "Refunded", not_repaid: "Not repaid", burned: "Burned", bond: "Bond", pool_in: "Pool" };
+export const STATE_TONE: Record<string, "" | "go" | "warn" | "bad"> = { locked: "", advanced: "go", delivered: "warn", settled: "go", half: "warn", declined: "", refunded: "bad", not_repaid: "bad", burned: "go", bond: "", pool_in: "" };
 export const ADVANCE_WORD: Record<string, string> = { customer: "allowed by the customer", pool: "from the pool", compute: "paid as compute" };

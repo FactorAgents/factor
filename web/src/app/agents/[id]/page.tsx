@@ -4,7 +4,7 @@ import type { Metadata } from "next";
 import { agentOf, getState } from "@/lib/data";
 import { House, Seal, SecHead, Tag } from "@/components/Bits";
 import { Count, Reveal } from "@/components/Motion";
-import { canDraw, day, eth, poolLimit, short } from "@/lib/format";
+import { canDraw, day, eth, poolLimit, scoreParts, short } from "@/lib/format";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> { return { title: (await params).id }; }
 
@@ -13,13 +13,9 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
   const a = agentOf(s, (await params).id);
   if (!a) notFound();
   const jobs = s.jobs.filter((j) => j.agentId === a.id);
-  const limit = poolLimit(a, s.params), can = canDraw(a, s.params);
-  const parts = [
-    ["Jobs settled", a.settled, Math.min(100, a.settled * 2.5)],
-    ["Different customers", a.customers, Math.min(100, a.customers * 5)],
-    ["Delivered on time", `${a.onTimePct}%`, a.onTimePct],
-    ["Advances repaid", `${a.advancesRepaid} of ${a.advancesRepaid + a.advancesMissed}`, a.advancesRepaid + a.advancesMissed ? (a.advancesRepaid / (a.advancesRepaid + a.advancesMissed)) * 100 : 0],
-  ] as const;
+  const limit = poolLimit(a), can = canDraw(a);
+  const parts = scoreParts(a, s.asOf);
+  const less = 50 * a.settledAtHalf + 100 * a.notDelivered;
   return (
     <>
       <section className="wrap page-head">
@@ -38,15 +34,16 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
             <span className="label">Score</span>
             <div className="bigscore num" style={{ marginTop: 18 }}><Count to={a.score} /><small>of 1000</small></div>
             {a.advancesMissed > 0 ? <p className="note" style={{ marginTop: 24 }}>This agent did not repay an advance. Its score is 0 and the pool does not advance it again. Customers can still hire it.</p> : null}
-            <div className="bars">{parts.map(([name, value, width]) => <div className="b" key={name}><span>{name}</span><span>{value}</span><div className="score"><i style={{ ["--w" as string]: `${width}%` }} /></div></div>)}</div>
+            <div className="bars">{parts.map((p) => <div className="b" key={p.name}><span>{p.name} · {p.value}</span><span>{p.points} of {p.max}</span><div className="score"><i style={{ ["--w" as string]: `${(p.points / p.max) * 100}%` }} /></div></div>)}</div>
+            {less > 0 && a.advancesMissed === 0 ? <p className="small" style={{ marginTop: 18 }}>Less {less}: {[a.settledAtHalf ? `${a.settledAtHalf} settled at half` : "", a.notDelivered ? `${a.notDelivered} not delivered` : ""].filter(Boolean).join(", ")}.</p> : null}
+            <p className="small" style={{ marginTop: 18 }}>Delivered on time: {a.settled ? `${a.onTimePct}%` : "no jobs yet"}. The score is one public formula. It moves no money.</p>
           </div>
           <div>
             <span className="label">What the pool will advance</span>
             <dl className="kv" style={{ marginTop: 18 }}>
               <dt>Its own bond<small>pays first if an advance is not repaid</small></dt><dd>{eth(a.bondEth)}</dd>
               <dt>Fees its jobs have paid in<small>{eth(a.volumeEth, 2)} of settled work</small></dt><dd>{eth(a.feesPaidEth)}</dd>
-              <dt>Counted {s.params.limitFeesMultiple} times</dt><dd>{eth(a.feesPaidEth * s.params.limitFeesMultiple)}</dd>
-              <dt>Limit</dt><dd>{eth(limit)}</dd>
+              <dt>Limit<small>the bond plus the fees, counted once</small></dt><dd>{eth(limit)}</dd>
               <dt>Out right now</dt><dd>{eth(a.drawnEth)}</dd>
               <dt>Can draw</dt><dd className="sum">{can > 0 ? eth(can) : "nothing yet"}</dd>
             </dl>

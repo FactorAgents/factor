@@ -23,7 +23,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
       </section>
       <section className="wrap" style={{ paddingTop: 56 }}>
         <div className="grid2">
-          <Reveal><JobBill j={j} agent={a} /></Reveal>
+          <Reveal><JobBill j={j} agent={a} p={s.params} /></Reveal>
           <Reveal delay={140} className="side">
             <div>
               <span className="label">Who is in it</span>

@@ -2,10 +2,12 @@
 // sample.ts fills it in. Amounts of ETH are plain numbers here because the site only shows them: arithmetic on
 // money happens in wei, in the contracts and the engine.
 
-export type JobState = "locked" | "advanced" | "delivered" | "settled" | "refunded" | "not_repaid";
+/** half: the customer rejected the delivery and the job settled at half. declined: the agent said no. */
+export type JobState = "locked" | "advanced" | "delivered" | "settled" | "half" | "declined" | "refunded";
 /** Who stands behind an advance: the customer who allowed it, the pool, or the pool paying for compute directly. */
 export type AdvanceKind = "customer" | "pool" | "compute";
-export type EventKind = "locked" | "advanced" | "delivered" | "settled" | "refunded" | "not_repaid" | "burned" | "bond" | "pool_in";
+/** not_repaid is the line a refund leaves when the job had an advance from the pool: the bond pays first. */
+export type EventKind = "locked" | "advanced" | "delivered" | "settled" | "half" | "declined" | "refunded" | "not_repaid" | "burned" | "bond" | "pool_in";
 
 export interface Advance { kind: AdvanceKind; eth: number; feeEth: number; at: string }
 
@@ -21,8 +23,12 @@ export interface Job {
   deliveredAt?: string;
   settledAt?: string;
   advance?: Advance;
-  /** what the agent was paid in the end, once settled */
+  /** what the agent was paid when the job closed, over and above its advance */
   paidEth?: number;
+  /** what went back to the customer when the job closed */
+  backEth?: number;
+  /** the job fee it paid into the pool when it closed */
+  feeEth?: number;
 }
 
 export interface Agent {
@@ -34,15 +40,17 @@ export interface Agent {
   does: string;          // one line: what it sells
   since: string;
   settled: number;       // jobs delivered and paid
+  settledAtHalf: number; // jobs the customer rejected
+  notDelivered: number;  // jobs that ran past the due time and were refunded
   customers: number;     // different customers among them
   onTimePct: number;
   volumeEth: number;     // what its settled jobs were worth
-  feesPaidEth: number;   // what those jobs paid into the protocol
+  feesPaidEth: number;   // the job fees its settled jobs paid into the pool
   bondEth: number;       // its own stake, first to pay for an advance it does not repay
   drawnEth: number;      // advanced to it right now
   advancesRepaid: number;
   advancesMissed: number;
-  score: number;         // 0 to 1000
+  score: number;         // 0 to 1000, worked out by format.ts from the fields above
 }
 
 export interface LedgerEvent {
@@ -62,10 +70,12 @@ export interface LogEntry { date: string; area: string; title: string; text: str
 export interface Params {
   advanceMaxPct: number;     // of the locked payment
   advanceFeePct: number;     // of the advance
-  jobFeePct: number;         // of every settled job
-  limitFeesMultiple: number; // pool-backed limit = bond + this many times the fees paid in
+  jobFeePct: number;         // of every settled job, into the pool
   graceHours: number;        // after the due time, before a job can be refunded
-  reserveMinPct: number;     // of the pool, kept back for advances that are not repaid
+  reviewHours: number;       // the customer's time to accept or reject a delivery
+  rejectedPct: number;       // of the price that goes back to a customer who rejects
+  reserveMinPct: number;     // of the pool, never out with agents
+  minJobEth: number;         // the smallest job
 }
 
 export interface FactorState {

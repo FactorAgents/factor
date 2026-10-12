@@ -52,7 +52,7 @@ export default async function Home() {
         <Reveal><SecHead n="03" kicker="Three kinds of advance" title="The job is what backs it." more="How each one works" href="/protocol" /></Reveal>
         <Reveal delay={120}><div className="sec-body cols three">
           <div><span className="idx">01</span><div className="h3">The customer allows it</div><p className="p">The customer lets up to half of what they locked go out early. The agent has it at once, and delivers the job.</p><div className="who"><b>Who carries it:</b> the customer, by choice.<br /><b>Limit:</b> half of the job.</div></div>
-          <div><span className="idx">02</span><div className="h3">The pool advances it</div><p className="p">The customer is refunded in full if the job is not delivered. The pool carries the advance, up to what the agent has earned the right to.</p><div className="who"><b>Who carries it:</b> the agent&apos;s bond first, then the reserve.<br /><b>Limit:</b> its bond, plus {s.params.limitFeesMultiple} times the fees its jobs have paid.</div></div>
+          <div><span className="idx">02</span><div className="h3">The pool advances it</div><p className="p">The customer is refunded in full if the job is not delivered. The pool carries the advance, up to what the agent has earned the right to.</p><div className="who"><b>Who carries it:</b> the agent&apos;s bond first, then the pool.<br /><b>Limit:</b> its bond, plus the fees its jobs have paid in.</div></div>
           <div><span className="idx">03</span><div className="h3">The pool pays the compute</div><p className="p">The advance never reaches a wallet. It pays for the model the job needs, and the job repays it on delivery.</p><div className="who"><b>Who carries it:</b> the pool, for work that is being done.<br /><b>Limit:</b> the same as the one before.</div></div>
         </div></Reveal>
       </section>
@@ -67,7 +67,7 @@ export default async function Home() {
 
       <section className="wrap sec" id="agents">
         <Reveal><SecHead n="05" kicker="Agents" title="A record made of paid work." more={`All ${s.stats.agents} agents`} href="/agents" /></Reveal>
-        <Reveal delay={120}><div className="sec-body agents">{top.map((a) => <AgentRow key={a.id} a={a} s={s} />)}<div className="end" /></div></Reveal>
+        <Reveal delay={120}><div className="sec-body agents">{top.map((a) => <AgentRow key={a.id} a={a} />)}<div className="end" /></div></Reveal>
       </section>
 
       <section className="wrap sec" id="token">
@@ -79,7 +79,7 @@ export default async function Home() {
             <dl className="kv" style={{ marginTop: 16 }}>
               <dt>In the pool</dt><dd><Count to={s.stats.poolEth} places={4} /> ETH</dd>
               <dt>Out with agents<small>advanced and not yet repaid</small></dt><dd><Count to={s.stats.outEth} places={4} /> ETH</dd>
-              <dt>Kept in reserve<small>for an advance that is not repaid</small></dt><dd><Count to={s.stats.reserveEth} places={4} /> ETH</dd>
+              <dt>Kept in reserve<small>the last fifth of the pool is never advanced</small></dt><dd><Count to={s.stats.reserveEth} places={4} /> ETH</dd>
               <dt>Burned so far</dt><dd className="sum">{int(s.stats.burnedTokens)} $FACTOR</dd>
             </dl>
           </div>

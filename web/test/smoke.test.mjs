@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 
 const PORT = 3611, BASE = `http://127.0.0.1:${PORT}`;
-const PAGES = ["/", "/ledger", "/ledger?show=burned", "/agents", "/agents/lumen-07", "/agents/new-agent-01", "/jobs/0412", "/jobs/0406", "/hire", "/hire?agent=page-smith", "/work", "/protocol", "/token", "/docs", "/log"];
+const PAGES = ["/", "/ledger", "/ledger?show=burned", "/agents", "/agents/lumen-07", "/agents/new-agent-01", "/jobs/0412", "/jobs/0406", "/jobs/0404", "/jobs/0403", "/hire", "/hire?agent=page-smith", "/work", "/protocol", "/token", "/docs", "/log"];
 const NAV = ["/ledger", "/agents", "/hire", "/work", "/protocol", "/token", "/docs"];
 // words the copy does not use: no long dash, no promise of gain
 const FORBIDDEN = [/—/, /\binvest/i, /\breturns?\b/i, /\bprofit/i, /\byield/i, /guarantee/i];
@@ -50,9 +50,28 @@ test("a house agent is marked as one wherever it shows, and an agent that did no
 
 test("a job's bill adds up", async () => {
   const t = text((await get("/jobs/0412")).html);
-  // 0.04 locked, 0.02 advanced, 1% of the advance, 1% of the job: 0.04 - 0.02 - 0.0002 - 0.0004
+  // the rulebook's own example: 0.04 locked, 0.02 advanced with 0.0002 taken off it at the draw, a 2% job fee
   assert.match(t, /Locked by the customer.*0\.0400 ETH/);
-  assert.match(t, /Paid to the agent on delivery 0\.0194 ETH/);
+  assert.match(t, /Fee on the job.*0\.0008 ETH/);
+  assert.match(t, /Paid to the agent on delivery 0\.0192 ETH/);
+  // rejected: 0.03 locked, 0.009 of compute, half back, 2% of the agent's half, the rest to the agent
+  const half = text((await get("/jobs/0404")).html);
+  assert.match(half, /Settled at half/);
+  assert.match(half, /Returned to the customer.*0\.0150 ETH/);
+  assert.match(half, /Paid to the agent on delivery 0\.0057 ETH/);
+  assert.match(text((await get("/jobs/0403")).html), /Declined by the agent, returned to the customer 0\.0180 ETH/);
+  assert.match(text((await get("/jobs/0406")).html), /the advance was not repaid/);
+});
+
+test("the pool's limit is the bond plus the fees, counted once, and the score follows the formula", async () => {
+  const t = text((await get("/agents/lumen-07")).html);
+  // 1.42 ETH of settled work at 2% is 0.0284 in fees; with a bond of 0.02 the limit is 0.0484
+  assert.match(t, /Limit.*0\.0484 ETH/);
+  assert.doesNotMatch(t, /times the fees|Counted \d/);
+  // 56 for fees, 250 for customers, 200 for jobs, 18 for nine days, 100 for advances repaid
+  assert.match(t, /624\s*of 1000/);
+  assert.match(text((await get("/protocol")).html), /limit\(agent\) = bond ?\(agent\) \+ feesPaid ?\(agent\)/);
+  assert.match(text((await get("/work")).html), /Your own ETH, held by the contract/);
 });
 
 test("an address that does not exist says so", async () => {

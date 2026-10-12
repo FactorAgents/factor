@@ -1,37 +1,49 @@
 // Sample figures, so every page can be built and looked at before there is a chain behind it. Nothing here is
 // real: the engine replaces this file's answer in phase 6, in the same shape.
 import type { Agent, FactorState, Job, LedgerEvent, Burn, LogEntry, Params } from "./types";
+import { scoreOf } from "./format";
 
-const params: Params = { advanceMaxPct: 50, advanceFeePct: 1, jobFeePct: 1, limitFeesMultiple: 3, graceHours: 12, reserveMinPct: 20 };
+// the rulebook's numbers (docs/RULEBOOK.md, section 9)
+const params: Params = { advanceMaxPct: 50, advanceFeePct: 1, jobFeePct: 2, graceHours: 12, reviewHours: 24, rejectedPct: 50, reserveMinPct: 20, minJobEth: 0.001 };
 // made-up addresses and transaction numbers that look like real ones: the same input always gives the same one
 const A = (n: number) => "0x" + ((BigInt(n) + 7n) * 0x9e3779b97f4a7c15f39cc0605cedc8341082276bn % (1n << 160n)).toString(16).padStart(40, "0");
 const TX = (n: number) => "0x" + ((BigInt(n) + 11n) * 0xbf58476d1ce4e5b994d049bb133111eb9e3779b97f4a7c15f39cc0605cedc835n % (1n << 256n)).toString(16).padStart(64, "0");
 const at = (min: number) => new Date(Date.UTC(2026, 9, 14, 18, 42, 7) - min * 60_000).toISOString();
 
-const agent = (id: string, name: string, house: boolean, does: string, daysOld: number, settled: number, customers: number, onTimePct: number, volumeEth: number, bondEth: number, drawnEth: number, repaid: number, missed: number, score: number, n: number): Agent =>
-  ({ id, name, house, does, address: A(n), since: at(daysOld * 1440), settled, customers, onTimePct, volumeEth, feesPaidEth: +(volumeEth * params.jobFeePct / 100).toFixed(5), bondEth, drawnEth, advancesRepaid: repaid, advancesMissed: missed, score });
+// half and missed: jobs settled at half, and [jobs not delivered, advances not repaid]. The score is worked out, never typed in.
+const agent = (id: string, name: string, house: boolean, does: string, daysOld: number, settled: number, customers: number, onTimePct: number, volumeEth: number, bondEth: number, drawnEth: number, repaid: number, half: number, missed: [number, number], n: number): Agent => {
+  const a = { id, name, house, does, address: A(n), since: at(daysOld * 1440), settled, settledAtHalf: half, notDelivered: missed[0], customers, onTimePct, volumeEth, feesPaidEth: +(volumeEth * params.jobFeePct / 100).toFixed(5), bondEth, drawnEth, advancesRepaid: repaid, advancesMissed: missed[1] };
+  return { ...a, score: scoreOf(a, at(0)) };
+};
 
 const agents: Agent[] = [
-  agent("lumen-07", "lumen-07", false, "Summarises long documents and contracts", 9, 41, 19, 98, 1.42, 0.02, 0.02, 33, 0, 812, 11),
-  agent("page-smith", "page-smith", true, "Builds a landing page from a short brief", 12, 36, 22, 100, 1.31, 0.03, 0.0125, 30, 0, 790, 12),
-  agent("ledger-scout", "ledger-scout", true, "Reads a wallet's history and writes it up", 12, 29, 17, 97, 0.88, 0.03, 0, 21, 0, 701, 13),
-  agent("orbit-ops", "orbit-ops", false, "Watches a contract and reports what changed", 7, 22, 9, 95, 0.61, 0.015, 0.01, 15, 0, 612, 14),
-  agent("quill-02", "quill-02", false, "Writes release notes from a list of commits", 6, 17, 8, 94, 0.36, 0.01, 0.0125, 11, 0, 540, 15),
-  agent("price-desk", "price-desk", true, "A daily price sheet from the Chainlink feeds", 12, 14, 6, 100, 0.22, 0.03, 0, 6, 0, 455, 16),
-  agent("tally-bot", "tally-bot", false, "Turns a spreadsheet into charts and a summary", 4, 6, 4, 83, 0.09, 0.005, 0, 3, 1, 0, 17),
-  agent("new-agent-01", "new-agent-01", false, "Translates product pages into five languages", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 18),
+  agent("lumen-07", "lumen-07", false, "Summarises long documents and contracts", 9, 41, 19, 98, 1.42, 0.02, 0, 33, 0, [0, 0], 11),
+  agent("page-smith", "page-smith", true, "Builds a landing page from a short brief", 12, 36, 22, 100, 1.31, 0.03, 0.0125, 30, 0, [0, 0], 12),
+  agent("ledger-scout", "ledger-scout", true, "Reads a wallet's history and writes it up", 12, 29, 17, 97, 0.88, 0.03, 0, 21, 0, [0, 0], 13),
+  agent("orbit-ops", "orbit-ops", false, "Watches a contract and reports what changed", 7, 22, 9, 95, 0.61, 0.015, 0.006, 15, 0, [0, 0], 14),
+  agent("quill-02", "quill-02", false, "Writes release notes from a list of commits", 6, 17, 8, 94, 0.36, 0.01, 0.0125, 11, 1, [0, 0], 15),
+  agent("price-desk", "price-desk", true, "A daily price sheet from the Chainlink feeds", 12, 14, 6, 100, 0.22, 0.03, 0, 6, 0, [0, 0], 16),
+  agent("tally-bot", "tally-bot", false, "Turns a spreadsheet into charts and a summary", 4, 6, 4, 83, 0.09, 0, 0, 3, 0, [2, 1], 17),
+  agent("new-agent-01", "new-agent-01", false, "Translates product pages into five languages", 0, 0, 0, 0, 0, 0, 0, 0, 0, [0, 0], 18),
 ];
 
 const job = (id: string, title: string, agentId: string, priceEth: number, state: Job["state"], lockedMin: number, kind?: "customer" | "pool" | "compute", n = 1): Job => {
   const adv = kind ? +(priceEth * (kind === "compute" ? 0.3 : 0.5)).toFixed(4) : 0;
   const fee = +(adv * params.advanceFeePct / 100).toFixed(5);
-  const closed = state === "settled" || state === "refunded" || state === "not_repaid";
+  const closed = state === "settled" || state === "half" || state === "declined" || state === "refunded";
+  // the agent's side of the job: all of it when it settles, half when the customer rejected
+  const side = state === "half" ? priceEth * (100 - params.rejectedPct) / 100 : priceEth;
+  const jobFee = +Math.min(side - adv, side * params.jobFeePct / 100).toFixed(5);
   return {
     id, title, agentId, customer: A(100 + n), priceEth, state, lockedAt: at(lockedMin), dueAt: at(lockedMin - 24 * 60),
-    ...(state === "delivered" || state === "settled" ? { deliveredAt: at(Math.max(1, lockedMin - 95)) } : {}),
+    ...(state === "delivered" || state === "settled" || state === "half" ? { deliveredAt: at(Math.max(1, lockedMin - 95)) } : {}),
     ...(closed ? { settledAt: at(Math.max(0, lockedMin - 110)) } : {}),
     ...(kind ? { advance: { kind, eth: adv, feeEth: fee, at: at(lockedMin - 4) } } : {}),
-    ...(state === "settled" ? { paidEth: +(priceEth - adv - fee - priceEth * params.jobFeePct / 100).toFixed(5) } : {}),
+    // the fee on an advance came off it at the draw, so it is not taken again here
+    ...(state === "settled" || state === "half" ? { feeEth: jobFee, paidEth: +(side - adv - jobFee).toFixed(5) } : {}),
+    ...(state === "half" ? { backEth: +(priceEth - side).toFixed(5) } : {}),
+    ...(state === "declined" ? { backEth: priceEth } : {}),
+    ...(state === "refunded" ? { backEth: +(priceEth - (kind === "customer" ? adv : 0)).toFixed(5) } : {}),
   };
 };
 
@@ -46,8 +58,10 @@ const jobs: Job[] = [
   job("0409", "Translate a product page into German", "tally-bot", 0.03, "refunded", 1500, undefined, 8),
   job("0408", "A pricing page with three plans", "page-smith", 0.035, "settled", 260, "pool", 9),
   job("0407", "Summarise this week's governance posts", "lumen-07", 0.022, "settled", 330, "compute", 10),
-  job("0406", "A spreadsheet of holders, charted", "tally-bot", 0.018, "not_repaid", 2900, "pool", 11),
+  job("0406", "A spreadsheet of holders, charted", "tally-bot", 0.018, "refunded", 2900, "pool", 11),
   job("0405", "Release notes for version 2.2", "quill-02", 0.02, "settled", 410, "pool", 12),
+  job("0404", "Release notes for a mobile app", "quill-02", 0.03, "half", 3100, "compute", 13),
+  job("0403", "Audit a token contract", "orbit-ops", 0.018, "declined", 3300, undefined, 14),
 ];
 
 const e = (n: number, min: number, kind: LedgerEvent["kind"], text: string, amount: string, jobId?: string, agentId?: string): LedgerEvent => ({ n, at: at(min), kind, text, amount, tx: TX(n), ...(jobId ? { jobId } : {}), ...(agentId ? { agentId } : {}) });
@@ -71,7 +85,9 @@ const events: LedgerEvent[] = [
   e(59, 220, "settled", "lumen-07 delivered, the pool was repaid", "+0.0066 ETH", "0407", "lumen-07"),
   e(58, 300, "settled", "quill-02 delivered, the pool was repaid", "+0.0100 ETH", "0405", "quill-02"),
   e(57, 1390, "refunded", "tally-bot did not deliver in time, the customer was refunded", "0.0300 ETH", "0409", "tally-bot"),
-  e(56, 2790, "not_repaid", "tally-bot did not deliver: its bond paid first, the reserve the rest", "0.0090 ETH", "0406", "tally-bot"),
+  e(56, 2790, "not_repaid", "tally-bot did not deliver: its bond paid first, the pool the rest", "0.0090 ETH", "0406", "tally-bot"),
+  e(55, 2990, "half", "the customer rejected the delivery, the job settled at half", "0.0150 ETH", "0404", "quill-02"),
+  e(54, 3290, "declined", "orbit-ops declined the job, the customer has it all back", "0.0180 ETH", "0403", "orbit-ops"),
 ];
 
 const burns: Burn[] = [
@@ -94,7 +110,7 @@ export function sampleState(): FactorState {
   return {
     asOf: at(0), launched: true,
     links: { pons: "https://ponsfamily.com/launchpad", github: "https://github.com", x: "https://x.com" },
-    stats: { advancedEth: 1.84, settledJobs: 312 - 6 + settled, poolEth: 0.62, reserveEth: 0.14, outEth: 0.055, burnedTokens: 4_120_553, supplyLeft: 1_000_000_000 - 4_120_553, agents: agents.length, lostEth: 0 },
+    stats: { advancedEth: 1.84, settledJobs: 312 - 6 + settled, poolEth: 0.62, reserveEth: 0.124, outEth: 0.031, burnedTokens: 4_120_553, supplyLeft: 1_000_000_000 - 4_120_553, agents: agents.length, lostEth: 0.004 },
     params, agents, jobs, events, burns, log,
     contracts: { desk: A(1), splitter: A(2), burnPot: A(3), token: A(4) },
   };

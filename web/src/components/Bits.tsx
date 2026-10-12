@@ -2,7 +2,7 @@
 // the head of a section.
 import Link from "next/link";
 import type { ReactNode } from "react";
-import type { Agent, FactorState, Job, LedgerEvent } from "@/lib/types";
+import type { Agent, Job, LedgerEvent, Params } from "@/lib/types";
 import { ADVANCE_WORD, STATE_TONE, STATE_WORD, canDraw, clock, eth, initials, short } from "@/lib/format";
 
 export function Tag({ kind }: { kind: string }) {
@@ -39,8 +39,8 @@ export function Ledger({ events, empty = "Nothing of that kind yet." }: { events
   );
 }
 
-export function AgentRow({ a, s }: { a: Agent; s: FactorState }) {
-  const can = canDraw(a, s.params);
+export function AgentRow({ a }: { a: Agent }) {
+  const can = canDraw(a);
   return (
     <Link className="agent" href={`/agents/${a.id}`}>
       <Seal name={a.name} />
@@ -57,12 +57,14 @@ function BillLine({ k, why, v, bad }: { k: string; why?: string; v: string; bad?
   return <div className="line"><span>{k}</span><i className="dots" /><b className={bad ? "bad" : undefined}>{v}</b>{why ? <small className="why">{why}</small> : null}</div>;
 }
 /** A job written out like the bill it is: what was locked, what was advanced, what the agent gets. */
-export function JobBill({ j, agent }: { j: Job; agent?: Agent }) {
+export function JobBill({ j, agent, p }: { j: Job; agent?: Agent; p: Params }) {
   const adv = j.advance;
   const at = ORDER.indexOf(j.state as (typeof ORDER)[number]);
-  const closedBadly = j.state === "refunded" || j.state === "not_repaid";
-  const jobFee = +(j.priceEth * 0.01).toFixed(5);
-  const toAgent = j.paidEth ?? +(j.priceEth - (adv ? adv.eth + adv.feeEth : 0) - jobFee).toFixed(5);
+  const paid = j.state === "settled" || j.state === "half";
+  const jobFee = j.feeEth ?? +(j.priceEth * p.jobFeePct / 100).toFixed(5);
+  // the fee on an advance came off it when it was drawn, so only the advance and the job fee come off here
+  const toAgent = j.paidEth ?? +(j.priceEth - (adv ? adv.eth : 0) - jobFee).toFixed(5);
+  const unpaid = j.state === "refunded" && adv && adv.kind !== "customer";
   return (
     <div className="bill">
       <div className="head"><div className="h3">Job {j.id}</div><Tag kind={j.state} /></div>
@@ -71,16 +73,17 @@ export function JobBill({ j, agent }: { j: Job; agent?: Agent }) {
       <div className="lines">
         <BillLine k="Locked by the customer" why="held by the contract until delivery" v={eth(j.priceEth)} />
         {adv ? <BillLine k="Advanced to the agent" why={`${ADVANCE_WORD[adv.kind]}, to pay for what the job costs`} v={eth(adv.eth)} /> : null}
-        {adv ? <BillLine k="Fee on the advance" why="buys back and burns $FACTOR" v={eth(adv.feeEth)} /> : null}
-        <BillLine k="Fee on the job" why="goes to the pool" v={eth(jobFee)} />
+        {adv ? <BillLine k="Fee on the advance" why="taken out of the advance, buys back and burns $FACTOR" v={eth(adv.feeEth)} /> : null}
+        {j.state === "half" ? <BillLine k="Returned to the customer" why="the customer rejected the delivery, so the job settled at half" v={eth(j.backEth ?? 0)} /> : null}
+        {j.state === "declined" || j.state === "refunded" ? null : <BillLine k="Fee on the job" why={j.state === "half" ? "on the agent's half, goes to the pool" : "goes to the pool"} v={eth(jobFee)} />}
         <div className="line sum">
-          {closedBadly
-            ? <><span>{j.state === "refunded" ? "Refunded to the customer" : "Refunded to the customer, the advance was not repaid"}</span><i className="dots" /><b className="bad">{eth(j.priceEth)}</b></>
-            : <><span>{j.state === "settled" ? "Paid to the agent on delivery" : "To the agent on delivery"}</span><i className="dots" /><b>{eth(toAgent)}</b></>}
+          {j.state === "declined" ? <><span>Declined by the agent, returned to the customer</span><i className="dots" /><b>{eth(j.backEth ?? j.priceEth)}</b></>
+            : j.state === "refunded" ? <><span>{unpaid ? "Refunded to the customer, the advance was not repaid" : "Refunded to the customer"}</span><i className="dots" /><b className="bad">{eth(j.backEth ?? j.priceEth)}</b></>
+            : <><span>{paid ? "Paid to the agent on delivery" : "To the agent on delivery"}</span><i className="dots" /><b>{eth(toAgent)}</b></>}
         </div>
       </div>
-      {closedBadly ? null : (
-        <div className="steps">{ORDER.map((st, i) => <div key={st} className={i < at ? "done" : i === at ? (j.state === "settled" ? "done" : "now") : undefined}>{STATE_WORD[st]}</div>)}</div>
+      {j.state === "declined" || j.state === "refunded" ? null : (
+        <div className="steps">{ORDER.map((st, i) => <div key={st} className={paid || i < at ? "done" : i === at ? "now" : undefined}>{st === "settled" && j.state === "half" ? STATE_WORD.half : STATE_WORD[st]}</div>)}</div>
       )}
     </div>
   );

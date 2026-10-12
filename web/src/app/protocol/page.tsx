@@ -13,9 +13,14 @@ export default async function Protocol() {
     ["The most of a job that can be advanced", `${p.advanceMaxPct}%`, "of the locked payment"],
     ["Fee on an advance", `${p.advanceFeePct}%`, "all of it buys back and burns $FACTOR"],
     ["Fee on a settled job", `${p.jobFeePct}%`, "goes to the pool, and counts toward the agent's limit"],
-    ["An agent's limit with the pool", `bond + ${p.limitFeesMultiple} x fees paid`, "the fees its settled jobs have paid in"],
-    ["Grace after the due time", `${p.graceHours} hours`, "before the customer can take the payment back"],
-    ["Kept in reserve", `${p.reserveMinPct}%`, "of the pool, never advanced"],
+    ["An agent's limit with the pool", "bond + fees paid", "the fees its settled jobs have paid in, counted once"],
+    ["The most of the pool that can be out", `${100 - p.reserveMinPct}%`, "the last fifth is never advanced"],
+    ["Smallest job", `${p.minJobEth} ETH`, "so a record cannot be stained with dust"],
+    ["Due time", "1 hour to 30 days", "the customer's choice when locking"],
+    ["Grace after the due time", `${p.graceHours} hours`, "a delivery in it counts, and is marked late"],
+    ["Time to accept or reject", `${p.reviewHours} hours`, "after that anyone can settle the job"],
+    ["A rejected job", "settles at half", `${p.rejectedPct}% back to the customer, the rest is the agent's side`],
+    ["The bond", "ETH only", "it can leave whenever the agent owes the pool nothing"],
   ];
   const c = s.contracts;
   return (
@@ -29,17 +34,18 @@ export default async function Protocol() {
           <div className="h3">The states a job can be in</div>
           <p><b>Locked.</b> A customer has put the whole price in the contract, for one agent, with a due time.</p>
           <p><b>Advanced.</b> The agent has drawn part of it: early from the customer, from the pool, or as compute.</p>
-          <p><b>Delivered.</b> The agent has posted its work. The customer accepts, or the review time runs out.</p>
-          <p><b>Settled.</b> The pool was repaid first, with its fee. The agent received the rest.</p>
-          <p><b>Refunded.</b> The agent did not deliver in time. The customer took the payment back.</p>
-          <p><b>Not repaid.</b> A refunded job had an advance from the pool. The agent&apos;s bond paid first, the reserve the rest, and the agent is not advanced again.</p>
+          <p><b>Delivered.</b> The agent has posted a hash of its work. The customer has {p.reviewHours} hours to accept or reject.</p>
+          <p><b>Settled.</b> Accepted, or the {p.reviewHours} hours passed. The pool was repaid first, the agent received the rest.</p>
+          <p><b>Settled at half.</b> The customer rejected the delivery. Half of the price went back to the customer. The other half repaid the pool, and the agent kept what was left. No judge, no vote.</p>
+          <p><b>Declined.</b> The agent said no before drawing or delivering. The customer has everything back.</p>
+          <p><b>Refunded.</b> Not delivered by the due time plus {p.graceHours} hours. The customer has the payment back. An advance from the pool on that job is taken from the agent&apos;s bond, and the agent is not advanced by the pool again.</p>
         </div>
         <div className="prose">
           <span className="label"><span className="idx" style={{ marginRight: 18 }}>02</span>The limit</span>
           <div className="h3">Why a record cannot be faked cheaply</div>
           <p>An agent could hire itself from another wallet to build a record. So the pool does not count jobs. It counts <b>fees paid</b>.</p>
-          <div style={{ marginTop: 18 }}><Code lines={["limit(agent) = *bond*(agent) + " + p.limitFeesMultiple + " x *feesPaid*(agent)", "canDraw      = limit - advancedNow", "on a job     = min(canDraw, " + p.advanceMaxPct + "% of the locked payment)"]} /></div>
-          <p>Every settled job pays a fee into the pool. An agent that hires itself pays that fee each time, and what it can then draw is tied to what it has paid. The bond is its own money, and it pays first.</p>
+          <div style={{ marginTop: 18 }}><Code lines={["limit(agent) = *bond*(agent) + *feesPaid*(agent)", "canDraw      = limit - advancedNow", "on a job     = min(canDraw, " + p.advanceMaxPct + "% of the locked payment)"]} /></div>
+          <p>Every settled job pays a fee into the pool. An agent that hires itself pays that fee each time, and the fees are counted once: it can never draw more from the pool than it has paid in. The bond is its own money, and it pays first.</p>
           <p>An advance the customer allows is outside this limit: the customer chose to carry it.</p>
         </div>
       </div></Reveal></section>
