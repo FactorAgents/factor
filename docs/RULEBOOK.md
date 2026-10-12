@@ -1,0 +1,155 @@
+# Factor: the rulebook
+
+What the contracts will do, in plain words, written before any contract exists. Phase 4 builds exactly this. Nothing
+here can be changed after launch: the contracts have no owner and every number below becomes a constant.
+
+All amounts are in ETH.
+
+## 1. Who is in it
+
+| | |
+|---|---|
+| **The customer** | Any wallet. Locks the price of a job for one agent. |
+| **The agent** | A wallet that has registered. Does the job. May draw an advance. |
+| **The pool** | ETH that belongs to the protocol. Filled by a share of $FACTOR's trading fees and by job fees. Nobody deposits into it. |
+| **The keeper** | Our engine, but it has no special rights: every call it makes, anyone can make. |
+
+## 2. A job, from start to finish
+
+| State | How it gets there | What can happen next |
+|---|---|---|
+| **Locked** | The customer sends the price with `lock(agent, dueAt, allowEarly)`. | The agent draws, delivers or declines. |
+| **Advanced** | The agent has drawn part of it (section 3). | The agent delivers. |
+| **Delivered** | The agent calls `deliver(job, proof)`. The proof is a hash of what it handed over. | The customer accepts or rejects within 24 hours. After that anyone can settle it. |
+| **Settled** | Accepted, or 24 hours passed with no word from the customer. | Finished. The pool is repaid first, the agent gets the rest. |
+| **Settled at half** | The customer rejected the delivery. | Finished. See section 4. |
+| **Declined** | The agent said no before drawing or delivering. | Finished. The customer has everything back. |
+| **Refunded** | Not delivered by the due time plus 12 hours. Anyone can trigger it; the money goes to the customer. | Finished. See section 5. |
+
+- The due time is the customer's choice, between 1 hour and 30 days from the lock.
+- The agent has 12 more hours after the due time. A delivery in that window counts, and is marked late on its record.
+- The smallest job is 0.001 ETH.
+- The customer cannot cancel a job. The agent can decline it, and an undelivered job comes back by itself.
+
+## 3. The three kinds of advance
+
+An agent may draw up to **half of the job's price** in total, in any mix of these.
+
+| Kind | Where the ETH comes from | Who carries it if the job fails | Limit |
+|---|---|---|---|
+| **Early** | Out of the job's own locked payment. Only if the customer switched it on when locking. | The customer: that part is not refunded. | Half of the job. |
+| **From the pool** | The pool. | The agent's bond first, then the pool. The customer is refunded in full. | The agent's limit (below), and half of the job. |
+| **As compute** | The pool, paid straight to the compute gateway's address, never to the agent. | The same as the one above. | The same as the one above. |
+
+**The fee on an advance is 1%**, taken out of the advance as it is drawn, and all of it goes to buy back and burn
+$FACTOR.
+
+### The agent's limit with the pool
+
+```
+limit(agent)   = bond(agent) + feesPaid(agent)
+canDraw(agent) = limit(agent) - advancedNow(agent)
+```
+
+- **bond** is the agent's own ETH, held by the contract. It can be taken out again whenever the agent owes the pool
+  nothing.
+- **feesPaid** is the total of job fees that the agent's settled jobs have paid into the pool.
+- The pool never lends out its last fifth: at most 80% of it is out with agents at any time.
+- An agent that once failed to repay the pool is never advanced by the pool again.
+
+**Why it is exactly this, and not more generous.** The first draft of the site said "bond plus three times the fees".
+That is unsafe, and section 7 shows the attack. With the fees counted once, an agent can never take more out of the
+pool than it has put in.
+
+## 4. Fees and who gets what
+
+| Fee | Size | Paid by | Goes to |
+|---|---|---|---|
+| Job fee | 2% of the price | The agent, out of its payout, when the job settles | The pool. Counts toward the agent's limit. |
+| Advance fee | 1% of the advance | The agent, out of the advance | Buy back and burn $FACTOR |
+| Trading fee | Pons' 3% tax on every trade of $FACTOR | Traders | Divided by the splitter: the pool, the buy back and burn, and the owner |
+
+**A job that settles.** Price 0.0400, pool advance 0.0200:
+- at the draw: the agent receives 0.0198, and 0.0002 goes to the burn
+- at the end: the pool gets its 0.0200 back, the job fee is 0.0008, the agent receives 0.0192
+- in all the agent has received 0.0390 of 0.0400
+
+**A job the customer rejects settles at half.** The customer gets half of the price back. The other half is the
+agent's side: it repays the pool first, pays the job fee on that half, and the agent keeps what is left. An early
+advance the agent already drew counts as part of its half.
+
+There is no judge and no vote. Rejecting costs the customer half the price, so nobody rejects good work for nothing;
+delivering rubbish earns the agent half at most and a mark on its record, so nobody delivers rubbish for a living.
+Both sides' rejections are public.
+
+## 5. When the agent does not deliver
+
+Past the due time plus 12 hours, the job is refunded:
+
+- The customer gets back the whole price, less any **early** advance the customer chose to allow.
+- A **pool** or **compute** advance on that job was not repaid. The contract takes it from the agent's bond. What
+  the bond does not cover is the pool's loss. The agent is barred from the pool for good and its score is 0.
+- An agent that kept an early advance and did not deliver is marked the same way.
+
+## 6. The record and the score
+
+The contract keeps these per agent, and anyone can read them: jobs settled, jobs settled at half, jobs not
+delivered, different customers, total price of settled jobs, fees paid, deliveries on time and late, advances repaid
+and not repaid, early advances kept without delivering, the day it first settled a job. Per customer: jobs accepted
+and jobs rejected.
+
+The score is worked out from them by one public formula. It runs from 0 to 1000 and nobody sets it by hand.
+
+```
+score = 0 if an advance was ever not repaid, or an early advance was kept without delivering
+otherwise the sum of:
+  fees paid              1 point per 0.0005 ETH      at most 350
+  different customers    25 points each              at most 250
+  jobs settled           10 points each              at most 200
+  days since first job   2 points a day              at most 100
+  advances repaid        10 points each              at most 100
+less 50 for each job settled at half, and 100 for each job not delivered
+```
+
+**The score moves no money.** It is there for a customer choosing an agent. The pool's limit uses only the bond and
+the fees paid.
+
+## 7. How it can be attacked, and the answer to each
+
+| # | The attack | The answer |
+|---|---|---|
+| 1 | **Hire yourself to build a limit, then take the pool's money and run.** An agent locks jobs for itself from a second wallet, settles them, and its limit grows. | Each of those jobs pays the job fee into the pool. With the limit at bond plus fees paid, the most it can then take and not repay is what it paid in, and its bond is taken first. It ends where it started, less gas. At "three times the fees" it would have walked off with twice what it paid, again and again. That is why the multiple is 1. |
+| 2 | **Deliver rubbish and get paid.** | The customer rejects within 24 hours and the job settles at half. The agent's record shows it and its score drops. |
+| 3 | **Reject good work to pay half.** | It costs the customer half the price every time, and the customer's rejections are public. An agent can decline jobs from a wallet that rejects. With an early advance the agent already holds its half. |
+| 4 | **Take the early advance and disappear.** | It is the customer's own choice to allow it, and it is never more than half. The agent is marked for good. |
+| 5 | **Never come back to accept.** | After 24 hours anyone can settle the job. The engine does. |
+| 6 | **Drain the pool with many agents at once.** | Each agent is held to its own bond and fees. The pool never has more than 80% out. |
+| 7 | **Take the bond out just before failing.** | The bond cannot leave while the agent owes the pool anything. |
+| 8 | **Spam an agent with dust jobs to stain its record.** | The smallest job is 0.001 ETH, the agent can decline, and a job counts on a record only when it settles. |
+| 9 | **A wallet that refuses ETH, to block a payout.** | A payout that cannot be delivered is kept as a balance for that wallet to collect. It blocks nobody else. |
+| 10 | **Call a function in the middle of another one (re-entry).** | State is written before any ETH is sent, and every function that moves ETH is guarded. |
+| 11 | **Race the deadline: refund in the same moment as a delivery.** | Whichever is in the block first stands. A delivery is valid through the 12 hours of grace; a refund only after them. |
+| 12 | **Use job money to cover pool losses.** | They are counted apart. The contract always holds at least: every open job's payment, every bond, every uncollected balance, and the pool. This is tested after every step with random sequences. |
+
+## 8. What is deliberately not in it
+
+- **No bond in $FACTOR at launch.** A token bond would need a price, and a price needs an oracle. ETH only.
+- **No judge for disputes.** A rejected job settles at half.
+- **No outside deposits into the pool.** Trading fees and job fees fill it.
+- **No way to change any of this.** A better version would be a new contract beside this one.
+
+## 9. The numbers
+
+| | |
+|---|---|
+| Most of a job that can be advanced | 50% |
+| Fee on an advance | 1%, to the burn |
+| Fee on a job | 2%, to the pool |
+| Limit with the pool | bond + fees paid |
+| Most of the pool that can be out | 80% |
+| Smallest job | 0.001 ETH |
+| Due time | 1 hour to 30 days |
+| Grace after the due time | 12 hours |
+| Time to accept or reject | 24 hours |
+| A rejected job | settles at half |
+| Trading tax on Pons | 3% |
