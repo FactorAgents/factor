@@ -1,0 +1,52 @@
+/* Factor: the design tokens. Everything the site is drawn with is named here once.
+   Dark is the site's own look; the light set is the same shapes on paper white. */
+@font-face { font-family: "Archivo"; src: url("fonts/Archivo.woff2") format("woff2"); font-weight: 100 900; font-stretch: 62% 125%; font-display: swap; }
+@font-face { font-family: "Azeret Mono"; src: url("fonts/AzeretMono.woff2") format("woff2"); font-weight: 400 600; font-display: swap; }
+
+:root {
+  /* ground */
+  --bg: #07120d;          /* the page */
+  --panel: #0c1c15;       /* a card on the page */
+  --panel-2: #10241b;     /* a card on a card, a field */
+  --line: #1b3327;        /* every border */
+  --line-2: #27483a;      /* a border that is hovered or in focus */
+  /* ink */
+  --ink: #eaf5ee;         /* words */
+  --mid: #9dbdab;         /* words that explain */
+  --dim: #6f9280;         /* labels, small capitals */
+  /* the one accent: money that is moving */
+  --go: #b9ff4f;
+  --go-ink: #07120d;      /* words on the accent */
+  --go-soft: rgba(185, 255, 79, 0.08);
+  --go-ring: rgba(185, 255, 79, 0.16);
+  /* states of a job, said in words first and in colour second */
+  --warn: #ffd166;        /* waiting on somebody */
+  --bad: #ff7b6b;         /* refunded, not repaid */
+
+  /* type */
+  --sans: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --mono: "Azeret Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --t-hero: clamp(44px, 6.6vw, 96px);
+  --t-h2: clamp(30px, 3.4vw, 48px);
+  --t-h3: 26px;
+  --t-lead: 19px;
+  --t-body: 16px;
+  --t-small: 14px;
+  --t-label: 11.5px;
+
+  /* shape */
+  --r-s: 10px; --r-m: 16px; --r-l: 22px; --r-pill: 999px;
+  --pad: 36px;            /* the page's side margin */
+  --wide: 1320px;         /* the widest a row of content gets */
+  --shadow: 0 30px 70px -40px rgba(0, 0, 0, 0.8);
+}
+
+[data-theme="light"] {
+  --bg: #f4f7f2; --panel: #ffffff; --panel-2: #f0f4ed; --line: #d5dfd3; --line-2: #b4c4b3;
+  --ink: #0a1811; --mid: #3f5a4b; --dim: #5f7a6b;
+  --go: #2f7d0b; --go-ink: #ffffff; --go-soft: rgba(47, 125, 11, 0.07); --go-ring: rgba(47, 125, 11, 0.16);
+  --warn: #8a5a00; --bad: #b3261e;
+  --shadow: 0 30px 60px -40px rgba(10, 24, 17, 0.35);
+}
+
+@media (max-width: 720px) { :root { --pad: 18px; --t-lead: 17px; --t-h3: 22px; } }

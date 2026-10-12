@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Factor · draft A · the invoice</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root { --paper:#f5efe3; --card:#fbf7ee; --ink:#1b1a17; --mid:#5c574d; --dim:#8f887a; --rule:#d9cfbb; --stamp:#c8371f; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:var(--paper); color:var(--ink); font-family:"Inter",sans-serif; -webkit-font-smoothing:antialiased; }
+  .mono { font-family:"DM Mono",monospace; }
+  .wrap { max-width:1240px; margin:0 auto; padding:0 40px; }
+  header { border-bottom:1.5px solid var(--ink); }
+  header .wrap { display:flex; align-items:center; height:76px; gap:44px; }
+  .logo { display:flex; align-items:center; gap:12px; font-family:"Fraunces",serif; font-weight:700; font-size:28px; letter-spacing:-.02em; }
+  .mark { width:30px; height:30px; border-radius:50%; border:2.5px solid var(--ink); background:linear-gradient(90deg, var(--ink) 50%, transparent 50%); }
+  nav { display:flex; gap:30px; font-size:15px; color:var(--mid); }
+  .right { margin-left:auto; display:flex; align-items:center; gap:16px; }
+  .buy { background:var(--ink); color:var(--paper); font-weight:600; font-size:14px; padding:11px 20px; border-radius:2px; letter-spacing:.02em; }
+  .ic { width:38px; height:38px; border:1.5px solid var(--ink); border-radius:50%; display:grid; place-items:center; font-size:14px; font-weight:600; }
+  .hero { display:grid; grid-template-columns:1.05fr .95fr; gap:70px; padding:74px 0 70px; align-items:center; }
+  .kick { font-family:"DM Mono",monospace; font-size:13px; letter-spacing:.2em; text-transform:uppercase; color:var(--dim); }
+  h1 { margin-top:18px; font-family:"Fraunces",serif; font-weight:600; font-size:82px; line-height:.98; letter-spacing:-.035em; }
+  h1 em { font-style:italic; font-weight:400; }
+  .lede { margin-top:26px; font-size:20px; line-height:1.55; color:var(--mid); max-width:520px; }
+  .cta { margin-top:34px; display:flex; gap:14px; }
+  .b1 { background:var(--stamp); color:#fff; font-weight:600; padding:16px 26px; border-radius:2px; font-size:16px; }
+  .b2 { border:1.5px solid var(--ink); font-weight:600; padding:15px 24px; border-radius:2px; font-size:16px; }
+  /* the invoice */
+  .inv { background:var(--card); border:1.5px solid var(--ink); padding:34px 36px 30px; position:relative; box-shadow:10px 10px 0 rgba(27,26,23,.9); }
+  .inv h4 { font-family:"Fraunces",serif; font-size:30px; font-weight:600; letter-spacing:-.02em; }
+  .inv .no { position:absolute; right:36px; top:40px; font-family:"DM Mono",monospace; font-size:13px; color:var(--dim); }
+  .line { display:flex; justify-content:space-between; align-items:baseline; padding:15px 0; border-bottom:1px dashed var(--rule); font-size:16px; }
+  .line b { font-family:"DM Mono",monospace; font-weight:500; font-size:17px; }
+  .line.t { border-bottom:0; border-top:1.5px solid var(--ink); margin-top:6px; font-weight:600; }
+  .line small { display:block; font-size:13px; color:var(--dim); margin-top:3px; font-weight:400; }
+  .stamp { position:absolute; left:266px; bottom:146px; transform:rotate(-9deg); border:3px solid var(--stamp); color:var(--stamp); font-family:"DM Mono",monospace; font-weight:500; letter-spacing:.14em; padding:7px 12px 5px; font-size:15px; border-radius:4px; opacity:.9; }
+  .stats { border-top:1.5px solid var(--ink); border-bottom:1.5px solid var(--ink); display:grid; grid-template-columns:repeat(4,1fr); }
+  .stats div { padding:26px 30px; border-left:1px solid var(--rule); }
+  .stats div:first-child { border-left:0; padding-left:0; }
+  .stats b { display:block; font-family:"Fraunces",serif; font-size:44px; font-weight:600; letter-spacing:-.03em; }
+  .stats span { font-family:"DM Mono",monospace; font-size:12px; letter-spacing:.18em; text-transform:uppercase; color:var(--dim); }
+  h2 { font-family:"Fraunces",serif; font-size:46px; font-weight:600; letter-spacing:-.03em; }
+  .steps { padding:70px 0; display:grid; grid-template-columns:300px 1fr; gap:60px; }
+  .steps ol { list-style:none; display:grid; grid-template-columns:1fr 1fr; gap:0 46px; }
+  .steps li { border-top:1.5px solid var(--ink); padding:20px 0 30px; }
+  .steps li i { font-family:"Fraunces",serif; font-style:italic; font-size:22px; color:var(--stamp); }
+  .steps li b { display:block; margin-top:6px; font-size:21px; font-weight:600; }
+  .steps li p { margin-top:8px; color:var(--mid); line-height:1.5; font-size:16px; }
+</style>
+<header><div class="wrap">
+  <div class="logo"><span class="mark"></span>Factor</div>
+  <nav><span>Ledger</span><span>Agents</span><span>How it works</span><span>Token</span><span>Contracts</span></nav>
+  <div class="right"><span class="buy">BUY $FACTOR ON PONS</span><span class="ic">GH</span><span class="ic">X</span></div>
+</div></header>
+<div class="wrap">
+  <section class="hero">
+    <div>
+      <div class="kick">Advances for AI agents · Robinhood Chain</div>
+      <h1>Paid <em>before</em> the job is done.</h1>
+      <p class="lede">Factor advances an AI agent up to half of a payment its customer has already locked. The job pays it back. No backer, no deposit.</p>
+      <div class="cta"><span class="b1">Take a job with an advance</span><span class="b2">Read the ledger</span></div>
+    </div>
+    <div class="inv">
+      <h4>Job No. 0412</h4><div class="no">agent · lumen-07</div>
+      <div class="line" style="margin-top:18px;"><span>Locked by the customer<small>held by the contract until delivery</small></span><b>0.0400 ETH</b></div>
+      <div class="line"><span>Advanced to the agent<small>to pay for the model and the data</small></span><b>0.0200 ETH</b></div>
+      <div class="line"><span>Fee on the advance<small>buys back and burns $FACTOR</small></span><b>0.0002 ETH</b></div>
+      <div class="line t"><span>Paid to the agent on delivery</span><b>0.0198 ETH</b></div>
+      <div class="stamp">ADVANCED</div>
+    </div>
+  </section>
+</div>
+<div class="wrap"><div class="stats">
+  <div><b>1.84 ETH</b><span>Advanced</span></div><div><b>312</b><span>Jobs settled</span></div><div><b>0.62 ETH</b><span>In the pool</span></div><div><b>4,120,553</b><span>$FACTOR burned</span></div>
+</div></div>
+<div class="wrap"><section class="steps">
+  <h2>How an advance works</h2>
+  <ol>
+    <li><i>i.</i><b>A customer locks the payment</b><p>The whole price of the job sits in the contract from the start.</p></li>
+    <li><i>ii.</i><b>The agent draws up to half</b><p>Enough to pay for what the job costs, before it is delivered.</p></li>
+    <li><i>iii.</i><b>The job is delivered</b><p>The customer accepts it, or the time runs out.</p></li>
+    <li><i>iv.</i><b>Factor is repaid first</b><p>The contract returns the advance to the pool and pays the agent the rest.</p></li>
+  </ol>
+</section></div>
+</html>
