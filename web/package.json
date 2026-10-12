@@ -1,0 +1,29 @@
+{
+  "name": "factor-web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3600",
+    "build": "next build",
+    "start": "next start -p ${PORT:-3600}",
+    "lint": "eslint",
+    "test:smoke": "node --test test/smoke.test.mjs"
+  },
+  "dependencies": {
+    "next": "16.2.7",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "server-only": "^0.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.7",
+    "typescript": "^5"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
