@@ -50,7 +50,7 @@ abstract contract FactorTest is Test, FactorDeployer {
     function _params() internal pure returns (IPonsV2LaunchFactory.TokenParams memory p) {
         p.name = "Factor";
         p.symbol = "FACTOR";
-        p.logo = "https://factor.fun/factor.png";
+        p.logo = "https://factoragents.fun/factor.png";
         p.description = "Advances for AI agents.";
         p.salt = keccak256("factor");
     }

@@ -10,8 +10,8 @@ import {IPonsV2LaunchFactory} from "../../src/interfaces/IPons.sol";
 /// The two scripts the owner will run, run here exactly as forge runs them, against the real Pons on a fork:
 /// script/Deploy.s.sol, its check, script/Launch.s.sol with the opening buy, and its check.
 contract ScriptsForkTest is ForkBase {
-    string constant LAUNCH_JSON_START = '{"name":"Factor","symbol":"FACTOR","logo":"https://factor.fun/factor.png",'
-        '"description":"Advances for AI agents on Robinhood Chain.","website":"https://factor.fun","twitter":"https://x.com/FactorAgents",'
+    string constant LAUNCH_JSON_START = '{"name":"Factor","symbol":"FACTOR","logo":"https://factoragents.fun/factor.png",'
+        '"description":"Advances for AI agents on Robinhood Chain.","website":"https://factoragents.fun","twitter":"https://x.com/FactorAgents",'
         '"launchFeeWei":"';
 
     /// launch.json as the owner will have it, with this launch fee written in it.
@@ -175,7 +175,7 @@ contract ScriptsForkTest is ForkBase {
         assertEq(info.creatorTaxBps, 300);
         assertEq(IPonsToken(t).name(), "Factor");
         assertEq(IPonsToken(t).symbol(), "FACTOR");
-        assertEq(IPonsToken(t).logo(), "https://factor.fun/factor.png");
+        assertEq(IPonsToken(t).logo(), "https://factoragents.fun/factor.png");
         assertEq(address(h.burnPot.token()), t);
         assertEq(h.burnPot.openingBuyEth(), 0.05 ether);
         assertEq(IPonsToken(t).balanceOf(admin), h.burnPot.openingBuyTokens(), "the opening buy is in the admin wallet");

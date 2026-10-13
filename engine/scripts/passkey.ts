@@ -21,7 +21,7 @@ export interface SoftPasskey {
   last: { hash: Hex; r: Hex; s: Hex } | null;
 }
 
-export function softPasskey(rpId = "factor.fun"): SoftPasskey {
+export function softPasskey(rpId = "factoragents.fun"): SoftPasskey {
   const { privateKey, publicKey } = generateKeyPairSync("ec", { namedCurve: "P-256" });
   const jwk = publicKey.export({ format: "jwk" });
   const x = hex(Buffer.from(jwk.x!, "base64url")), y = hex(Buffer.from(jwk.y!, "base64url"));

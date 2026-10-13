@@ -162,7 +162,7 @@ contract FactorForkTest is ForkBase {
         assertEq(uint8(info.phase), 0);
         assertEq(token.name(), "Factor");
         assertEq(token.symbol(), "FACTOR");
-        assertEq(token.logo(), "https://factor.fun/factor.png", "the metadata is on chain, set in the launch");
+        assertEq(token.logo(), "https://factoragents.fun/factor.png", "the metadata is on chain, set in the launch");
         assertEq(curve.deployer(), address(splitter), "the curve pays its fees to the splitter");
         assertEq(address(burnPot.token()), address(token));
         assertEq(burnPot.startedAt(), t0);

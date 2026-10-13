@@ -74,13 +74,13 @@ contract AccountTest is DeskBase {
         pure
         returns (bytes memory)
     {
-        bytes memory authenticatorData = abi.encodePacked(sha256("factor.fun"), flags, uint32(0));
+        bytes memory authenticatorData = abi.encodePacked(sha256("factoragents.fun"), flags, uint32(0));
         string memory json = string.concat(
             '{"type":"',
             kind,
             '","challenge":"',
             Base64.encodeURL(abi.encodePacked(challenge)),
-            '","origin":"https://factor.fun","crossOrigin":false}'
+            '","origin":"https://factoragents.fun","crossOrigin":false}'
         );
         (bytes32 r, bytes32 s) = vm.signP256(pk, sha256(abi.encodePacked(authenticatorData, sha256(bytes(json)))));
         // a browser hands the low half; the high one is as valid a signature and is refused, so nobody can make a

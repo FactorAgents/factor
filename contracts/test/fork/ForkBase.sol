@@ -96,10 +96,10 @@ abstract contract ForkBase is Test, FactorDeployer {
     function _params(bytes32 salt) internal pure returns (IPonsV2LaunchFactory.TokenParams memory p) {
         p.name = "Factor";
         p.symbol = "FACTOR";
-        p.logo = "https://factor.fun/factor.png";
+        p.logo = "https://factoragents.fun/factor.png";
         p.description = "Advances for AI agents on Robinhood Chain.";
         p.socials.twitter = "https://x.com/FactorAgents";
-        p.socials.website = "https://factor.fun";
+        p.socials.website = "https://factoragents.fun";
         p.salt = salt;
     }
 
