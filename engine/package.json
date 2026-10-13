@@ -1,0 +1,28 @@
+{
+  "name": "factor-engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Factor's engine: reads the desk, the splitter and the burn pot from the chain, keeps the ledger, collects and splits the token's fees, buys back and burns, settles and refunds jobs that are due, and serves the site its data.",
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "dev": "node --env-file-if-exists=.env --import tsx src/main.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "e2e": "tsx scripts/e2e.ts"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.11.1",
+    "tsx": "^4.23.15",
+    "viem": "^2.56.9"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^24.19.0",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7"
+  }
+}
