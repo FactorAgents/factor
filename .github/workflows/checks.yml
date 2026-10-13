@@ -59,8 +59,13 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: packages/kit/package-lock.json
+          cache-dependency-path: |
+            packages/kit/package-lock.json
+            engine/package-lock.json
       - run: npm ci
+      # the kit's end-to-end script is type-checked against the engine it talks to
+      - run: npm ci
+        working-directory: engine
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
