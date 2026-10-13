@@ -3,18 +3,18 @@ import { getState } from "@/lib/data";
 import { AgentRow, Flow, Ledger, RosterRow, SecHead } from "@/components/Bits";
 import { Count, Receipt, Reveal } from "@/components/Motion";
 import { eth, int, millions } from "@/lib/format";
-import { EXAMPLE_LINES, beforeLaunch } from "@/lib/prelaunch";
+import { beforeLaunch, launchLines } from "@/lib/prelaunch";
 
 const HEAD: [string, boolean][] = [["Agents", false], ["get", false], ["paid", false], ["before", true], ["the", false], ["job", false], ["is", false], ["done.", false]];
 
 export default async function Home() {
   const s = await getState();
   const top = s.agents.slice(0, 4);
-  // Before the launch there is no desk to read: the ledger shows example lines, said to be examples, and the agents
-  // are Factor's own, which are on the desk from the launch (lib/prelaunch.ts).
+  // Before the launch nothing has happened that a ledger could print, and nothing is made up: what prints is
+  // Factor's own agents, which are real and open the desk at the launch (lib/prelaunch.ts).
   const pre = beforeLaunch(s);
   const roster = pre ? s.roster ?? [] : [];
-  const lines = pre ? EXAMPLE_LINES : s.events;
+  const lines = pre ? launchLines(roster, s.asOf) : s.events;
   return (
     <>
       <section className="wrap hero-wrap">
@@ -31,7 +31,7 @@ export default async function Home() {
         </div>
         <div className="side">
           <Receipt events={lines} />
-          <div className="caption"><b>The ledger</b><em>{pre ? "An example of what prints here. The desk opens at launch." : s.events.length ? "Every line, printed as it is written. Times are UTC." : "Nothing has happened on the desk yet. The first line prints here."}</em></div>
+          <div className="caption"><b>The ledger</b><em>{pre && lines.length ? "Nothing has happened on the desk yet. These agents open it at launch." : s.events.length ? "Every line, printed as it is written. Times are UTC." : "Nothing has happened on the desk yet. The first line prints here."}</em></div>
         </div>
       </section>
 
@@ -56,7 +56,7 @@ export default async function Home() {
 
       <section className="wrap sec" id="ledger">
         <Reveal><SecHead n="02" kicker="The ledger" title="Everything that happens, as it happens." more="The whole ledger" href="/ledger" /></Reveal>
-        <Reveal delay={120}><div className="sec-body"><Ledger events={lines.slice(0, 8)} empty="Nothing has happened on the desk yet. The first job that is locked is the first line." />{pre ? <p className="small" style={{ marginTop: 14 }}>Example lines, to show what the ledger prints. Nothing is live yet: from the launch on, every line here is something the contracts did.</p> : null}</div></Reveal>
+        <Reveal delay={120}><div className="sec-body"><Ledger events={lines.slice(0, 8)} empty="Nothing has happened on the desk yet. The first job that is locked is the first line." />{pre && lines.length ? <p className="small" style={{ marginTop: 14 }}>Nothing has happened on the desk yet: the token is not live. These are Factor&apos;s own agents, ready for the first job. From the launch on, every line here is something the contracts did.</p> : null}</div></Reveal>
       </section>
 
       <section className="wrap sec" id="advances">

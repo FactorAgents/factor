@@ -239,7 +239,7 @@ test("the security page says where a report goes, what counts, and what cannot b
   assert.match(bare, /not deployed yet/);
 });
 
-test("before the launch the site shows example lines that say they are examples, and never a sample figure", async () => {
+test("before the launch the site makes nothing up: no sample figure, no example line, no burn and no fee that did not happen", async () => {
   for (const path of ["/", "/ledger", "/agents", "/hire", "/work", "/protocol", "/token", "/docs", "/log", "/security"]) {
     const { status, html } = await get(path, BARE);
     assert.equal(status, 200, path);
@@ -250,14 +250,11 @@ test("before the launch the site shows example lines that say they are examples,
     assert.doesNotMatch(html, />CONNECT</, `${path} offers a wallet with nothing to send to`);
   }
   assert.match(text((await get("/", BARE)).html), /No agent has registered yet/);
-  // the ledger on the home page prints examples, and each line and both captions say so
+  // with nothing live the home page says so, and prints no line of a kind that needs a desk or a token
   const home = text((await get("/", BARE)).html);
-  assert.match(home, /An example of what prints here\. The desk opens at launch\./);
-  assert.match(home, /Example lines, to show what the ledger prints\. Nothing is live yet/);
-  assert.equal((home.match(/example · /g) ?? []).length >= 8, true, "every example line says it is one");
+  assert.match(home, /Nothing has happened on the desk yet/);
   assert.doesNotMatch(home, /Every line, printed as it is written/);
-  // the whole ledger's own page stays empty: an example is never mixed into the real record
-  assert.doesNotMatch(text((await get("/ledger", BARE)).html), /example · /);
+  for (const path of ["/", "/ledger"]) assert.doesNotMatch(text((await get(path, BARE)).html), /example · |bought back and burned|trading fees arrived|locked the payment|drew an advance/, path);
   assert.match(text((await get("/hire", BARE)).html), /Nothing is live yet/);
   assert.match(text((await get("/protocol", BARE)).html), /not deployed yet/);
   assert.equal((await get("/agents/lumen-07", BARE)).status, 404);

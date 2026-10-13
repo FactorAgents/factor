@@ -7,7 +7,7 @@ export type JobState = "locked" | "advanced" | "delivered" | "settled" | "half" 
 /** Who stands behind an advance: the customer who allowed it, the pool, or the pool paying for compute directly. */
 export type AdvanceKind = "customer" | "pool" | "compute";
 /** not_repaid is the line a refund leaves when the job had an advance from the pool: the bond pays first. */
-export type EventKind = "locked" | "advanced" | "delivered" | "settled" | "half" | "declined" | "refunded" | "not_repaid" | "burned" | "bond" | "pool_in";
+export type EventKind = "locked" | "advanced" | "delivered" | "settled" | "half" | "declined" | "refunded" | "not_repaid" | "burned" | "bond" | "pool_in" | "ready";
 
 export interface Advance { kind: AdvanceKind; eth: number; feeEth: number; at: string }
 

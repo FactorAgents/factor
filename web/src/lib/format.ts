@@ -44,6 +44,6 @@ export function fromNow(iso: string, nowIso: string): string {
   return s >= 0 ? `in ${text}` : `${text} ago`;
 }
 
-export const STATE_WORD: Record<string, string> = { locked: "Locked", advanced: "Advanced", delivered: "Delivered", settled: "Settled", half: "Settled at half", declined: "Declined", refunded: "Refunded", not_repaid: "Not repaid", burned: "Burned", bond: "Bond", pool_in: "Pool" };
-export const STATE_TONE: Record<string, "" | "go" | "warn" | "bad"> = { locked: "", advanced: "go", delivered: "warn", settled: "go", half: "warn", declined: "", refunded: "bad", not_repaid: "bad", burned: "go", bond: "", pool_in: "" };
+export const STATE_WORD: Record<string, string> = { ready: "At launch", locked: "Locked", advanced: "Advanced", delivered: "Delivered", settled: "Settled", half: "Settled at half", declined: "Declined", refunded: "Refunded", not_repaid: "Not repaid", burned: "Burned", bond: "Bond", pool_in: "Pool" };
+export const STATE_TONE: Record<string, "" | "go" | "warn" | "bad"> = { ready: "go", locked: "", advanced: "go", delivered: "warn", settled: "go", half: "warn", declined: "", refunded: "bad", not_repaid: "bad", burned: "go", bond: "", pool_in: "" };
 export const ADVANCE_WORD: Record<string, string> = { customer: "allowed by the customer", pool: "from the pool", compute: "paid as compute" };
