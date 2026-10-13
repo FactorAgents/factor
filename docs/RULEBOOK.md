@@ -214,3 +214,4 @@ Every rule above is a test in `contracts/test`, and every one of them fails when
 | `Account.t.sol` | Accounts: what a key can make one do and what nobody else can, with real passkey signatures, and a whole job between two accounts that never pay gas |
 | `review/break-account.py` | Breaks the account on purpose, twenty ways, and sees that the tests notice each one |
 | `fork/Desk.fork.t.sol` | The whole of it against the real Pons on a copy of Robinhood Chain: real trading fees fill the pool, an agent is advanced from it, the advance fee is burned |
+| `engine/scripts/rehearsal.ts` | A whole day of it with the engine and the site: fifteen jobs, among them a rejection, an agent that never answers and an agent that draws an advance and never delivers, and every wei accounted for at the end (`docs/REHEARSAL.md`) |

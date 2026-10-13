@@ -53,7 +53,8 @@ test("a house agent is marked as one wherever it shows, and an agent that did no
   assert.match(text((await get("/agents")).html), /house agents, run by Factor/);
   const bad = text((await get("/agents/tally-bot")).html);
   assert.match(bad, /did not repay an advance/);
-  assert.match(bad, /Can draw nothing yet/);
+  // a barred agent draws nothing, and is not told "yet"
+  assert.match(bad, /Can draw nothing (?!yet)/);
 });
 
 test("a job's bill adds up", async () => {

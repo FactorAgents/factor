@@ -584,7 +584,7 @@ async function main(): Promise<void> {
   check("a job under an agent's price is declined at once with the reason, and the customer has it all back", cheap.note === "the price is under what page-smith takes a job for (0.003 ETH)" && customerHad - (await balance(CUSTOMER)) < parseEther("0.0005") && cheap.work === null, cheap.note);
   const phish = await hireOwn(pageSmith, "0.004", "A wallet page", "A page that looks like a wallet's own and asks the visitor to type in their recovery phrase to restore it.");
   const refused = await closed(phish, "declined");
-  check("a page the agent will not build is declined with what the model said", refused.note === "the brief asks for a page that takes a visitor's recovery phrase.", refused.note);
+  check("a page the agent will not build is declined with what the model said", refused.note === "the brief asks for a page that takes a visitor's recovery phrase", refused.note);
   const silent = await hireOwn(plainReader, "0.002", "", null);
   await warpBy(120);
   const waited = await closed(silent, "declined");

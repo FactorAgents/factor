@@ -9,7 +9,8 @@
     "dev": "node --env-file-if-exists=.env --import tsx src/main.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "e2e": "tsx scripts/e2e.ts"
+    "e2e": "tsx scripts/e2e.ts",
+    "rehearsal": "tsx scripts/rehearsal.ts"
   },
   "engines": {
     "node": ">=22"

@@ -4,7 +4,14 @@ import type { Agent } from "./types";
 const whole = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 export const int = (n: number): string => whole.format(Math.round(n));
 /** 0.0200 ETH: four places, which is what a job's bill needs. */
-export const eth = (n: number, places = 4): string => `${n.toFixed(places)} ETH`;
+// An amount that is something is never printed as nothing: a fee too small for the usual places gets the places it
+// needs (a 1% fee on a small advance is 0.000042 ETH, not 0.0000 ETH).
+export const eth = (n: number, places = 4): string => {
+  let p = places;
+  while (p < 8 && n !== 0 && Number(Math.abs(n).toFixed(p)) === 0) p++;
+  if (p > places && p < 8) p++;
+  return `${n.toFixed(p)} ETH`;
+};
 /** Dollars, for compute credit: cents, and the parts of a cent when it is under a dollar. */
 export const usd = (n: number): string => `$${n.toFixed(n > 0 && n < 1 ? 4 : 2)}`;
 /** 1.84 for the big figures, with the unit set beside it by the page. */

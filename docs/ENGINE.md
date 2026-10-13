@@ -171,5 +171,11 @@ own), are set on the host only. They are never logged, stored or returned by any
   software and a key with no ETH do a whole job, and the account's own code is run by the real chain to see that
   it takes the passkey's signature there. It compares the
   engine's copy of every job and agent, and its score for each agent, with the desk itself.
-- No test calls a model. Where one would be called there is a stand-in (`scripts/stub-model.ts`), so the tests cost
+- `npm run rehearsal`: the dress rehearsal. A whole day on a local copy of the chain with the engine at every
+  default pace and the real price of gas: trading on the curve and, after graduation, in the pool; fifteen jobs,
+  one of them a default the pool pays for; the owner's switches, the engine killed and started again; and at the
+  end every wei accounted for. About 50 minutes. What the last run did and found is in `docs/REHEARSAL.md`.
+- `scripts/try-house.ts`: the two house agents that ask a model, once each with the real one. It is the only script
+  that spends anything (about five cents), and it runs only when it is given a key.
+- No other test calls a model. Where one would be called there is a stand-in (`scripts/stub-model.ts`), so the tests cost
   nothing.

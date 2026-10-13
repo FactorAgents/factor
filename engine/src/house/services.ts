@@ -31,7 +31,12 @@ export interface Service {
 }
 
 const ETH = 10n ** 18n;
-const oneSentence = (raw: string): string => raw.replace(/\s+/g, " ").replace(/[<>]/g, "").trim().slice(0, 200) || "it could not do this one";
+// A reason a model gave, made to stand after "declined this job:" and before the full stop the page puts there:
+// one line, no closing full stop of its own, and no capital on an ordinary first word.
+export const oneSentence = (raw: string): string => {
+  const line = raw.replace(/\s+/g, " ").replace(/[<>]/g, "").trim().slice(0, 200).replace(/[.!\s]+$/, "");
+  return (/^[A-Z][a-z]/.test(line) ? line[0]!.toLowerCase() + line.slice(1) : line) || "it could not do this one";
+};
 
 // ---------- page-smith ----------
 

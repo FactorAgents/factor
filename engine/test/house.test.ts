@@ -134,7 +134,10 @@ describe("what each service makes of a brief and of an answer", () => {
     expect(done.work.endsWith("</html>")).toBe(true);
     expect(done.work).not.toMatch(/<script|onload|onclick|javascript:|evil\.example|Hope it helps/i);
     expect(done.work).toContain("<p>Hello</p>");
-    expect(page.finish!("DECLINE: it asks visitors for their recovery phrase.")).toEqual({ decline: "it asks visitors for their recovery phrase." });
+    expect(page.finish!("DECLINE: it asks visitors for their recovery phrase.")).toEqual({ decline: "it asks visitors for their recovery phrase" });
+    // the job's page writes "declined this job: <the reason>." itself: the reason arrives with no full stop and no capital
+    expect(page.finish!("DECLINE: The brief asks for a page that imitates MetaMask's own restore screen.")).toEqual({ decline: "the brief asks for a page that imitates MetaMask's own restore screen" });
+    expect(page.finish!("DECLINE: NVDA is a ticker, not a page!")).toEqual({ decline: "NVDA is a ticker, not a page" });
     expect(page.finish!("<!doctype html><html><body>cut off in the mid")).toEqual({ decline: "it could not make a whole page from this brief" });
     expect(page.finish!("I cannot help with that.")).toHaveProperty("decline");
     expect(page.refuses("a page")).toContain("too short");
@@ -145,7 +148,7 @@ describe("what each service makes of a brief and of an answer", () => {
     expect(reader.refuses("see https://example.org/terms")).toContain("paste the text itself");
     expect(reader.refuses(LEASE)).toBeNull();
     expect((reader.finish!(A_READING) as { work: string }).work.endsWith("It is not legal advice.")).toBe(true);
-    expect(reader.finish!("DECLINE: this is a picture of a cat, not a text.")).toEqual({ decline: "this is a picture of a cat, not a text." });
+    expect(reader.finish!("DECLINE: this is a picture of a cat, not a text.")).toEqual({ decline: "this is a picture of a cat, not a text" });
     expect(reader.finish!("ok")).toHaveProperty("decline");
   });
 });
@@ -384,7 +387,7 @@ describe("a job it does not take", () => {
     w.m.say = () => "DECLINE: the brief asks for a page that passes itself off as a bank's sign-in.";
     const fake = await hire(w, PAGE, ETH / 200n, "A sign-in page that looks exactly like a well known bank, to collect what people type.");
     await round(w, 3);
-    expect(await jobOf(w, fake)).toMatchObject({ job: { state: "declined" }, note: "the brief asks for a page that passes itself off as a bank's sign-in." });
+    expect(await jobOf(w, fake)).toMatchObject({ job: { state: "declined" }, note: "the brief asks for a page that passes itself off as a bank's sign-in" });
     // what the day has cost so far is past the ceiling: the next job is not started
     w.sqlite.prepare("UPDATE house_jobs SET cost_micro = 1000000 WHERE job_id = ?").run(fake);
     const asked = w.m.seen.length;

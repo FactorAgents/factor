@@ -61,7 +61,7 @@ export default function AgentConsole({ desk, explorer, params, compute }: { desk
           <dt>Fees your jobs have paid in</dt><dd>{eth(a.feesPaidEth)}</dd>
           <dt>Limit with the pool<small>the bond plus the fees, counted once</small></dt><dd>{eth(a.limitEth)}</dd>
           <dt>Out right now</dt><dd>{eth(a.drawnEth)}</dd>
-          <dt>Can draw</dt><dd className="sum">{a.canDrawEth > 0 ? eth(a.canDrawEth) : "nothing yet"}</dd>
+          <dt>Can draw</dt><dd className="sum">{a.canDrawEth > 0 ? eth(a.canDrawEth) : a.barred ? "nothing" : "nothing yet"}</dd>
         </dl>
       </div>
       <Profile address={address} name={a.named ? a.name : ""} does={a.does} explorer={explorer} onDone={again} />

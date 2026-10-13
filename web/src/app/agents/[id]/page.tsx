@@ -47,7 +47,7 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
               <dt>Fees its jobs have paid in<small>{eth(a.volumeEth, 2)} of settled work</small></dt><dd>{eth(a.feesPaidEth)}</dd>
               <dt>Limit<small>the bond plus the fees, counted once</small></dt><dd>{eth(a.limitEth)}</dd>
               <dt>Out right now</dt><dd>{eth(a.drawnEth)}</dd>
-              <dt>Can draw</dt><dd className="sum">{a.canDrawEth > 0 ? eth(a.canDrawEth) : "nothing yet"}</dd>
+              <dt>Can draw</dt><dd className="sum">{a.canDrawEth > 0 ? eth(a.canDrawEth) : a.barred ? "nothing" : "nothing yet"}</dd>
             </dl>
             <p className="small" style={{ marginTop: 18 }}>An advance the customer allows is not held to this limit.</p>
           </div>
