@@ -1,0 +1,62 @@
+// A made-up Factor site and a made-up node, for the tests that need nothing but the kit's own behaviour: what it
+// refuses before it would send anything, and what its tools say. The real thing is scripts/e2e.ts.
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
+import type { Agent, Job, State } from "../src/types.js";
+
+export const DESK = "0x00000000000000000000000000000000000de5c0";
+export const KEY = "0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6"; // one of anvil's public test keys
+
+const agent = (name: string, address: string, score: number, over: Partial<Agent> = {}): Agent => ({
+  id: address, name, named: true, address, house: false, does: "Summarises long documents", since: "2026-10-01T00:00:00.000Z", settled: 4, settledAtHalf: 0, notDelivered: 0, unanswered: 0, customers: 2,
+  onTimePct: 100, volumeEth: 0.2, feesPaidEth: 0.004, bondEth: 0.02, drawnEth: 0, limitEth: 0.024, canDrawEth: 0.024, advancesRepaid: 2, advancesMissed: 0, barred: false, score, scoreParts: [], ...over,
+});
+export const AGENTS = [agent("lumen-07", "0x00000000000000000000000000000000000000a1", 624), agent("page-smith", "0x00000000000000000000000000000000000000a2", 580, { house: true, does: "Builds a landing page" })];
+export const JOB: Job = {
+  id: "0012", n: 12, title: "Summarise a contract", agentId: AGENTS[0].address, customer: "0x00000000000000000000000000000000000000c1", priceEth: 0.04, state: "delivered",
+  lockedAt: "2026-10-13T08:00:00.000Z", dueAt: "2026-10-14T08:00:00.000Z", allowEarly: false, late: false, deliveredAt: "2026-10-13T09:00:00.000Z", advances: [{ kind: "pool", eth: 0.02, feeEth: 0.0002, at: "2026-10-13T08:05:00.000Z" }], tx: "0xabc",
+};
+
+export function state(over: Partial<State> = {}): State {
+  return {
+    asOf: new Date().toISOString(), launched: true, links: { pons: null, github: null, x: null },
+    stats: { advancedEth: 1.2, settledJobs: 31, jobs: 40, poolEth: 0.62, reserveEth: 0.124, outEth: 0.03, heldEth: 0.1, burnedTokens: 1000, supplyLeft: 999_999_000, agents: 2, lostEth: 0 },
+    params: { advanceMaxPct: 50, advanceFeePct: 1, jobFeePct: 2, graceHours: 12, reviewHours: 24, rejectedPct: 50, reserveMinPct: 20, minJobEth: 0.001 },
+    agents: AGENTS, jobs: [JOB], events: [], contracts: { desk: DESK, splitter: null, burnPot: null, token: null, explorer: "https://explorer.example" }, ...over,
+  };
+}
+
+export interface Stub { api: string; rpc: string; site: { state: State }; node: { chainId: number; code: string; calls: string[] }; posts: { path: string; body: unknown }[]; close(): Promise<void> }
+
+export async function stub(): Promise<Stub> {
+  const site = { state: state() };
+  const node = { chainId: 4663, code: "0x6080", calls: [] as string[] };
+  const posts: { path: string; body: unknown }[] = [];
+  const json = (res: import("node:http").ServerResponse, status: number, body: unknown) => { res.writeHead(status, { "content-type": "application/json" }); res.end(JSON.stringify(body)); };
+  const body = (req: import("node:http").IncomingMessage) => new Promise<string>((r) => { let s = ""; req.on("data", (c) => (s += c)); req.on("end", () => r(s)); });
+  const web = createServer(async (req, res) => {
+    const path = (req.url ?? "").split("?")[0].replace("/api/v1", "");
+    if (req.method === "POST") { posts.push({ path, body: JSON.parse(await body(req)) }); return json(res, 200, { ok: true }); }
+    if (path === "/state") return json(res, 200, site.state);
+    if (path === "/agents") return json(res, 200, { items: site.state.agents });
+    if (path === "/jobs") return json(res, 200, { total: 1, more: false, items: site.state.jobs });
+    if (path === "/ledger") return json(res, 200, { total: 0, more: false, items: [] });
+    const a = /^\/agents\/(.+)$/.exec(path);
+    if (a) { const g = site.state.agents.find((x) => x.address === a[1].toLowerCase() || x.name === a[1]); return g ? json(res, 200, { agent: g, jobs: site.state.jobs, events: [] }) : json(res, 404, { error: "no such agent" }); }
+    const j = /^\/jobs\/(\d+)$/.exec(path);
+    if (j) { const g = site.state.jobs.find((x) => x.n === Number(j[1])); return g ? json(res, 200, { job: g, agent: site.state.agents[0], events: [] }) : json(res, 404, { error: "no such job" }); }
+    json(res, 404, { error: "not found" });
+  });
+  const rpc = createServer(async (req, res) => {
+    const call = JSON.parse(await body(req)) as { id: number; method: string } | { id: number; method: string }[];
+    const one = (c: { id: number; method: string }) => {
+      node.calls.push(c.method);
+      const result = c.method === "eth_chainId" ? `0x${node.chainId.toString(16)}` : c.method === "eth_getCode" ? node.code : c.method === "eth_blockNumber" ? "0x10" : null;
+      return result === null ? { jsonrpc: "2.0", id: c.id, error: { code: -32601, message: `the stub node does not do ${c.method}` } } : { jsonrpc: "2.0", id: c.id, result };
+    };
+    json(res, 200, Array.isArray(call) ? call.map(one) : one(call));
+  });
+  const listen = (s: Server) => new Promise<number>((r) => s.listen(0, "127.0.0.1", () => r((s.address() as AddressInfo).port)));
+  const [wp, rp] = await Promise.all([listen(web), listen(rpc)]);
+  return { api: `http://127.0.0.1:${wp}`, rpc: `http://127.0.0.1:${rp}`, site, node, posts, close: () => new Promise<void>((r) => { web.close(); rpc.close(); r(); }) };
+}

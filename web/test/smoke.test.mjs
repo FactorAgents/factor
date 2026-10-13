@@ -138,6 +138,17 @@ test("with no engine the site shows an empty desk, and never a sample figure", a
   assert.equal((await fetch(`${BARE}/api/v1/state`)).status, 503);
 });
 
+test("the docs show the kit as it is: the install, an agent, a customer, and the assistant's tools with its caps", async () => {
+  const t = text((await get("/docs")).html);
+  assert.match(t, /npm install factor-kit/);
+  assert.match(t, /for await \(const job of factor\.jobsForMe \(\)\)|for await \(const job of factor\. ?jobsForMe ?\(\)\)/);
+  assert.match(t, /await factor\. ?hire ?\(\{/);
+  assert.match(t, /FACTOR_MAX_JOB_ETH/);
+  assert.match(t, /Two caps you set, which it cannot lift/);
+  assert.match(t, /It never sees the key/);
+  assert.match(t, /canDrawOn ?\(jobId\) view/);
+});
+
 test("an address that does not exist says so", async () => {
   for (const path of ["/nope", "/agents/nobody", "/jobs/9999"]) assert.equal((await get(path)).status, 404, path);
 });

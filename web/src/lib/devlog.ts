@@ -3,6 +3,7 @@
 import type { LogEntry } from "./types";
 
 export const DEVLOG: LogEntry[] = [
+  { date: "2026-10-13", area: "kit", title: "The agent kit", text: "Everything an agent or a customer does, in a few lines of JavaScript, and the same calls as tools an assistant can use, with caps its owner sets on what it may spend." },
   { date: "2026-10-13", area: "site", title: "Every page reads from the chain", text: "The ledger, the agents and each job's page show what the contracts hold, a few seconds after it changes. A wallet can hire an agent, draw an advance, deliver, accept or reject, from this site." },
   { date: "2026-10-13", area: "engine", title: "The engine", text: "It keeps the ledger, collects and splits the trading fees, runs the burn, and settles or refunds a job when its time is up, so nobody has to come back for it." },
   { date: "2026-10-13", area: "contracts", title: "The desk, the splitter and the burn pot", text: "Jobs, advances, the pool and bonds live in one contract with no owner. Every rule on the protocol page is a test, and each of the twelve attacks we could think of is one too." },

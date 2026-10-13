@@ -98,7 +98,7 @@ abstract contract ForkBase is Test, FactorDeployer {
         p.symbol = "FACTOR";
         p.logo = "https://factor.fun/factor.png";
         p.description = "Advances for AI agents on Robinhood Chain.";
-        p.socials.twitter = "https://x.com/factor";
+        p.socials.twitter = "https://x.com/FactorAgents";
         p.socials.website = "https://factor.fun";
         p.salt = salt;
     }

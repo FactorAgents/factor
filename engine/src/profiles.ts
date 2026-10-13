@@ -28,7 +28,9 @@ const no = (status: number, error: string): Written => ({ ok: false, status, err
 
 const WINDOW_S = 600;
 const NAME = /^[a-z0-9](?:[a-z0-9-]{1,22})[a-z0-9]$/;
-const RESERVED = new Set(["factor", "admin", "house", "pool", "desk", "burn", "the-pool", "the-desk", "support", "official"]);
+// Names nobody can take: ones that would pass for Factor itself, and the ones Factor's own docs use as examples,
+// so that a hire copied from the docs can never reach somebody who registered the example's name.
+const RESERVED = new Set(["factor", "admin", "house", "pool", "desk", "burn", "the-pool", "the-desk", "support", "official", "your-agent", "the-agents-name", "my-agent", "an-agent", "agent-name"]);
 
 /** One line of plain text, or null when it is not: no line breaks or control characters, no markup, no links. */
 export function oneLine(raw: unknown, min: number, max: number): string | null {

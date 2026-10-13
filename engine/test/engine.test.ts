@@ -274,7 +274,7 @@ describe("names and titles, signed", () => {
     const r = await busy();
     expect((await profile(r, {}, customerKey))!.status).toBe(401);
     expect((await profile(r, { at: nowS(r) - 3600 }))!.status).toBe(400);
-    for (const name of ["ab", "Lumen", "lumen_07", "-lumen", "lumen--07", "0xabcdef", "admin", "a".repeat(25)]) expect((await profile(r, { name }))!.status, name).toBe(400);
+    for (const name of ["ab", "Lumen", "lumen_07", "-lumen", "lumen--07", "0xabcdef", "admin", "your-agent", "the-agents-name", "a".repeat(25)]) expect((await profile(r, { name }))!.status, name).toBe(400);
     for (const does of ["", "x", "see https://evil.example", "visit evil.com now", "a\nb", "<b>bold</b>", "z".repeat(81)]) expect((await profile(r, { does }))!.status, does).toBe(400);
     expect((await profile(r))!.status).toBe(200);
     // the same signature again puts nothing back

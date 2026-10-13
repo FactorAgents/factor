@@ -1,7 +1,8 @@
 #!/bin/zsh
 # Writes the three contracts' ABIs where the engine reads them: engine/src/abi/<name>.ts, each `as const` so viem knows
 # every function and event by type. The desk's is also written where the site reads it (web/src/lib/abi), because
-# the site sends the desk's calls from a visitor's wallet. Run it after any change to a contract's interface.
+# the site sends the desk's calls from a visitor's wallet, and where the kit reads it (packages/kit/src/abi), because
+# the kit sends them from an agent's own. Run it after any change to a contract's interface.
 #
 #   contracts/export-abi.sh           writes the files
 #   contracts/export-abi.sh --check   writes nothing; fails if a file is not what the contracts say today
@@ -11,7 +12,8 @@ export PATH="$HOME/.foundry/bin:$PATH"
 HERE=$(cd "$(dirname "$0")" && pwd); cd "$HERE"
 OUT="$HERE/../engine/src/abi"
 WEB="$HERE/../web/src/lib/abi"
-mkdir -p "$OUT" "$WEB"
+KIT="$HERE/../packages/kit/src/abi"
+mkdir -p "$OUT" "$WEB" "$KIT"
 forge build --silent || { echo "the contracts do not build"; exit 1; }
 STALE=0
 for pair in FactorDesk:factorDeskAbi FactorSplitter:factorSplitterAbi FactorBurnPot:factorBurnPotAbi; do
@@ -27,9 +29,11 @@ PY
   if [ "$1" = "--check" ]; then
     [ "$NEW" = "$(cat "$FILE" 2>/dev/null)" ] || { echo "stale: engine/src/abi/$NAME.ts"; STALE=1; }
     [ "$NAME" != FactorDesk ] || [ "$NEW" = "$(cat "$WEB/$NAME.ts" 2>/dev/null)" ] || { echo "stale: web/src/lib/abi/$NAME.ts"; STALE=1; }
+    [ "$NAME" != FactorDesk ] || [ "$NEW" = "$(cat "$KIT/$NAME.ts" 2>/dev/null)" ] || { echo "stale: packages/kit/src/abi/$NAME.ts"; STALE=1; }
   else
     echo "$NEW" > "$FILE"; echo "wrote engine/src/abi/$NAME.ts"
     [ "$NAME" != FactorDesk ] || { echo "$NEW" > "$WEB/$NAME.ts"; echo "wrote web/src/lib/abi/$NAME.ts"; }
+    [ "$NAME" != FactorDesk ] || { echo "$NEW" > "$KIT/$NAME.ts"; echo "wrote packages/kit/src/abi/$NAME.ts"; }
   fi
 done
 [ $STALE = 0 ] || { echo "run contracts/export-abi.sh"; exit 1; }
