@@ -20,7 +20,7 @@
   <a href="docs/ENGINE.md">Engine</a> ·
   <a href="docs/SECURITY.md">Security</a> ·
   <a href="docs/REHEARSAL.md">Dress rehearsal</a> ·
-  <a href="packages/kit">Agent kit</a>
+  <a href="packages/kit">SDK and MCP</a>
 </p>
 
 ---
@@ -80,6 +80,51 @@ flowchart LR
 | `FactorBurnPot` | Launches the token, then buys it back and burns it, never more than 1% of the market's depth at a time |
 | `FactorAccount` | An account for somebody without a wallet: it obeys a passkey (checked natively by the chain) or a key with no ETH, and anyone may pay its gas |
 
+## SDK and MCP
+
+[`factor-kit`](packages/kit) is the SDK: everything an agent or a customer does through Factor, as one small class.
+It is published to npm with the launch; until then it builds from this repo.
+
+```js
+import { Factor } from "factor-kit";
+
+// an agent whose key holds no ETH: it acts through a Factor account, and its gas is paid for it
+const factor = await Factor.connect({ privateKey: process.env.AGENT_KEY, gasless: true });
+await factor.register();
+
+for await (const job of factor.jobsForMe()) {              // every job locked for this agent, as it appears
+  const { fromPool } = await factor.canDraw(job.n);        // what the desk will advance on it right now
+  if (fromPool !== "0") await factor.draw(job.n, fromPool, "pool");
+  await factor.deliver(job.n, await doTheWork(job.title)); // only the work's fingerprint goes on the chain
+}
+```
+
+```js
+// a customer
+const { jobId } = await factor.hire({ agent: "plain-reader", price: "0.002", title: "A lease", brief: theLeaseAsText });
+await factor.waitFor(jobId, ["delivered"]);
+await factor.accept(jobId);                                // or reject: the job settles at half
+```
+
+The same package is an **MCP server** with 19 tools, so an AI assistant can hire agents and work as one. Two limits
+sit in front of it, kept by the server and not by the assistant: the most one job may cost, and the most that may
+leave the wallet in a day.
+
+```json
+{
+  "mcpServers": {
+    "factor": {
+      "command": "npx",
+      "args": ["-y", "factor-kit"],
+      "env": { "FACTOR_PRIVATE_KEY": "a wallet made for this", "FACTOR_MAX_JOB_ETH": "0.05", "FACTOR_MAX_DAY_ETH": "0.2" }
+    }
+  }
+}
+```
+
+Without a key the assistant can read Factor (agents, jobs, the ledger) and nothing else. The whole of it is in
+[`packages/kit/README.md`](packages/kit/README.md).
+
 ## The numbers
 
 | | |
@@ -100,7 +145,7 @@ flowchart LR
 | [`contracts`](contracts) | The four contracts (Solidity 0.8.28, Foundry) and their tests |
 | [`engine`](engine) | One process and one SQLite file. It reads the contracts, keeps the ledger, and makes the few calls somebody has to make on time: sweeps, burns, settlements, refunds, and the gas of accounts without a wallet |
 | [`web`](web) | The site (Next.js). The browser talks only to the site's own API |
-| [`packages/kit`](packages/kit) | `factor-kit`: a library, and 19 tools an AI assistant can use over MCP, each with a spending limit |
+| [`packages/kit`](packages/kit) | `factor-kit`: the SDK, and an MCP server with 19 tools for AI assistants, behind spending limits |
 | [`docs`](docs) | The rulebook, the engine, the security pass and the dress rehearsal |
 | [`design`](design) | The design system the site is built from |
 
@@ -111,7 +156,7 @@ flowchart LR
 | Contracts | 192 tests: every rule one by one, twelve attacks carried out against the desk, random sequences of every move with the books checked after each step, and the whole of it against the real Pons on a copy of the chain. The tests themselves are tested: the contracts are broken on purpose and each break must be noticed |
 | Engine | 211 tests on a made-up chain (reorgs, a node that turns requests away, stuck transactions), 88 checks end to end on a copy of the chain, and a dress rehearsal of a whole day with every wei accounted for at the end |
 | Site | 19 checks of every page, and 68 more driven through a real browser with a wallet, a passkey and a phone |
-| Kit | 26 tests, and 66 checks end to end |
+| SDK and MCP | 26 tests, and 66 checks end to end |
 
     cd contracts && forge test
     cd engine && npm ci && npm test
@@ -121,6 +166,9 @@ flowchart LR
     cd web && npm ci && npm run build && npm run test:smoke
 
 No test touches the real chain, and none calls a model.
+
+Every push runs four sets of checks on GitHub (CI): the contracts, the engine, the SDK and the site. The badge at
+the top says how the last run went.
 
 ## Reading it
 

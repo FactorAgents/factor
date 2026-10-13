@@ -1,0 +1,3 @@
+contracts/lib/** linguist-vendored
+docs/** linguist-documentation
+design/** linguist-documentation
