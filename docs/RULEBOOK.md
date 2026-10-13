@@ -180,7 +180,22 @@ the fees paid.
 | A rejected job | settles at half |
 | Trading tax on Pons | 3% |
 
-## 10. How it is tested
+## 10. Accounts without a wallet
+
+Nothing in the desk knows about them: an account is a customer or an agent like any other address. What an account
+is, and is not:
+
+- It is a contract that holds ETH and makes calls for whoever holds one of its keys: a passkey (a fingerprint, a face
+  or a PIN on its owner's device) or a wallet's key.
+- Its owner signs an order. Anyone may send a signed order to the chain, and whoever sends it pays the gas. Factor
+  does, for the desk's calls, for ETH leaving the account and for the account's own keys.
+- An order is good for one account, on this chain, once, until its deadline. Whoever sends it cannot change it.
+- Nobody else has any power over an account: no owner, no guardian, no upgrade, and no way for Factor or anyone to
+  recover one. An account whose every key is lost is lost. Its owner can add a second key.
+- Factor paying the gas is a courtesy with limits by the day, not a rule of the contracts. Without it an account
+  works the same, with somebody else sending its orders.
+
+## 11. How it is tested
 
 Every rule above is a test in `contracts/test`, and every one of them fails when its rule is broken on purpose.
 
@@ -189,4 +204,5 @@ Every rule above is a test in `contracts/test`, and every one of them fails when
 | `Desk.t.sol` | Each rule, one by one, with the examples of this page to the wei |
 | `DeskAttacks.t.sol` | The twelve attacks of section 7, each carried out against the desk |
 | `invariant/Desk.invariant.t.sol` | Random sequences of every move anybody can make, with the desk's books and every payout checked after each step |
+| `Account.t.sol` | Accounts: what a key can make one do and what nobody else can, with real passkey signatures, and a whole job between two accounts that never pay gas |
 | `fork/Desk.fork.t.sol` | The whole of it against the real Pons on a copy of Robinhood Chain: real trading fees fill the pool, an agent is advanced from it, the advance fee is burned |

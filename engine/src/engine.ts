@@ -13,10 +13,11 @@
 
 import type Database from "better-sqlite3";
 import type { Abi } from "viem";
-import { factorBurnPotAbi, factorDeskAbi, factorSplitterAbi } from "./abi/index.js";
+import { factorAccountsAbi, factorBurnPotAbi, factorDeskAbi, factorSplitterAbi } from "./abi/index.js";
 import { actPass, type ActResult } from "./chain/act.js";
 import { normalizeAddress } from "./chain/address.js";
 import { addressOfKey, hostsOnly, nodeBusy, reason, revertOf, viemChain, viemSigner, type Chain, type Signer } from "./chain/chain.js";
+import { Accounts } from "./accounts.js";
 import { ComputeStore, Gateway } from "./compute.js";
 import { Profiles } from "./profiles.js";
 import { configured, readConfig, takeBotKey, takeModelKey, type EngineConfig, type Env } from "./chain/config.js";
@@ -51,6 +52,8 @@ interface Loop {
   backingOff: boolean;
   timer: ReturnType<typeof setTimeout> | null;
   running: Promise<void> | null;
+  again: boolean; // a run was asked for while one was under way
+  tick: () => void;
 }
 
 export class Engine {
@@ -62,6 +65,7 @@ export class Engine {
   ctx: Ctx | null = null;
   profiles: Profiles | null = null;
   gateway: Gateway | null = null;
+  accounts: Accounts | null = null;
   private chain: (Chain & { stop?: () => void }) | null = null;
   private loops = new Map<string, Loop>();
   private stopped = false;
@@ -91,7 +95,7 @@ export class Engine {
     for (const [name, l] of this.loops) loops[name] = { lastRunAt: l.lastRunAt, lastOkAt: l.lastOkAt, runs: l.runs, failures: l.failures, waitMs: l.waitMs, backingOff: l.backingOff };
     return {
       config: this.config, state: this.state, problems: this.problems, warnings: this.warnings, lastError: this.lastError, loops, ctx: this.ctx, rpc: this.chain?.health() ?? null, now: this.now,
-      links: { pons: link(this.env.FACTOR_PONS_URL), github: link(this.env.FACTOR_GITHUB_URL), x: link(this.env.FACTOR_X_URL) }, dataDirSet: !!this.env.FACTOR_DATA_DIR?.trim(), profiles: this.profiles, gateway: this.gateway,
+      links: { pons: link(this.env.FACTOR_PONS_URL), github: link(this.env.FACTOR_GITHUB_URL), x: link(this.env.FACTOR_X_URL) }, dataDirSet: !!this.env.FACTOR_DATA_DIR?.trim(), profiles: this.profiles, gateway: this.gateway, accounts: this.accounts,
     };
   }
 
@@ -144,7 +148,8 @@ export class Engine {
       params: c.params,
       chainId: c.chainId,
       explorer: c.explorer,
-      addr: { splitter: c.splitter, burnPot: c.burnPot, desk: c.desk },
+      addr: { splitter: c.splitter, burnPot: c.burnPot, desk: c.desk, accounts: c.accounts.factory },
+      accounts: c.accounts,
       deployBlock: c.deployBlock,
       chain: this.chain,
       signer,
@@ -157,8 +162,13 @@ export class Engine {
       stopping: () => this.stopped,
     };
     this.log(`[engine] mode ${c.mode}: ${c.mode === "watch" ? "reading the chain, sending nothing" : c.mode === "dry" ? "reading the chain and showing what it would send, sending nothing" : `reading the chain and sending from the gas wallet ${signer?.address}`}`);
-    this.profiles = new Profiles(this.ctx.db, this.now);
-    this.gateway = new Gateway(c.compute, new ComputeStore(this.ctx.db), this.ctx.db, c.compute.enabled ? takeModelKey(this.env) : null, this.log);
+    // accounts for people without a wallet: orders are taken only while there is a gas wallet to send them from
+    this.accounts = new Accounts(c.accounts, this.ctx.db, this.chain, c.desk, () => this.ctx?.mode === "live" && !!this.ctx.signer && this.state === "running", () => this.kick("act"), this.log);
+    const accountSigned = (address: string, message: string, signature: unknown) => this.accounts!.signed(address, message, signature);
+    this.profiles = new Profiles(this.ctx.db, this.now, accountSigned);
+    this.gateway = new Gateway(c.compute, new ComputeStore(this.ctx.db), this.ctx.db, c.compute.enabled ? takeModelKey(this.env) : null, this.log, accountSigned);
+    if (c.accounts.enabled) this.log(`[accounts] on: made by ${c.accounts.factory}; the gas wallet pays up to ${Number(c.accounts.gasDayWei / 10n ** 12n) / 1e6} ETH a day for them`);
+    else if (c.accounts.note) this.log(`[accounts] NOT ON: ${c.accounts.note}`);
     if (c.compute.enabled) this.log(`[compute] on: ${Object.keys(c.compute.models).join(", ")}, at the list price plus ${c.compute.markupBps / 100}%`);
     else if (c.compute.note) this.log(`[compute] NOT ON: ${c.compute.note}`);
     this.log(`[engine] desk ${c.desk}, splitter ${c.splitter}, burn pot ${c.burnPot}, from block ${c.deployBlock}; ${c.rpcUrls.length} node(s): ${c.rpcUrls.map((u) => hostsOnly(u)).join(", ")}`);
@@ -228,6 +238,12 @@ export class Engine {
     if (sDesk !== addr.desk) throw new Wrong(`the splitter sends the pool's share to ${sDesk}, not to FACTOR_DESK ${addr.desk}`);
     if (dBurn !== addr.burnPot) throw new Wrong(`the desk sends its advance fees to ${dBurn}, not to FACTOR_BURN_POT ${addr.burnPot}`);
     ctx.facts.gateway = gateway;
+    // the maker of accounts, when one is named: it must be one, or orders would be sent into nothing
+    if (addr.accounts) {
+      if ((await chain.code(addr.accounts)) === "0x") throw new Wrong(`FACTOR_ACCOUNTS is ${addr.accounts}, and there is no contract at that address on chain ${id}`);
+      const original = await ask("FACTOR_ACCOUNTS", addr.accounts, factorAccountsAbi as Abi, "implementation");
+      if (original === ZERO || (await chain.code(original)) === "0x") throw new Wrong(`FACTOR_ACCOUNTS is ${addr.accounts}, and it has nothing to make accounts from`);
+    }
     if (c.token && token !== c.token) throw new Wrong(`the burn pot's token() is ${token === ZERO ? "not set (nothing is launched from it)" : token}, not FACTOR_TOKEN ${c.token}`);
     if (c.admin && sAdmin !== c.admin) throw new Wrong(`the splitter's admin is ${sAdmin}, not FACTOR_ADMIN ${c.admin}`);
     const head = await chain.head();
@@ -265,12 +281,17 @@ export class Engine {
   // doubles its wait, up to five minutes, said once when it starts and once when it clears; anything else it
   // throws is an error, kept for the health answer.
   private every(name: string, ms: number, fn: () => Promise<void>, runNow = true): void {
-    const l: Loop = { lastRunAt: null, lastOkAt: null, runs: 0, failures: 0, waitMs: ms, backingOff: false, timer: null, running: null };
+    const l: Loop = { lastRunAt: null, lastOkAt: null, runs: 0, failures: 0, waitMs: ms, backingOff: false, timer: null, running: null, again: false, tick: () => undefined };
     this.loops.set(name, l);
     const next = () => {
-      if (!this.stopped) l.timer = setTimeout(tick, l.waitMs);
+      if (this.stopped) return;
+      // somebody asked for a run while this one was under way (kick): the next comes at once, never while the
+      // node is turning requests away
+      l.timer = setTimeout(tick, l.again && !l.backingOff ? 0 : l.waitMs);
+      l.again = false;
     };
     const tick = () => {
+      if (l.timer) clearTimeout(l.timer);
       l.timer = null;
       l.lastRunAt = this.now();
       l.runs++;
@@ -298,8 +319,17 @@ export class Engine {
           next();
         });
     };
+    l.tick = tick;
     if (runNow) tick();
     else next();
+  }
+
+  // Do not wait for a loop's next turn: somebody is waiting for what it does (an order of an account).
+  private kick(name: string): void {
+    const l = this.loops.get(name);
+    if (!l || this.stopped || l.backingOff) return;
+    if (l.running) l.again = true;
+    else l.tick();
   }
 
   // One pass of the watchers (the loop calls this; so do the tests).

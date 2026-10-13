@@ -7,6 +7,8 @@
 //                pool repaid. refund_job: a job is past its due time and the 12 hours of grace: refund it.
 //   collect      the desk holds an advance fee the burn pot was not sent: deliver it.
 //   return_compute  compute credit that was closed unspent (its job was refunded): the ETH goes back to the pool.
+//   relay           what the owner of an account without a wallet signed (../accounts.ts): made, or carried out,
+//                   with this wallet paying the gas. First in every pass: somebody is waiting for it.
 //
 // Every attempt goes the same way (attempt(), below): the lock, a last simulation of exactly the call that would
 // be sent, the gas against its cap, the gas price against its cap, then in dry mode a record of what would have
@@ -20,6 +22,7 @@
 import type { Abi } from "viem";
 import { factorBurnPotAbi, factorDeskAbi, factorSplitterAbi, factorTokenAbi } from "../abi/index.js";
 import { DeskStore, rereadJob } from "../desk.js";
+import { AccountStore, callOfRelay, landedRelay } from "../accounts.js";
 import { ComputeStore } from "../compute.js";
 import { nodeBusy, nodeRejected, reason, revertOf, type CallSpec, type Fees, type Head, type Pay, type Receipt } from "./chain.js";
 import { snapshotOf, type Ctx } from "./context.js";
@@ -27,7 +30,7 @@ import type { ActionKind, ActionRow } from "./db.js";
 import { ponsEscrowAbi } from "./pons.js";
 
 export type SendKind = Exclude<ActionKind, "unstick">;
-export const KINDS: SendKind[] = ["sweep", "claim_token", "burn", "settle_job", "refund_job", "collect", "return_compute"];
+export const KINDS: SendKind[] = ["relay", "sweep", "claim_token", "burn", "settle_job", "refund_job", "collect", "return_compute"];
 // In dry mode nothing changes on the chain, so a trigger stays true: what would be sent is shown again this often.
 export const DRY_REPEAT_S = 1800;
 const BPS = 10_000n;
@@ -183,6 +186,11 @@ async function dispatch(ctx: Ctx, kind: SendKind, ref: string, what: { call?: Ca
 // What a finished transaction changes in the engine's own notes, whenever its receipt is seen.
 function landed(ctx: Ctx, a: ActionRow, r: Receipt): void {
   if (a.kind === "unstick") return;
+  if (a.kind === "relay" && a.tx_hash) {
+    const store = new AccountStore(ctx.db);
+    const row = store.relay(a.ref);
+    if (row && row.status !== "done" && row.status !== "failed") landedRelay(store, row, r, a.tx_hash);
+  }
   if (a.kind === "return_compute") {
     const pending = ctx.db.getJson<{ hash: string; lots: { tx_hash: string; log_index: number }[] }>("return_compute:pending");
     if (pending && pending.hash === a.tx_hash) {
@@ -198,6 +206,12 @@ function landed(ctx: Ctx, a: ActionRow, r: Receipt): void {
 // free to try again at once.
 function unsent(ctx: Ctx, a: ActionRow, why: string): void {
   if (a.kind === "unstick") return;
+  if (a.kind === "relay") {
+    // the order is as good as it was: it goes back in the queue, and its deadline decides whether it is sent again
+    const store = new AccountStore(ctx.db);
+    const row = store.relay(a.ref);
+    if (row && row.status === "sent") store.mark(row.id, { status: "queued", tx_hash: null });
+  }
   say(ctx, a.kind, why, { lastAt: 0 });
   ctx.log(`[${a.kind}] ${why} (${a.tx_hash}): it will be tried again`);
 }
@@ -526,7 +540,60 @@ export interface ActResult {
   said: Partial<Record<SendKind, string>>;
 }
 
+// ---------- 6. orders of accounts without a wallet ----------
+
+// Each is one call the gas wallet makes: the maker of accounts making one, or an account carrying out what its
+// owner signed. An order was tried whole when it was taken; it is tried again here, as the wallet that sends it,
+// because the chain may have moved. A few a pass, oldest first, and none while another is on its way.
+async function relay(ctx: Ctx, head: Head): Promise<string> {
+  const cfg = ctx.accounts;
+  const factory = ctx.addr.accounts;
+  if (!cfg?.enabled || !factory) return say(ctx, "relay", "accounts are switched off", { fails: 0, nextAt: 0 });
+  const store = new AccountStore(ctx.db);
+  const waiting = store.queued(cfg.perPass);
+  if (waiting.length === 0) return say(ctx, "relay", "no order is waiting", { fails: 0, nextAt: 0 });
+  if (ctx.mode !== "live" || !ctx.signer) {
+    for (const r of waiting) store.mark(r.id, { status: "failed", error: "the engine is not sending transactions right now" });
+    return say(ctx, "relay", `${waiting.length} order(s) turned away: the engine is not sending`);
+  }
+  let done = 0;
+  let last = "";
+  for (const r of waiting) {
+    if (ctx.stopping()) break;
+    if (r.kind === "execute" && r.deadline <= head.timestamp) {
+      store.mark(r.id, { status: "failed", error: "the order's time ran out before it could be sent: sign it again" });
+      continue;
+    }
+    if (store.gasToday() >= cfg.gasDayWei) {
+      store.mark(r.id, { status: "failed", error: "Factor has paid all the gas it pays for accounts today" });
+      continue;
+    }
+    const call = callOfRelay(r, factory);
+    const o = await attempt(ctx, "relay", r.id, call, { account: r.account, what: r.kind }, ctx.params.maxGasWei);
+    if (o.status === "done" && o.receipt && o.hash) {
+      landedRelay(store, r, o.receipt, o.hash);
+      done++;
+      last = o.hash;
+      continue;
+    }
+    if (o.status === "sent" && o.hash) {
+      store.mark(r.id, { status: "sent", tx_hash: o.hash });
+      return say(ctx, "relay", `${done} sent and mined, one on its way`, { lastAt: head.timestamp, tx: o.hash });
+    }
+    if (o.status === "failed") {
+      if (o.receipt && o.hash) landedRelay(store, r, o.receipt, o.hash);
+      else store.mark(r.id, { status: "failed", error: o.why });
+      continue;
+    }
+    // skipped (the wallet is busy, or gas is over the cap): it stays in the queue for the next pass
+    return say(ctx, "relay", `${done} sent and mined; waiting: ${o.why}`);
+  }
+  const left = store.queued(1).length;
+  return say(ctx, "relay", `${done} sent and mined${left ? ", more waiting" : ""}`, { lastAt: head.timestamp, fails: 0, nextAt: 0, ...(last ? { tx: last } : {}) });
+}
+
 const STEPS: [SendKind, (ctx: Ctx, head: Head) => Promise<string>][] = [
+  ["relay", relay],
   ["sweep", sweep],
   ["claim_token", claimToken],
   ["burn", burn],

@@ -20,14 +20,16 @@ engine.start();
 
 // the most a signed write may carry: a name and a line, or a title
 const BODY_MOST = 4096;
+// an order of an account carries its calls and a passkey's answer: more than a signed name, and still small
+const ORDER_MOST = 32_768;
 
-function readJson(req: IncomingMessage): Promise<unknown> {
+function readJson(req: IncomingMessage, most = BODY_MOST): Promise<unknown> {
   return new Promise((resolve, reject) => {
     let size = 0;
     const parts: Buffer[] = [];
     req.on("data", (chunk: Buffer) => {
       size += chunk.length;
-      if (size > BODY_MOST) {
+      if (size > most) {
         reject(new Error("too large"));
         req.destroy();
       } else parts.push(chunk);
@@ -64,7 +66,7 @@ const server = createServer((req, res) => {
   }
   if (req.method === "POST") {
     const key = req.headers["x-admin-key"];
-    readJson(req)
+    readJson(req, path.startsWith("/v1/accounts") ? ORDER_MOST : BODY_MOST)
       .then((body) => engine.post(path, body, caller(req), typeof key === "string" ? key : undefined))
       .then((a) => (a ? send(a.status, a.body) : send(404, { error: "not found" })))
       .catch((e: Error) => (e.message === "too large" ? send(413, { error: "the body is too large" }) : e.message === "not JSON" ? send(400, { error: "the body is not JSON" }) : failed()));

@@ -1,6 +1,6 @@
 #!/bin/zsh
-# Deploys the three contracts of Factor from the admin wallet, then reads the deployment back from the chain and
-# checks every wire.
+# Deploys the three contracts of Factor from the admin wallet, and with them the maker of accounts for people
+# without a wallet, then reads the deployment back from the chain and checks every wire.
 #
 #   contracts/deploy.sh <the admin wallet's address> <the gateway wallet's address>
 #
@@ -23,16 +23,16 @@
 ADMIN=$1
 GATEWAY=$2
 TMP=$(mktemp -t factor-deploy); trap 'rm -f $TMP' EXIT
-NAMES=(FACTOR_BURN_POT FACTOR_DESK FACTOR_SPLITTER)
+NAMES=(FACTOR_BURN_POT FACTOR_DESK FACTOR_SPLITTER FACTOR_ACCOUNTS)
 # where forge writes down what it sent (a dry run goes to a folder of its own beside it)
 RECORD="$HERE/broadcast/Deploy.s.sol/4663/run-latest.json"
 
-# The three addresses out of forge's record of the deploy, as NAME=address lines. Fails unless the record is exactly
-# the three contracts, each created once, all from the admin wallet.
+# The four addresses out of forge's record of the deploy, as NAME=address lines. Fails unless the record is exactly
+# the four contracts, each created once, all from the admin wallet.
 read_record() {
   python3 - "$RECORD" "$ADMIN" <<'PY'
 import json, sys
-want = {"FactorBurnPot": "FACTOR_BURN_POT", "FactorDesk": "FACTOR_DESK", "FactorSplitter": "FACTOR_SPLITTER"}
+want = {"FactorBurnPot": "FACTOR_BURN_POT", "FactorDesk": "FACTOR_DESK", "FactorSplitter": "FACTOR_SPLITTER", "FactorAccounts": "FACTOR_ACCOUNTS"}
 try: txs = json.load(open(sys.argv[1]))["transactions"]
 except Exception: sys.exit(1)
 if len(txs) != len(want) or sorted(str(t.get("contractName")) for t in txs) != sorted(want): sys.exit(1)
@@ -63,11 +63,12 @@ for name in $NAMES; do
   is_address "$v" || { tail -15 $TMP; die "the dry run did not say where $name would be"; }
   eval "$name=$v"
 done
-echo "  three contracts, about $GAS gas at most; forge wants up to $NEED ETH in the wallet (about \$$(usd $NEED_WEI))"
+echo "  four contracts, about $GAS gas at most; forge wants up to $NEED ETH in the wallet (about \$$(usd $NEED_WEI))"
 echo "  they would be at:"
 echo "    burn pot   $FACTOR_BURN_POT"
 echo "    desk       $FACTOR_DESK"
 echo "    splitter   $FACTOR_SPLITTER"
+echo "    accounts   $FACTOR_ACCOUNTS"
 if [ -n "$DRY" ]; then
   python3 -c "import sys; sys.exit(0 if int('$BAL') >= int('$NEED_WEI') else 1)" || echo "  note: the admin wallet holds $(eth $BAL) ETH; the deploy needs up to $NEED ETH"
   echo; echo "DRY RUN ONLY (FACTOR_DRY is set). Nothing was sent and no key was asked for."; exit 0
@@ -77,12 +78,12 @@ python3 -c "import sys; sys.exit(0 if int('$BAL') >= int('$NEED_WEI') else 1)" |
 step "3/4 the deploy: forge now asks for the admin wallet's private key (nothing shows as it is typed or pasted)"
 BLOCK=$(cast block-number --rpc-url "$RPC")
 FACTOR_ADMIN=$ADMIN FACTOR_GATEWAY=$GATEWAY forge script script/Deploy.s.sol --rpc-url "$RPC" --broadcast --interactive --sender $ADMIN \
-  || die "the deploy did not go through. Read the lines above. If some of the three were sent and not the others, do not launch: say so and start again with a fresh admin wallet nonce in mind."
+  || die "the deploy did not go through. Read the lines above. If some of the four were sent and not the others, do not launch: say so and start again with a fresh admin wallet nonce in mind."
 
 step "4/4 the check: the addresses forge recorded, and everything read back from the chain"
 # forge's record must be this deploy's: written after the dry run of this very run
 [ -f "$RECORD" ] && [ "$RECORD" -nt $TMP ] && SENT=$(read_record) \
-  || die "the deploy was sent, but forge's record of it ($RECORD) is missing or is not this deploy's. The contracts are on the chain: do NOT deploy again. Find the three addresses in the lines above or in the admin wallet's transactions."
+  || die "the deploy was sent, but forge's record of it ($RECORD) is missing or is not this deploy's. The contracts are on the chain: do NOT deploy again. Find the four addresses in the lines above or in the admin wallet's transactions."
 echo "  deployed at:"
 echo "$SENT" | sed 's/^/    /'
 for name in $NAMES; do
@@ -94,15 +95,15 @@ for name in $NAMES; do
   has_code $v || die "there is no contract at $v, where forge recorded $name. Do not launch, and do not deploy again before looking at the admin wallet's transactions."
   eval "$name=$v"
 done
-export FACTOR_ADMIN=$ADMIN FACTOR_GATEWAY=$GATEWAY FACTOR_BURN_POT FACTOR_DESK FACTOR_SPLITTER
+export FACTOR_ADMIN=$ADMIN FACTOR_GATEWAY=$GATEWAY FACTOR_BURN_POT FACTOR_DESK FACTOR_SPLITTER FACTOR_ACCOUNTS
 forge script script/Deploy.s.sol --sig "check()" --rpc-url "$RPC" > $TMP 2>&1 \
   || { tail -15 $TMP; die "the contracts do not read back as meant at the addresses above. Do not launch, and do not deploy again before this is understood."; }
-grep -E "OK:|burn pot|splitter|admin|token" $TMP | sed 's/^ */  /'
+grep -E "OK:|burn pot|splitter|accounts|admin|token" $TMP | sed 's/^ */  /'
 mkdir -p "$HERE/broadcast"
 {
   echo "FACTOR_ADMIN=$ADMIN"
   echo "FACTOR_GATEWAY=$GATEWAY"
-  echo "FACTOR_BURN_POT=$FACTOR_BURN_POT"; echo "FACTOR_DESK=$FACTOR_DESK"; echo "FACTOR_SPLITTER=$FACTOR_SPLITTER"; echo "FACTOR_DEPLOY_BLOCK=$BLOCK"
+  echo "FACTOR_BURN_POT=$FACTOR_BURN_POT"; echo "FACTOR_DESK=$FACTOR_DESK"; echo "FACTOR_SPLITTER=$FACTOR_SPLITTER"; echo "FACTOR_ACCOUNTS=$FACTOR_ACCOUNTS"; echo "FACTOR_DEPLOY_BLOCK=$BLOCK"
 } > "$OUT"
 echo "  written to $OUT (FACTOR_DEPLOY_BLOCK is the block just before the deploy: start reading logs there)"
 echo "  the admin wallet now holds $(eth $(cast balance $ADMIN --rpc-url "$RPC")) ETH"

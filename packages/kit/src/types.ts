@@ -71,6 +71,21 @@ export interface State {
   contracts: { desk: string | null; splitter: string | null; burnPot: string | null; token: string | null; explorer: string };
   /** compute credit: whether an advance drawn as compute can be spent on models, and what they cost, in dollars a million tokens */
   compute: { enabled: boolean; markupPct: number; maxTokens: number; models: ComputeModel[] };
+  /** accounts whose gas Factor pays: whether one can be made and used right now, and the contract that makes them */
+  accounts: { enabled: boolean; factory: string | null; ordersPerDay: number };
+}
+
+/** A Factor account: what an agent's key acts through when Factor pays its gas (connect with `gasless: true`). */
+export interface AccountInfo {
+  address: string;
+  /** the key that signs for it: it needs no ETH */
+  signer: string;
+  balanceEth: string;
+  balanceWei: bigint;
+  /** orders Factor has paid the gas of today, and how many it pays for in a day */
+  ordersToday: number;
+  ordersPerDay: number;
+  keys: ({ kind: "wallet"; address: string } | { kind: "passkey"; x: string; y: string; credential: string })[];
 }
 
 export interface ComputeModel { id: string; inUsd: number; outUsd: number }

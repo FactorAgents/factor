@@ -3,6 +3,7 @@ pragma solidity 0.8.28;
 
 import {Test} from "forge-std/Test.sol";
 import {FactorDeployer} from "../script/FactorDeployer.sol";
+import {FactorAccounts} from "../src/FactorAccount.sol";
 import {FactorBurnPot} from "../src/FactorBurnPot.sol";
 import {FactorDesk} from "../src/FactorDesk.sol";
 import {FactorSplitter} from "../src/FactorSplitter.sol";
@@ -28,6 +29,7 @@ abstract contract FactorTest is Test, FactorDeployer {
     FactorBurnPot internal burnPot;
     FactorDesk internal desk;
     FactorSplitter internal splitter;
+    FactorAccounts internal accounts;
 
     MockFactorToken internal token;
     MockCurve internal curve;
@@ -42,6 +44,7 @@ abstract contract FactorTest is Test, FactorDeployer {
         burnPot = h.burnPot;
         desk = h.desk;
         splitter = h.splitter;
+        accounts = h.accounts;
     }
 
     function _params() internal pure returns (IPonsV2LaunchFactory.TokenParams memory p) {

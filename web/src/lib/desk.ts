@@ -41,7 +41,16 @@ const WORDS: Record<string, (a: readonly unknown[]) => string> = {
   ZeroAmount: () => "Enter an amount.",
   NothingOwed: () => "Nothing is waiting to be collected.",
   GasShort: () => "The wallet sent it with too little gas. Try again.",
+  // an account without a wallet (lib/passkey.ts): its own answers, and the engine's on its behalf
+  BadSignature: () => "The passkey's answer was not taken as this account's. Try again.",
+  Expired: () => "It took too long to confirm. Try again.",
+  CallFailed: () => "The account could not do that: it does not hold enough ETH for it.",
+  KeyExists: () => "The account already has that key.",
+  LastKey: () => "An account keeps at least one key.",
+  AccountShort: (a) => `Your account holds ${eth(a[0])} ETH: not enough for the ${eth(a[1])} ETH this needs. Send ETH to the account's address first.`,
 };
+/** One of the contracts' refusals in words, by its name, or null when it is not one this site knows. */
+export const wordsFor = (name: string, args: readonly unknown[]): string | null => WORDS[name]?.(args) ?? null;
 
 /** What a failed call or send was, in words. */
 export function explain(e: unknown): string {
@@ -115,8 +124,24 @@ export async function send(p: Provider, desk: string, from: string, functionName
   const hash = await sendTx(p, { from, to: desk, data, value: o.value });
   o.on?.("mining");
   const receipt = await waitFor(p, hash);
-  if (receipt.status !== "0x1") throw new Refusal("The transaction was mined and the desk refused it. Nothing changed. Reload the page and look again.");
-  return { hash, receipt };
+  if (receipt.status !== "0x1") throw new Refusal(receipt.reason ?? "The transaction was mined and the desk refused it. Nothing changed. Reload the page and look again.");
+  // an account's order is known by a number of its own until it is mined: the transaction's own hash is the receipt's
+  return { hash: receipt.transactionHash || hash, receipt };
+}
+
+/**
+ * Anything else an account or a wallet sends: ETH to an address, or a call to the account itself (a second key).
+ * The same road as a call to the desk: followed until it is mined.
+ */
+export async function sendPlain(p: Provider, from: string, to: string, o: { value?: bigint; data?: string; on?: (step: "checking" | "wallet" | "mining") => void } = {}): Promise<Sent> {
+  o.on?.("checking");
+  await ensureChain(p);
+  o.on?.("wallet");
+  const hash = await sendTx(p, { from, to, data: o.data ?? "0x", value: o.value });
+  o.on?.("mining");
+  const receipt = await waitFor(p, hash);
+  if (receipt.status !== "0x1") throw new Refusal(receipt.reason ?? "The transaction was mined and refused. Nothing changed.");
+  return { hash: receipt.transactionHash || hash, receipt };
 }
 
 /** The number the desk gave a job, read from the transaction that locked it. */

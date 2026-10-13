@@ -8,6 +8,7 @@
 
 import { readFileSync } from "node:fs";
 import { normalizeAddress } from "./address.js";
+import { readAccounts, type AccountsConfig } from "../accounts.js";
 import { readCompute, type ComputeConfig } from "../compute.js";
 
 // the chain the token lives on, written down once
@@ -37,7 +38,7 @@ export interface EngineParams {
   burnRetryS: number; // ENGINE_BURN_RETRY_S
   maxGasWei: bigint; // ENGINE_MAX_GAS_GWEI: the most the engine pays per unit of gas
   unstickMaxGasWei: bigint; // ENGINE_UNSTICK_MAX_GAS_GWEI: the same for replacing a transaction that is stuck
-  gasCaps: { sweep: bigint; claim_token: bigint; burn: bigint; settle_job: bigint; refund_job: bigint; collect: bigint; return_compute: bigint };
+  gasCaps: { sweep: bigint; claim_token: bigint; burn: bigint; settle_job: bigint; refund_job: bigint; collect: bigint; return_compute: bigint; relay: bigint };
   jobsPerPass: number; // ENGINE_JOBS_PER_PASS: jobs the engine settles or refunds in one pass at most
   deskReadsPerPass: number; // ENGINE_DESK_READS_PER_PASS: jobs and agents read back from the desk in one pass at most
   gasHeadroomBps: number; // on top of the node's estimate
@@ -62,7 +63,7 @@ export const DEFAULTS: EngineParams = {
   burnRetryS: 120,
   maxGasWei: 2n * GWEI,
   unstickMaxGasWei: 20n * GWEI,
-  gasCaps: { sweep: 700_000n, claim_token: 400_000n, burn: 900_000n, settle_job: 600_000n, refund_job: 500_000n, collect: 200_000n, return_compute: 150_000n },
+  gasCaps: { sweep: 700_000n, claim_token: 400_000n, burn: 900_000n, settle_job: 600_000n, refund_job: 500_000n, collect: 200_000n, return_compute: 150_000n, relay: 1_500_000n },
   jobsPerPass: 5,
   deskReadsPerPass: 200,
   gasHeadroomBps: 2500,
@@ -102,6 +103,9 @@ export interface EngineConfig {
   // Compute credit: whether it is served, the models and their prices. The model maker's key itself is taken with
   // `takeModelKey` and kept nowhere else.
   compute: ComputeConfig;
+  // Accounts for people without a wallet: whether orders are taken, the maker of accounts, and the limits on what
+  // the gas wallet pays for.
+  accounts: AccountsConfig;
 }
 
 // A factor.env-style file: NAME=value lines. What the environment already says wins.
@@ -259,6 +263,8 @@ export function readConfig(processEnv: Env = process.env): EngineConfig {
     problems.push("BOT_PRIVATE_KEY must be 32 bytes of hex, with or without the 0x in front");
   }
   const compute = readCompute(env, problems);
+  const accounts = readAccounts(env, problems);
+  if (accounts.factory && (accounts.factory === desk || accounts.factory === splitter || accounts.factory === burnPot)) problems.push("FACTOR_ACCOUNTS is the same address as another of the contracts");
   const rawAdmin = env.ENGINE_ADMIN_KEY?.trim() ?? "";
   if (rawAdmin && rawAdmin.length < 24) problems.push("ENGINE_ADMIN_KEY must be at least 24 characters");
   const adminKey = rawAdmin.length >= 24 ? rawAdmin : null;
@@ -285,6 +291,7 @@ export function readConfig(processEnv: Env = process.env): EngineConfig {
     hasBotKey,
     adminKey,
     compute,
+    accounts,
   };
 }
 

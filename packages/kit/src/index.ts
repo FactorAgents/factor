@@ -10,14 +10,19 @@
 //     Refusal that says why, in words;
 //   - the desk's address is read from Factor's site and then checked on the chain itself: it must be a contract
 //     there, or nothing is ever sent to it;
-//   - the key stays in this process. It signs transactions and two kinds of readable text (an agent's name, a job's
-//     title). It is never sent anywhere, logged or stored by the kit.
-import { createPublicClient, createWalletClient, decodeEventLog, defineChain, formatEther, http, keccak256, parseEther, toHex, type Abi, type Account, type Hex, type PublicClient, type WalletClient } from "viem";
+//   - the key stays in this process. It signs transactions and readable text (an agent's name, a job's title, the
+//     request for a compute key). It is never sent anywhere, logged or stored by the kit;
+//   - with `gasless: true` the key needs no ETH at all. It acts through a Factor account, a small contract that
+//     obeys this key and nobody else: the key signs what the account should do, and Factor sends it and pays the
+//     gas. Factor cannot sign for the account, move what is in it, or change what was signed.
+import { createPublicClient, createWalletClient, decodeEventLog, defineChain, encodeFunctionData, formatEther, http, keccak256, parseEther, toHex, type Abi, type Account, type Hex, type PublicClient, type WalletClient } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
+import { factorAccountAbi } from "./abi/FactorAccount.js";
+import { factorAccountsAbi } from "./abi/FactorAccounts.js";
 import { factorDeskAbi } from "./abi/FactorDesk.js";
 import { CHAIN_ID, DEFAULT_API, DEFAULT_RPC } from "./defaults.js";
-import type { Agent, AgentPage, ComputeCredit, ComputeKey, Job, JobPage, JobState, LedgerLine, Page, Sent, State } from "./types.js";
-import { explain, Refusal } from "./words.js";
+import type { AccountInfo, Agent, AgentPage, ComputeCredit, ComputeKey, Job, JobPage, JobState, LedgerLine, Page, Sent, State } from "./types.js";
+import { explain, Refusal, WORDS } from "./words.js";
 
 export { Refusal, explain } from "./words.js";
 export type * from "./types.js";
@@ -40,6 +45,25 @@ export interface FactorOptions {
   /** For a test chain only: the desk's address, instead of the one the site names. */
   desk?: string;
   chainId?: number;
+  /**
+   * Act through a Factor account: the key signs, Factor sends and pays the gas, and the key needs no ETH. The
+   * account's address is what the desk and everybody else know this agent or customer by; ETH it is paid arrives
+   * there, and `withdraw` takes it out. Leave it out and the key's own wallet acts and pays its own gas.
+   */
+  gasless?: boolean;
+}
+
+/** What a key signs for an order of its account: EIP-712, the same as the account contract works out. */
+export function orderTypedData(account: string, chainId: number, calls: { to: string; value: bigint; data: Hex }[], nonce: bigint, deadline: bigint) {
+  return {
+    domain: { name: "Factor Account", version: "1", chainId, verifyingContract: account as Hex },
+    types: {
+      Execute: [{ name: "calls", type: "Call[]" }, { name: "nonce", type: "uint256" }, { name: "deadline", type: "uint256" }],
+      Call: [{ name: "to", type: "address" }, { name: "value", type: "uint256" }, { name: "data", type: "bytes" }],
+    },
+    primaryType: "Execute" as const,
+    message: { calls: calls.map((c) => ({ to: c.to as Hex, value: c.value, data: c.data })), nonce, deadline },
+  };
 }
 
 // What a wallet signs to name an agent or a job: readable text, the same to the letter as the site and the engine use.
@@ -73,11 +97,24 @@ export class Factor {
     private readonly pub: PublicClient,
     private readonly wallet: WalletClient | null,
     private readonly account: Account | null,
+    /** The Factor account this key acts through, when it was connected with `gasless`. */
+    private readonly via: Hex | null = null,
+    private readonly chainId: number = CHAIN_ID,
   ) {}
 
-  /** The wallet this Factor acts as, lowercase, or null when it only reads. */
+  /** Who this Factor acts as on the desk, lowercase: the key's wallet, or its Factor account. null when it only reads. */
   get address(): string | null {
+    return this.via ?? (this.account ? this.account.address.toLowerCase() : null);
+  }
+
+  /** The address of the key itself. With `gasless` it is not the address the desk knows: that is `address`. */
+  get signer(): string | null {
     return this.account ? this.account.address.toLowerCase() : null;
+  }
+
+  /** Whether this Factor acts through an account whose gas Factor pays. */
+  get gasless(): boolean {
+    return this.via !== null;
   }
 
   /** Reads the desk's address from Factor's site, checks it on the chain, and is ready. */
@@ -102,7 +139,27 @@ export class Factor {
       account = privateKeyToAccount((key.startsWith("0x") ? key : `0x${key}`) as Hex);
     }
     const wallet = account ? (createWalletClient({ account, chain, transport }) as WalletClient) : null;
-    return new Factor(api, desk as Hex, state.contracts.explorer, pub, wallet, account);
+    if (!o.gasless) return new Factor(api, desk as Hex, state.contracts.explorer, pub, wallet, account, null, id);
+
+    if (!account) throw new Refusal("gasless needs a key: the key signs, and Factor pays the gas.", "read_only");
+    const maker = state.accounts?.factory?.toLowerCase();
+    if (!state.accounts?.enabled || !maker || !/^0x[0-9a-f]{40}$/.test(maker)) throw new Refusal("Accounts whose gas Factor pays are not switched on yet. Connect without gasless, with a wallet that holds a little ETH.", "accounts_off");
+    const makerCode = await pub.getCode({ address: maker as Hex });
+    if (!makerCode || makerCode === "0x") throw new Refusal(`There is no contract at ${maker}, where the site says accounts are made. Nothing will be sent.`, "no_accounts");
+    // where this key's account is, asked of the chain itself: the site is not taken at its word for an address
+    // that ETH will be sent to
+    const first = { kind: 1, a: `0x${"0".repeat(24)}${account.address.slice(2).toLowerCase()}` as Hex, b: `0x${"0".repeat(64)}` as Hex };
+    const via = ((await pub.readContract({ address: maker as Hex, abi: factorAccountsAbi as Abi, functionName: "addressOf", args: [first] })) as string).toLowerCase() as Hex;
+    const f = new Factor(api, desk as Hex, state.contracts.explorer, pub, wallet, account, via, id);
+    const made = await f.ask<{ address: string; deployed: boolean; relay: string | null }>("/accounts", { kind: "wallet", address: account.address.toLowerCase() });
+    if (made.address.toLowerCase() !== via) throw new Refusal(`The site says this key's account is ${made.address}, and the chain says ${via}. Nothing will be sent.`, "wrong_account");
+    if (made.relay) await f.settled(made.relay);
+    for (let i = 0; i < 60; i++) {
+      const code = await pub.getCode({ address: via });
+      if (code && code !== "0x") return f;
+      await sleep(1000);
+    }
+    throw new Refusal("The account was not made in time. Try again in a moment.", "timeout");
   }
 
   // ---------- reading ----------
@@ -347,11 +404,95 @@ export class Factor {
     }
   }
 
+  // ---------- a Factor account (gasless) ----------
+
+  /** What this key's Factor account holds, and how many of its orders Factor has paid for today. */
+  async accountInfo(): Promise<AccountInfo> {
+    const via = this.viaOrRefuse();
+    const [info, balance] = await Promise.all([read<{ ordersToday: number; ordersPerDay: number; keys: AccountInfo["keys"] }>(this.api, `/accounts/${via}`), this.pub.getBalance({ address: via })]);
+    return { address: via, signer: this.signer!, balanceWei: balance, balanceEth: ethText(balance), ordersToday: info?.ordersToday ?? 0, ordersPerDay: info?.ordersPerDay ?? 0, keys: info?.keys ?? [] };
+  }
+
+  /** Take ETH out of the Factor account, to any address. Factor pays the gas. */
+  async withdraw(to: string, amount: Amount): Promise<Sent> {
+    const via = this.viaOrRefuse();
+    if (!/^0x[0-9a-fA-F]{40}$/.test(to)) throw new Refusal("Give the address the ETH should go to.", "bad_address");
+    const value = toWei(amount);
+    if (value === 0n) throw new Refusal("The amount is zero.", "bad_amount");
+    const has = await this.pub.getBalance({ address: via });
+    if (value > has) throw new Refusal(WORDS.AccountShort!([has, value]), "account_short");
+    return this.sent(await this.order([{ to: to.toLowerCase(), value, data: "0x" }]));
+  }
+
+  /**
+   * Give the account a second key: a wallet's address. That wallet can then act for the account by itself and pay
+   * its own gas (`run` on the account), with no help from Factor. Worth doing for an account that holds anything.
+   */
+  async addWalletKey(address: string): Promise<Sent> {
+    const via = this.viaOrRefuse();
+    if (!/^0x[0-9a-fA-F]{40}$/.test(address)) throw new Refusal("Give the wallet's address.", "bad_address");
+    const data = encodeFunctionData({ abi: factorAccountAbi as Abi, functionName: "addKey", args: [{ kind: 1, a: `0x${"0".repeat(24)}${address.slice(2).toLowerCase()}`, b: `0x${"0".repeat(64)}` }, "0x"] });
+    return this.sent(await this.order([{ to: via, value: 0n, data }]));
+  }
+
+  private viaOrRefuse(): Hex {
+    if (!this.via) throw new Refusal("This Factor acts as a wallet of its own. Connect with gasless: true to act through a Factor account.", "not_gasless");
+    return this.via;
+  }
+
+  /** One order of the account: checked, signed by the key, handed to Factor to send, followed until it is mined. */
+  private async order(calls: { to: string; value: bigint; data: Hex }[]): Promise<{ hash: Hex; explorer: string; receipt: { logs: unknown[] } }> {
+    const via = this.viaOrRefuse();
+    if (!this.account?.signTypedData) throw new Refusal("This key cannot sign an order (it has no signTypedData).", "read_only");
+    const wire = calls.map((c) => ({ to: c.to, value: c.value.toString(), data: c.data }));
+    const checked = await this.ask<{ nonce: number; deadline: number }>("/accounts/check", { account: via, calls: wire });
+    // the number the order must carry is the chain's own; the deadline is the site's, held to an hour by the
+    // chain's own clock, so that nothing signed here stays good for longer than that
+    const [nonce, head] = await Promise.all([this.pub.readContract({ address: via, abi: factorAccountAbi as Abi, functionName: "nonce" }) as Promise<bigint>, this.pub.getBlock()]);
+    if (!Number.isSafeInteger(checked.deadline) || BigInt(checked.deadline) <= head.timestamp || BigInt(checked.deadline) > head.timestamp + 3600n) throw new Refusal("The site gave the order a deadline that makes no sense. Nothing was signed.", "bad_deadline");
+    const signature = await this.account.signTypedData(orderTypedData(via, this.chainId, calls, nonce, BigInt(checked.deadline)));
+    const sent = await this.ask<{ id: string }>("/accounts/relay", { account: via, calls: wire, deadline: checked.deadline, signature });
+    const hash = await this.settled(sent.id);
+    const receipt = await this.pub.waitForTransactionReceipt({ hash, timeout: 180_000 });
+    if (receipt.status !== "success") throw new Refusal(`The transaction ${hash} was mined and refused. Nothing changed.`, "reverted");
+    return { hash, explorer: `${this.explorer}/tx/${hash}`, receipt };
+  }
+
+  /** Waits for an order Factor is sending. The transaction's hash, or a Refusal that says why it was not sent. */
+  private async settled(id: string): Promise<Hex> {
+    const until = Date.now() + 180_000;
+    for (;;) {
+      const r = await read<{ status: string; hash: Hex | null; error: string | null; refused?: { name: string; args: string[] } }>(this.api, `/accounts/relay/${id}`);
+      if (r?.status === "done" && r.hash) return r.hash;
+      if (r?.status === "failed") throw new Refusal(r.refused && WORDS[r.refused.name] ? WORDS[r.refused.name]!(r.refused.args) : sentence(r.error ?? "The order was not sent"), "not_sent");
+      if (Date.now() > until) throw new Refusal("The order was not mined in time. It may still be: read the account before sending it again.", "timeout");
+      await sleep(700);
+    }
+  }
+
+  /** A request to the site's account routes. What the site refuses comes back as a Refusal in words. */
+  private async ask<T>(path: string, body: Record<string, unknown>): Promise<T> {
+    for (let tries = 0; ; tries++) {
+      let r: Response;
+      try {
+        r = await fetch(`${this.api}${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(30_000) });
+      } catch {
+        throw new Refusal("Factor's site could not be reached.", "no_site");
+      }
+      const b = (await r.json().catch(() => ({}))) as { error?: string; refused?: { name: string; args: string[] } } & Record<string, unknown>;
+      if (r.ok) return b as T;
+      // the account's last order, or its making, is still on its way: a few seconds, not a refusal
+      if (r.status === 409 && tries < 40) { await sleep(1000); continue; }
+      const said = b.refused && WORDS[b.refused.name] ? WORDS[b.refused.name]!(b.refused.args) : sentence(b.error ?? `Factor's site answered ${r.status}`);
+      throw new Refusal(said, r.status === 429 ? "not_today" : r.status === 401 ? "bad_signature" : r.status === 503 ? "accounts_off" : "refused");
+    }
+  }
+
   // ---------- internals ----------
 
   private mine(): string {
     if (!this.account) throw new Refusal("This Factor was connected without a key: it can only read.", "read_only");
-    return this.account.address.toLowerCase();
+    return this.via ?? this.account.address.toLowerCase();
   }
 
   private sent(s: { hash: Hex; explorer: string }): Sent {
@@ -361,6 +502,16 @@ export class Factor {
   /** One call to the desk: tried without sending, sent, followed until it is mined. */
   private async send(functionName: string, args: readonly unknown[], value?: bigint): Promise<{ hash: Hex; explorer: string; receipt: { logs: unknown[] } }> {
     if (!this.account || !this.wallet) throw new Refusal("This Factor was connected without a key: it can only read.", "read_only");
+    if (this.via) {
+      // tried as the account would make it, on this kit's own node, so the desk's reason is said before anything is signed
+      try {
+        await this.pub.simulateContract({ address: this.desk, abi: ABI, functionName, args, account: this.via, ...(value !== undefined ? { value } : {}) } as never);
+      } catch (e) {
+        if (/insufficient (funds|balance)|exceeds the balance/i.test(`${(e as { shortMessage?: string }).shortMessage} ${(e as Error).message}`)) throw new Refusal(WORDS.AccountShort!([await this.pub.getBalance({ address: this.via }), value ?? 0n]), "account_short");
+        throw e instanceof Refusal ? e : new Refusal(explain(e), "desk_refused");
+      }
+      return this.order([{ to: this.desk, value: value ?? 0n, data: encodeFunctionData({ abi: ABI, functionName, args } as never) }]);
+    }
     let hash: Hex;
     try {
       const { request } = await this.pub.simulateContract({ address: this.desk, abi: ABI, functionName, args, account: this.account, ...(value !== undefined ? { value } : {}) } as never);
@@ -399,6 +550,8 @@ function whole(jobId: number): number {
   if (!Number.isSafeInteger(jobId) || jobId < 1) throw new Refusal("A job's number is a whole number, like 12.", "bad_job");
   return jobId;
 }
+
+const sentence = (text: string): string => { const t = text.charAt(0).toUpperCase() + text.slice(1); return /[.!?]$/.test(t) ? t : `${t}.`; };
 
 /** One plain line of 3 to 80 characters without links: what the site accepts as a name's line or a title. */
 function oneLine(raw: string): string {

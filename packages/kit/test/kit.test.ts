@@ -5,7 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { factorDeskAbi } from "../src/abi/FactorDesk.js";
-import { computeKeyMessage, Factor, profileMessage, proofOf, Refusal, titleMessage, toWei } from "../src/index.js";
+import { computeKeyMessage, Factor, orderTypedData, profileMessage, proofOf, Refusal, titleMessage, toWei } from "../src/index.js";
+import { orderTypedData as engineOrder } from "../../../engine/src/accounts.js";
 import { limitsFrom, runTool, Spending, TOOLS } from "../src/tools.js";
 import { WORDS } from "../src/words.js";
 import { keyMessage as engineComputeKey } from "../../../engine/src/compute.js";
@@ -39,6 +40,9 @@ describe("what a wallet signs", () => {
     expect(profileMessage("0xabc", "lumen-07", "Summarises long documents", 1_791_000_000)).toBe(engineProfile("0xabc", "lumen-07", "Summarises long documents", 1_791_000_000));
     expect(titleMessage(12, "Summarise a contract", 1_791_000_000)).toBe(engineTitle(12, "Summarise a contract", 1_791_000_000));
     expect(computeKeyMessage("0xabc", 1_791_000_000)).toBe(engineComputeKey("0xabc", 1_791_000_000));
+    // an order of an account: the kit's typed data is the engine's, which the end-to-end run holds to the contract's
+    const calls = [{ to: DESK, value: 40_000_000_000_000_000n, data: "0x12345678" as const }, { to: AGENTS[0].address, value: 1n, data: "0x" as const }];
+    expect(orderTypedData(AGENTS[1].address, 4663, calls, 7n, 1_791_000_600n)).toEqual(engineOrder(AGENTS[1].address, 4663, calls, 7, 1_791_000_600));
   });
 
   it("fingerprints a delivery the same way every time, and differently for different work", () => {
@@ -138,6 +142,28 @@ describe("compute credit", () => {
   });
 });
 
+describe("gasless", () => {
+  it("is refused in words while accounts are not switched on, and without a key", async () => {
+    expect((await refusal(connect({ privateKey: KEY, gasless: true }))).code).toBe("accounts_off");
+    expect((await refusal(connect({ gasless: true }))).code).toBe("read_only");
+    // a wallet of its own has no account to take ETH out of
+    const f = await connect({ privateKey: KEY });
+    expect(f.gasless).toBe(false);
+    expect((await refusal(f.withdraw(AGENTS[0].address, "0.01"))).code).toBe("not_gasless");
+    expect((await refusal(f.accountInfo())).code).toBe("not_gasless");
+    expect((await runTool(f, "factor_account", {}, null)).text).toContain("pays its own gas");
+  });
+
+  it("will not use an account maker that is not a contract on the chain", async () => {
+    s.site.state.accounts = { enabled: true, factory: "0x00000000000000000000000000000000000acc07", ordersPerDay: 40 };
+    s.node.code = "0x";
+    // the desk is checked first, and with no code anywhere that is what it says
+    expect((await refusal(connect({ privateKey: KEY, gasless: true }))).code).toBe("no_desk");
+    s.node.code = "0x6080";
+    s.site.state.accounts = { enabled: false, factory: null, ordersPerDay: 40 };
+  });
+});
+
 describe("without a key", () => {
   it("reads everything and sends nothing", async () => {
     const f = await connect();
@@ -215,9 +241,9 @@ describe("the assistant's caps", () => {
 
 describe("the tools", () => {
   it("have a name, a description and an input each, and say which of them send something", () => {
-    expect(TOOLS.map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_hire", "factor_accept", "factor_reject", "factor_set_title", "factor_register", "factor_set_profile", "factor_bond", "factor_can_draw", "factor_compute_credit", "factor_draw", "factor_deliver", "factor_decline"]);
+    expect(TOOLS.map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_hire", "factor_accept", "factor_reject", "factor_set_title", "factor_register", "factor_set_profile", "factor_bond", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_draw", "factor_deliver", "factor_decline"]);
     for (const t of TOOLS) expect(t.description.length, t.name).toBeGreaterThan(40);
-    expect(TOOLS.filter((t) => t.readOnly).map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_can_draw", "factor_compute_credit"]);
+    expect(TOOLS.filter((t) => t.readOnly).map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_can_draw", "factor_account", "factor_compute_credit"]);
     // the ones that spend or cannot be undone say so in capitals, where an assistant will not miss it
     for (const name of ["factor_hire", "factor_reject", "factor_bond"]) expect(TOOLS.find((t) => t.name === name)!.description).toMatch(/SPENDS ETH|SETTLES AT HALF/);
   });

@@ -209,6 +209,48 @@ CREATE INDEX IF NOT EXISTS compute_usage_agent ON compute_usage (agent, id);
 -- The keys agents call the gateway with: only their hashes.
 CREATE TABLE IF NOT EXISTS compute_keys (hash TEXT PRIMARY KEY, agent TEXT NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS compute_keys_agent ON compute_keys (agent, created_at);
+-- Accounts for people without a wallet (../accounts.ts). The engine's own notes, not the chain's: an account and its
+-- first key as it was asked for, and whether the chain has it yet. Never taken back by a reindex.
+CREATE TABLE IF NOT EXISTS accounts (
+  address TEXT PRIMARY KEY,
+  kind INTEGER NOT NULL,             -- 1 a wallet's address, 2 a passkey
+  a TEXT NOT NULL,
+  b TEXT NOT NULL,
+  credential TEXT NOT NULL DEFAULT '0x', -- a passkey's own id, so a browser finds its account again
+  created_at INTEGER NOT NULL,       -- ms
+  caller TEXT NOT NULL DEFAULT '',   -- who asked for it, for the limit on new accounts; empty when the chain told us
+  deployed INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS accounts_created ON accounts (created_at);
+CREATE TABLE IF NOT EXISTS account_keys (
+  account TEXT NOT NULL,
+  kind INTEGER NOT NULL,
+  a TEXT NOT NULL,
+  b TEXT NOT NULL,
+  credential TEXT NOT NULL DEFAULT '0x',
+  added_at INTEGER NOT NULL,
+  PRIMARY KEY (account, kind, a, b)
+);
+CREATE INDEX IF NOT EXISTS account_keys_credential ON account_keys (credential);
+-- Orders the gas wallet sends for accounts: making one, or carrying out what its owner signed.
+CREATE TABLE IF NOT EXISTS relays (
+  id TEXT PRIMARY KEY,               -- 32 random bytes: what the caller asks after
+  account TEXT NOT NULL,
+  kind TEXT NOT NULL,                -- create | execute
+  payload TEXT NOT NULL,             -- JSON: the key, or the calls with their deadline and signature
+  status TEXT NOT NULL,              -- queued | sent | done | failed
+  tx_hash TEXT,
+  error TEXT,
+  refused TEXT,                      -- JSON: the contract's own error, by name, when that is why
+  gas_wei TEXT NOT NULL DEFAULT '0', -- what it cost the gas wallet
+  logs TEXT,                         -- JSON: the logs of the transaction, once it is mined
+  deadline INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  caller TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS relays_status ON relays (status, created_at);
+CREATE INDEX IF NOT EXISTS relays_account ON relays (account, created_at);
 CREATE TABLE IF NOT EXISTS job_titles (
   job_id INTEGER PRIMARY KEY,
   title TEXT NOT NULL,
@@ -218,7 +260,7 @@ CREATE TABLE IF NOT EXISTS job_titles (
 );
 `;
 
-export type ActionKind = "sweep" | "claim_token" | "burn" | "settle_job" | "refund_job" | "collect" | "return_compute" | "unstick";
+export type ActionKind = "sweep" | "claim_token" | "burn" | "settle_job" | "refund_job" | "collect" | "return_compute" | "relay" | "unstick";
 export type ActionStatus = "dry" | "signed" | "sent" | "done" | "failed" | "replaced";
 
 export interface ActionRow {

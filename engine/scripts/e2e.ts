@@ -25,6 +25,8 @@
 //      agent with the desk's own score(), and the engine's figures with the desk's books;
 //   7  kills the engine and starts it again, then has it read the whole chain again from the deploy block: the same
 //      ledger both times, and the signed names still there.
+//   8  accounts without a wallet: a person with a passkey (made of software here, see scripts/passkey.ts) and an
+//      agent whose key holds no ETH do a whole job, with the engine paying the gas of every transaction.
 //
 // It ends with the list of checks and exits 1 if one failed.
 //
@@ -37,8 +39,11 @@ import { existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createPublicClient, defineChain, encodeFunctionData, http, parseAbi, parseEther, type Abi } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
+import { createPublicClient, defineChain, encodeAbiParameters, encodeFunctionData, hashMessage, hashTypedData, http, keccak256, parseAbi, parseEther, type Abi, type Hex } from "viem";
+import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
+import { factorAccountAbi } from "../src/abi/index.js";
+import { deskCall, orderTypedData, type Call } from "../src/accounts.js";
+import { softPasskey } from "./passkey.js";
 import { factorBurnPotAbi, factorDeskAbi, factorSplitterAbi, factorTokenAbi } from "../src/abi/index.js";
 import type { AgentJson, EventJson, FactorState, JobJson } from "../src/api.js";
 import { costMicro, DEFAULT_MODELS, keyMessage, usdMicro } from "../src/compute.js";
@@ -158,6 +163,7 @@ function startEngine(dataDir: string, envFile: string, more: Record<string, stri
     env: {
       ...process.env, PORT: String(ENGINE_PORT), FACTOR_DATA_DIR: dataDir, ENGINE_MODE: "live", BOT_PRIVATE_KEY: BOT_KEY, FACTOR_ENV_FILE: envFile, FACTOR_RPC_URLS: RPC,
       FACTOR_REHEARSAL_CLOCK: "chain", FACTOR_HOUSE_AGENTS: AGENT2,
+      ACCOUNTS_MODE: "on",
       COMPUTE_MODE: "on", ANTHROPIC_API_KEY: MODEL_KEY, COMPUTE_UPSTREAM_URL: `http://127.0.0.1:${MODEL_PORT}`,
       ENGINE_WATCH_EVERY_MS: "700", ENGINE_ACT_EVERY_MS: "900", ENGINE_CONFIRMATIONS: "1", ENGINE_API_CACHE_MS: "0", ENGINE_SWEEP_EVERY_S: "60", ...more,
     },
@@ -206,11 +212,11 @@ async function main(): Promise<void> {
   forge("script/Deploy.s.sol", { FACTOR_ADMIN: ADMIN, FACTOR_GATEWAY: BOT });
   const record = JSON.parse(readFileSync(join(WORK, "broadcast", "Deploy.s.sol", "4663", "run-latest.json"), "utf8")) as { transactions: { contractName: string; contractAddress: string }[] };
   const at = (name: string) => record.transactions.find((t) => t.contractName === name)!.contractAddress;
-  const burnPot = at("FactorBurnPot"), splitter = at("FactorSplitter"), desk = at("FactorDesk");
-  const addresses = { FACTOR_ADMIN: ADMIN, FACTOR_GATEWAY: BOT, FACTOR_BURN_POT: burnPot, FACTOR_DESK: desk, FACTOR_SPLITTER: splitter };
+  const burnPot = at("FactorBurnPot"), splitter = at("FactorSplitter"), desk = at("FactorDesk"), accountsAt = at("FactorAccounts");
+  const addresses = { FACTOR_ADMIN: ADMIN, FACTOR_GATEWAY: BOT, FACTOR_BURN_POT: burnPot, FACTOR_DESK: desk, FACTOR_SPLITTER: splitter, FACTOR_ACCOUNTS: accountsAt };
   const envFile = join(WORK, "factor.fork.env");
   writeFileSync(envFile, [...Object.entries(addresses).map(([k, v]) => `${k}=${v}`), `FACTOR_DEPLOY_BLOCK=${deployBlock}`, ""].join("\n"));
-  check("the three contracts are deployed and wired (the script's own check)", forge("script/Deploy.s.sol", addresses, "check()").includes("OK: the three contracts are wired"));
+  check("the contracts are deployed and wired (the script's own check)", forge("script/Deploy.s.sol", addresses, "check()").includes("OK: the three contracts are wired"));
   console.log(`  desk ${desk}, splitter ${splitter}, burn pot ${burnPot}`);
   const dataDir = join(WORK, "data");
   startEngine(dataDir, envFile);
@@ -244,7 +250,7 @@ async function main(): Promise<void> {
     const failedSoFar = checks.filter((c) => !c.ok);
     records.forEach((f, i) => { if (!hadRecords[i]) rmSync(f, { recursive: true, force: true }); });
     if (failedSoFar.length) throw new Error(`${failedSoFar.length} check(s) failed before the desk was ready`);
-    writeFileSync(join(WORK, "bare.json"), JSON.stringify({ rpc: RPC, api: API, desk, splitter, burnPot, token, keys, model: `http://127.0.0.1:${MODEL_PORT}` }, null, 2));
+    writeFileSync(join(WORK, "bare.json"), JSON.stringify({ rpc: RPC, api: API, desk, splitter, burnPot, token, accounts: accountsAt, keys, model: `http://127.0.0.1:${MODEL_PORT}` }, null, 2));
     console.log(`\nLeft running: the fork on ${RPC}, the engine on ${API}, the pool holding ${eth(pool0)} ETH. Written to ${join(WORK, "bare.json")}.`);
     console.log("Stop them with: npm run e2e -- --stop");
     return;
@@ -412,6 +418,107 @@ async function main(): Promise<void> {
   const kept = await state();
   check("and the signed name and title were kept", kept.agents.find((a) => a.named)?.name === "lumen-07" && kept.jobs.find((j) => j.n === 1)?.title === title);
   check("the gas wallet sent only what it had to", (await client.getTransactionCount({ address: BOT })) === Object.values((await health()).actions).reduce((n, a) => n + a.done, 0), `${await client.getTransactionCount({ address: BOT })} transactions`);
+
+  step("8  accounts without a wallet: a passkey and a key with no ETH do a whole job, and the engine pays the gas");
+  type Order = { status: string; hash?: string; error?: string; refused?: { name: string; args: string[] }; logs?: { address: string; topics: Hex[]; data: Hex }[] };
+  const wire = (calls: Call[]) => calls.map((c) => ({ to: c.to, value: c.value.toString(), data: c.data }));
+  const settledOrder = (id: string) => waitFor("the order to be mined", async () => { const s = await get<Order>(`/v1/accounts/relay/${id}`); return s.status === "done" || s.status === "failed" ? s : null; }, 60_000);
+  // an order from the check to the receipt: what the site does for a passkey, and the kit for an agent's key
+  const order = async (account: string, calls: Call[], sign: (typed: ReturnType<typeof orderTypedData>) => Promise<Hex> | Hex): Promise<{ status: number; body: Record<string, unknown>; order?: Order }> => {
+    const checked = await post("/v1/accounts/check", { account, calls: wire(calls) });
+    if (checked.status !== 200) return checked;
+    const deadline = checked.body.deadline as number;
+    const signature = await sign(orderTypedData(account, 4663, calls, checked.body.nonce as number, deadline));
+    const sent = await post("/v1/accounts/relay", { account, calls: wire(calls), deadline, signature });
+    return sent.status === 200 ? { ...sent, order: await settledOrder(sent.body.id as string) } : sent;
+  };
+  const h8 = await health() as Health & { accounts: { enabled: boolean; factory: string; orders: number; gasTodayWei: string } };
+  check("the engine knows the maker of accounts and takes orders", h8.accounts?.enabled && low(h8.accounts.factory) === low(accountsAt) && (await state() as FactorState & { accounts: { enabled: boolean } }).accounts.enabled);
+
+  // a person: a passkey and nothing else
+  const passkey = softPasskey();
+  const bySig = (typed: ReturnType<typeof orderTypedData>) => passkey.sign(hashTypedData(typed));
+  const botTxs = await client.getTransactionCount({ address: BOT });
+  const made = await post("/v1/accounts", { kind: "passkey", x: passkey.x, y: passkey.y, credential: passkey.credential });
+  const person = made.body.address as string;
+  const madeOrder = await settledOrder(made.body.relay as string);
+  check("a passkey gets an account, made on the chain by the gas wallet", made.status === 200 && madeOrder.status === "done" && (await client.getCode({ address: person as Hex })) !== undefined && low(await read<string>(accountsAt, parseAbi(["function addressOf((uint8 kind, bytes32 a, bytes32 b)) view returns (address)"]) as Abi, "addressOf", [{ kind: 2, a: passkey.x, b: passkey.y }])) === low(person), person);
+  check("asked for again, it is the same account, and a browser finds it by the passkey's own id", (await post("/v1/accounts", { kind: "passkey", x: passkey.x, y: passkey.y, credential: passkey.credential })).body.address === person && (await get<{ address: string }>(`/v1/accounts/by-credential/${passkey.credential}`)).address === person);
+  // an agent: a program with a brand new key, and not a wei
+  const agentKeyNew = generatePrivateKey();
+  const gasless = privateKeyToAccount(agentKeyNew);
+  const byKey = (typed: ReturnType<typeof orderTypedData>) => gasless.signTypedData(typed);
+  const madeAgent = await post("/v1/accounts", { kind: "wallet", address: gasless.address });
+  const worker = madeAgent.body.address as string;
+  await settledOrder(madeAgent.body.relay as string);
+  const registered = await order(worker, [deskCall(desk, "register")], byKey);
+  check("an agent whose key holds no ETH registers on the desk", registered.order?.status === "done" && (await read<{ registered: boolean }>(desk, DESK, "agent", [worker])).registered && (await balance(gasless.address)) === 0n);
+
+  // the person's ETH arrives from wherever they have it
+  await rpc("eth_sendTransaction", [{ from: TRADER, to: person, value: `0x${parseEther("0.05").toString(16)}` }]);
+  await waitFor("the ETH to arrive", async () => (await balance(person)) === parseEther("0.05"));
+  const due8 = (await blockTime()) + 2 * 3600;
+  const small = await post("/v1/accounts/check", { account: person, calls: wire([deskCall(desk, "lock", [worker, BigInt(due8), true], parseEther("0.0001"))]) });
+  check("a job under the smallest is refused before anything is signed, with the desk's own reason", small.status === 400 && (small.body.refused as { name: string })?.name === "TooSmall");
+  const tooMuch = await post("/v1/accounts/check", { account: person, calls: wire([deskCall(desk, "lock", [worker, BigInt(due8), true], parseEther("1"))]) });
+  check("and one the account cannot pay for", tooMuch.status === 400, String(tooMuch.body.error).slice(0, 80));
+  const jobsBefore = Number(await read<bigint>(desk, DESK, "jobCount"));
+  const hired = await order(person, [deskCall(desk, "lock", [worker, BigInt(due8), true], parseEther("0.02"))], bySig);
+  const job8 = jobsBefore + 1;
+  const locked8 = await read<{ customer: string; agent: string; price: bigint; state: number }>(desk, DESK, "job", [BigInt(job8)]);
+  check("the passkey hires the agent: the desk holds the job for the two accounts", hired.order?.status === "done" && low(locked8.customer) === low(person) && low(locked8.agent) === low(worker) && locked8.price === parseEther("0.02") && (await balance(person)) === parseEther("0.03"), `job ${job8}`);
+  // the chain this is a copy of checks a passkey's signature itself (a precompile): asked directly, it takes this very one
+  const native = await fetch(LIVE_RPC, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_call", params: [{ to: "0x0000000000000000000000000000000000000100", data: `0x${[passkey.last!.hash, passkey.last!.r, passkey.last!.s, passkey.x, passkey.y].map((w) => w.slice(2)).join("")}` }, "latest"] }) }).then((r) => r.json() as Promise<{ result?: string }>).catch(() => ({ result: undefined }));
+  check("the real chain's own passkey check accepts the signature the account just took", native.result === `0x${"0".repeat(63)}1`, native.result ?? "the node did not answer");
+
+  // And the account's own code, run by the real chain (a read with the code put at an empty address for the length
+  // of the call: nothing is deployed and nothing is sent). There the passkey is checked natively, which a local
+  // copy of the chain may not do.
+  const original = await read<string>(accountsAt, parseAbi(["function implementation() view returns (address)"]) as Abi, "implementation");
+  const probe = "0x00000000000000000000000000000000fac70a11";
+  const slot = BigInt(keccak256(encodeAbiParameters([{ type: "bytes32" }, { type: "uint256" }], [passkey.id, 0n])));
+  const word = (n: bigint): Hex => `0x${n.toString(16).padStart(64, "0")}`;
+  const overrides = { [probe]: { code: await client.getCode({ address: original as Hex }), stateDiff: { [word(slot)]: word(2n), [word(slot + 1n)]: passkey.x, [word(slot + 2n)]: passkey.y } } };
+  const said = hashMessage("the real chain checks this");
+  const realCall = async (method: string, hash: Hex, signature: Hex) => fetch(LIVE_RPC, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params: [{ to: probe, data: encodeFunctionData({ abi: factorAccountAbi, functionName: "isValidSignature", args: [hash, signature] }) }, "latest", overrides] }) }).then((r) => r.json() as Promise<{ result?: string; error?: { message: string } }>).catch((e: Error) => ({ result: undefined, error: { message: e.message } }));
+  const realSig = passkey.sign(said);
+  const [realYes, realNo, realGas] = [await realCall("eth_call", said, realSig), await realCall("eth_call", hashMessage("something else"), realSig), await realCall("eth_estimateGas", said, realSig)];
+  check("the account's own code, run by the real chain, takes the passkey's signature and refuses it for another text", realYes.result?.startsWith("0x1626ba7e") && realNo.result?.startsWith("0xffffffff"), realYes.result ? `about ${Number(BigInt(realGas.result ?? "0x0"))} gas there for the whole check` : realYes.error?.message.slice(0, 120));
+
+  const otherPasskey = softPasskey();
+  const stolen = await order(person, [{ to: TRADER, value: parseEther("0.03"), data: "0x" }], (typed) => { const sig = otherPasskey.sign(hashTypedData(typed)); return `${passkey.id}${sig.slice(66)}` as Hex; });
+  check("another passkey's signature moves nothing out of the account", stolen.status === 401 && (stolen.body.refused as { name: string })?.name === "BadSignature" && (await balance(person)) === parseEther("0.03"));
+  const elsewhere = await post("/v1/accounts/check", { account: person, calls: wire([{ to: splitter, value: 0n, data: "0x35faa416" }]) });
+  check("the gas wallet pays for the desk's calls and ETH going out, and not for calls to anything else", elsewhere.status === 400);
+
+  const drew = await order(worker, [deskCall(desk, "draw", [BigInt(job8), parseEther("0.01"), KIND.early])], byKey);
+  check("the agent draws early: the advance lands in its account, and the desk owes it nothing", drew.order?.status === "done" && (await balance(worker)) === parseEther("0.0099") && (await read<bigint>(desk, DESK, "owed", [worker])) === 0n);
+  const delivered8 = await order(worker, [deskCall(desk, "deliver", [BigInt(job8), `0x${"cd".repeat(32)}`])], byKey);
+  const accepted8 = await order(person, [deskCall(desk, "accept", [BigInt(job8)])], bySig);
+  check("it delivers, the passkey accepts, and the agent's account is paid", delivered8.order?.status === "done" && accepted8.order?.status === "done" && (await read<{ state: number }>(desk, DESK, "job", [BigInt(job8)])).state === 4 && (await balance(worker)) === parseEther("0.0099") + parseEther("0.01") - parseEther("0.0004"));
+
+  // names: an account signs through its own key, and the engine asks the account whether it did
+  const now8 = await blockTime();
+  const profile8 = { address: low(worker), name: "gasless-01", does: "Works without a wei of its own", at: now8 };
+  const sig8 = await gasless.signMessage({ message: profileMessage(profile8.address, profile8.name, profile8.does, profile8.at) });
+  const wrong8 = await agentAcct.signMessage({ message: profileMessage(profile8.address, profile8.name, profile8.does, profile8.at) });
+  check("the agent's account signs its name with its key, and nobody else's key will do", (await post("/v1/agents/profile", { ...profile8, signature: wrong8 })).status === 401 && (await post("/v1/agents/profile", { ...profile8, signature: sig8 })).status === 200);
+  const title8 = "Proofread a product page";
+  await waitFor("the engine to have the job", async () => (await get<{ job?: JobJson }>(`/v1/jobs/${job8}`)).job);
+  const titleSig = passkey.sign(hashMessage(titleMessage(job8, title8, now8)));
+  check("the passkey signs what its job is about", (await post("/v1/jobs/title", { job: job8, title: title8, at: now8, signature: titleSig })).status === 200 && (await get<{ job: JobJson }>(`/v1/jobs/${job8}`)).job.title === title8);
+
+  // out: the agent's owner takes what it earned to an address of its own
+  const earned = await balance(worker);
+  const out8 = await order(worker, [{ to: gasless.address, value: earned, data: "0x" }], byKey);
+  check("the agent's earnings leave its account for its owner's own address", out8.order?.status === "done" && (await balance(gasless.address)) === earned && (await balance(worker)) === 0n, `${eth(earned)} ETH`);
+  // a second key: the person adds a wallet, which can then act for the account with its own gas, engine or no engine
+  const added = await order(person, [{ to: person, value: 0n, data: encodeFunctionData({ abi: factorAccountAbi, functionName: "addKey", args: [{ kind: 1, a: `0x${"0".repeat(24)}${CUSTOMER.slice(2)}`, b: `0x${"0".repeat(64)}` }, "0x"] }) }], bySig);
+  await send(CUSTOMER, person, factorAccountAbi as Abi, "run", [[{ to: CUSTOMER, value: parseEther("0.01"), data: "0x" }]]);
+  check("a wallet added as a second key moves the account's ETH by itself, with no help from the engine", added.order?.status === "done" && (await balance(person)) === parseEther("0.02") && (await get<{ keys: unknown[] }>(`/v1/accounts/${person}`)).keys.length === 2);
+  const h8b = await health() as Health & { accounts: { orders: number; failed: number; gasTodayWei: string } };
+  const sentFor = (await client.getTransactionCount({ address: BOT })) - botTxs;
+  check("every one of those transactions was the gas wallet's, and it knows what they cost", sentFor === h8b.accounts.orders && h8b.accounts.orders === 9 && h8b.accounts.failed === 0 && BigInt(h8b.accounts.gasTodayWei) > 0n, `${sentFor} transactions, ${eth(BigInt(h8b.accounts.gasTodayWei))} ETH of gas in all`);
 
   // tidy up
   records.forEach((f, i) => { if (!hadRecords[i]) rmSync(f, { recursive: true, force: true }); });

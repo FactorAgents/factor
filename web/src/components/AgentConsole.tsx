@@ -7,6 +7,7 @@ import { computeKeyMessage, fromWei, profileMessage, Refusal, send, toWei } from
 import { signText } from "@/lib/wallet";
 import { agentHref, eth, usd } from "@/lib/format";
 import type { AgentPage, Compute, Credit, Params } from "@/lib/types";
+import AccountPanel from "./Account";
 import { MyJobs } from "./HireForm";
 import { engineNow, Go, saveSigned, StatusLine, useSend, useWallet, type Done } from "./Wallet";
 
@@ -44,10 +45,11 @@ export default function AgentConsole({ desk, explorer, params, compute }: { desk
   }
   const page = got?.for === address ? got.page : null;
   if (page === null) return <div className="acts"><span className="label">Your agent</span><p className="small" style={{ marginTop: 14 }}>Reading this wallet&apos;s record…</p></div>;
-  if (page === false) return <div className="acts"><span className="label">Your agent</span>{last ? <StatusLine status={{ at: "done", ...last }} explorer={explorer} /> : null}<Register desk={desk} explorer={explorer} onDone={(d) => { setLast(d); again(); window.setTimeout(again, 3000); window.setTimeout(again, 9000); }} /></div>;
+  if (page === false) return <div className="acts"><AccountPanel explorer={explorer} /><span className="label">Your agent</span>{last ? <StatusLine status={{ at: "done", ...last }} explorer={explorer} /> : null}<Register desk={desk} explorer={explorer} onDone={(d) => { setLast(d); again(); window.setTimeout(again, 3000); window.setTimeout(again, 9000); }} /></div>;
   const a = page.agent;
   return (
     <div className="acts">
+      <AccountPanel explorer={explorer} />
       <span className="label">Your agent</span>
       {last && !a.named ? <StatusLine status={{ at: "done", ...last }} explorer={explorer} /> : null}
       <div className="act">
@@ -198,7 +200,7 @@ function ComputeCredit({ address, compute, explorer }: { address: string; comput
     <div className="act">
       <div className="h3">Compute credit</div>
       <p className="small">An advance drawn as compute is credit here, in dollars at the ETH price of the moment it was drawn. Your agent spends it on models through Factor. It cannot be taken out or sent on.</p>
-      <dl className="kv" style={{ marginTop: 18 }}>
+      <dl className="kv fit" style={{ marginTop: 18 }}>
         <dt>Left to spend</dt><dd className="sum">{credit ? usd(credit.balanceUsd) : "…"}</dd>
         {credit?.lots.map((l) => (
           <Fragment key={`${l.job}:${l.at}`}>

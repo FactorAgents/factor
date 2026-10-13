@@ -21,6 +21,7 @@ import { normalizeAddress, shortAddress } from "./chain/address.js";
 import { hostsOnly, type RpcHealth } from "./chain/chain.js";
 import type { EngineConfig } from "./chain/config.js";
 import { snapshotOf, type Ctx, type Snapshot } from "./chain/context.js";
+import type { Accounts } from "./accounts.js";
 import type { Gateway } from "./compute.js";
 import { DeskStore, KIND_NAME, RULES, STATE, STATE_NAME, type AdvanceRow, type AgentRow, type JobRow, type LedgerRow } from "./desk.js";
 import { Profiles, type Profile, type Written } from "./profiles.js";
@@ -48,6 +49,7 @@ export interface EngineView {
   dataDirSet: boolean;
   profiles: Profiles | null;
   gateway: Gateway | null;
+  accounts: Accounts | null;
 }
 
 // ---- the site's shape: web/src/lib/types.ts. Keep the two in step by hand. ----
@@ -118,6 +120,8 @@ export interface FactorState {
   contracts: { desk: string | null; splitter: string | null; burnPot: string | null; token: string | null; explorer: string };
   /** compute credit: whether an advance drawn "as compute" can be spent on models yet, and what they cost here */
   compute: { enabled: boolean; markupPct: number; maxTokens: number; models: { id: string; inUsd: number; outUsd: number }[] };
+  /** accounts for people without a wallet: whether one can be made and used right now, and what makes them */
+  accounts: { enabled: boolean; factory: string | null; ordersPerDay: number };
 }
 
 const ok = (body: Record<string, unknown>): Answer => ({ status: 200, body });
@@ -239,6 +243,8 @@ export class EngineApi {
   // The answer for a path, or null when the path is not one of the engine's. `query` is what followed the ? in the
   // address; a value in it that makes no sense is ignored, never an error.
   async handle(path: string, query: URLSearchParams = new URLSearchParams()): Promise<Answer | null> {
+    // accounts are asked about as they change (an order on its way): never answered from the cache
+    if (path.startsWith("/v1/accounts/")) return this.accountsGet(path);
     const route = this.route(path, query);
     if (!route) return null;
     const v = this.view();
@@ -271,8 +277,47 @@ export class EngineApi {
     return null;
   }
 
+  // What an account holds, the account of a passkey, how an order went.
+  private async accountsGet(path: string): Promise<Answer | null> {
+    const v = this.view();
+    const a = v.accounts;
+    if (!a || v.state !== "running") return { status: 503, body: { error: "the engine is not reading the chain yet" } };
+    let m = /^\/v1\/accounts\/relay\/(0x[0-9a-f]{64})$/.exec(path);
+    if (m) { const r = a.status(m[1]!); return r ? ok(r) : notFound("no such order"); }
+    m = /^\/v1\/accounts\/by-credential\/(0x[0-9a-f]{2,2046})$/.exec(path);
+    if (m) { const r = a.byCredential(m[1]!); return r ? ok(r) : notFound("no account is known for that passkey"); }
+    m = /^\/v1\/accounts\/(0x[0-9a-fA-F]{40})$/.exec(path);
+    if (m) { const r = await a.account(m[1]!.toLowerCase()); return r ? ok(r) : notFound("that is not an account made here"); }
+    return null;
+  }
+
+  // One caller's requests of one kind in a minute: true when it is one too many.
+  private tooMany(from: string, kind: string, most: number): boolean {
+    const now = Date.now();
+    const key = `${kind}:${from}`;
+    const seen = this.posts.get(key);
+    if (this.posts.size > 20_000) this.posts.clear();
+    if (!seen || now - seen.from > 60_000) { this.posts.set(key, { n: 1, from: now }); return false; }
+    return ++seen.n > most;
+  }
+
+  private async accountsPost(path: string, body: unknown, from: string): Promise<Answer | null> {
+    const what = path.slice("/v1/accounts".length);
+    if (what !== "" && what !== "/check" && what !== "/call" && what !== "/relay") return null;
+    const v = this.view();
+    const a = v.accounts;
+    if (!a || v.state !== "running") return { status: 503, body: { error: "the engine is not reading the chain yet" } };
+    if (!body || typeof body !== "object" || Array.isArray(body)) return { status: 400, body: { error: "the body is not a JSON object" } };
+    if (this.tooMany(from, what, what === "/call" || what === "/check" ? 240 : 30)) return { status: 429, body: { error: "too many requests: try again in a minute" } };
+    const b = body as Record<string, unknown>;
+    const r = what === "" ? await a.create(b, from) : what === "/check" ? await a.check(b) : what === "/call" ? await a.call(b) : await a.relay(b, from);
+    if ("status" in r && "error" in r) return { status: r.status, body: { error: r.error, ...(r.refused ? { refused: r.refused } : {}) } };
+    return ok(r as Record<string, unknown>);
+  }
+
   // A signed write. `from` is the caller's address on the network, for the limit on how many one may send.
   async post(path: string, body: unknown, from: string, adminKey?: string): Promise<Answer | null> {
+    if (path === "/v1/accounts" || path.startsWith("/v1/accounts/")) return this.accountsPost(path, body, from);
     if (path !== "/v1/agents/profile" && path !== "/v1/jobs/title" && path !== "/v1/admin/hide") return null;
     const v = this.view();
     if (!v.profiles || v.state !== "running") return { status: 503, body: { error: "the engine is not reading the chain yet" } };
@@ -387,7 +432,8 @@ export class EngineApi {
     // token's own page on Pons. So the site's buy button works from the launch on whether or not anybody remembered.
     const links = { ...v.links, pons: v.links.pons ?? (contracts.token ? `https://ponsfamily.com/launchpad/${getAddress(contracts.token)}` : null) };
     const compute = v.gateway?.about() ?? { enabled: false, markupPct: 0, maxTokens: 0, models: [] };
-    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute };
+    const accounts = v.accounts?.about() ?? { enabled: false, factory: null, ordersPerDay: 0 };
+    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts };
     if (!r) {
       return { ...base, launched: false, stats: { advancedEth: 0, settledJobs: 0, jobs: 0, poolEth: 0, reserveEth: 0, outEth: 0, heldEth: 0, burnedTokens: 0, supplyLeft: SUPPLY, agents: 0, lostEth: 0 }, agents: [], jobs: [], events: [], burns: [] };
     }
@@ -476,6 +522,7 @@ export class EngineApi {
       burnPot: snap?.burnPot ?? null,
       desk: snap ? { ...snap.desk, agents: store.agentCount(), jobsKnown: store.jobCount(), waitingToBeRead: ctx.db.count("desk_jobs") ? (ctx.db.q("SELECT (SELECT COUNT(*) FROM desk_jobs WHERE dirty = 1) + (SELECT COUNT(*) FROM desk_agents WHERE dirty = 1) AS n").get() as { n: number }).n : 0, dueToSettle: store.dueToSettle(t, 500).length, dueToRefund: store.dueToRefund(t, 500).length } : null,
       ethUsd8: snap?.ethUsd8 ?? null,
+      accounts: v.accounts ? { ...v.accounts.about(), note: c.accounts.note, ...v.accounts.store.totals(), gasDayWei: c.accounts.gasDayWei.toString() } : null,
       compute: v.gateway ? { ...v.gateway.about(), note: c.compute.note, ...v.gateway.store.totals(), todayMicro: v.gateway.store.spentToday(), dailyMicro: c.compute.dailyMicro } : null,
       rpc: v.rpc ? { ...v.rpc, lastError: v.rpc.lastError ? hostsOnly(v.rpc.lastError) : null } : null,
       events: ctx.db.count("chain_events"),

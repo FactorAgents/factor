@@ -14,7 +14,8 @@ export interface Provider {
   providers?: Provider[];
 }
 
-export interface Receipt { status: string; transactionHash: string; logs: { address: string; topics: string[]; data: string }[] }
+/** `reason`: why it was not carried out, in words, when whoever sent it knows (an account's order the engine could not send). */
+export interface Receipt { status: string; transactionHash: string; logs: { address: string; topics: string[]; data: string }[]; reason?: string }
 
 /** The wallet in this browser, or null. With several installed, MetaMask's if it is one of them. */
 export function provider(): Provider | null {

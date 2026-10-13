@@ -42,6 +42,9 @@ export function oneLine(raw: unknown, min: number, max: number): string | null {
   return text;
 }
 
+/** Asks an account whether one of its keys signed a text. Given by the engine; without it only wallets sign. */
+export type AccountSigned = (address: string, message: string, signature: unknown) => Promise<boolean>;
+
 async function signerOf(message: string, signature: unknown): Promise<string | null> {
   if (typeof signature !== "string" || !/^0x[0-9a-fA-F]{130}$/.test(signature)) return null;
   try {
@@ -55,6 +58,7 @@ export class Profiles {
   constructor(
     private db: EngineDb,
     private now: () => number, // ms
+    private accountSigned: AccountSigned | null = null,
   ) {}
 
   private fresh(at: unknown): number | null {
@@ -74,7 +78,7 @@ export class Profiles {
     if (!does || does !== body.does) return no(400, "what it does is one plain line of 3 to 80 characters, without links, line breaks or double spaces");
     const at = this.fresh(body.at);
     if (at === null) return no(400, "the signature's time is more than ten minutes from now: sign again");
-    if ((await signerOf(profileMessage(address, name, does, at), body.signature)) !== address) return no(401, "the signature is not this agent's wallet's");
+    if (!(await this.signedBy(address, profileMessage(address, name, does, at), body.signature))) return no(401, "the signature is not this agent's wallet's");
     if (!this.db.q("SELECT 1 FROM desk_agents WHERE address = ?").get(address)) return no(404, "this wallet has not registered as an agent on the desk");
     const had = this.db.q("SELECT signed_at FROM agent_profiles WHERE address = ?").get(address) as { signed_at: number } | undefined;
     if (had && at <= had.signed_at) return no(409, "a newer profile is already stored");
@@ -94,11 +98,17 @@ export class Profiles {
     if (at === null) return no(400, "the signature's time is more than ten minutes from now: sign again");
     const job = this.db.q("SELECT customer FROM desk_jobs WHERE id = ?").get(jobId) as { customer: string } | undefined;
     if (!job) return no(404, "the desk has no such job yet (a new job shows up a few seconds after it is locked)");
-    if ((await signerOf(titleMessage(jobId, title, at), body.signature)) !== job.customer) return no(401, "the signature is not the wallet that locked this job");
+    if (!(await this.signedBy(job.customer, titleMessage(jobId, title, at), body.signature))) return no(401, "the signature is not the wallet that locked this job");
     const had = this.db.q("SELECT signed_at FROM job_titles WHERE job_id = ?").get(jobId) as { signed_at: number } | undefined;
     if (had && at <= had.signed_at) return no(409, "a newer title is already stored");
     this.db.q("INSERT INTO job_titles (job_id, title, by, signed_at) VALUES (?, ?, ?, ?) ON CONFLICT(job_id) DO UPDATE SET title = excluded.title, by = excluded.by, signed_at = excluded.signed_at").run(jobId, title, job.customer, at);
     return { ok: true };
+  }
+
+  /** Whether `address` signed the text: a wallet by its signature, an account by the answer of one of its keys. */
+  private async signedBy(address: string, message: string, signature: unknown): Promise<boolean> {
+    if ((await signerOf(message, signature)) === address) return true;
+    return this.accountSigned ? this.accountSigned(address, message, signature) : false;
   }
 
   /** The owner hides (or shows again) a name or a title. Nothing is deleted. */

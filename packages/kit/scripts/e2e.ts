@@ -20,7 +20,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { createPublicClient, http, parseAbi, parseEther } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
+import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { Factor, proofOf, Refusal, type Job } from "../src/index.js";
 
 const KIT = join(fileURLToPath(new URL(".", import.meta.url)), "..");
@@ -153,6 +153,32 @@ async function main(): Promise<void> {
   for (let i = 0; i < 40 && keptCredit.lots[0].state !== "kept"; i++) { await new Promise((r) => setTimeout(r, 700)); keptCredit = await agent.computeCredit(); }
   check("the job settled and repaid the pool: what is left of the credit is the agent's", keptCredit.lots[0].state === "kept" && keptCredit.balanceUsd === after2.balanceUsd && (await desk<{ advancedNow: bigint }>("agent", [agent.address])).advancedNow === 0n);
 
+  step("2c gasless: an agent whose key has never held a wei");
+  const freshKey = generatePrivateKey();
+  const fresh = privateKeyToAccount(freshKey).address;
+  const g = await Factor.connect({ ...where, privateKey: freshKey, gasless: true });
+  const madeCode = await chain.getCode({ address: g.address as `0x${string}` });
+  check("it connects through a Factor account of its own, made for its key", g.gasless && g.signer === fresh.toLowerCase() && g.address !== g.signer && !!madeCode && madeCode !== "0x", g.address ?? "");
+  await g.register();
+  await g.profile({ name: "gasless-01", does: "Works without a wei of its own" });
+  check("it registers and names itself, and the desk and the site know it by its account", (await desk<{ registered: boolean }>("agent", [g.address])).registered && (await reader.agent("gasless-01"))?.agent.address === g.address);
+  check("with nothing in the account, hiring is refused in words before anything is signed", (await refused(g.hire({ agent: "lumen-07", price: "0.01" }))).startsWith("The account holds 0 ETH: not enough for the 0.01 ETH this needs."));
+  const fifth = await customer.hire({ agent: g.address!, price: "0.01", title: "Proofread a product page", allowEarly: true });
+  await g.draw(fifth.jobId, "0.005", "early");
+  check("it draws early, and the advance lands in its account", (await balance(g.address!)) === parseEther("0.00495"));
+  check("a draw past the job's half is refused with the desk's own words, through the account too", (await refused(g.draw(fifth.jobId, "0.001", "early"))) === "Half of this job is already advanced. Nothing more can be drawn on it.");
+  await g.deliver(fifth.jobId, "The page, proofread.");
+  await customer.accept(fifth.jobId);
+  const info = await g.accountInfo();
+  check("it is paid into its account, and the kit says what is there", info.balanceWei === parseEther("0.00495") + parseEther("0.005") - parseEther("0.0002") && info.ordersToday === 3 && info.keys.length === 1 && info.keys[0].kind === "wallet", `${info.balanceEth} ETH, ${info.ordersToday} of ${info.ordersPerDay} paid actions today`);
+  check("more than it holds cannot be taken out", (await refused(g.withdraw(fresh, "1"))).startsWith("The account holds 0.00975 ETH"));
+  const homeOf = privateKeyToAccount(generatePrivateKey()).address;
+  await g.withdraw(homeOf, "0.009");
+  check("its owner takes the earnings out to an address of their own", (await balance(homeOf)) === parseEther("0.009") && (await balance(g.address!)) === parseEther("0.00075"));
+  const gKey = await g.compute();
+  check("it signs for a compute key with the same key, as the account", /^fck_/.test(gKey.apiKey) && gKey.balanceUsd === 0);
+  check("and through all of it the key itself never held a wei", (await balance(fresh)) === 0n && (await chain.getTransactionCount({ address: fresh })) === 0);
+
   step("3  the assistant's tools, through a real client");
   const dir = mkdtempSync(join(tmpdir(), "factor-kit-e2e-"));
   const serve = async (env: Record<string, string>) => {
@@ -166,8 +192,14 @@ async function main(): Promise<void> {
   const said: string[] = [];
   const ask = async (name: string, args: Record<string, unknown> = {}) => { const r = await assistant.call(name, args); said.push(r.text); return r; };
   const tools = (await assistant.client.listTools()).tools;
-  check("the assistant is offered eighteen tools, each described", tools.length === 18 && tools.every((t) => (t.description ?? "").length > 40), tools.map((t) => t.name).slice(0, 4).join(", ") + ", …");
+  check("the assistant is offered nineteen tools, each described", tools.length === 19 && tools.every((t) => (t.description ?? "").length > 40), tools.map((t) => t.name).slice(0, 4).join(", ") + ", …");
   const overview = await ask("factor_overview");
+  const noAccount = await ask("factor_account");
+  check("it says it has no Factor account when it acts as a wallet", !noAccount.isError && noAccount.text.includes("pays its own gas"));
+  const viaAccount = await serve({ FACTOR_PRIVATE_KEY: freshKey, FACTOR_GASLESS: "1" });
+  const itsAccount = await viaAccount.call("factor_account");
+  check("with FACTOR_GASLESS it acts through the key's Factor account, and says what is in it", !itsAccount.isError && itsAccount.text.startsWith(`Factor account ${g.address} holds 0.00075 ETH.`), itsAccount.text.slice(0, 90));
+  await viaAccount.client.close();
   const creditSaid = await ask("factor_compute_credit", { agent: "lumen-07" });
   check("it can say what compute credit an agent has left, and what the models cost", !creditSaid.isError && /^\$\d+\.\d+ of compute credit left\. From job 4: /.test(creditSaid.text) && creditSaid.text.includes("claude-sonnet-5-5 $2.10 in / $10.50 out"), creditSaid.text.slice(0, 70));
   check("it can read Factor, and is told which wallet it acts as", !overview.isError && overview.text.includes("a rejected job settles at half") && overview.text.includes(`acts as the wallet ${me}`));

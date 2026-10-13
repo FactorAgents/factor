@@ -11,7 +11,7 @@ abstract contract DeskBase is FactorTest {
     address internal agentA = makeAddr("agent a");
     address internal agentB = makeAddr("agent b");
 
-    function setUp() public override {
+    function setUp() public virtual override {
         super.setUp();
         vm.prank(agentA);
         desk.register();

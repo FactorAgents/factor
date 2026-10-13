@@ -36,7 +36,7 @@ chain_or_die() {
 load_deployment() {
   [ -f "$OUT" ] || die "no deployment found in $OUT. Run contracts/deploy.sh first."
   local name
-  for name in FACTOR_ADMIN FACTOR_GATEWAY FACTOR_BURN_POT FACTOR_DESK FACTOR_SPLITTER; do
+  for name in FACTOR_ADMIN FACTOR_GATEWAY FACTOR_BURN_POT FACTOR_DESK FACTOR_SPLITTER FACTOR_ACCOUNTS; do
     local v=$(val $name)
     is_address "$v" || die "$OUT has no $name"
     export $name=$v

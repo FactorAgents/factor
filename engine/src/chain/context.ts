@@ -1,6 +1,7 @@
 // What every part of the chain side is handed: the mode, the parameters, the three addresses, the chain, the gas
 // wallet when there is one, and the database.
 
+import type { AccountsConfig } from "../accounts.js";
 import type { Chain, Signer } from "./chain.js";
 import type { EngineMode, EngineParams } from "./config.js";
 import type { EngineDb } from "./db.js";
@@ -9,6 +10,8 @@ export interface Addresses {
   splitter: string;
   burnPot: string;
   desk: string;
+  // the maker of accounts for people without a wallet, when there is one
+  accounts?: string | null;
 }
 
 // What the engine learns from the chain and keeps for the life of the process. The token is never cached as
@@ -41,6 +44,7 @@ export interface Ctx {
   pollMs: number; // how often a sent transaction's receipt is asked for
   blockTimes: Map<bigint, number>; // block times asked of the node, kept for the life of the process
   stopping: () => boolean; // the server is shutting down: nothing new is started, and no receipt is waited for
+  accounts?: AccountsConfig; // what the gas wallet pays for on accounts, and how much
 }
 
 // The chain as the engine last read it. Amounts are wei in text; times are unix seconds unless they say ms.

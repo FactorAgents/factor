@@ -3,6 +3,7 @@
 // read Factor and, when its owner has set a wallet's key, hire agents and work as one.
 //
 //   FACTOR_PRIVATE_KEY   the key of the wallet to act as. Not set: the tools only read.
+//   FACTOR_GASLESS       1: act through a Factor account, so the key needs no ETH for gas (Factor pays it)
 //   FACTOR_MAX_JOB_ETH   the most one job may cost (0.05 when not set)
 //   FACTOR_MAX_DAY_ETH   the most that may leave the wallet in a day (0.2 when not set)
 //   FACTOR_API           Factor's site, when it is not the usual one
@@ -23,7 +24,7 @@ async function main(): Promise<void> {
   const limits = limitsFrom(env);
   let factor: Factor | null = null;
   // connected at the first call, so that a site that is slow to answer does not keep the assistant from starting
-  const connect = async (): Promise<Factor> => (factor ??= await Factor.connect({ privateKey: env.FACTOR_PRIVATE_KEY?.trim() || undefined, api: env.FACTOR_API?.trim() || undefined, rpcUrl: env.FACTOR_RPC_URL?.trim() || undefined, desk: env.FACTOR_DESK?.trim() || undefined }));
+  const connect = async (): Promise<Factor> => (factor ??= await Factor.connect({ privateKey: env.FACTOR_PRIVATE_KEY?.trim() || undefined, gasless: !!env.FACTOR_PRIVATE_KEY?.trim() && /^(1|true|on|yes)$/i.test(env.FACTOR_GASLESS?.trim() ?? ""), api: env.FACTOR_API?.trim() || undefined, rpcUrl: env.FACTOR_RPC_URL?.trim() || undefined, desk: env.FACTOR_DESK?.trim() || undefined }));
 
   const server = new McpServer({ name: "factor", version: "0.1.0" });
   const answer = async (name: string, args: Record<string, unknown>) => {

@@ -13,6 +13,7 @@ import {
   BaseError,
   ContractFunctionRevertedError,
   createPublicClient,
+  decodeErrorResult,
   defineChain,
   encodeFunctionData,
   fallback,
@@ -50,7 +51,16 @@ export interface Receipt {
   ok: boolean;
   blockNumber: bigint;
   gasUsed: bigint;
+  gasPrice?: bigint; // what a unit of gas really cost in it, when the node says
   logs: ChainLog[];
+}
+
+// A call by its raw data, as some address would make it.
+export interface RawCall {
+  from: string;
+  to: string;
+  data: Hex;
+  value?: bigint;
 }
 
 export interface LogFilter {
@@ -83,6 +93,9 @@ export interface Chain {
   read<T = unknown>(call: CallSpec): Promise<T>;
   // Run a call as `from` without sending it. Throws when it would revert (see revertOf).
   simulate<T = unknown>(call: CallSpec, from: string): Promise<T>;
+  // The same for a call that is only known as data (an order an account's owner signed): what it would return.
+  // `errors` names the reverts worth knowing by name. Throws Reverted when it would revert.
+  call(raw: RawCall, errors?: Abi): Promise<Hex>;
   // The gas a call would use; with no call, the gas of an empty transfer from the wallet to itself, or of `pay`.
   estimateGas(call: CallSpec | null, from: string, pay?: Pay): Promise<bigint>;
   fees(): Promise<Fees>;
@@ -347,6 +360,30 @@ export function viemChain(urls: string[], chainId: number, now: () => number = D
       const r = await plain.simulateContract({ ...(contract(c) as object), account: from as Hex } as never);
       return (r as { result: T }).result;
     },
+    async call(raw, errors) {
+      try {
+        const r = await plain.call({ account: raw.from as Hex, to: raw.to as Hex, data: raw.data, value: raw.value ?? 0n });
+        return r.data ?? "0x";
+      } catch (e) {
+        // the revert's own data, wherever in the chain of causes the node's answer put it
+        let data: unknown;
+        if (e instanceof BaseError) {
+          const deepest = e.walk() as { data?: unknown };
+          data = typeof deepest?.data === "object" && deepest.data !== null ? (deepest.data as { data?: unknown }).data : deepest?.data;
+        }
+        if (typeof data === "string" && /^0x[0-9a-fA-F]{8,}$/.test(data)) {
+          try {
+            const d = decodeErrorResult({ abi: errors ?? [], data: data as Hex });
+            throw new Reverted(d.errorName, (d.args as readonly unknown[] | undefined) ?? []);
+          } catch (x) {
+            if (x instanceof Reverted) throw x;
+            throw new Reverted("reverted");
+          }
+        }
+        if (e instanceof BaseError && /execution reverted/i.test(`${e.shortMessage} ${e.message}`)) throw new Reverted("reverted");
+        throw e;
+      }
+    },
     estimateGas: (c, from, pay) =>
       c ? plain.estimateContractGas({ ...(contract(c) as object), account: from as Hex } as never) : plain.estimateGas({ account: from as Hex, to: (pay?.to ?? from) as Hex, value: pay?.value ?? 0n }),
     async fees() {
@@ -367,6 +404,7 @@ export function viemChain(urls: string[], chainId: number, now: () => number = D
           ok: r.status === "success",
           blockNumber: r.blockNumber,
           gasUsed: r.gasUsed,
+          gasPrice: r.effectiveGasPrice,
           logs: r.logs.map((l) => ({
             address: l.address.toLowerCase(),
             topics: l.topics as Hex[],

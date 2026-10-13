@@ -6,7 +6,8 @@ import {IPonsV2LaunchFactory} from "../src/interfaces/IPons.sol";
 import {Config} from "./Config.sol";
 
 /// Deploys the three contracts of Factor, in the order the launch runbook needs: every address the token's fees
-/// will ever go to exists, and is checked, before there is a token.
+/// will ever go to exists, and is checked, before there is a token. A fourth follows them and is wired to none of
+/// them: FactorAccounts, which makes accounts for people without a wallet.
 ///
 ///   1. FactorBurnPot   given the splitter's address ahead of time (worked out from the deployer's nonce)
 ///   2. FactorDesk      jobs, advances, the pool and bonds; its advance fees go to the burn pot
@@ -40,16 +41,18 @@ contract Deploy is Script, Config {
         console.log("FACTOR_BURN_POT=%s", address(h.burnPot));
         console.log("FACTOR_DESK=%s", address(h.desk));
         console.log("FACTOR_SPLITTER=%s", address(h.splitter));
+        console.log("FACTOR_ACCOUNTS=%s", address(h.accounts));
     }
 
     /// Reads a deployment back from the chain and checks every wire. No broadcast, no key.
-    ///   FACTOR_ADMIN=… FACTOR_BURN_POT=… FACTOR_DESK=… FACTOR_SPLITTER=… \
+    ///   FACTOR_ADMIN=… FACTOR_BURN_POT=… FACTOR_DESK=… FACTOR_SPLITTER=… FACTOR_ACCOUNTS=… \
     ///     forge script script/Deploy.s.sol --sig "check()" --rpc-url https://rpc.mainnet.chain.robinhood.com
     function check() external view {
         _requireChain();
         Factor memory h = _deployed();
         _verifyFactor(h, _admin(), h.desk.gateway(), _factory());
         console.log("OK: the three contracts are wired to each other, to the admin and to Pons.");
+        console.log("    accounts   %s (accounts for people without a wallet)", address(h.accounts));
         console.log("    desk       %s (jobs, advances, the pool and bonds)", address(h.desk));
         console.log("    gateway    %s (compute advances are paid here)", h.desk.gateway());
         console.log("    burn pot   %s", address(h.burnPot));

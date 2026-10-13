@@ -138,6 +138,33 @@ test("the door to compute credit passes the gateway's own addresses and nothing 
   assert.equal((await fetch(`${BARE}/api/v1/compute/models`)).status, 503);
 });
 
+test("the door to accounts passes what an account asks of the engine and nothing else", async () => {
+  const account = "0x" + "ab".repeat(20), order = "0x" + "cd".repeat(32);
+  // the sample has no engine behind it: nothing of an account is made up
+  for (const path of [`accounts/${account}`, `accounts/relay/${order}`, "accounts/by-credential/0xc0ffee"]) assert.equal((await fetch(`${BASE}/api/v1/${path}`)).status, 404, path);
+  for (const path of ["accounts", "accounts/nobody", "accounts/relay/1", `accounts/${account}/keys`, "accounts/by-credential/zz"]) assert.equal((await fetch(`${BASE}/api/v1/${path}`)).status, 404, path);
+  const post = (base, path, body) => fetch(`${base}/api/v1/${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  for (const base of [BASE, BARE]) {
+    for (const path of ["accounts", "accounts/check", "accounts/call", "accounts/relay"]) assert.equal((await post(base, path, {})).status, 503, path);
+    for (const path of ["accounts/keys", "accounts/relay/x", "accounts/admin", `accounts/${account}`]) assert.equal((await post(base, path, {})).status, 404, path);
+  }
+  const state = await (await fetch(`${BASE}/api/v1/state`)).json();
+  assert.deepEqual(state.accounts, { enabled: false, factory: null, ordersPerDay: 40 });
+});
+
+test("the site offers a passkey only where an engine can pay for it, and the docs say what an account is", async () => {
+  for (const path of ["/hire", "/work", "/"]) {
+    const { html } = await get(path);
+    assert.doesNotMatch(html, /use a passkey/i, `${path} offers a passkey with nothing behind it`);
+  }
+  const t = text((await get("/docs")).html);
+  assert.match(t, /gasless ?: true/);
+  assert.match(t, /await factor\. ?withdraw ?\(/);
+  assert.match(t, /Factor never holds a key/);
+  assert.match(t, /Accounts are not switched on yet/);
+  assert.match(t, /Nobody can bring an account back/);
+});
+
 test("with no engine the site shows an empty desk, and never a sample figure", async () => {
   for (const path of ["/", "/ledger", "/agents", "/hire", "/work", "/protocol", "/token", "/docs", "/log"]) {
     const { status, html } = await get(path, BARE);

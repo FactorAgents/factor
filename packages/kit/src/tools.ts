@@ -216,6 +216,15 @@ export const TOOLS: Tool[] = [
     },
   },
   {
+    name: "factor_account", readOnly: true, input: {},
+    description: "The Factor account this assistant acts through, when it has one (FACTOR_GASLESS=1): its address, the ETH in it, and how many of its actions Factor has paid the gas of today. ETH for a job has to be sent to this address first.",
+    async run(f) {
+      if (!f.gasless) return f.address ? `This assistant acts as the wallet ${f.address} and pays its own gas. It has no Factor account.` : "No wallet key is set.";
+      const a = await f.accountInfo();
+      return `Factor account ${a.address} holds ${a.balanceEth} ETH. Factor has paid the gas of ${a.ordersToday} of its actions today, of ${a.ordersPerDay} a day. Its key is ${a.signer}, which needs no ETH. To put ETH in, send it to ${a.address} on Robinhood Chain.`;
+    },
+  },
+  {
     name: "factor_compute_credit", readOnly: true, input: { agent: z.string().optional().describe("The agent's name or address. Left out: this wallet's own") },
     description: "What an agent has left of its compute credit, in dollars: advances drawn as compute, which are spent on model calls through Factor and cannot be withdrawn. Also says which models it buys and what they cost.",
     async run(f, a) {
@@ -257,7 +266,7 @@ function need(f: Factor): string {
   if (!f.address) throw new Refusal("No wallet key is set (FACTOR_PRIVATE_KEY), so this can only read: figures, agents, jobs and the ledger.", "read_only");
   return f.address;
 }
-const this_wallet = (f: Factor): string => (f.address ? `This assistant acts as the wallet ${f.address}.` : "No wallet key is set, so this assistant can read Factor and cannot hire, draw or deliver.");
+const this_wallet = (f: Factor): string => (f.gasless ? `This assistant acts as the Factor account ${f.address}: its key signs, Factor pays the gas, and ETH for a job has to be in the account.` : f.address ? `This assistant acts as the wallet ${f.address}.` : "No wallet key is set, so this assistant can read Factor and cannot hire, draw or deliver.");
 
 /** Run one tool by its name. A refusal comes back as words, marked as an error, and never throws. */
 export async function runTool(factor: Factor, name: string, args: Record<string, unknown>, spending: Spending | null): Promise<{ text: string; isError: boolean }> {

@@ -272,6 +272,8 @@ export class Gateway {
     private db: EngineDb,
     private modelKey: string | null, // the owner's key with the model maker: sent upstream, never anywhere else
     private log: (line: string) => void,
+    // asks an account whether one of its keys signed a text (see ./accounts.ts); without it only wallets sign
+    private accountSigned: ((address: string, message: string, signature: unknown) => Promise<boolean>) | null = null,
   ) {}
 
   /** What anybody may know: whether it is on, the models and what they cost here. */
@@ -329,7 +331,7 @@ export class Gateway {
     } catch {
       signer = null;
     }
-    if (signer !== address) return fail(401, "authentication_error", "The signature is not this agent's wallet's.");
+    if (signer !== address && !(this.accountSigned && (await this.accountSigned(address, keyMessage(address, at), body.signature)))) return fail(401, "authentication_error", "The signature is not this agent's wallet's.");
     if (!this.db.q("SELECT 1 FROM desk_agents WHERE address = ?").get(address)) return fail(404, "not_found_error", "This wallet has not registered as an agent on the desk.");
     const k = this.store.addKey(address, this.cfg.keyTtlS);
     return { key: k.key, expiresAt: new Date(k.expiresAt * 1000).toISOString(), agent: address };

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { deskOf, getState } from "@/lib/data";
 import { PageHead } from "@/components/Bits";
+import AccountPanel from "@/components/Account";
 import HireForm, { MyJobs } from "@/components/HireForm";
 import { Reveal } from "@/components/Motion";
 
@@ -20,6 +21,7 @@ export default async function Hire({ searchParams }: { searchParams: Promise<{ a
           <Reveal>
             <div className="h3">Lock a payment</div>
             <p className="small" style={{ margin: "8px 0 30px" }}>Nothing leaves your wallet until you confirm it there.</p>
+            <AccountPanel explorer={s.contracts.explorer} />
             <HireForm agents={agents} picked={picked?.address ?? ""} desk={deskOf(s)} explorer={s.contracts.explorer} params={s.params} />
           </Reveal>
           <Reveal delay={140} className="side">

@@ -116,6 +116,8 @@ export interface FactorState {
   burns: Burn[];
   contracts: { desk: string | null; splitter: string | null; burnPot: string | null; token: string | null; explorer: string };
   compute: Compute;
+  /** accounts for people without a wallet: whether one can be made and used right now */
+  accounts: { enabled: boolean; factory: string | null; ordersPerDay: number };
 }
 
 /** One agent with what the page about it shows. */

@@ -2,6 +2,7 @@
 pragma solidity 0.8.28;
 
 import {CommonBase} from "forge-std/Base.sol";
+import {FactorAccounts} from "../src/FactorAccount.sol";
 import {FactorBurnPot} from "../src/FactorBurnPot.sol";
 import {FactorDesk} from "../src/FactorDesk.sol";
 import {FactorSplitter} from "../src/FactorSplitter.sol";
@@ -13,7 +14,7 @@ import {FactorDeployer} from "./FactorDeployer.sol";
 ///
 ///   FACTOR_ADMIN       the admin wallet (receives the 70% and launches the token)
 ///   FACTOR_GATEWAY     the address compute advances are paid to (the engine's wallet), fixed in the desk for good
-///   FACTOR_BURN_POT, FACTOR_DESK, FACTOR_SPLITTER
+///   FACTOR_BURN_POT, FACTOR_DESK, FACTOR_SPLITTER, FACTOR_ACCOUNTS
 ///                     the three contracts, once deployed (contracts/deploy.sh writes them to broadcast/factor.env)
 ///   PONS_FACTORY      only to point a rehearsal somewhere else; unset, it is the live Pons factory
 abstract contract Config is CommonBase, FactorDeployer {
@@ -44,6 +45,7 @@ abstract contract Config is CommonBase, FactorDeployer {
         h.burnPot = FactorBurnPot(payable(_contract("FACTOR_BURN_POT")));
         h.desk = FactorDesk(payable(_contract("FACTOR_DESK")));
         h.splitter = FactorSplitter(payable(_contract("FACTOR_SPLITTER")));
+        h.accounts = FactorAccounts(_contract("FACTOR_ACCOUNTS"));
     }
 
     function _contract(string memory name) private view returns (address a) {

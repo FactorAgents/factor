@@ -347,6 +347,18 @@ button.toggle { width: 100%; text-align: left; background: transparent; color: i
 .acts > .status { margin: 0 0 18px; }
 .acts > .rest { padding: 22px 0; border-top: 1px solid var(--line); }
 .act .cta { margin-top: 20px; }
+/* an account without a wallet: the dialog that makes one, and what is in it */
+.veil { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 20px; background: color-mix(in srgb, var(--bg) 78%, transparent); backdrop-filter: blur(6px); }
+.dialog { width: min(520px, 100%); background: var(--paper); border: 1px solid var(--line-2); padding: 34px 34px 28px; display: grid; gap: 12px; max-height: calc(100dvh - 40px); overflow-y: auto; }
+.dialog .h3 { margin-top: 2px; }
+.dialog .cta { margin-top: 14px; }
+.dialog .status { margin: 4px 0 0; }
+.fine { color: var(--dim); font-size: 13px; line-height: 1.55; margin-top: 10px; padding-top: 16px; border-top: 1px solid var(--line); }
+.fine .linkish { font-size: 13px; }
+.account { padding: 0 0 30px; margin-bottom: 30px; border-bottom: 1px solid var(--line); min-width: 0; }
+.account .cta { margin-top: 20px; }
+.acts > .account { margin-bottom: 26px; }
+@media (max-width: 560px) { .dialog { padding: 26px 22px 22px; } }
 .keybox { display: grid; gap: 8px; margin-top: 22px; min-width: 0; }
 .keybox .code { padding: 12px 14px; word-break: break-all; white-space: normal; }
 .linkish { background: none; border: 0; padding: 0; color: var(--ink); font: inherit; border-bottom: 1px solid var(--line-2); cursor: pointer; }
@@ -371,6 +383,9 @@ button.toggle { width: 100%; text-align: left; background: transparent; color: i
   .happened > * { grid-template-columns: 96px 1fr auto; gap: 10px; }
   .kv { grid-template-columns: minmax(0, auto) minmax(0, 1fr); }
   .kv dd { white-space: normal; overflow-wrap: anywhere; }
+  /* a list whose values are short and whose labels carry a line of small print: the value keeps its line */
+  .kv.fit { grid-template-columns: minmax(0, 1fr) auto; gap: 0 16px; }
+  .kv.fit dd { white-space: nowrap; overflow-wrap: normal; }
   .top .btn.pill { height: 34px; padding: 0 12px; font-size: 11px; }
   .top .icon { width: 34px; height: 34px; }
   .logo { font-size: 22px; gap: 8px; }

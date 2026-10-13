@@ -16,6 +16,9 @@
 //      early, and delivers; the customer accepts. A second job is rejected and a third declined. On a fourth the
 //      agent draws as compute, signs for its key on the page, and a program calls a model with the key through the
 //      site (behind the engine is a stand-in for the model maker: no model is called, nothing is spent);
+//   5b with no wallet at all: the visitor makes an account with a passkey (Chrome's own test authenticator stands
+//      in for the fingerprint reader), puts ETH in it, hires an agent, takes ETH out, adds a second key, signs out
+//      and back in. The engine pays the gas of all of it;
 //   5  checks what the pages say against what the desk holds, what the site says when a wallet says no or the desk
 //      would refuse, what happens with no wallet on a computer and on a phone, and that the pages fit a phone.
 //
@@ -33,7 +36,8 @@ const WEB = join(fileURLToPath(new URL(".", import.meta.url)), "..");
 const ENGINE = join(WEB, "..", "engine");
 const WORK = join(tmpdir(), "factor-e2e");
 const SITE_PORT = 3620, CHROME_PORT = 9987;
-const SITE = `http://127.0.0.1:${SITE_PORT}`;
+// by name, not by number: a passkey belongs to a site's name, and a browser makes none for a bare address
+const SITE = `http://localhost:${SITE_PORT}`;
 const SHOTS = join(WEB, "..", "docs", "shots", "flows");
 const args = process.argv.slice(2);
 const STAY = args.includes("--stay");
@@ -153,7 +157,8 @@ ws.addEventListener("message", (m) => {
   if (x.method === "Runtime.consoleAPICalled" && x.params.type === "error") problems.push("console: " + x.params.args.map((a) => a.value ?? a.description ?? "").join(" ").slice(0, 200));
   // the browser writes a line for every 404, and two are answers, not faults: "this wallet has not registered", and
   // "the engine has not seen this brand new job yet" (asked again a moment later)
-  if (x.method === "Log.entryAdded" && x.params.entry.level === "error" && !(/status of 404/.test(x.params.entry.text) && /\/api\/v1\/(agents\/0x[0-9a-f]{40}|jobs\/title)$/.test(x.params.entry.url ?? ""))) problems.push(`log: ${x.params.entry.text.slice(0, 200)} ${x.params.entry.url ?? ""}`);
+  // and so is the account's "that would not go through" (400), said to the visitor in words before anything is signed
+  if (x.method === "Log.entryAdded" && x.params.entry.level === "error" && !(/status of 404/.test(x.params.entry.text) && /\/api\/v1\/(agents\/0x[0-9a-f]{40}|jobs\/title)$/.test(x.params.entry.url ?? "")) && !(/status of (400|409)/.test(x.params.entry.text) && /\/api\/v1\/accounts\/(check|call|relay)$/.test(x.params.entry.url ?? ""))) problems.push(`log: ${x.params.entry.text.slice(0, 200)} ${x.params.entry.url ?? ""}`);
   if (x.method === "Page.windowOpen") opened.push(x.params.url);
   if (x.method === "Network.requestWillBeSent") requested.push(x.params.request.url);
 });
@@ -213,7 +218,7 @@ const statusOf = (heading) => inPage(`const s = scopeOf(${JSON.stringify(heading
 const settled = (heading, words, ms = 60_000) => until(`"${words}" under "${heading}"`, async () => { const s = await statusOf(heading); if (s.includes(words)) return s; return false; }, ms);
 async function shot(name) { const p = await send("Page.captureScreenshot", { format: "png" }); writeFileSync(join(SHOTS, `${name}.png`), Buffer.from(p.result.data, "base64")); }
 async function as(account) { wallet.account = account; wallet.shared = false; await run("try { localStorage.removeItem('factor-wallet') } catch (e) {}").catch(() => undefined); }
-const connect = async () => { if (await has("Connect a wallet")) await press("Connect a wallet"); await until("the wallet to be connected", async () => (await text()).includes(`${wallet.account.address.slice(0, 6).toLowerCase()}…${wallet.account.address.slice(-4).toLowerCase()}`)); };
+const connect = async () => { if (await has("Connect, or use a passkey")) await press("Connect, or use a passkey"); await until("the wallet to be connected", async () => (await text()).includes(`${wallet.account.address.slice(0, 6).toLowerCase()}…${wallet.account.address.slice(-4).toLowerCase()}`)); };
 
 try {
   // ---------- 4: the flows ----------
@@ -221,7 +226,7 @@ try {
   step("4a an agent registers, names itself and posts a bond");
   await as(AGENT);
   await go("/work");
-  check("the page offers to connect, and connecting shows the wallet in the header", await has("Connect a wallet"));
+  check("the page offers to connect, and connecting shows the wallet in the header", await has("Connect, or use a passkey"));
   await connect();
   await says("Register this wallet");
   await press("Register as an agent", "Register this wallet");
@@ -451,26 +456,99 @@ try {
   check("the browser asked the network for this site only", requested.every((u) => u.startsWith(SITE) || u.startsWith("data:") || u.startsWith("about:")), requested.find((u) => !u.startsWith(SITE) && !u.startsWith("data:") && !u.startsWith("about:")) ?? `${requested.length} requests`);
   check("the pages raised no error and broke no rule of the content policy", problems.length === 0, problems.slice(0, 3).join(" | "));
 
-  step("5b with no wallet: a computer is sent to get one, a phone into MetaMask's own browser");
+  step("5b with no wallet: an account with a passkey, and the gas paid for");
   await send("Page.removeScriptToEvaluateOnNewDocument", { identifier: providerScript });
   await send("Runtime.removeBinding", { name: "__factorWalletBridge" });
+  // Chrome's own test authenticator: it makes and uses passkeys as a phone's fingerprint reader would, and says yes
+  await send("WebAuthn.enable");
+  const { result: { authenticatorId } } = await send("WebAuthn.addVirtualAuthenticator", { options: { protocol: "ctap2", transport: "internal", hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true } });
   await go("/hire?agent=lumen-07");
   await run("try { localStorage.removeItem('factor-wallet') } catch (e) {}");
   check("there is no wallet in this page", await run("typeof window.ethereum === 'undefined'"));
+  const botTxs = await chain.getTransactionCount({ address: accounts[1].address });
+  await press("Connect, or use a passkey");
+  await says("An account with a passkey");
+  await shot("desktop-passkey-dialog");
   opened.length = 0;
-  await press("Connect a wallet");
+  await press("Use a wallet instead");
   await until("a new window", async () => opened.length > 0, 10_000).catch(() => undefined);
-  check("on a computer, connecting opens where a wallet is got", opened.some((u) => u.startsWith("https://metamask.io/download")), opened[0] ?? "nothing opened");
+  check("somebody who would rather use a wallet is still sent to where one is got", opened.some((u) => u.startsWith("https://metamask.io/download")), opened[0] ?? "nothing opened");
+  await press("Connect, or use a passkey");
+  await press("Create an account");
+  const session = await until("the account to be made", async () => { const raw = await run("localStorage.getItem('factor-account')"); return raw ? JSON.parse(raw) : null; }, 90_000);
+  const person = session.address;
+  await until("the dialog to close", async () => !(await text()).includes("An account with a passkey"));
+  const code = await chain.getCode({ address: person });
+  check("a passkey makes an account on the chain, and the header shows it", !!code && code !== "0x" && (await text()).includes(`${person.slice(0, 6)}…${person.slice(-4)}`), person);
+  check("the browser keeps where the account is and its public key, and nothing a thief could use", Object.keys(session).sort().join() === "address,credential,x,y" && (await run("document.cookie")) === "");
+  await says("YOUR ACCOUNT");
+  // nothing in it yet: the page says so before the passkey is asked for anything
+  await fill("Price in ETH", "0.01");
+  await fill("What you want done", "Proofread a product page");
+  await press("Lock 0.01 ETH");
+  await says("Your account holds 0 ETH: not enough for the 0.01 ETH this needs.");
+  check("with nothing in the account, hiring is refused in words and nothing is sent", (await chain.getTransactionCount({ address: accounts[1].address })) === botTxs + 1, "the one transaction so far made the account");
+  // the visitor's ETH arrives from wherever they have it
+  await anvil("eth_sendTransaction", [{ from: accounts[2].address, to: person, value: "0xb1a2bc2ec50000" }]); // 0.05 ETH
+  await until("the page to show the ETH", async () => /IN IT\s*0\.05 ETH/i.test((await text()).replace(/\n+/g, " ")), 30_000);
+  await shot("desktop-account-panel");
+  await press("Lock 0.01 ETH");
+  await until("job 5", async () => (await text()).includes("Job 0005 is locked for lumen-07."), 90_000);
+  const j5 = await desk("job", [5n]);
+  check("the passkey hires the agent: the desk holds the job for the account", j5.customer.toLowerCase() === person && j5.price === 10n ** 16n && j5.state === 1 && (await chain.getBalance({ address: person })) === 4n * 10n ** 16n);
+  await until("the job's page to carry the title the passkey signed", async () => { await go("/jobs/0005"); return (await text()).includes("Proofread a product page"); }, 40_000);
+  check("its customer is shown what it can do there, as a wallet's owner is", (await text()).includes("There is nothing for you to do until it delivers."));
+  await go("/hire?agent=lumen-07");
+  await says("YOUR ACCOUNT");
+  await press("Take ETH out");
+  const home = "0x00000000000000000000000000000000000a11ce";
+  await fill("To this address", home);
+  await fill("Amount in ETH", "0.01");
+  await press("Send it");
+  await says("0.01 ETH left your account.");
+  check("ETH leaves the account for any address, and its owner paid no gas", (await chain.getBalance({ address: home })) === 10n ** 16n && (await chain.getBalance({ address: person })) === 3n * 10n ** 16n);
+  await press("Add a second key");
+  await fill("The wallet's address", CUSTOMER.address);
+  await press("Add it as a key");
+  await says("That wallet is a key of your account now.");
+  const keyCount = await chain.readContract({ address: person, abi: parseAbi(["function keyCount() view returns (uint256)"]), functionName: "keyCount" });
+  check("a wallet is added as a second way in", keyCount === 2n);
+  // signed out, and back in with nothing but the passkey
+  await run(`document.querySelector("button.wallet").click()`);
+  await until("signed out", async () => (await run("localStorage.getItem('factor-account')")) === null && (await text()).includes("CONNECT"));
+  await press("Connect, or use a passkey");
+  await press("I have one already");
+  await until("signed in again", async () => (await run("localStorage.getItem('factor-account')")) !== null && !(await text()).includes("An account with a passkey"), 30_000);
+  check("the passkey alone finds the account again", JSON.parse(await run("localStorage.getItem('factor-account')")).address === person);
+  const paid = (await chain.getTransactionCount({ address: accounts[1].address })) - botTxs;
+  check("every transaction of it was sent and paid for by the engine's gas wallet", paid === 4, `${paid} transactions: the account, the job, the ETH out, the key`);
+  check("the pages raised no error and broke no rule of the content policy, with a passkey too", problems.length === 0, problems.slice(0, 3).join(" | "));
   await send("Emulation.setDeviceMetricsOverride", PHONE);
   await send("Emulation.setTouchEmulationEnabled", { enabled: true });
   await send("Emulation.setUserAgentOverride", { userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1" });
   await go("/hire?agent=lumen-07");
   check("the phone is seen as a phone", await run("window.matchMedia('(pointer: coarse)').matches && /iPhone/.test(navigator.userAgent)"));
+  await says("YOUR ACCOUNT");
+  check("the account's own part of the page fits a phone", (await run("document.documentElement.scrollWidth")) <= PHONE.width + 1);
+  await run(`document.querySelector(".account").scrollIntoView({ block: "start" })`);
+  await sleep(500);
+  // a figure keeps its line when it is not allowed to wrap and still fits its column
+  const squeezed = await run(`[...document.querySelectorAll(".account .kv dd")].every((d) => getComputedStyle(d).whiteSpace === "nowrap" && d.scrollWidth <= d.clientWidth + 1 && d.getBoundingClientRect().width > 40)`);
+  check("on a phone each figure of the account keeps to one line", squeezed);
+  await shot("phone-account-panel");
+  await run("try { localStorage.removeItem('factor-account') } catch (e) {}");
+  await go("/hire?agent=lumen-07");
+  await press("Connect, or use a passkey");
+  await says("An account with a passkey");
+  check("the dialog fits a phone", (await run("document.documentElement.scrollWidth")) <= PHONE.width + 1 && (await run(`document.querySelector(".dialog").getBoundingClientRect().width`)) <= PHONE.width);
+  await shot("phone-passkey-dialog");
   requested.length = 0;
-  await press("Connect a wallet");
-  const deep = `https://metamask.app.link/dapp/127.0.0.1:${SITE_PORT}/hire?agent=lumen-07`;
+  await press("Use a wallet instead");
+  const deep = `https://metamask.app.link/dapp/localhost:${SITE_PORT}/hire?agent=lumen-07`;
   await until("the phone to be sent into MetaMask", async () => requested.includes(deep), 10_000).catch(() => undefined);
-  check("on a phone, connecting opens this very page inside MetaMask", requested.includes(deep), requested.find((u) => u.includes("metamask")) ?? "no such request");
+  check("on a phone, a wallet instead opens this very page inside MetaMask", requested.includes(deep), requested.find((u) => u.includes("metamask")) ?? "no such request");
+  await send("WebAuthn.removeVirtualAuthenticator", { authenticatorId });
+  await send("WebAuthn.disable");
 
   step("5c the wallet pages on a phone");
   problems.length = 0;

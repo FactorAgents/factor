@@ -16,6 +16,7 @@ wallet that holds a little ETH and nothing else.
 | Refund | A job is past its due time and the 12 hours of grace | The customer has the payment back |
 | Collect | The desk holds an advance fee the burn pot was not sent | Delivers it to the burn pot |
 | Return compute | A job with a compute advance was refunded and the pool lost on it | Sends the unspent part back to the pool, as ETH |
+| Relay | The owner of an account without a wallet signed something for it to do | Sends it, and pays the gas. First in every pass |
 
 `ENGINE_MODE` decides how far it goes: `off` (nothing runs), `watch` (reads), `dry` (reads and shows what it would
 send), `live` (sends).
@@ -46,6 +47,37 @@ send), `live` (sends).
 Nobody has an account. A name or a title is a signature over plain text from the one wallet it belongs to, with a
 time in it so an old signature cannot be sent again. Text is held to one short plain line without links, and the
 owner can hide one with `ENGINE_ADMIN_KEY`.
+
+## Accounts without a wallet
+
+An account is a small contract (`contracts/src/FactorAccount.sol`) that obeys a key only its owner holds: a passkey
+(a person, on the site) or an ordinary key that holds no ETH (an agent, through the kit with `gasless: true`). The
+owner signs what the account should do. The engine sends it from the gas wallet and pays the gas (`src/accounts.ts`).
+
+| | |
+|---|---|
+| `POST /v1/accounts` | An account for a key, made on the chain by the gas wallet. The same key is always the same account |
+| `GET /v1/accounts/<address>` | What is in it, its keys, how many of its orders were paid for today |
+| `GET /v1/accounts/by-credential/<id>` | The account of a passkey, so a browser finds it again |
+| `POST /v1/accounts/check` | Would these calls go through, as this account? Asked before anything is signed |
+| `POST /v1/accounts/call` | A read of the desk, for a browser that talks to the site only |
+| `POST /v1/accounts/relay` | A signed order: tried whole, queued, sent by the gas wallet |
+| `GET /v1/accounts/relay/<id>` | How it went, with the transaction's logs |
+
+- The engine never has a key of anybody's. It cannot sign for an account, move what is in it or change what was
+  signed. The worst it can do is not pay, and then anyone can send the same signature to the chain themselves.
+- It pays for the desk's own calls (register, lock, draw, deliver, accept, reject, decline, bond), ETH leaving the
+  account, and the account's own keys. Nothing else.
+- Limits, all by the day (UTC): `ACCOUNTS_NEW_PER_CALLER_DAY` (3), `ACCOUNTS_NEW_DAY` (300), `ACCOUNTS_ORDERS_DAY`
+  (40 for one account) and `ACCOUNTS_GAS_DAY_ETH` (0.01 for everything together). An order costs the gas wallet
+  well under a cent on Robinhood Chain, which checks a passkey's signature natively.
+- A name, a job's title and the request for a compute key are signed by an account through its key: the engine
+  asks the account itself whether it did (ERC-1271).
+- `ACCOUNTS_MODE=on` and `FACTOR_ACCOUNTS` switch it on, and only while `ENGINE_MODE=live`. Off, `/v1/state` says
+  `accounts.enabled: false` and the site and the kit offer a wallet only.
+- A passkey belongs to the site's name. Accounts made on one domain cannot be used from another: the domain must
+  be the final one before this is switched on.
+- Who asked for an account is not kept: only a mark made from their address and the day, to count by.
 
 ## Compute credit
 
@@ -83,9 +115,11 @@ on nothing else.
 
 ## Tests
 
-- `npm test`: 152 tests on a made-up chain (reorgs, a node that turns requests away, stuck transactions, every
-  action, the API, signed names, compute credit against a stand-in for the model maker).
-- `npm run e2e`: the engine against the real contracts on a local fork of the chain, 50 checks. It compares the
+- `npm test`: 176 tests on a made-up chain (reorgs, a node that turns requests away, stuck transactions, every
+  action, the API, signed names, compute credit against a stand-in for the model maker, accounts and their limits).
+- `npm run e2e`: the engine against the real contracts on a local fork of the chain, 68 checks. A passkey made of
+  software and a key with no ETH do a whole job, and the account's own code is run by the real chain to see that
+  it takes the passkey's signature there. It compares the
   engine's copy of every job and agent, and its score for each agent, with the desk itself.
 - No test calls a model. Where one would be called there is a stand-in (`scripts/stub-model.ts`), so the tests cost
   nothing.

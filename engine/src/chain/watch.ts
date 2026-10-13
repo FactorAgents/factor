@@ -13,7 +13,8 @@
 // and each agent of the desk: a log marks it as changed, and it is then read from the desk itself (../desk.ts).
 
 import { decodeEventLog, encodeEventTopics, pad, parseAbi, type Abi, type Hex } from "viem";
-import { factorBurnPotAbi, factorDeskAbi, factorSplitterAbi, factorTokenAbi } from "../abi/index.js";
+import { factorAccountsAbi, factorBurnPotAbi, factorDeskAbi, factorSplitterAbi, factorTokenAbi } from "../abi/index.js";
+import { AccountStore } from "../accounts.js";
 import { applyCompute, ComputeStore } from "../compute.js";
 import { applyBurn, applyDesk, refreshDesk } from "../desk.js";
 import { normalizeAddress } from "./address.js";
@@ -33,7 +34,7 @@ const TRANSFER = encodeEventTopics({ abi: factorTokenAbi, eventName: "Transfer" 
 const FROM_NOBODY = pad(ZERO as Hex, { size: 32 });
 
 interface Watcher {
-  name: "splitter" | "burnPot" | "desk" | "token";
+  name: "splitter" | "burnPot" | "desk" | "token" | "accounts";
   abi: Abi;
   filter(ctx: Ctx): LogFilter | null; // null: nothing to read yet
   apply(db: EngineDb, e: EventRow, ctx: Ctx): string | null; // a line for the log, if it is worth one
@@ -77,6 +78,20 @@ export const WATCHERS: Watcher[] = [
       // a compute advance is also credit at the gateway, priced at the ETH price of the last reading
       applyCompute(new ComputeStore(db), e, snapshotOf(db)?.ethUsd8 ?? null);
       return applyDesk(db, e, { splitter: ctx.addr.splitter, gateway: ctx.facts.gateway });
+    },
+  },
+  {
+    // Accounts for people without a wallet, as their maker logs them: whoever made one, the engine knows it, and
+    // a database that was lost finds every account again from here.
+    name: "accounts",
+    abi: factorAccountsAbi as Abi,
+    filter: (ctx) => (ctx.addr.accounts ? { address: ctx.addr.accounts } : null),
+    apply(db, e) {
+      if (e.event !== "Created") return null;
+      const account = normalizeAddress(e.args.account);
+      if (!account) return null;
+      new AccountStore(db).seen(account, { kind: Number(e.args.kind), a: String(e.args.a) as Hex, b: String(e.args.b) as Hex }, String(e.args.credential));
+      return null;
     },
   },
   {
@@ -187,7 +202,8 @@ export async function watchPass(ctx: Ctx): Promise<WatchResult> {
   let reached = false;
   const groups = new Map<bigint, Watcher[]>();
   for (const w of WATCHERS) {
-    if (w.name === "token") continue;
+    // the mint is read apart (below); a watcher with nothing to read yet (no maker of accounts) is passed over
+    if (w.name === "token" || !w.filter(ctx)) continue;
     const from = (db.cursor(w.name) ?? ctx.deployBlock - 1n) + 1n;
     groups.set(from, [...(groups.get(from) ?? []), w]);
   }

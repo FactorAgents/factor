@@ -36,6 +36,14 @@ export const WORDS: Record<string, (a: readonly unknown[]) => string> = {
   PushFailed: () => "The wallet that money was owed to refused it. It is still waiting in the desk.",
   ZeroAddress: () => "An address is missing.",
   ReentrancyGuardReentrantCall: () => "The desk does not take a call in the middle of another one.",
+  // a Factor account's own answers, and the engine's on its behalf
+  BadSignature: () => "The signature is not one of this account's keys', or it is for another order.",
+  Expired: () => "The order's time ran out before it was sent. Send it again.",
+  NotAKey: () => "That wallet is not a key of this account.",
+  LastKey: () => "An account keeps at least one key.",
+  KeyExists: () => "The account already has that key.",
+  CallFailed: () => "The account could not make that call: it does not hold enough ETH for it, or what it called refused.",
+  AccountShort: (a) => `The account holds ${eth(a[0])} ETH: not enough for the ${eth(a[1])} ETH this needs. Send ETH to the account's address first.`,
 };
 
 /** Any failure of a call, as one sentence. A Refusal is passed through as it is. */

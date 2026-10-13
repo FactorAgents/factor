@@ -40,6 +40,7 @@ contract ScriptsForkTest is ForkBase {
         vm.setEnv("FACTOR_BURN_POT", vm.toString(address(h.burnPot)));
         vm.setEnv("FACTOR_DESK", vm.toString(address(h.desk)));
         vm.setEnv("FACTOR_SPLITTER", vm.toString(address(h.splitter)));
+        vm.setEnv("FACTOR_ACCOUNTS", vm.toString(address(h.accounts)));
     }
 
     /// One test, in order, because the scripts read their addresses from the environment and the environment is

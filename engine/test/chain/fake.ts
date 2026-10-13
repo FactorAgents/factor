@@ -4,9 +4,9 @@
 // in the real encoding (the watchers decode them with the real ABIs), and a wallet whose sends can be held back,
 // dropped or made to fail. Nothing here touches a node or a key.
 
-import { encodeAbiParameters, encodeEventTopics, type Abi, type AbiEvent, type Hex } from "viem";
-import { factorBurnPotAbi, factorDeskAbi, factorSplitterAbi, factorTokenAbi } from "../../src/abi/index.js";
-import { Reverted, type CallSpec, type Chain, type ChainLog, type Fees, type Head, type LogFilter, type Pay, type Receipt, type RpcHealth, type Signer, type TxRequest } from "../../src/chain/chain.js";
+import { decodeFunctionData, encodeAbiParameters, encodeEventTopics, keccak256, type Abi, type AbiEvent, type Hex } from "viem";
+import { factorAccountAbi, factorAccountsAbi, factorBurnPotAbi, factorDeskAbi, factorSplitterAbi, factorTokenAbi } from "../../src/abi/index.js";
+import { Reverted, type CallSpec, type Chain, type ChainLog, type Fees, type Head, type LogFilter, type Pay, type RawCall, type Receipt, type RpcHealth, type Signer, type TxRequest } from "../../src/chain/chain.js";
 import { ETH_USD_FEED } from "../../src/chain/watch.js";
 
 export const A = {
@@ -19,11 +19,17 @@ export const A = {
   escrow: "0x0000000000000000000000000000000000e5c209",
   admin: "0x00000000000000000000000000000000000ad313",
   bot: "0x0000000000000000000000000000000000000b07",
+  // the maker of accounts for people without a wallet, and the account its copies are made from
+  accounts: "0x00000000000000000000000000000000000acc07",
+  original: "0x00000000000000000000000000000000000acc00",
 };
+// What the made-up accounts take as their owner's signature: a real one needs a passkey or a key, which the engine
+// never has, so here the right signature is simply this one and every other is refused as the contract would.
+export const GOOD_SIGNATURE = `0x${"5e".repeat(65)}` as Hex;
 const ZERO = "0x0000000000000000000000000000000000000000";
 export const ETH = 10n ** 18n;
 export const MINTED = 1_000_000_000n * ETH;
-const ABIS: Record<string, Abi> = { splitter: factorSplitterAbi as Abi, burnPot: factorBurnPotAbi as Abi, desk: factorDeskAbi as Abi, token: factorTokenAbi as Abi };
+const ABIS: Record<string, Abi> = { splitter: factorSplitterAbi as Abi, burnPot: factorBurnPotAbi as Abi, desk: factorDeskAbi as Abi, token: factorTokenAbi as Abi, accounts: factorAccountsAbi as Abi, account: factorAccountAbi as Abi };
 
 // The desk's own numbers for a job's state, and for the kind of an advance.
 export const S = { none: 0, locked: 1, advanced: 2, delivered: 3, settled: 4, half: 5, declined: 6, refunded: 7 } as const;
@@ -72,7 +78,9 @@ export class FakeChain implements Chain {
   private stamps = new Map<bigint, number>();
   private salts = new Map<bigint, number>();
   allLogs: ChainLog[] = [];
-  code_ = new Set<string>([A.splitter, A.burnPot, A.desk, A.token, A.factory, A.escrow]);
+  code_ = new Set<string>([A.splitter, A.burnPot, A.desk, A.token, A.factory, A.escrow, A.accounts, A.original]);
+  // accounts for people without a wallet that exist, with the number their next order must carry
+  made = new Map<string, { nonce: number; kind: number; a: string; b: string }>();
 
   // the token
   token: string | null = A.token;
@@ -178,13 +186,13 @@ export class FakeChain implements Chain {
 
   // ---------- logs ----------
 
-  emit(contract: keyof typeof ABIS, eventName: string, args: Record<string, unknown>, txHash?: string): ChainLog {
+  emit(contract: keyof typeof ABIS, eventName: string, args: Record<string, unknown>, txHash?: string, from?: string): ChainLog {
     const abi = ABIS[contract];
     const event = abi.find((x) => x.type === "event" && x.name === eventName) as AbiEvent;
     const topics = encodeEventTopics({ abi, eventName, args } as never) as Hex[];
     const rest = event.inputs.filter((i) => !i.indexed);
     const data = encodeAbiParameters(rest, rest.map((i) => args[i.name!]) as never);
-    const address = contract === "token" ? this.token! : A[contract as "splitter"];
+    const address = from ?? (contract === "token" ? this.token! : A[contract as "splitter"]);
     const hash = txHash ?? this.newHash();
     const log: ChainLog = { address, topics, data, blockNumber: this.number, transactionHash: hash, logIndex: this.allLogs.filter((l) => l.blockNumber === this.number).length };
     this.allLogs.push(log);
@@ -303,6 +311,39 @@ export class FakeChain implements Chain {
         this.give(who, amount, txHash, true);
       }
       return undefined;
+    }
+    if (to === A.accounts && fn === "create") {
+      const key = args[0] as { kind: number; a: string; b: string };
+      const account = FakeChain.accountOf(key);
+      if (commit && !this.made.has(account)) {
+        this.made.set(account, { nonce: 0, kind: Number(key.kind), a: key.a, b: key.b });
+        this.code_.add(account);
+        const id = keccak256(encodeAbiParameters([{ type: "uint8" }, { type: "bytes32" }, { type: "bytes32" }], [Number(key.kind), key.a as Hex, key.b as Hex]));
+        this.emit("account", "KeyAdded", { id, kind: Number(key.kind), a: key.a, b: key.b, credential: args[1] }, txHash, account);
+        this.emit("accounts", "Created", { account, keyId: id, kind: Number(key.kind), a: key.a, b: key.b, credential: args[1] }, txHash);
+      }
+      return account;
+    }
+    const account = this.made.get(to);
+    if (account && fn === "execute") {
+      const [calls, deadline, signature] = args as [{ to: string; value: bigint; data: Hex }[], bigint, string];
+      if (BigInt(this.time) > deadline) throw new Reverted("Expired", [deadline]);
+      if (signature !== GOOD_SIGNATURE) throw new Reverted("BadSignature");
+      // every call is tried first, so that all of an order happens or none of it
+      calls.forEach((c, i) => {
+        try {
+          this.asAccount(to, c, false, txHash);
+        } catch (e) {
+          // a call the account cannot pay for fails inside the order, which then fails as a whole
+          if (e instanceof Reverted) throw e;
+          throw new Reverted("CallFailed", [BigInt(i)]);
+        }
+      });
+      if (commit) {
+        account.nonce++;
+        for (const c of calls) this.asAccount(to, c, true, txHash);
+      }
+      return [];
     }
     throw new Error(`the fake chain has no ${fn} at ${to}`);
   }
@@ -515,10 +556,75 @@ export class FakeChain implements Chain {
     return this.pool + this.deskHeld + this.bonds + this.owedTotal;
   }
 
+  /** Where the made-up maker puts the account of a key: the same key, the same place. */
+  static accountOf(key: { kind: number; a: string; b: string }): string {
+    return `0x${keccak256(encodeAbiParameters([{ type: "uint8" }, { type: "bytes32" }, { type: "bytes32" }], [Number(key.kind), key.a as Hex, key.b as Hex])).slice(26)}`;
+  }
+
+  // One call of an order, made by the account: the desk's calls a customer or an agent makes, or ETH taken out.
+  private asAccount(account: string, c: { to: string; value: bigint; data: Hex }, commit: boolean, txHash?: string): void {
+    const to = c.to.toLowerCase();
+    const has = this.balances.get(account) ?? 0n;
+    if (c.value > has) throw Object.assign(new Error("insufficient funds for transfer"), { insufficient: true });
+    if (to !== A.desk) {
+      if (c.data !== "0x") throw new Reverted("CallFailed", [0n]);
+      if (commit) {
+        this.balances.set(account, has - c.value);
+        this.balances.set(to, (this.balances.get(to) ?? 0n) + c.value);
+      }
+      return;
+    }
+    const d = decodeFunctionData({ abi: factorDeskAbi as Abi, data: c.data });
+    const args = (d.args ?? []) as unknown[];
+    if (d.functionName === "register") {
+      if (this.agents.get(account)?.registered) throw new Reverted("AlreadyRegistered");
+      if (commit) this.register(account);
+    } else if (d.functionName === "lock") {
+      const agent = String(args[0]).toLowerCase();
+      if (!this.agents.get(agent)?.registered) throw new Reverted("NotRegistered");
+      if (c.value < ETH / 1000n) throw new Reverted("TooSmall", [ETH / 1000n]);
+      if (commit) {
+        this.balances.set(account, has - c.value);
+        this.lock(account, agent, c.value, Number(args[1] as bigint) - this.time, Boolean(args[2]));
+      }
+    } else if (d.functionName === "deliver") {
+      const j = this.jobs.get(Number(args[0]));
+      if (!j || j.agent !== account) throw new Reverted("NotAgent");
+      if (commit) this.deliver(Number(args[0]));
+    } else if (d.functionName === "accept") {
+      const j = this.jobs.get(Number(args[0]));
+      if (!j || j.customer !== account) throw new Reverted("NotCustomer");
+      if (commit) this.accept(Number(args[0]));
+    } else throw new Error(`the fake chain's accounts do not do ${d.functionName}`);
+    void txHash;
+  }
+
+  call(raw: RawCall): Promise<Hex> {
+    return this.ask("call", raw.to, undefined, () => {
+      const to = raw.to.toLowerCase();
+      if (to === A.desk && raw.data.length >= 10) {
+        const d = decodeFunctionData({ abi: factorDeskAbi as Abi, data: raw.data });
+        if (["register", "lock", "deliver", "accept"].includes(d.functionName)) this.asAccount(raw.from.toLowerCase(), { to, value: raw.value ?? 0n, data: raw.data }, false);
+        return "0x" as Hex;
+      }
+      if ((raw.value ?? 0n) > (this.balances.get(raw.from.toLowerCase()) ?? 0n)) throw new Error("insufficient funds for transfer");
+      return "0x" as Hex;
+    });
+  }
+
   private answer(call: CallSpec): unknown {
     const to = call.to.toLowerCase();
     const a = call.args ?? [];
     const fn = call.functionName;
+    if (to === A.accounts) {
+      if (fn === "implementation") return A.original;
+      if (fn === "addressOf") return FakeChain.accountOf(a[0] as { kind: number; a: string; b: string });
+    }
+    const made = this.made.get(to);
+    if (made) {
+      if (fn === "nonce") return BigInt(made.nonce);
+      if (fn === "isValidSignature") return a[1] === GOOD_SIGNATURE ? "0x1626ba7e" : "0xffffffff";
+    }
     if (to === A.splitter) {
       const s: Record<string, unknown> = {
         burnPot: this.wiring.splitterBurn, desk: this.wiring.splitterDesk, admin: A.admin, escrow: A.escrow, unsplit: this.unsplit,
@@ -682,7 +788,7 @@ export class FakeChain implements Chain {
     this.nonce++;
     const gasUsed = tx.call ? (this.gasOf[tx.call.functionName] ?? 100_000n) : 21_000n;
     this.balances.set(from, (this.balances.get(from) ?? 0n) - gasUsed * this.gasPrice);
-    this.receipts.set(hash, { ok, blockNumber: this.number, gasUsed, logs: this.allLogs.slice(before) });
+    this.receipts.set(hash, { ok, blockNumber: this.number, gasUsed, gasPrice: this.gasPrice, logs: this.allLogs.slice(before) });
   }
 
   // Whatever was held back is mined now.
