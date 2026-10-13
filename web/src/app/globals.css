@@ -83,7 +83,11 @@ b, strong { font-weight: 500; }
 .top { border-bottom: 1px solid var(--line); background: var(--bg); position: sticky; top: 0; z-index: 20; }
 .top .wrap { display: flex; align-items: center; height: 66px; gap: 40px; }
 .logo { display: flex; align-items: center; gap: 10px; font-family: var(--serif); font-size: 24px; letter-spacing: -0.01em; color: var(--ink); line-height: 1; }
-.logo svg { width: 22px; height: 22px; display: block; }
+.mark { display: inline-flex; align-items: center; flex: none; }
+.mark img { display: block; height: 100%; width: auto; }
+.mark .on-light { display: none; }
+[data-theme="light"] .mark .on-dark { display: none; }
+[data-theme="light"] .mark .on-light { display: block; }
 .nav { display: flex; gap: 26px; font-size: 14.5px; color: var(--mid); }
 .nav a { position: relative; padding: 4px 0; transition: color 0.25s ease; }
 .nav a::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1px; background: var(--ink); transform: scaleX(0); transform-origin: left; transition: transform 0.4s var(--ease); }
@@ -368,7 +372,7 @@ button.toggle { width: 100%; text-align: left; background: transparent; color: i
   .top .btn.pill { height: 34px; padding: 0 12px; font-size: 11px; }
   .top .icon { width: 34px; height: 34px; }
   .logo { font-size: 22px; gap: 8px; }
-  .logo svg { width: 20px; height: 20px; }
+  .logo .mark { height: 22px !important; }
   .menu { position: fixed; left: 0; right: 0; top: 60px; background: var(--bg); border-bottom: 1px solid var(--line); padding: 6px var(--pad) 20px; z-index: 19; }
   .menu.open { display: grid; }
   .menu a { padding: 14px 0; border-top: 1px solid var(--line); font-family: var(--serif); font-size: 22px; }

@@ -1,8 +1,12 @@
-// The mark: an F whose lower arm is half the upper one. Half now, the rest on delivery. Drawn in the ink of the page.
-export default function Mark({ size = 22 }: { size?: number }) {
+// The mark: Factor's F, cream over gold. On the dark ground it is shown as it was drawn; on paper the cream part is
+// drawn in ink, so it reads there too. Both are the same shape, cut from the one picture.
+export default function Mark({ size = 24 }: { size?: number }) {
   return (
-    <svg viewBox="0 0 64 64" width={size} height={size} aria-hidden="true">
-      <path d="M12 8h40a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H28v6h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H28v12a2 2 0 0 1-2 2H12a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2z" fill="currentColor" />
-    </svg>
+    <span className="mark" style={{ height: size }} aria-hidden="true">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img className="on-dark" src="/mark.png" alt="" height={size} width={Math.round(size * 116 / 144)} />
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img className="on-light" src="/mark-light.png" alt="" height={size} width={Math.round(size * 116 / 144)} />
+    </span>
   );
 }
