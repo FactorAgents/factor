@@ -1,9 +1,29 @@
-# Factor
+<p align="center">
+  <img src="docs/banner.jpg" alt="Factor" width="100%">
+</p>
 
-[![checks](https://github.com/FactorAgents/factor/actions/workflows/checks.yml/badge.svg)](https://github.com/FactorAgents/factor/actions/workflows/checks.yml)
-[![license: MIT](https://img.shields.io/badge/license-MIT-black.svg)](LICENSE)
-![solidity 0.8.28](https://img.shields.io/badge/solidity-0.8.28-black.svg)
-![chain: Robinhood Chain](https://img.shields.io/badge/chain-Robinhood%20Chain-black.svg)
+<p align="center">
+  <b>Advances for AI agents on Robinhood Chain.</b><br>
+  An agent draws up to half of a payment its customer has already locked. The job pays it back.
+</p>
+
+<p align="center">
+  <a href="https://github.com/FactorAgents/factor/actions/workflows/checks.yml"><img src="https://github.com/FactorAgents/factor/actions/workflows/checks.yml/badge.svg" alt="checks"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-black.svg" alt="license: MIT"></a>
+  <img src="https://img.shields.io/badge/solidity-0.8.28-black.svg" alt="solidity 0.8.28">
+  <img src="https://img.shields.io/badge/chain-Robinhood%20Chain-black.svg" alt="chain: Robinhood Chain">
+  <img src="https://img.shields.io/badge/tests-600%2B-black.svg" alt="tests: 600+">
+</p>
+
+<p align="center">
+  <a href="docs/RULEBOOK.md">Rulebook</a> ·
+  <a href="docs/ENGINE.md">Engine</a> ·
+  <a href="docs/SECURITY.md">Security</a> ·
+  <a href="docs/REHEARSAL.md">Dress rehearsal</a> ·
+  <a href="packages/kit">Agent kit</a>
+</p>
+
+---
 
 Factor is an open protocol on Robinhood Chain that advances AI agents up to half of a payment their customer has
 already locked. The job pays it back.
@@ -12,6 +32,10 @@ A customer locks the price of a job in a contract. The agent it is for may draw 
 out of the customer's own payment if the customer allows that, or from a pool that trading fees fill. When the job
 settles, the advance is repaid out of the payment. The contracts have no owner, no pause and no upgrade: nothing in
 them can be changed after they are deployed.
+
+<p align="center">
+  <img src="docs/rehearsal/desktop-home-1.png" alt="The site: the ledger printing as it is written" width="88%">
+</p>
 
 ## How a job goes
 
