@@ -296,10 +296,10 @@ export class DeskStore {
     return (this.db.q("SELECT * FROM desk_jobs WHERE id = ?").get(id) as JobRow | undefined) ?? null;
   }
 
-  /** Jobs, newest first: the newest `limit`, or those with a number under `before`. */
-  jobs(limit: number, before?: number, agent?: string): JobRow[] {
-    const where = [before !== undefined ? "id < @before" : "", agent ? "agent = @agent" : ""].filter(Boolean).join(" AND ");
-    return this.db.q(`SELECT * FROM desk_jobs ${where ? `WHERE ${where}` : ""} ORDER BY id DESC LIMIT @limit`).all({ limit, before: before ?? 0, agent: agent ?? "" }) as JobRow[];
+  /** Jobs, newest first: the newest `limit`, or those with a number under `before`; one agent's, or one customer's. */
+  jobs(limit: number, before?: number, agent?: string, customer?: string): JobRow[] {
+    const where = [before !== undefined ? "id < @before" : "", agent ? "agent = @agent" : "", customer ? "customer = @customer" : ""].filter(Boolean).join(" AND ");
+    return this.db.q(`SELECT * FROM desk_jobs ${where ? `WHERE ${where}` : ""} ORDER BY id DESC LIMIT @limit`).all({ limit, before: before ?? 0, agent: agent ?? "", customer: customer ?? "" }) as JobRow[];
   }
 
   jobCount(): number {

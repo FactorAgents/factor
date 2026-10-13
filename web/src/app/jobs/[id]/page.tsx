@@ -1,46 +1,50 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { agentOf, getState, jobOf } from "@/lib/data";
+import { deskOf, getJob, getState } from "@/lib/data";
 import { JobBill, Tag } from "@/components/Bits";
+import JobActions from "@/components/JobActions";
 import { Reveal } from "@/components/Motion";
-import { clock, dayTime, short } from "@/lib/format";
+import { ADVANCE_WORD, addressHref, agentHref, dayTime, short, txHref } from "@/lib/format";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> { return { title: `Job ${(await params).id}` }; }
 
 export default async function JobPage({ params }: { params: Promise<{ id: string }> }) {
-  const s = await getState();
-  const j = jobOf(s, (await params).id);
-  if (!j) notFound();
-  const a = agentOf(s, j.agentId);
-  const lines = s.events.filter((e) => e.jobId === j.id).reverse();
+  const [s, got] = await Promise.all([getState(), getJob((await params).id)]);
+  if (got === "down") return <section className="wrap page-head"><Link className="more quiet back" href="/ledger">← The ledger</Link><h1 className="h1">This job&apos;s page is not arriving right now.</h1><p className="lead">The job is on the chain and is not lost. Try again in a moment.</p></section>;
+  if (!got) notFound();
+  const { job: j, agent: a, events } = got;
+  const ex = s.contracts.explorer;
+  const kinds = [...new Set(j.advances.map((x) => ADVANCE_WORD[x.kind]))];
   return (
     <>
       <section className="wrap page-head">
         <Link className="more quiet back" href="/ledger">← The ledger</Link>
-        <h1 className="h1">{j.title}</h1>
+        <h1 className="h1">{j.title || `Job ${j.id}`}</h1>
         <p className="small mono" style={{ marginTop: 12, color: "var(--dim)" }}>job {j.id} · locked {dayTime(j.lockedAt)} · due {dayTime(j.dueAt)}</p>
       </section>
       <section className="wrap" style={{ paddingTop: 56 }}>
         <div className="grid2">
-          <Reveal><JobBill j={j} agent={a} p={s.params} /></Reveal>
+          <Reveal><JobBill j={j} agent={a ?? undefined} p={s.params} /></Reveal>
           <Reveal delay={140} className="side">
             <div>
               <span className="label">Who is in it</span>
               <dl className="kv" style={{ marginTop: 18 }}>
-                <dt>The agent</dt><dd><Link href={`/agents/${j.agentId}`}>{a?.name ?? j.agentId}</Link></dd>
-                <dt>The customer</dt><dd>{short(j.customer)}</dd>
-                <dt>The advance</dt><dd>{j.advance ? { customer: "allowed by the customer", pool: "from the pool", compute: "paid as compute" }[j.advance.kind] : "none"}</dd>
+                <dt>The agent</dt><dd>{a ? <Link href={agentHref(a)}>{a.name}</Link> : short(j.agentId)}</dd>
+                <dt>The customer</dt><dd><a href={addressHref(ex, j.customer)} target="_blank" rel="noopener noreferrer">{short(j.customer)}</a></dd>
+                <dt>The advance</dt><dd>{kinds.length ? kinds.join(", ") : j.allowEarly ? "none yet, early allowed" : "none"}</dd>
+                {j.deliveredAt ? <><dt>Delivered</dt><dd>{dayTime(j.deliveredAt)}{j.late ? ", late" : ""}</dd></> : null}
               </dl>
             </div>
             <div>
               <span className="label">What happened</span>
               <div className="happened" style={{ marginTop: 18 }}>
-                {lines.length ? lines.map((e) => (
-                  <div key={e.n}><span className="mono small" style={{ color: "var(--dim)" }}>{clock(e.at)}</span><Tag kind={e.kind} /><span className="mono small" style={{ textAlign: "right", color: "var(--ink)" }}>{e.amount}</span></div>
-                )) : <p className="small">Its lines are further back in the ledger.</p>}
+                {events.length ? [...events].reverse().map((e) => (
+                  <a key={e.n} href={txHref(ex, e.tx)} target="_blank" rel="noopener noreferrer"><span className="mono small" style={{ color: "var(--dim)" }}>{dayTime(e.at).replace(" UTC", "")}</span><Tag kind={e.kind} /><span className="mono small" style={{ textAlign: "right", color: "var(--ink)" }}>{e.amount}</span></a>
+                )) : <p className="small">Its lines are on their way from the chain.</p>}
               </div>
             </div>
+            <JobActions job={j} agentName={a?.name ?? short(j.agentId)} desk={deskOf(s)} explorer={ex} params={s.params} now={s.asOf} />
           </Reveal>
         </div>
       </section>

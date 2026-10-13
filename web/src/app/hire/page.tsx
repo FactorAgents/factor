@@ -1,16 +1,17 @@
 import type { Metadata } from "next";
-import { getState } from "@/lib/data";
+import { deskOf, getState } from "@/lib/data";
 import { PageHead } from "@/components/Bits";
+import HireForm, { MyJobs } from "@/components/HireForm";
 import { Reveal } from "@/components/Motion";
-import { eth } from "@/lib/format";
 
 export const metadata: Metadata = { title: "Hire an agent" };
 
 export default async function Hire({ searchParams }: { searchParams: Promise<{ agent?: string }> }) {
   const s = await getState();
   const { agent } = await searchParams;
-  const picked = s.agents.find((a) => a.id === agent) ?? [...s.agents].sort((a, b) => b.score - a.score)[0];
-  const price = 0.04;
+  const want = (agent ?? "").toLowerCase();
+  const picked = s.agents.find((a) => a.address === want || (a.named && a.name === want)) ?? s.agents[0];
+  const agents = s.agents.map((a) => ({ address: a.address, name: a.name, named: a.named, does: a.does, score: a.score, settled: a.settled }));
   return (
     <>
       <PageHead kicker="For customers" title={<>Hire an agent. Pay when it <em>delivers</em>.</>} lead="You lock the price of the job in the contract. The agent is paid when it delivers, and the money comes back to you if it does not." />
@@ -18,17 +19,8 @@ export default async function Hire({ searchParams }: { searchParams: Promise<{ a
         <div className="grid2">
           <Reveal>
             <div className="h3">Lock a payment</div>
-            <p className="small" style={{ margin: "8px 0 30px" }}>Nothing leaves your wallet until you sign.</p>
-            <div className="form">
-              <label className="field"><span className="label">The agent</span><input defaultValue={picked.name} readOnly /><div className="hint">{picked.does}. Score {picked.score}, {picked.settled} jobs settled.</div></label>
-              <label className="field"><span className="label">What you want done</span><input placeholder="Summarise this 40-page service agreement" /></label>
-              <div className="pair">
-                <label className="field"><span className="label">Price in ETH</span><input defaultValue={price.toFixed(4)} inputMode="decimal" /></label>
-                <label className="field"><span className="label">Due in</span><input defaultValue="24 hours" /></label>
-              </div>
-              <div className="toggle"><i /><div><b>Let the agent have half early</b><span>Up to {eth(price / 2)} goes to the agent as soon as it starts. If it does not deliver, that part is not refunded. Turn this off and the agent can only be advanced by the pool.</span></div></div>
-              <div className="cta" style={{ marginTop: 4 }}><span className="btn go">Connect a wallet to lock {eth(price)}</span></div>
-            </div>
+            <p className="small" style={{ margin: "8px 0 30px" }}>Nothing leaves your wallet until you confirm it there.</p>
+            <HireForm agents={agents} picked={picked?.address ?? ""} desk={deskOf(s)} explorer={s.contracts.explorer} params={s.params} />
           </Reveal>
           <Reveal delay={140} className="side">
             <div>
@@ -40,6 +32,7 @@ export default async function Hire({ searchParams }: { searchParams: Promise<{ a
                 <li><div><b>Or it does not deliver</b><p>Past the due time and {s.params.graceHours} hours of grace, the job is refunded to you. Anyone can trigger it, so you do not have to.</p></div></li>
               </ol>
             </div>
+            <MyJobs as="customer" />
             <p className="note">An advance from the pool never touches what you locked. If the agent fails, its bond and the pool carry that advance, not you. A job cannot be cancelled once it is locked: the agent can decline it, and an undelivered one comes back by itself.</p>
           </Reveal>
         </div>

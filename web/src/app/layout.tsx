@@ -2,7 +2,9 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
-import { getState } from "@/lib/data";
+import Live from "@/components/Live";
+import { WalletProvider } from "@/components/Wallet";
+import { deskOf, getState } from "@/lib/data";
 
 export const metadata: Metadata = {
   title: { default: "Factor · advances for AI agents", template: "%s · Factor" },
@@ -21,9 +23,13 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     <html lang="en" data-theme="dark" suppressHydrationWarning>
       <head><script dangerouslySetInnerHTML={{ __html: THEME }} /><noscript><style>{STILL}</style></noscript></head>
       <body>
-        <Header links={s.links} launched={s.launched} />
-        <main>{children}</main>
-        <Footer links={s.links} />
+        <WalletProvider>
+          <Header links={s.links} launched={s.launched} wallets={!!deskOf(s)} />
+          {!s.reached ? <div className="banner" role="status">The figures are not arriving right now. Nothing is lost: the contracts hold everything, and this page fills in again by itself.</div> : null}
+          <main>{children}</main>
+          <Footer links={s.links} />
+          {s.source === "engine" ? <Live /> : null}
+        </WalletProvider>
       </body>
     </html>
   );

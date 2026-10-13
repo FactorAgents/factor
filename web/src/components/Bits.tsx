@@ -3,7 +3,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import type { Agent, Job, LedgerEvent, Params } from "@/lib/types";
-import { ADVANCE_WORD, STATE_TONE, STATE_WORD, canDraw, clock, eth, initials, short } from "@/lib/format";
+import { ADVANCE_WORD, STATE_TONE, STATE_WORD, agentHref, clock, eth, initials, short } from "@/lib/format";
 
 export function Tag({ kind }: { kind: string }) {
   const tone = STATE_TONE[kind] ?? "";
@@ -40,11 +40,11 @@ export function Ledger({ events, empty = "Nothing of that kind yet." }: { events
 }
 
 export function AgentRow({ a }: { a: Agent }) {
-  const can = canDraw(a);
+  const can = a.canDrawEth;
   return (
-    <Link className="agent" href={`/agents/${a.id}`}>
-      <Seal name={a.name} />
-      <div><div className="name">{a.name}{a.house ? <House /> : null}</div><div className="does">{a.does}</div></div>
+    <Link className="agent" href={agentHref(a)}>
+      <Seal name={a.named ? a.name : a.address.slice(2)} />
+      <div><div className="name">{a.name}{a.house ? <House /> : null}</div><div className="does">{a.does || (a.named ? "" : "An agent that has not signed a name yet")}</div></div>
       <div className="col"><span className="label">Settled</span><div className="v num">{a.settled} jobs</div></div>
       <div className="col"><span className="label">Can draw</span><div className={`v num${can > 0 ? "" : " none"}`}>{can > 0 ? eth(can, 3) : "nothing yet"}</div></div>
       <div><span className="label">Score {a.score}</span><div className="score"><i style={{ ["--w" as string]: `${a.score / 10}%` }} /></div></div>
@@ -61,18 +61,20 @@ export function JobBill({ j, agent, p }: { j: Job; agent?: Agent; p: Params }) {
   const adv = j.advance;
   const at = ORDER.indexOf(j.state as (typeof ORDER)[number]);
   const paid = j.state === "settled" || j.state === "half";
-  const jobFee = j.feeEth ?? +(j.priceEth * p.jobFeePct / 100).toFixed(5);
+  const jobFee = j.feeEth ?? +(j.priceEth * p.jobFeePct / 100).toFixed(6);
   // the fee on an advance came off it when it was drawn, so only the advance and the job fee come off here
-  const toAgent = j.paidEth ?? +(j.priceEth - (adv ? adv.eth : 0) - jobFee).toFixed(5);
-  const unpaid = j.state === "refunded" && adv && adv.kind !== "customer";
+  const toAgent = j.paidEth ?? +(j.priceEth - (adv ? adv.eth : 0) - jobFee).toFixed(6);
+  const unpaid = j.state === "refunded" && (j.notRepaidEth ?? 0) > 0;
+  // more than one kind of draw on the job: the bill's one line says so
+  const mixed = new Set(j.advances.map((a) => a.kind)).size > 1;
   return (
     <div className="bill">
       <div className="head"><div className="h3">Job {j.id}</div><Tag kind={j.state} /></div>
-      <div className="title">{j.title}</div>
-      <div className="meta">agent {agent?.name ?? j.agentId} · customer {short(j.customer)}</div>
+      <div className="title">{j.title || "A job with no title"}</div>
+      <div className="meta">agent {agent?.name ?? short(j.agentId)} · customer {short(j.customer)}</div>
       <div className="lines">
         <BillLine k="Locked by the customer" why="held by the contract until delivery" v={eth(j.priceEth)} />
-        {adv ? <BillLine k="Advanced to the agent" why={`${ADVANCE_WORD[adv.kind]}, to pay for what the job costs`} v={eth(adv.eth)} /> : null}
+        {adv ? <BillLine k="Advanced to the agent" why={mixed ? `in ${j.advances.length} draws, most of it ${ADVANCE_WORD[adv.kind]}` : `${ADVANCE_WORD[adv.kind]}, to pay for what the job costs`} v={eth(adv.eth)} /> : null}
         {adv ? <BillLine k="Fee on the advance" why="taken out of the advance, buys back and burns $FACTOR" v={eth(adv.feeEth)} /> : null}
         {j.state === "half" ? <BillLine k="Returned to the customer" why="the customer rejected the delivery, so the job settled at half" v={eth(j.backEth ?? 0)} /> : null}
         {j.state === "declined" || j.state === "refunded" ? null : <BillLine k="Fee on the job" why={j.state === "half" ? "on the agent's half, goes to the pool" : "goes to the pool"} v={eth(jobFee)} />}

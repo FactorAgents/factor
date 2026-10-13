@@ -245,8 +245,9 @@ a.row:hover .what b { color: var(--gilt); }
 .kv .sum { color: var(--gilt); }
 .kv a { color: var(--ink); border-bottom: 1px solid var(--line-2); }
 .kv a:hover { border-color: var(--ink); }
-.happened > div { display: grid; grid-template-columns: 84px 1fr auto; gap: 14px; padding: 12px 0; border-top: 1px solid var(--line); align-items: baseline; }
-.happened > div:last-child { border-bottom: 1px solid var(--line); }
+.happened > * { display: grid; grid-template-columns: 112px 1fr auto; gap: 14px; padding: 12px 0; border-top: 1px solid var(--line); align-items: baseline; transition: background 0.25s ease; }
+.happened > *:last-child { border-bottom: 1px solid var(--line); }
+.happened > a:hover { background: var(--paper); }
 .bigscore { font-family: var(--serif); font-size: 112px; line-height: 0.9; letter-spacing: -0.02em; white-space: nowrap; }
 .bigscore small { font-family: var(--sans); font-size: 15px; color: var(--dim); margin-left: 10px; letter-spacing: 0; }
 .bars { margin-top: 28px; display: grid; gap: 16px; }
@@ -308,6 +309,47 @@ a.row:hover .what b { color: var(--gilt); }
 .caption em { font-family: var(--serif); font-style: italic; font-size: 15px; }
 .band.home { margin-top: 96px; }
 
+/* ── a wallet at work ──────────────────────────────────────────────────────── */
+.banner { border-bottom: 1px solid var(--line); padding: 10px var(--pad); text-align: center; font-size: 13.5px; color: var(--mid); background: var(--paper); }
+.btn[disabled] { opacity: 0.45; cursor: default; pointer-events: none; }
+.btn.wallet { gap: 8px; }
+.btn.wallet i { width: 6px; height: 6px; border-radius: 50%; background: var(--gilt); }
+.field select, .field textarea { width: 100%; border: 0; border-bottom: 1px solid var(--line-2); border-radius: 0; background-color: transparent; color: var(--ink); font-family: var(--mono); font-size: 15px; transition: border-color 0.25s ease; }
+.field select { height: 42px; appearance: none; -webkit-appearance: none; padding-right: 24px; cursor: pointer; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23a4a098' stroke-width='1.2'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 4px center; background-size: 10px 6px; }
+.field select option { background: var(--paper); color: var(--ink); }
+.field textarea { display: block; padding: 10px 0; resize: vertical; min-height: 84px; line-height: 1.5; }
+.field select:focus, .field textarea:focus { outline: none; border-bottom-color: var(--ink); }
+.field select:focus-visible, .field textarea:focus-visible, .seg button:focus-visible, button.toggle:focus-visible, .linkish:focus-visible { outline: 1px solid var(--gilt); outline-offset: 3px; }
+.field input[aria-invalid="true"] { border-bottom-color: var(--bad); }
+.field input:disabled, .field select:disabled, .field textarea:disabled { opacity: 0.55; }
+button.toggle { width: 100%; text-align: left; background: transparent; color: inherit; font: inherit; cursor: pointer; border-left: 0; border-right: 0; }
+.toggle i, .toggle i::after { transition: background 0.25s ease, border-color 0.25s ease, transform 0.3s var(--ease); }
+.toggle.off i { background: transparent; border-color: var(--line-2); }
+.toggle.off i::after { background: var(--dim); transform: translateX(-16px); }
+.seg { display: flex; flex-wrap: wrap; margin: 18px 0 10px; border: 1px solid var(--line-2); border-radius: 2px; width: fit-content; max-width: 100%; }
+.seg button { height: 36px; padding: 0 14px; background: transparent; border: 0; border-left: 1px solid var(--line-2); color: var(--mid); font-family: var(--sans); font-size: 14px; cursor: pointer; transition: background 0.25s ease, color 0.25s ease; }
+.seg button:first-child { border-left: 0; }
+.seg button:hover { color: var(--ink); }
+.seg button.on { background: var(--ink); color: var(--bg); }
+.status { margin-top: 16px; font-size: 14px; line-height: 1.5; color: var(--mid); display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: baseline; }
+.status.ok { color: var(--ink); }
+.status.bad { color: var(--bad); }
+.status .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--gilt); align-self: center; animation: waiting 1.2s ease-in-out infinite; }
+@keyframes waiting { 50% { opacity: 0.25; } }
+.acts { display: grid; }
+.acts > .label { padding-bottom: 18px; }
+.act { padding: 26px 0; border-top: 1px solid var(--line); min-width: 0; }
+.act .h3 + .small { margin-top: 8px; }
+.acts > .status { margin: 0 0 18px; }
+.acts > .rest { padding: 22px 0; border-top: 1px solid var(--line); }
+.act .cta { margin-top: 20px; }
+.linkish { background: none; border: 0; padding: 0; color: var(--ink); font: inherit; border-bottom: 1px solid var(--line-2); cursor: pointer; }
+.mine a { display: grid; grid-template-columns: 48px minmax(0, 1fr) auto auto; gap: 14px; align-items: baseline; padding: 12px 0; border-top: 1px solid var(--line); font-size: 14.5px; transition: background 0.25s ease; }
+.mine a:last-child { border-bottom: 1px solid var(--line); }
+.mine a:hover { background: var(--paper); }
+.mine .what { color: var(--mid); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mine .amt { font-size: 13px; }
+
 /* ── phones ────────────────────────────────────────────────────────────────── */
 .menu { display: none; }
 @media (max-width: 960px) {
@@ -316,6 +358,13 @@ a.row:hover .what b { color: var(--gilt); }
   .top .wrap { height: 60px; gap: 10px; }
   .top .right { gap: 8px; }
   .top .right .icon.hide { display: none; }
+  .top .right .wallet.hide { display: none; }
+  .menu .rowx .wallet { margin-right: auto; }
+  .mine a { grid-template-columns: 44px minmax(0, 1fr) auto; }
+  .mine .amt { display: none; }
+  .happened > * { grid-template-columns: 96px 1fr auto; gap: 10px; }
+  .kv { grid-template-columns: minmax(0, auto) minmax(0, 1fr); }
+  .kv dd { white-space: normal; overflow-wrap: anywhere; }
   .top .btn.pill { height: 34px; padding: 0 12px; font-size: 11px; }
   .top .icon { width: 34px; height: 34px; }
   .logo { font-size: 22px; gap: 8px; }

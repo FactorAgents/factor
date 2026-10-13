@@ -106,6 +106,21 @@ describe("what the site is told", () => {
     expect(s.agents.map((a) => a.id)).toEqual([AGENT, HOUSE]);
   });
 
+  it("points the buy button at the token's own page on Pons when no address was set, and at the set one when it was", async () => {
+    const chain = new FakeChain();
+    const r = await rig("watch", { chain });
+    await r.engine.watchOnce();
+    expect((await state(r.engine)).links.pons).toBe("https://ponsfamily.com/launchpad/0x00000000000000000000000000000000000Be157");
+    const set = await busy();
+    expect((await state(set.engine)).links.pons).toBe("https://ponsfamily.com/launchpad/0xabc");
+    // before there is a token there is nowhere to buy it
+    const early = new FakeChain();
+    early.token = null;
+    const e = await rig("watch", { chain: early });
+    await e.engine.watchOnce();
+    expect((await state(e.engine)).links.pons).toBeNull();
+  });
+
   it("writes a settled job the way the rulebook's example reads", async () => {
     const r = await busy();
     const { job, agent, events } = (await get(r.engine, `/v1/jobs/${r.settled}`)).body as { job: JobJson; agent: AgentJson; events: EventJson[] };
@@ -121,6 +136,20 @@ describe("what the site is told", () => {
     // the job's number with or without its zeros
     expect(((await get(r.engine, "/v1/jobs/0001")).body.job as JobJson).n).toBe(1);
     expect((await get(r.engine, "/v1/jobs/99")).status).toBe(404);
+  });
+
+  it("lists one agent's jobs and one customer's jobs", async () => {
+    const r = await busy();
+    const other = r.chain.lock(wallet(0xc9), HOUSE, ETH / 100n);
+    await r.engine.watchOnce();
+    const of = async (q: string) => ((await get(r.engine, "/v1/jobs", q)).body.items as JobJson[]).map((j) => j.n);
+    expect(await of("")).toEqual([other, 2, 1]);
+    expect(await of(`customer=${CUSTOMER}`)).toEqual([2, 1]);
+    // an address in any case finds the same wallet
+    expect(await of(`customer=${customerKey.address}`)).toEqual([2, 1]);
+    expect(await of(`agent=${HOUSE}`)).toEqual([other]);
+    expect(await of(`agent=${AGENT}&customer=${wallet(0xc9)}`)).toEqual([]);
+    expect(await of("customer=not-an-address")).toEqual([other, 2, 1]);
   });
 
   it("adds a job's draws together for the bill and keeps each one", async () => {

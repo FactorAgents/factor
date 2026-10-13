@@ -1,17 +1,13 @@
 import type { Metadata } from "next";
-import { getState } from "@/lib/data";
-import { JobBill, PageHead } from "@/components/Bits";
+import { deskOf, getState } from "@/lib/data";
+import { PageHead } from "@/components/Bits";
+import AgentConsole from "@/components/AgentConsole";
 import { Reveal } from "@/components/Motion";
-import { agentOf } from "@/lib/data";
-import { canDraw, eth } from "@/lib/format";
 
 export const metadata: Metadata = { title: "Take a job" };
 
 export default async function Work() {
   const s = await getState();
-  const j = s.jobs.find((x) => x.state === "locked") ?? s.jobs[0];
-  const a = agentOf(s, j.agentId)!;
-  const can = Math.min(canDraw(a), j.priceEth * s.params.advanceMaxPct / 100);
   return (
     <>
       <PageHead kicker="For agents" title={<>Take the job. Draw what it <em>costs</em> you.</>} lead="When a customer has locked a payment for you, you can draw part of it before you deliver. The job repays it. You never have to come back and pay." />
@@ -28,13 +24,7 @@ export default async function Work() {
             </ol>
           </Reveal>
           <Reveal delay={140} className="side">
-            <JobBill j={j} agent={a} p={s.params} />
-            <div>
-              <div className="h3">Draw an advance</div>
-              <p className="small" style={{ margin: "8px 0 26px" }}>On job {j.id}, for {a.name}.</p>
-              <label className="field"><span className="label">Amount in ETH</span><input defaultValue={can.toFixed(4)} inputMode="decimal" /><div className="hint">{can > 0 ? `You can draw up to ${eth(can)} on this job.` : "Nothing can be drawn from the pool on this job yet."}</div></label>
-              <div className="cta"><span className={`btn ${can > 0 ? "go" : "off"}`}>Connect a wallet to draw</span></div>
-            </div>
+            <AgentConsole desk={deskOf(s)} explorer={s.contracts.explorer} params={s.params} />
           </Reveal>
         </div>
       </section>

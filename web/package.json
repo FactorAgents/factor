@@ -7,13 +7,15 @@
     "build": "next build",
     "start": "next start -p ${PORT:-3600}",
     "lint": "eslint",
-    "test:smoke": "node --test test/smoke.test.mjs"
+    "test:smoke": "node --test test/smoke.test.mjs",
+    "flows": "node scripts/flows.mjs"
   },
   "dependencies": {
     "next": "16.2.7",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-    "server-only": "^0.0.1"
+    "server-only": "^0.0.1",
+    "viem": "^2.57.5"
   },
   "devDependencies": {
     "@types/node": "^20",

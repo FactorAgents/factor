@@ -148,6 +148,7 @@ CREATE TABLE IF NOT EXISTS desk_jobs (
   not_repaid TEXT NOT NULL DEFAULT '0'
 );
 CREATE INDEX IF NOT EXISTS desk_jobs_agent ON desk_jobs (agent, id);
+CREATE INDEX IF NOT EXISTS desk_jobs_customer ON desk_jobs (customer, id);
 CREATE INDEX IF NOT EXISTS desk_jobs_state ON desk_jobs (state);
 CREATE INDEX IF NOT EXISTS desk_jobs_dirty ON desk_jobs (dirty) WHERE dirty = 1;
 -- An agent as the desk holds it: its record, read from the desk (agent(address)) whenever a log says it changed.

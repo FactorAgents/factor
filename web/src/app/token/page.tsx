@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { getState } from "@/lib/data";
 import { PageHead, SecHead } from "@/components/Bits";
 import { Count, Reveal } from "@/components/Motion";
-import { dayTime, int, short } from "@/lib/format";
+import { dayTime, int, short, txHref } from "@/lib/format";
 
 export const metadata: Metadata = { title: "$FACTOR" };
 
@@ -29,8 +29,9 @@ export default async function Token() {
         <Reveal><SecHead n="03" kicker="The burns" title="Each one, with its transaction." /></Reveal>
         <Reveal delay={120}><div className="sec-body"><table className="table stack">
           <thead><tr><th>No.</th><th>When</th><th>Spent</th><th className="r">Burned</th><th className="r">Transaction</th></tr></thead>
-          <tbody>{s.burns.map((b) => <tr key={b.n}><td className="m">{b.n}</td><td className="m wide" style={{ color: "var(--mid)" }}>{dayTime(b.at)}</td><td className="m">{b.eth.toFixed(4)} ETH</td><td className="m r gilt">{int(b.tokens)} $FACTOR</td><td className="m r" style={{ color: "var(--mid)" }}>{short(b.tx)}</td></tr>)}</tbody>
+          <tbody>{s.burns.map((b) => <tr key={b.n}><td className="m">{b.n}</td><td className="m wide" style={{ color: "var(--mid)" }}>{dayTime(b.at)}</td><td className="m">{b.eth.toFixed(4)} ETH</td><td className="m r gilt">{int(b.tokens)} $FACTOR</td><td className="m r" style={{ color: "var(--mid)" }}><a href={txHref(s.contracts.explorer, b.tx)} target="_blank" rel="noopener noreferrer">{short(b.tx)}</a></td></tr>)}</tbody>
         </table>
+        {s.burns.length === 0 ? <p className="small" style={{ marginTop: 22 }}>No burn yet. The first one comes half an hour after the first trading fees or the first advance.</p> : null}
         <p className="note" style={{ marginTop: 36 }}>$FACTOR can lose all of its value. Holding it gives no claim on the pool and no share of anything. Trade it at your own risk.</p>
         </div></Reveal>
       </section>

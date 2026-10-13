@@ -22,27 +22,18 @@ export const short = (a: string): string => (a.length > 12 ? `${a.slice(0, 6)}â€
 /** two letters for an agent's tile: lumen-07 becomes L7 */
 export const initials = (name: string): string => { const parts = name.split(/[-\s]+/).filter(Boolean); const a = parts[0]?.[0] ?? "?"; const last = parts.length > 1 ? parts[parts.length - 1] : parts[0].slice(1); const b = /\d/.test(last) ? last.replace(/\D/g, "").slice(-1) : last[0] ?? ""; return (a + b).toUpperCase(); };
 
-/** How far the pool will go for an agent: its own bond, plus the fees its settled jobs have paid in. Counted once:
- *  an agent can then never take more out of the pool than it has put in. */
-export const poolLimit = (a: Pick<Agent, "bondEth" | "feesPaidEth">): number => a.bondEth + a.feesPaidEth;
-/** What it can still draw from the pool right now. */
-export const canDraw = (a: Pick<Agent, "bondEth" | "feesPaidEth" | "drawnEth" | "advancesMissed">): number => (a.advancesMissed > 0 ? 0 : Math.max(0, poolLimit(a) - a.drawnEth));
-
-/** The score, part by part, by the one public formula. Nobody sets it by hand, and it moves no money. */
-export type ScorePart = { name: string; value: string; points: number; max: number };
-type Scored = Pick<Agent, "feesPaidEth" | "customers" | "settled" | "since" | "advancesRepaid" | "advancesMissed" | "settledAtHalf">;
-export function scoreParts(a: Scored, asOf: string): ScorePart[] {
-  const days = a.settled ? Math.max(0, Math.floor((Date.parse(asOf) - Date.parse(a.since)) / 86_400_000)) : 0;
-  const part = (name: string, value: string, raw: number, max: number): ScorePart => ({ name, value, points: Math.min(max, Math.floor(raw + 1e-9)), max });
-  return [
-    part("Fees paid into the pool", eth(a.feesPaidEth), a.feesPaidEth / 0.0005, 350),
-    part("Different customers", String(a.customers), a.customers * 25, 250),
-    part("Jobs settled", String(a.settled), a.settled * 10, 200),
-    part("Days since its first job", String(days), days * 2, 100),
-    part("Advances repaid", `${a.advancesRepaid} of ${a.advancesRepaid + a.advancesMissed}`, a.advancesRepaid * 10, 100),
-  ];
+/** Where an agent's page is: under its name when it has signed one, under its address otherwise. */
+export const agentHref = (a: Pick<Agent, "name" | "named" | "address">): string => `/agents/${a.named ? a.name : a.address}`;
+/** A transaction or an address on the chain's explorer. */
+export const txHref = (explorer: string, tx: string): string => `${explorer}/tx/${tx}`;
+export const addressHref = (explorer: string, address: string): string => `${explorer}/address/${address}`;
+/** in 3 hours, 20 minutes ago: for a due time or a deadline, from a moment given (the page's own reading of now). */
+export function fromNow(iso: string, nowIso: string): string {
+  const s = Math.round((Date.parse(iso) - Date.parse(nowIso)) / 1000), a = Math.abs(s);
+  const n = a < 90 ? [a, "second"] as const : a < 5400 ? [Math.round(a / 60), "minute"] as const : a < 129_600 ? [Math.round(a / 3600), "hour"] as const : [Math.round(a / 86_400), "day"] as const;
+  const text = `${n[0]} ${n[1]}${n[0] === 1 ? "" : "s"}`;
+  return s >= 0 ? `in ${text}` : `${text} ago`;
 }
-export const scoreOf = (a: Scored, asOf: string): number => (a.advancesMissed > 0 ? 0 : Math.max(0, scoreParts(a, asOf).reduce((n, p) => n + p.points, 0) - 50 * a.settledAtHalf));
 
 export const STATE_WORD: Record<string, string> = { locked: "Locked", advanced: "Advanced", delivered: "Delivered", settled: "Settled", half: "Settled at half", declined: "Declined", refunded: "Refunded", not_repaid: "Not repaid", burned: "Burned", bond: "Bond", pool_in: "Pool" };
 export const STATE_TONE: Record<string, "" | "go" | "warn" | "bad"> = { locked: "", advanced: "go", delivered: "warn", settled: "go", half: "warn", declined: "", refunded: "bad", not_repaid: "bad", burned: "go", bond: "", pool_in: "" };

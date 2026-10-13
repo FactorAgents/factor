@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { getState } from "@/lib/data";
 import { Code, Flow, PageHead, SecHead } from "@/components/Bits";
 import { Reveal } from "@/components/Motion";
-import { short } from "@/lib/format";
+import { addressHref, short } from "@/lib/format";
 
 export const metadata: Metadata = { title: "The protocol" };
 
@@ -64,7 +64,7 @@ export default async function Protocol() {
           <thead><tr><th>Contract</th><th>What it does</th><th className="r">Address</th></tr></thead>
           <tbody>
             {([["The desk", "Jobs, advances, the pool, the reserve, bonds and records", c.desk], ["The splitter", "Divides the token's trading fees", c.splitter], ["The burn pot", "Buys back $FACTOR and burns it", c.burnPot], ["$FACTOR", "The token, launched on Pons", c.token]] as const).map(([name, does, addr]) => (
-              <tr key={name}><td><b>{name}</b></td><td className="wide">{does}</td><td className="m r">{addr ? short(addr) : "at launch"}</td></tr>
+              <tr key={name}><td><b>{name}</b></td><td className="wide">{does}</td><td className="m r">{addr ? <a href={addressHref(c.explorer, addr)} target="_blank" rel="noopener noreferrer">{short(addr)}</a> : name === "$FACTOR" ? "at launch" : "not deployed yet"}</td></tr>
             ))}
           </tbody>
         </table>

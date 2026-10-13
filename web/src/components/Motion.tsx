@@ -63,26 +63,51 @@ const block = (e: LedgerEvent, id: number, time: string): Block => {
 };
 const chars = (b: Block) => b.time.length + (STATE_WORD[b.e.kind] ?? b.e.kind).length + b.e.amount.length + b.lines.reduce((n, l) => n + l.length, 0);
 
+// how many of the newest lines are printed again, one after another, when the page is first looked at
+const PRINT = 3;
+
 export function Receipt({ events }: { events: LedgerEvent[] }) {
   const [blocks, setBlocks] = useState<Block[]>(() => events.slice(0, KEEP).map((e) => block(e, e.n, clock(e.at))));
   const [typed, setTyped] = useState(Infinity);   // how many characters of the newest line have been printed
   const [live, setLive] = useState(false);
-  const next = useRef(KEEP);
+  const seen = useRef<number | null>(null);        // the newest line that has been printed
+  const queue = useRef<LedgerEvent[]>([]);
+  // Only what is in the ledger is ever printed, with the time it has there. When the page is first looked at, the
+  // newest few lines come out of the printer one after another; after that a line is printed when the ledger has a
+  // new one, and the paper rests in between.
   useEffect(() => {
-    if (calm() || events.length === 0) return;
-    let raf = 0;
-    const id = window.setInterval(() => {
-      const e = events[next.current % events.length];
-      next.current += 1;
-      const fresh = block(e, 100_000 + next.current, clock(new Date().toISOString()));
-      setBlocks((had) => [fresh, ...had].slice(0, KEEP));
+    if (calm()) return;
+    let raf = 0, timer = 0;
+    const print = () => {
+      const e = queue.current.shift();
+      if (!e) { timer = 0; return; }
+      const fresh = block(e, e.n, clock(e.at));
+      setBlocks((had) => [fresh, ...had.filter((b) => b.id !== fresh.id)].slice(0, KEEP));
       setLive(true);
       const total = chars(fresh), t0 = performance.now(), dur = 560;
       const step = (now: number) => { const p = Math.min(1, (now - t0) / dur); setTyped(p < 1 ? Math.floor(p * total) : Infinity); if (p < 1) raf = requestAnimationFrame(step); };
       setTyped(0);
       raf = requestAnimationFrame(step);
-    }, 3800);
-    return () => { window.clearInterval(id); cancelAnimationFrame(raf); };
+      timer = window.setTimeout(print, 2600);
+    };
+    if (seen.current === null) {
+      // the first look: the newest few are taken back and printed again, oldest of them first
+      const again = events.slice(0, Math.min(PRINT, Math.max(0, events.length - 1)));
+      seen.current = events[0]?.n ?? 0;
+      if (again.length) {
+        queue.current = [...again].reverse();
+        timer = window.setTimeout(() => { setBlocks(events.slice(again.length, again.length + KEEP).map((e) => block(e, e.n, clock(e.at)))); timer = window.setTimeout(print, 500); }, 0);
+      }
+    } else {
+      const fresh = events.filter((e) => e.n > seen.current!).reverse();
+      if (fresh.length) {
+        seen.current = events[0].n;
+        queue.current.push(...fresh);
+      }
+      // also when the page was read again in the middle of a printout: what was waiting goes on being printed
+      if (queue.current.length) timer = window.setTimeout(print, 400);
+    }
+    return () => { window.clearTimeout(timer); cancelAnimationFrame(raf); };
   }, [events]);
 
   // where each block sits on the paper, and, for the newest one, how many characters come before each of its texts

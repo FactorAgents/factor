@@ -8,7 +8,7 @@ const HEAD: [string, boolean][] = [["Agents", false], ["get", false], ["paid", f
 
 export default async function Home() {
   const s = await getState();
-  const top = [...s.agents].sort((a, b) => b.score - a.score).slice(0, 4);
+  const top = s.agents.slice(0, 4);
   return (
     <>
       <section className="wrap hero-wrap">
@@ -25,14 +25,14 @@ export default async function Home() {
         </div>
         <div className="side">
           <Receipt events={s.events} />
-          <div className="caption"><b>The ledger</b><em>Every line, printed as it is written. Times are UTC.</em></div>
+          <div className="caption"><b>The ledger</b><em>{s.events.length ? "Every line, printed as it is written. Times are UTC." : "Nothing has happened on the desk yet. The first line prints here."}</em></div>
         </div>
       </section>
 
       <div className="band home">
         <div className="wrap stats">
           <Reveal delay={0}><div className="stat"><span className="label">Advanced</span><b className="num"><Count to={s.stats.advancedEth} places={2} /><small>ETH</small></b><div className="sub">{eth(s.stats.outEth, 3)} out with agents right now</div></div></Reveal>
-          <Reveal delay={80}><div className="stat"><span className="label">Jobs settled</span><b className="num"><Count to={s.stats.settledJobs} /></b><div className="sub">by {s.stats.agents} agents on the desk</div></div></Reveal>
+          <Reveal delay={80}><div className="stat"><span className="label">Jobs settled</span><b className="num"><Count to={s.stats.settledJobs} /></b><div className="sub">{s.stats.agents === 1 ? "1 agent" : `${s.stats.agents} agents`} on the desk</div></div></Reveal>
           <Reveal delay={160}><div className="stat"><span className="label">In the pool</span><b className="num"><Count to={s.stats.poolEth} places={2} /><small>ETH</small></b><div className="sub">{eth(s.stats.reserveEth, 2)} of it kept in reserve</div></div></Reveal>
           <Reveal delay={240}><div className="stat"><span className="label">$FACTOR burned</span><b className="num"><Count to={s.stats.burnedTokens / 1e6} places={2} /><small>M</small></b><div className="sub">{millions(s.stats.supplyLeft)}M of the supply left</div></div></Reveal>
         </div>
@@ -45,7 +45,7 @@ export default async function Home() {
 
       <section className="wrap sec" id="ledger">
         <Reveal><SecHead n="02" kicker="The ledger" title="Everything that happens, as it happens." more="The whole ledger" href="/ledger" /></Reveal>
-        <Reveal delay={120}><div className="sec-body"><Ledger events={s.events.slice(0, 8)} /></div></Reveal>
+        <Reveal delay={120}><div className="sec-body"><Ledger events={s.events.slice(0, 8)} empty="Nothing has happened on the desk yet. The first job that is locked is the first line." /></div></Reveal>
       </section>
 
       <section className="wrap sec" id="advances">
@@ -66,8 +66,8 @@ export default async function Home() {
       </section>
 
       <section className="wrap sec" id="agents">
-        <Reveal><SecHead n="05" kicker="Agents" title="A record made of paid work." more={`All ${s.stats.agents} agents`} href="/agents" /></Reveal>
-        <Reveal delay={120}><div className="sec-body agents">{top.map((a) => <AgentRow key={a.id} a={a} />)}<div className="end" /></div></Reveal>
+        <Reveal><SecHead n="05" kicker="Agents" title="A record made of paid work." more={s.stats.agents ? `All ${s.stats.agents} agents` : "Register an agent"} href={s.stats.agents ? "/agents" : "/work"} /></Reveal>
+        <Reveal delay={120}><div className="sec-body agents">{top.length ? top.map((a) => <AgentRow key={a.id} a={a} />) : <p className="note" style={{ margin: "26px 0" }}>No agent has registered yet. An agent is a wallet: it registers with one transaction and takes its first job.</p>}<div className="end" /></div></Reveal>
       </section>
 
       <section className="wrap sec" id="token">

@@ -3,7 +3,7 @@
 //   GET  /v1/state             everything the site's first page draws, in the shape of web/src/lib/types.ts
 //   GET  /v1/agents            every agent, by score
 //   GET  /v1/agents/<id>       one agent (its address or its name), its jobs and its lines of the ledger
-//   GET  /v1/jobs              jobs, newest first: ?limit=50&before=<number>&agent=<address>
+//   GET  /v1/jobs              jobs, newest first: ?limit=50&before=<number>&agent=<address>&customer=<address>
 //   GET  /v1/jobs/<number>     one job, its advances and its lines of the ledger
 //   GET  /v1/ledger            the ledger, newest first: ?limit=50&before=<n>&show=locked|advanced|settled|refunded|burned
 //   GET  /v1/burns             every buy back and burn: ?limit=50&before=<burn number>
@@ -15,6 +15,7 @@
 // job and agent), so a burst of visitors costs the node nothing. Before the contracts are given, and whenever the
 // engine is off or stopped, /v1/state answers the same shape with launched: false and no figure invented.
 
+import { getAddress } from "viem";
 import { actState, KINDS } from "./chain/act.js";
 import { normalizeAddress, shortAddress } from "./chain/address.js";
 import { hostsOnly, type RpcHealth } from "./chain/chain.js";
@@ -238,7 +239,7 @@ export class EngineApi {
     if (!route) return null;
     const v = this.view();
     const ttl = v.config.params.apiCacheMs;
-    const key = `${path}?${[...query.entries()].filter(([k]) => ["limit", "before", "show", "agent"].includes(k)).map(([k, x]) => `${k}=${x.slice(0, 64)}`).sort().join("&")}`;
+    const key = `${path}?${[...query.entries()].filter(([k]) => ["limit", "before", "show", "agent", "customer"].includes(k)).map(([k, x]) => `${k}=${x.slice(0, 64)}`).sort().join("&")}`;
     const hit = this.cache.get(key);
     const now = Date.now();
     if (hit && ttl > 0 && now - hit.at < ttl) return hit.answer;
@@ -257,7 +258,7 @@ export class EngineApi {
     if (path === "/v1/health") return (v) => this.health(v);
     if (path === "/v1/burns") return (v) => ok(this.burns(v, limit, before));
     if (path === "/v1/agents") return (v) => ok({ items: this.agents(v) });
-    if (path === "/v1/jobs") return (v) => ok(this.jobs(v, limit, before, normalizeAddress(query.get("agent")) ?? undefined));
+    if (path === "/v1/jobs") return (v) => ok(this.jobs(v, limit, before, normalizeAddress(query.get("agent")) ?? undefined, normalizeAddress(query.get("customer")) ?? undefined));
     if (path === "/v1/ledger") return (v) => ok(this.ledger(v, limit, before, SHOW[query.get("show") ?? ""]));
     let m = /^\/v1\/agents\/([0-9a-zA-Z-]{3,42})$/.exec(path);
     if (m) return (v) => this.agent(v, m![1]);
@@ -324,10 +325,10 @@ export class EngineApi {
     return rows.map((j) => jobJson(j, advances.get(j.id) ?? [], titles.get(j.id)));
   }
 
-  private jobs(v: EngineView, limit: number, before?: number, agent?: string): Record<string, unknown> {
+  private jobs(v: EngineView, limit: number, before?: number, agent?: string, customer?: string): Record<string, unknown> {
     const r = this.running(v);
     if (!r) return { total: 0, more: false, items: [] };
-    const rows = r.store.jobs(limit + 1, before, agent);
+    const rows = r.store.jobs(limit + 1, before, agent, customer);
     return { total: r.store.jobCount(), more: rows.length > limit, items: this.jobsJson(v, r.store, rows.slice(0, limit)) };
   }
 
@@ -378,7 +379,10 @@ export class EngineApi {
     const c = v.config;
     const r = this.running(v);
     const contracts = { desk: v.ctx?.addr.desk ?? c.desk, splitter: v.ctx?.addr.splitter ?? c.splitter, burnPot: v.ctx?.addr.burnPot ?? c.burnPot, token: r?.snap.token?.address ?? null, explorer: c.explorer };
-    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links: v.links, params: PARAMS, contracts };
+    // Where the token is bought: the address the owner set, or, once there is a token and nothing was set, the
+    // token's own page on Pons. So the site's buy button works from the launch on whether or not anybody remembered.
+    const links = { ...v.links, pons: v.links.pons ?? (contracts.token ? `https://ponsfamily.com/launchpad/${getAddress(contracts.token)}` : null) };
+    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts };
     if (!r) {
       return { ...base, launched: false, stats: { advancedEth: 0, settledJobs: 0, jobs: 0, poolEth: 0, reserveEth: 0, outEth: 0, heldEth: 0, burnedTokens: 0, supplyLeft: SUPPLY, agents: 0, lostEth: 0 }, agents: [], jobs: [], events: [], burns: [] };
     }

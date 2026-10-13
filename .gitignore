@@ -9,3 +9,4 @@ data/
 !.env.example
 .DS_Store
 *.log
+docs/shots/flows/

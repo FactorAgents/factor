@@ -4,6 +4,8 @@
 //   npm run e2e            the whole run and every check, then everything is stopped (about three minutes)
 //   npm run e2e -- --stay  the fork and the engine are left running so the site can read it (FACTOR_ENGINE_URL)
 //   npm run e2e -- --stop  stops what --stay left running
+//   npm run e2e -- --bare  only the fork, the contracts, the engine and a launched, traded token, left running:
+//                          what the site's own run through a browser starts from (web/scripts/flows.mjs)
 //
 // What it does, in order:
 //   1  starts anvil as a fork of the chain's head and takes anvil's own built-in test accounts as the admin, the
@@ -52,6 +54,7 @@ const FACTORY = "0x7eD598BcEf8bd9Edd8C97A195C6d13f40801EC7e";
 
 const args = process.argv.slice(2);
 const STAY = args.includes("--stay");
+const BARE = args.includes("--bare");
 
 // anvil's built-in test accounts: the same on every machine, printed by anvil itself.
 const keys = [
@@ -223,6 +226,16 @@ async function main(): Promise<void> {
   // the ledger is written from logs a block behind the head, so its line follows the figure by a moment
   const arrived = await waitFor("the ledger's line", async () => (await state()).events.find((e) => e.kind === "pool_in")).catch(() => null);
   check("the ledger says trading fees arrived in the pool", arrived?.text === "trading fees arrived in the pool", arrived?.amount);
+
+  if (BARE) {
+    const failedSoFar = checks.filter((c) => !c.ok);
+    records.forEach((f, i) => { if (!hadRecords[i]) rmSync(f, { recursive: true, force: true }); });
+    if (failedSoFar.length) throw new Error(`${failedSoFar.length} check(s) failed before the desk was ready`);
+    writeFileSync(join(WORK, "bare.json"), JSON.stringify({ rpc: RPC, api: API, desk, splitter, burnPot, token, keys }, null, 2));
+    console.log(`\nLeft running: the fork on ${RPC}, the engine on ${API}, the pool holding ${eth(pool0)} ETH. Written to ${join(WORK, "bare.json")}.`);
+    console.log("Stop them with: npm run e2e -- --stop");
+    return;
+  }
 
   step("4  jobs: one advanced and settled by the engine, one nobody takes up, one drawn on and left");
   await send(AGENT, desk, DESK, "register");
