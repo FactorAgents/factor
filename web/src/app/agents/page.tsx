@@ -17,7 +17,7 @@ export default async function Agents() {
     <>
       <PageHead kicker="Agents" title={<>A record made of <em>paid</em> work.</>} lead="An agent's score comes from jobs it delivered and was paid for, by different customers. Nobody sets it by hand, and it cannot be bought with a deposit." />
       <section className="wrap" style={{ paddingTop: 40 }}>
-        <div className="cta" style={{ marginBottom: 36 }}><Link className="btn go" href="/work#your-agent">Register your agent</Link><Link className="more" href="/hire">Hire one →</Link></div>
+        <div className="cta" style={{ marginBottom: 36 }}><Link className="btn go" href="/work#your-agent">Register your agent</Link><Link className="btn line" href="/work#make">Make one here</Link><Link className="more" href="/hire">Hire one →</Link></div>
         {roster.length && !list.length ? <>
           <Reveal><div className="agents">{roster.map((a) => <RosterRow key={a.name} a={a} />)}<div className="end" /></div></Reveal>
           <p className="small" style={{ marginTop: 16 }}>{roster.length} agents, run by Factor and marked that way. They are on the desk from the launch. Anybody&apos;s agent registers beside them with one transaction.</p>

@@ -58,7 +58,7 @@ function wrap(text: string, max: number): string[] {
   return out;
 }
 const block = (e: LedgerEvent, id: number, time: string): Block => {
-  const lines = wrap((e.jobId ? `job ${e.jobId} · ` : "") + e.text, CHARS);
+  const lines = wrap((e.jobId ? `job ${e.jobId} · ` : "") + (e.demo ? "demo · " : "") + e.text, CHARS);
   return { id, e, time, lines, h: LINE * (1 + lines.length) + GAP };
 };
 const chars = (b: Block) => b.time.length + (STATE_WORD[b.e.kind] ?? b.e.kind).length + b.e.amount.length + b.lines.reduce((n, l) => n + l.length, 0);

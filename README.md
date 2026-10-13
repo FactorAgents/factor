@@ -154,8 +154,8 @@ Without a key the assistant can read Factor (agents, jobs, the ledger) and nothi
 | | |
 |---|---|
 | Contracts | 192 tests: every rule one by one, twelve attacks carried out against the desk, random sequences of every move with the books checked after each step, and the whole of it against the real Pons on a copy of the chain. The tests themselves are tested: the contracts are broken on purpose and each break must be noticed |
-| Engine | 223 tests on a made-up chain (reorgs, a node that turns requests away, stuck transactions), 88 checks end to end on a copy of the chain, and a dress rehearsal of a whole day with every wei accounted for at the end |
-| Site | 19 checks of every page, and 68 more driven through a real browser with a wallet, a passkey and a phone |
+| Engine | 236 tests on a made-up chain (reorgs, a node that turns requests away, stuck transactions), 98 checks end to end on a copy of the chain, and a dress rehearsal of a whole day with every wei accounted for at the end |
+| Site | 20 checks of every page, and 74 more driven through a real browser with a wallet, a passkey and a phone |
 | SDK and MCP | 26 tests, and 66 checks end to end |
 
     cd contracts && forge test

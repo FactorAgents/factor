@@ -29,6 +29,10 @@
 //      agent whose key holds no ETH do a whole job, with the engine paying the gas of every transaction.
 //   9  Factor's own agents: the engine puts three up, and customers hire them. One reads Chainlink's feeds on the
 //      copy of the chain, two ask the model (the stand-in here), one job is under its agent's price and is declined.
+//  11  an agent somebody makes on the site: signed for by a wallet, put on the desk and run by the engine, hired,
+//      and its maker paid what it earned less what the model cost.
+//  12  a demonstration job: Factor's own customer hires one of Factor's own agents with real ETH, and every place
+//      that shows the job says it is a demonstration.
 //  10  the owner's switches, turned over HTTP with the owner's key, and a split somebody starved of gas: the pool's
 //      share is left waiting in the splitter, and the engine sends it on.
 //
@@ -54,6 +58,7 @@ import { costMicro, DEFAULT_MODELS, keyMessage, usdMicro } from "../src/compute.
 import { ponsFactoryAbi } from "../src/chain/pons.js";
 import { FEED_ABI, FEEDS } from "../src/house/feeds.js";
 import { SERVICES } from "../src/house/services.js";
+import { hostedMessage } from "../src/house/hosted.js";
 import { briefMessage, profileMessage, proofOf, titleMessage } from "../src/profiles.js";
 
 const ENGINE = join(fileURLToPath(new URL(".", import.meta.url)), "..");
@@ -179,7 +184,8 @@ function startEngine(dataDir: string, envFile: string, more: Record<string, stri
 }
 
 // Factor's own agents, switched on: their model is the stand-in, and a brief may wait a minute and a half
-const HOUSE = { HOUSE_MODE: "on", HOUSE_UPSTREAM_URL: `http://127.0.0.1:${MODEL_PORT}`, HOUSE_BRIEF_WAIT_S: "90" };
+// (and with them: agents people make on the site, and the demonstration customer, which does nothing until it has ETH)
+const HOUSE = { HOUSE_MODE: "on", HOUSE_UPSTREAM_URL: `http://127.0.0.1:${MODEL_PORT}`, HOUSE_BRIEF_WAIT_S: "90", HOSTED_MODE: "on", DEMO_MODE: "on", DEMO_EVERY_MIN: "1", DEMO_ACCEPT_AFTER_MIN: "0" };
 
 const CURVE = parseAbi(["function buy(uint256 amountIn, uint256 minOut, address to) payable returns (uint256)"]) as Abi;
 const DESK = factorDeskAbi as Abi;
@@ -645,6 +651,50 @@ async function main(): Promise<void> {
   await flip("hiring", true);
   await flip("accounts", true);
   check("turned back, everything is as it was", (await state() as FactorState & { paused: string | null }).paused === null && Object.keys((await health() as Health & { stopped: Record<string, unknown> }).stopped).length === 0);
+
+  step("11 an agent made on the site: signed for by a wallet, run by the engine, and its maker paid");
+  const maker = privateKeyToAccount(generatePrivateKey());
+  const MAKER = low(maker.address);
+  const instructions = "Write one plain sentence that says what the customer's text is about. Nothing else, and never more than one sentence.";
+  const makeAgent = async (name: string, by = maker) => {
+    const at = await blockTime();
+    const body = { owner: MAKER, name, does: "Says what a text is about in one sentence", instructions, priceEth: "0.002", payout: MAKER, at };
+    return post("/v1/agents/make", { ...body, signature: await by.signMessage({ message: hostedMessage(MAKER, name, body.does, body.priceEth, MAKER, keccak256(`0x${Buffer.from(instructions, "utf8").toString("hex")}`), at) }) });
+  };
+  check("somebody else's signature makes nobody an agent", (await makeAgent("one-liner", customerAcct)).status === 401);
+  const made11 = await makeAgent("one-liner");
+  check("its maker's signature does", made11.status === 200 && made11.body.name === "one-liner", JSON.stringify(made11.body));
+  type Made = AgentJson & { hosted?: boolean; owner?: string; service?: { fromEth: number } };
+  const oneLiner = await waitFor("the new agent to be on the desk", async () => { const a = (await state()).agents.find((x) => x.name === "one-liner") as Made | undefined; return a?.named && a.service ? a : null; }, 240_000);
+  check("the engine put it on the desk under its name, said to be run by Factor for its maker and not one of Factor's own", oneLiner.hosted === true && oneLiner.owner === MAKER && !oneLiner.house && oneLiner.service!.fromEth === 0.002 && (await read<{ registered: boolean }>(desk, DESK, "agent", [oneLiner.address])).registered);
+  const job11 = await hireOwn(oneLiner as Own, "0.004", "A note", "The shop is closed on Monday because of the holiday, and opens again on Tuesday at nine.");
+  const done11 = await closed(job11, "delivered");
+  check("hired, it does the job by its maker's instructions and delivers text with its fingerprint on the chain", done11.work?.kind === "text" && done11.work.text.includes("Done by one-liner, an agent its maker set up and Factor runs.") && (await proofOnChain(job11)) === proofOf(done11.work.text));
+  const makerBefore = await balance(MAKER);
+  await send(CUSTOMER, desk, DESK, "accept", [BigInt(job11)]);
+  // what it earned is sent on ten minutes after it was last looked at: the chain's clock is moved past that
+  await warpBy(660);
+  const paid11 = await waitFor("its maker to be paid", async () => { const b = await balance(MAKER); return b > makerBefore ? b - makerBefore : null; }, 180_000);
+  const earned11 = parseEther("0.004") - parseEther("0.00008");
+  check("its maker is paid what it earned, less what the model cost and nothing else", paid11 < earned11 && paid11 > earned11 - parseEther("0.0001") && (await balance(oneLiner.address)) === 0n, `${eth(paid11)} ETH of ${eth(earned11)} earned`);
+
+  step("12 a demonstration job: Factor's own customer, a real job, and said to be a demonstration wherever it shows");
+  type Demo = { enabled: boolean; customer: string | null; jobs: number; note: string | null };
+  const demo0 = await waitFor("the demonstration customer's account", async () => { const d = (await health() as Health & { demo: Demo }).demo; return d?.customer && d.note ? d : null; }, 180_000);
+  check("with no ETH the demonstration customer locks nothing, and says what it needs", demo0.enabled && demo0.jobs === 0 && demo0.note!.includes(`send some to ${demo0.customer}`), demo0.note ?? "");
+  await rpc("eth_sendTransaction", [{ from: TRADER, to: demo0.customer, value: `0x${parseEther("0.05").toString(16)}` }]);
+  // it looks again ten minutes after it found itself without ETH
+  await warpBy(660);
+  type DemoJob = JobJson & { demo?: boolean };
+  const shown = await waitFor("a demonstration job to settle", async () => { const j = (await state()).jobs.find((x) => (x as DemoJob).demo && x.state === "settled") as DemoJob | undefined; return j ?? null; }, 300_000);
+  const onDesk = await read<{ customer: string; state: number; early: bigint; price: bigint }>(desk, DESK, "job", [BigInt(shown.n)]);
+  check("it is a real job on the desk: Factor's customer locked the price, the agent delivered, and it settled", low(onDesk.customer) === low(demo0.customer!) && onDesk.state === 4 && onDesk.price > 0n && low(shown.customer) === low(demo0.customer!), `job ${shown.n}, ${eth(onDesk.price)} ETH`);
+  check("the advance its customer allowed was drawn as it was delivered: half the price, its fee to the burn", onDesk.early === onDesk.price / 2n && shown.advances.length === 1 && shown.advances[0]!.kind === "customer");
+  const await0 = new Set((await state()).jobs.filter((x) => (x as DemoJob).demo).map((x) => x.id));
+  const lines12 = (await get<{ items: (EventJson & { demo?: boolean })[] }>("/v1/ledger?limit=200")).items;
+  const mine12 = lines12.filter((l) => l.jobId === shown.id);
+  check("every line of it on the ledger says it is a demonstration, and no line of anybody else's job does", mine12.length >= 3 && mine12.every((l) => l.demo === true) && lines12.filter((l) => l.jobId !== undefined && !(await0.has(l.jobId))).every((l) => !l.demo), `${mine12.length} lines`);
+  check("the feed counts the demonstrations apart", ((await state()).stats as { demoJobs?: number }).demoJobs! >= 1);
 
   // tidy up
   records.forEach((f, i) => { if (!hadRecords[i]) rmSync(f, { recursive: true, force: true }); });

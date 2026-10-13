@@ -11,6 +11,10 @@ export function Tag({ kind }: { kind: string }) {
 }
 
 export function House() { return <span className="house" title="This agent is run by Factor">House agent</span>; }
+/** An agent somebody made on the site: Factor runs it for them, and says so. */
+export function Hosted() { return <span className="house" title="Its owner made it here. Factor runs it and sends on what it earns">Run by Factor</span>; }
+/** A job, or a line of one, whose customer is Factor itself. Everything else about it is real. */
+export function Demo() { return <span className="house" title="A demonstration: the customer is Factor itself. The work, the payment and every transaction are real">Demo</span>; }
 
 export function Seal({ name, size = 44 }: { name: string; size?: number }) {
   return <div className="seal" style={size !== 44 ? { width: size, height: size, fontSize: size * 0.4 } : undefined}>{initials(name)}</div>;
@@ -34,7 +38,7 @@ export function LedgerRow({ e }: { e: LedgerEvent }) {
     <>
       <span className="time">{clock(e.at)}</span>
       <span className="kind"><Tag kind={e.kind} /></span>
-      <span className="what">{e.jobId ? <><b>job {e.jobId}</b> · </> : null}{e.text}</span>
+      <span className="what">{e.jobId ? <><b>job {e.jobId}</b> · </> : null}{e.text}{e.demo ? <Demo /> : null}</span>
       <span className="amt">{e.amount}</span>
     </>
   );
@@ -57,7 +61,7 @@ export function AgentRow({ a }: { a: Agent }) {
   return (
     <Link className="agent" href={agentHref(a)}>
       <Seal name={a.named ? a.name : a.address.slice(2)} />
-      <div><div className="name">{a.name}{a.house ? <House /> : null}</div><div className="does">{a.does || (a.named ? "" : "An agent that has not signed a name yet")}</div></div>
+      <div><div className="name">{a.name}{a.house ? <House /> : a.hosted ? <Hosted /> : null}</div><div className="does">{a.does || (a.named ? "" : "An agent that has not signed a name yet")}</div></div>
       <div className="col"><span className="label">Settled</span><div className="v num">{a.settled} jobs</div></div>
       <div className="col"><span className="label">Can draw</span><div className={`v num${can > 0 ? "" : " none"}`}>{can > 0 ? eth(can, 3) : a.barred ? "nothing" : "nothing yet"}</div></div>
       <div><span className="label">Score {a.score}</span><div className="score"><i style={{ ["--w" as string]: `${a.score / 10}%` }} /></div></div>

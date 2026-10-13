@@ -26,6 +26,8 @@ import type { EngineDb } from "../chain/db.js";
 import { costMicro, DEFAULT_MODELS, type Price } from "../compute.js";
 import { stopped } from "../switches.js";
 import { proofOf, type Profiles } from "../profiles.js";
+import { FEED_ABI, FEEDS } from "./feeds.js";
+import { hostedService, type HostedRow } from "./hosted.js";
 import { SERVICES, type Asked, type Done, type Service } from "./services.js";
 
 type Env = Record<string, string | undefined>;
@@ -40,6 +42,10 @@ export interface HouseConfig {
   payoutMinWei: bigint;
   briefWaitS: number; // HOUSE_BRIEF_WAIT_S: how long a job may wait for its brief before it is declined
   note: string | null;
+  /** agents somebody made on the site and Factor runs for them (./hosted.ts): HOSTED_MODE=on */
+  hosted: { enabled: boolean; perOwner: number; most: number; floorWei: bigint; dailyMicroEach: number; payoutMinWei: bigint };
+  /** demonstration jobs, with a customer of Factor's own (./demo.ts): DEMO_MODE=on */
+  demo: { enabled: boolean; everyS: number; acceptAfterS: number };
 }
 
 export function readHouse(env: Env, problems: string[] = []): HouseConfig {
@@ -69,6 +75,19 @@ export function readHouse(env: Env, problems: string[] = []): HouseConfig {
     payout,
     payoutMinWei: 5n * 10n ** 15n,
     briefWaitS: int("HOUSE_BRIEF_WAIT_S", 900, 30, 86_400),
+    hosted: {
+      enabled: on && hasSeed && hasMaker && (env.HOSTED_MODE ?? "").trim().toLowerCase() === "on",
+      perOwner: int("HOSTED_PER_OWNER", 3, 1, 50),
+      most: int("HOSTED_MOST", 200, 1, 10_000),
+      floorWei: 10n ** 15n, // 0.001 ETH: the least a job of one of these costs
+      dailyMicroEach: int("HOSTED_DAILY_USD_EACH", 1, 1, 1000) * 1_000_000,
+      payoutMinWei: 2n * 10n ** 15n,
+    },
+    demo: {
+      enabled: on && hasSeed && hasMaker && (env.DEMO_MODE ?? "").trim().toLowerCase() === "on",
+      everyS: int("DEMO_EVERY_MIN", 60, 1, 1440) * 60,
+      acceptAfterS: int("DEMO_ACCEPT_AFTER_MIN", 3, 0, 1440) * 60,
+    },
     note: !on ? null : !hasMaker ? "HOUSE_MODE is on and FACTOR_ACCOUNTS is not set: the house agents act through accounts, and there is nothing to make them with." : !hasSeed ? "HOUSE_MODE is on and there is no key to make the house agents' keys from (BOT_PRIVATE_KEY, or HOUSE_AGENTS_KEY)." : null,
   };
 }
@@ -96,8 +115,10 @@ export function houseSigner(seed: Hex, name: string): HouseSigner {
 
 type State = "waiting" | "worked" | "delivering" | "delivered" | "to_decline" | "declining" | "declined" | "gave_up";
 interface Row { job_id: number; agent: string; state: State; kind: string; work: string; note: string; relay: string | null; tries: number; next_at: number; cost_micro: number }
-interface JobRow { id: number; customer: string; agent: string; price: string; due_at: number; locked_at: number; state: number }
-interface Agent { service: Service; signer: HouseSigner; key: Key; address: string | null; setUp: boolean; payoutAt: number }
+interface JobRow { id: number; customer: string; agent: string; price: string; due_at: number; locked_at: number; state: number; allow_early: number }
+interface Agent { service: Service; signer: HouseSigner; key: Key; address: string | null; setUp: boolean; payoutAt: number; hosted?: { id: number; owner: string; payout: string } }
+const JOB = "id, customer, agent, price, due_at, locked_at, state, allow_early";
+type Made = { ok: true; id: number; name: string } | { ok: false; status: number; error: string };
 
 const GRACE_S = 12 * 3600;
 const MOST_TRIES = 3;
@@ -114,6 +135,8 @@ export interface HouseDeps {
   live: () => boolean;
   now: () => number; // ms, the engine's clock
   log: (line: string) => void;
+  /** where the ETH that pays for a hosted agent's models goes when the owner named no payout address: the gas wallet */
+  costTo?: () => string | null;
   /** for the tests: other signers than the ones made from the seed, and no waiting between reads */
   signers?: (name: string) => HouseSigner;
   paceMs?: number;
@@ -122,6 +145,8 @@ export interface HouseDeps {
 export class House {
   readonly agents: Agent[] = [];
   private busy = false;
+  /** the account of the demonstration customer (./demo.ts), once it is known: its jobs are marked wherever they show */
+  demoCustomer: string | null = null;
 
   constructor(readonly cfg: HouseConfig, private d: HouseDeps) {
     if (!cfg.enabled) return;
@@ -132,11 +157,71 @@ export class House {
       if (service.ask && !d.modelKey) continue;
       this.agents.push({ service, signer, key: { kind: KIND.wallet, a: `0x${"0".repeat(24)}${signer.address.slice(2)}` as Hex, b: `0x${"0".repeat(64)}` as Hex }, address: null, setUp: false, payoutAt: 0 });
     }
+    // the agents people made on the site: they ask a model, so there are none without a key for one
+    if (cfg.hosted.enabled && d.modelKey) for (const row of d.db.q("SELECT * FROM hosted_agents ORDER BY id").all() as HostedRow[]) this.put(row);
+  }
+
+  // ---------- agents made on the site ----------
+
+  private put(row: HostedRow): Agent | null {
+    const signer = this.d.signers?.(`hosted ${row.id}`) ?? (this.d.seed ? houseSigner(this.d.seed, `hosted ${row.id}`) : null);
+    if (!signer) return null;
+    const a: Agent = { service: hostedService(row), signer, key: { kind: KIND.wallet, a: `0x${"0".repeat(24)}${signer.address.slice(2)}` as Hex, b: `0x${"0".repeat(64)}` as Hex }, address: null, setUp: false, payoutAt: 0, hosted: { id: row.id, owner: row.owner, payout: row.payout } };
+    this.agents.push(a);
+    return a;
+  }
+
+  /**
+   * Somebody makes an agent: a name, what it does, how to do it and its price. Factor runs it from here on. Whoever
+   * calls this has already seen that `owner` signed for it (../api.ts).
+   */
+  make(o: { owner: string; name: string; does: string; instructions: string; priceWei: bigint; payout: string }): Made {
+    const h = this.cfg.hosted;
+    if (!h.enabled || !this.d.modelKey) return { ok: false, status: 503, error: "making an agent here is not switched on yet" };
+    if (stopped(this.d.db, "house") || stopped(this.d.db, "keeper")) return { ok: false, status: 503, error: "making an agent is paused for now" };
+    if (o.priceWei < h.floorWei) return { ok: false, status: 400, error: `the price is under the least one of these takes a job for (${Number(h.floorWei / 10n ** 12n) / 1e6} ETH)` };
+    if (o.priceWei > 10n ** 18n) return { ok: false, status: 400, error: "the price is over 1 ETH a job: set it lower" };
+    const db = this.d.db;
+    if ((db.q("SELECT COUNT(*) AS n FROM hosted_agents WHERE owner = ?").get(o.owner) as { n: number }).n >= h.perOwner) return { ok: false, status: 429, error: `one address can have ${h.perOwner} agents made here` };
+    if ((db.q("SELECT COUNT(*) AS n FROM hosted_agents").get() as { n: number }).n >= h.most) return { ok: false, status: 429, error: "no more agents can be made here for now" };
+    if (db.q("SELECT 1 FROM hosted_agents WHERE name = ?").get(o.name)) return { ok: false, status: 409, error: "another agent has that name" };
+    const id = Number(db.q("INSERT INTO hosted_agents (owner, name, does, instructions, price_wei, payout, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(o.owner, o.name, o.does, o.instructions, o.priceWei.toString(), o.payout, this.d.now()).lastInsertRowid);
+    this.put(db.q("SELECT * FROM hosted_agents WHERE id = ?").get(id) as HostedRow);
+    this.d.log(`[house] a new agent was made on the site: ${o.name}, for ${o.owner}`);
+    return { ok: true, id, name: o.name };
+  }
+
+  /** Whether an agent can be made here right now: switched on, a key for the model, and nothing stopped. */
+  canMake(): boolean {
+    return this.cfg.hosted.enabled && !!this.d.modelKey && this.d.live() && !stopped(this.d.db, "house") && !stopped(this.d.db, "keeper");
+  }
+
+  /** The agents an address made here, for their owner's own page. */
+  madeBy(owner: string): { name: string; does: string; priceEth: number; payout: string; paused: boolean; address: string | null; ready: boolean }[] {
+    return (this.d.db.q("SELECT * FROM hosted_agents WHERE owner = ? ORDER BY id").all(owner) as HostedRow[]).map((r) => {
+      const a = this.agents.find((x) => x.hosted?.id === r.id);
+      return { name: r.name, does: r.does, priceEth: Number(BigInt(r.price_wei) / 10n ** 12n) / 1e6, payout: r.payout, paused: !!r.paused, address: a?.address ?? null, ready: !!a?.setUp };
+    });
+  }
+
+  /** Its owner pauses one (it declines every job from then on) or lets it work again. */
+  pause(owner: string, name: string, paused: boolean): boolean {
+    return this.d.db.q("UPDATE hosted_agents SET paused = ? WHERE owner = ? AND name = ?").run(paused ? 1 : 0, owner, name).changes > 0;
+  }
+
+  /** Who made the agent at an address, when it is one made on the site. */
+  ownerOf(address: string): string | null {
+    return this.agents.find((x) => x.address === address)?.hosted?.owner ?? null;
   }
 
   /** The house agents' addresses on the desk, as far as they are known yet. */
   addresses(): string[] {
-    return this.agents.map((a) => a.address).filter((a): a is string => !!a);
+    return this.agents.filter((a) => !a.hosted).map((a) => a.address).filter((a): a is string => !!a);
+  }
+
+  /** The agents made on the site, by address: who made each. */
+  hostedAddresses(): Map<string, string> {
+    return new Map(this.agents.filter((a) => a.hosted && a.address).map((a) => [a.address!, a.hosted!.owner]));
   }
 
   /** What a house agent takes a job for, for the page that offers it. */
@@ -151,9 +236,11 @@ export class House {
     return r && r.note && ["to_decline", "declining", "declined", "gave_up"].includes(r.state) ? r.note : null;
   }
 
-  spentToday(): number {
-    const now = this.d.now();
-    return (this.d.db.q("SELECT COALESCE(SUM(cost_micro), 0) AS n FROM house_jobs WHERE created_at >= ?").get(now - (now % 86_400_000)) as { n: number }).n;
+  /** What was spent on models today (UTC), by all of them or by one. */
+  spentToday(agent?: string): number {
+    const now = this.d.now(), from = now - (now % 86_400_000);
+    const row = agent ? this.d.db.q("SELECT COALESCE(SUM(cost_micro), 0) AS n FROM house_jobs WHERE created_at >= ? AND agent = ?").get(from, agent) : this.d.db.q("SELECT COALESCE(SUM(cost_micro), 0) AS n FROM house_jobs WHERE created_at >= ?").get(from);
+    return (row as { n: number }).n;
   }
 
   totals(): Record<string, unknown> {
@@ -161,7 +248,8 @@ export class House {
     const n = (s: string) => by.find((r) => r.state === s)?.n ?? 0;
     return {
       enabled: this.cfg.enabled, note: this.cfg.note, model: this.cfg.model, payout: this.cfg.payout,
-      agents: this.agents.map((a) => ({ name: a.service.name, address: a.address, ready: a.setUp, asksAModel: !!a.service.ask })),
+      agents: this.agents.filter((a) => !a.hosted).map((a) => ({ name: a.service.name, address: a.address, ready: a.setUp, asksAModel: !!a.service.ask })),
+      hosted: { enabled: this.cfg.hosted.enabled, agents: this.agents.filter((a) => a.hosted).length, ready: this.agents.filter((a) => a.hosted && a.setUp).length },
       delivered: n("delivered"), declined: n("declined"), gaveUp: n("gave_up"), underWay: n("waiting") + n("worked") + n("delivering") + n("to_decline") + n("declining"),
       spentTodayMicro: this.spentToday(), dailyMicro: this.cfg.dailyMicro,
     };
@@ -178,11 +266,11 @@ export class House {
     try {
       for (const a of this.agents) {
         if (!(await this.ready(a))) continue;
-        const open = this.d.db.q("SELECT id, customer, agent, price, due_at, locked_at, state FROM desk_jobs WHERE agent = ? AND state IN (1, 2) ORDER BY id LIMIT 6").all(a.address) as JobRow[];
+        const open = this.d.db.q(`SELECT ${JOB} FROM desk_jobs WHERE agent = ? AND state IN (1, 2) ORDER BY id LIMIT 6`).all(a.address) as JobRow[];
         const mine = this.d.db.q("SELECT job_id FROM house_jobs WHERE agent = ? AND state IN ('worked', 'delivering', 'to_decline', 'declining')").all(a.address) as { job_id: number }[];
         const ids = [...new Set([...mine.map((m) => m.job_id), ...open.map((j) => j.id)])].sort((x, y) => x - y);
         for (const id of ids) {
-          const job = open.find((j) => j.id === id) ?? (this.d.db.q("SELECT id, customer, agent, price, due_at, locked_at, state FROM desk_jobs WHERE id = ?").get(id) as JobRow | undefined);
+          const job = open.find((j) => j.id === id) ?? (this.d.db.q(`SELECT ${JOB} FROM desk_jobs WHERE id = ?`).get(id) as JobRow | undefined);
           if (!job) continue;
           try {
             await this.step(a, job);
@@ -263,6 +351,10 @@ export class House {
       if (nowS > job.due_at + GRACE_S) return this.save(job.id, a, { state: "gave_up", note: "its time had run out before it could be done" });
       const floor = a.service.floorWei;
       if (BigInt(job.price) < floor) return this.decline(a, job, `the price is under what ${a.service.name} takes a job for (${Number(floor / 10n ** 12n) / 1e6} ETH)`);
+      if (a.hosted) {
+        const own = db.q("SELECT paused FROM hosted_agents WHERE id = ?").get(a.hosted.id) as { paused: number } | undefined;
+        if (!own || own.paused) return this.decline(a, job, `${a.service.name} is not taking jobs for now`);
+      }
       const brief = profiles.brief(job.id);
       if (!brief) {
         if (nowS - job.locked_at > this.cfg.briefWaitS) return this.decline(a, job, `no brief came with the job, and ${a.service.name} cannot work without one`);
@@ -275,7 +367,7 @@ export class House {
       let cost = { micro: 0, input: 0, output: 0 };
       if (a.service.work) done = await a.service.work(title, brief, { chain: this.d.chain, now: nowS, desk: this.d.desk, pace: () => new Promise((r) => setTimeout(r, this.d.paceMs ?? 300)) });
       else {
-        if (this.spentToday() >= this.cfg.dailyMicro) return this.decline(a, job, `${a.service.name} has taken all the jobs it takes in a day: hire it again tomorrow`);
+        if (this.spentToday() >= this.cfg.dailyMicro || (a.hosted && this.spentToday(a.address!) >= this.cfg.hosted.dailyMicroEach)) return this.decline(a, job, `${a.service.name} has taken all the jobs it takes in a day: hire it again tomorrow`);
         try {
           const answer = await this.ask(a.service.ask!(title, brief));
           cost = { micro: answer.costMicro, input: answer.input, output: answer.output };
@@ -298,7 +390,11 @@ export class House {
 
     if (row.state === "worked") {
       if (job.state >= 3) return this.save(job.id, a, { state: job.state === 3 || job.state === 4 || job.state === 5 ? "delivered" : "gave_up" });
-      const relay = await this.orderFor(a, job, [deskCall(this.d.desk, "deliver", [BigInt(job.id), proofOf(row.work)])]);
+      // A demonstration job whose customer allowed an early advance: the agent draws half of it and delivers in one
+      // order, so the advance is never out on a job that is not delivered (an advance kept that way bars an agent).
+      const early = this.demoCustomer !== null && job.customer === this.demoCustomer && !!job.allow_early && job.state === 1;
+      const calls = [...(early ? [deskCall(this.d.desk, "draw", [BigInt(job.id), BigInt(job.price) / 2n, 0])] : []), deskCall(this.d.desk, "deliver", [BigInt(job.id), proofOf(row.work)])];
+      const relay = await this.orderFor(a, job, calls);
       if (relay) this.save(job.id, a, { state: "delivering", relay });
       return;
     }
@@ -333,16 +429,50 @@ export class House {
     return this.d.accounts.orderAs(a.address!, calls, (typed) => a.signer.signTypedData(typed));
   }
 
-  /** What an agent has earned goes on to where the owner said, now and then, when there is enough to be worth it. */
+  /**
+   * What an agent has earned goes on, now and then, when there is enough to be worth it. One of Factor's own: to
+   * where the owner said. One somebody made here: to its maker, less what its jobs cost in models, which goes
+   * where Factor's own earnings go.
+   */
   private async payOut(a: Agent): Promise<void> {
     const now = this.d.now();
-    if (!this.cfg.payout || now < a.payoutAt) return;
+    const to = a.hosted ? a.hosted.payout : this.cfg.payout;
+    if (!to || now < a.payoutAt) return;
     a.payoutAt = now + 600_000;
     if (this.d.db.q("SELECT 1 FROM house_jobs WHERE agent = ? AND state IN ('worked', 'delivering', 'to_decline', 'declining') LIMIT 1").get(a.address)) return;
     const balance = await this.d.chain.balance(a.address!);
-    if (balance < this.cfg.payoutMinWei) return;
-    const relay = await this.order(a, [{ to: this.cfg.payout, value: balance, data: "0x" }]).catch((e) => { if (!revertOf(e)) throw e; return null; });
-    if (relay) this.d.log(`[house] ${a.service.name}: ${Number(balance / 10n ** 12n) / 1e6} ETH it earned is on its way to ${this.cfg.payout}`);
+    if (balance < (a.hosted ? this.cfg.hosted.payoutMinWei : this.cfg.payoutMinWei)) return;
+    const calls: Call[] = [];
+    let covered = 0;
+    if (a.hosted) {
+      const costTo = this.cfg.payout ?? this.d.costTo?.() ?? null;
+      const spent = (this.d.db.q("SELECT COALESCE(SUM(cost_micro), 0) AS n FROM house_jobs WHERE agent = ?").get(a.address) as { n: number }).n;
+      const paid = (this.d.db.q("SELECT cost_paid_micro FROM hosted_agents WHERE id = ?").get(a.hosted.id) as { cost_paid_micro: number } | undefined)?.cost_paid_micro ?? 0;
+      const owed = Math.max(0, spent - paid);
+      if (owed > 0 && costTo) {
+        const price8 = await this.ethUsd8();
+        if (price8 === null) return; // no price for ETH just now: looked at again later, nothing is sent on a guess
+        // millionths of a dollar into wei: micro x 1e20 / (dollars x 1e8)
+        const wei = (BigInt(owed) * 10n ** 20n) / price8;
+        const take = wei > balance ? balance : wei;
+        covered = wei > balance ? Number((BigInt(owed) * balance) / wei) : owed;
+        if (take > 0n) calls.push({ to: costTo, value: take, data: "0x" });
+        if (balance - take > 0n) calls.push({ to, value: balance - take, data: "0x" });
+      } else calls.push({ to, value: balance, data: "0x" });
+    } else calls.push({ to, value: balance, data: "0x" });
+    const relay = await this.order(a, calls).catch((e) => { if (!revertOf(e)) throw e; return null; });
+    if (!relay) return;
+    if (a.hosted && covered > 0) this.d.db.q("UPDATE hosted_agents SET cost_paid_micro = cost_paid_micro + ? WHERE id = ?").run(covered, a.hosted.id);
+    this.d.log(`[house] ${a.service.name}: ${Number(balance / 10n ** 12n) / 1e6} ETH it earned is on its way${a.hosted ? ` to its maker ${to}${covered ? `, less what its models cost` : ""}` : ` to ${to}`}`);
+  }
+
+  private async ethUsd8(): Promise<bigint | null> {
+    const feed = FEEDS.find((f) => f.symbol === "ETH");
+    if (!feed) return null;
+    try {
+      const [, answer] = await this.d.chain.read<readonly [bigint, bigint, bigint, bigint, bigint]>({ to: feed.address, abi: FEED_ABI as never, functionName: "latestRoundData" });
+      return answer > 0n ? answer : null;
+    } catch { return null; }
   }
 
   // ---------- the model ----------

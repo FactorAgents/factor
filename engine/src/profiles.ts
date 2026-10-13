@@ -161,6 +161,39 @@ export class Profiles {
     return { ok: true };
   }
 
+  /**
+   * The brief of a demonstration job: the engine is the customer there, so nobody signs. It is stored as the
+   * customer's own, and only for a job that this very customer locked.
+   */
+  ownBrief(jobId: number, customer: string, title: string, brief: string): boolean {
+    const job = this.db.q("SELECT customer FROM desk_jobs WHERE id = ?").get(jobId) as { customer: string } | undefined;
+    if (!job || job.customer !== customer) return false;
+    const at = Math.floor(this.now() / 1000);
+    this.db.tx(() => {
+      this.db.q("INSERT INTO job_briefs (job_id, brief, by, signed_at) VALUES (?, ?, ?, ?) ON CONFLICT(job_id) DO NOTHING").run(jobId, brief, customer, at);
+      if (title) this.db.q("INSERT INTO job_titles (job_id, title, by, signed_at) VALUES (?, ?, ?, ?) ON CONFLICT(job_id) DO NOTHING").run(jobId, title, customer, at);
+    });
+    return true;
+  }
+
+  /** Whether `address` signed the text, for the other things people sign (an agent made on the site). */
+  signed(address: string, message: string, signature: unknown): Promise<boolean> {
+    return this.signedBy(address, message, signature);
+  }
+
+  /** The time a signature carries, when it is within ten minutes of now, or null. */
+  freshAt(at: unknown): number | null {
+    return this.fresh(at);
+  }
+
+  /** Why a name cannot be given to a new agent, or null when it can. */
+  nameProblem(name: string): string | null {
+    if (!NAME.test(name) || /^0x/.test(name) || /--/.test(name)) return "a name is 3 to 24 characters: small letters, digits and single dashes";
+    if (RESERVED.has(name)) return "that name is not available";
+    if (this.db.q("SELECT 1 FROM agent_profiles WHERE name_key = ?").get(name)) return "another agent has that name";
+    return null;
+  }
+
   brief(jobId: number): string | null {
     return (this.db.q("SELECT brief FROM job_briefs WHERE job_id = ? AND hidden = 0").get(jobId) as { brief: string } | undefined)?.brief ?? null;
   }

@@ -619,6 +619,12 @@ export class FakeChain implements Chain {
       const j = this.jobs.get(Number(args[0]));
       if (!j || j.customer !== account) throw new Reverted("NotCustomer");
       if (commit) this.accept(Number(args[0]));
+    } else if (d.functionName === "draw") {
+      const j = this.jobs.get(Number(args[0]));
+      if (!j || j.agent !== account) throw new Reverted("NotAgent");
+      if (j.state !== S.locked && j.state !== S.advanced) throw new Reverted("WrongState", [j.state]);
+      if (Number(args[2]) === K.early && !j.allowEarly) throw new Reverted("EarlyNotAllowed");
+      if (commit) this.draw(Number(args[0]), args[1] as bigint, Number(args[2]));
     } else throw new Error(`the fake chain's accounts do not do ${d.functionName}`);
     void txHash;
   }
@@ -628,7 +634,7 @@ export class FakeChain implements Chain {
       const to = raw.to.toLowerCase();
       if (to === A.desk && raw.data.length >= 10) {
         const d = decodeFunctionData({ abi: factorDeskAbi as Abi, data: raw.data });
-        if (["register", "lock", "deliver", "decline", "accept"].includes(d.functionName)) this.asAccount(raw.from.toLowerCase(), { to, value: raw.value ?? 0n, data: raw.data }, false);
+        if (["register", "lock", "deliver", "decline", "accept", "draw"].includes(d.functionName)) this.asAccount(raw.from.toLowerCase(), { to, value: raw.value ?? 0n, data: raw.data }, false);
         return "0x" as Hex;
       }
       if ((raw.value ?? 0n) > (this.balances.get(raw.from.toLowerCase()) ?? 0n)) throw new Error("insufficient funds for transfer");

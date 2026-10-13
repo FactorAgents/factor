@@ -23,12 +23,15 @@ import type { EngineConfig } from "./chain/config.js";
 import { snapshotOf, type Ctx, type Snapshot } from "./chain/context.js";
 import type { Accounts } from "./accounts.js";
 import type { Gateway } from "./compute.js";
+import { keccak256, toHex } from "viem";
+import type { Demo } from "./house/demo.js";
+import { hostedMessage, INSTRUCTIONS_LEAST, INSTRUCTIONS_MOST } from "./house/hosted.js";
 import type { House } from "./house/house.js";
 import { SERVICES } from "./house/services.js";
 import { timingSafeEqual } from "node:crypto";
 import { allStopped, isSwitch, SWITCHES, stopped, turn } from "./switches.js";
 import { DeskStore, KIND_NAME, RULES, STATE, STATE_NAME, type AdvanceRow, type AgentRow, type JobRow, type LedgerRow } from "./desk.js";
-import { Profiles, type Profile, type Written } from "./profiles.js";
+import { briefText, oneLine, Profiles, type Profile, type Written } from "./profiles.js";
 import { canDrawOf, limitOf, scoreOf, scoreParts } from "./score.js";
 
 export interface Answer {
@@ -55,12 +58,15 @@ export interface EngineView {
   gateway: Gateway | null;
   accounts: Accounts | null;
   house: House | null;
+  demo: Demo | null;
 }
 
 // ---- the site's shape: web/src/lib/types.ts. Keep the two in step by hand. ----
 
 export interface AdvanceJson { kind: "customer" | "pool" | "compute"; eth: number; feeEth: number; at: string }
 export interface JobJson {
+  /** a demonstration: the customer is Factor's own. Said on the ledger's line and on the job's page */
+  demo?: boolean;
   id: string; // "0412"
   n: number;
   title: string;
@@ -87,6 +93,9 @@ export interface AgentJson {
   id: string; // its address: what the site's links carry
   name: string;
   named: boolean; // false: the name is only its address, shortened
+  /** made on the site and run by Factor for whoever made it: said wherever it shows */
+  hosted?: boolean;
+  owner?: string;
   address: string;
   house: boolean;
   /** for one of Factor's own agents: what to put in the brief, what comes back, and the least it takes a job for */
@@ -111,14 +120,14 @@ export interface AgentJson {
   score: number;
   scoreParts: { name: string; value: string; points: number; max: number }[];
 }
-export interface EventJson { n: number; at: string; kind: string; jobId?: string; agentId?: string; text: string; amount: string; tx: string }
+export interface EventJson { n: number; at: string; kind: string; jobId?: string; agentId?: string; text: string; amount: string; tx: string; demo?: boolean }
 export interface BurnJson { n: number; at: string; eth: number; tokens: number; tx: string }
 export interface FactorState {
   source: "engine";
   asOf: string;
   launched: boolean;
   links: { pons: string | null; github: string | null; x: string | null };
-  stats: { advancedEth: number; settledJobs: number; jobs: number; poolEth: number; reserveEth: number; outEth: number; heldEth: number; burnedTokens: number; supplyLeft: number; agents: number; lostEth: number };
+  stats: { advancedEth: number; settledJobs: number; jobs: number; poolEth: number; reserveEth: number; outEth: number; heldEth: number; burnedTokens: number; supplyLeft: number; agents: number; demoJobs: number; lostEth: number };
   params: { advanceMaxPct: number; advanceFeePct: number; jobFeePct: number; graceHours: number; reviewHours: number; rejectedPct: number; reserveMinPct: number; minJobEth: number };
   agents: AgentJson[];
   jobs: JobJson[];
@@ -133,6 +142,8 @@ export interface FactorState {
   paused: string | null;
   /** Factor's own agents, whether or not they are on the desk yet: what each does and takes a job for */
   roster: RosterJson[];
+  /** whether somebody can make an agent on the site right now, how many one address may have, and the least a job of one costs */
+  hosted: { enabled: boolean; perOwner: number; fromEth: number };
 }
 export interface RosterJson { name: string; does: string; needs: string; delivers: string; fromEth: number; asksAModel: boolean }
 // what Factor's own agents are, said the same before the launch and after it
@@ -169,6 +180,10 @@ export const link = (raw: string | undefined): string | null => (raw && /^https:
 interface Names {
   profiles: Map<string, Profile>;
   house: Set<string>;
+  /** agents made on the site, by address: who made each */
+  hosted?: Map<string, string>;
+  /** the jobs that are demonstrations */
+  demoJobs?: Set<number>;
   service?: (address: string) => AgentJson["service"] | null;
 }
 const nameOf = (names: Names, address: string | null): string => (address ? (names.profiles.get(address)?.name ?? shortAddress(address)) : "an agent");
@@ -178,6 +193,7 @@ export function agentJson(row: AgentRow, names: Names, nowS: number): AgentJson 
   const p = names.profiles.get(row.address);
   return {
     id: row.address, name: p?.name ?? shortAddress(row.address), named: !!p, address: row.address, house: names.house.has(row.address), does: p?.does ?? "", since: iso(row.registered_at),
+    ...(names.hosted?.has(row.address) ? { hosted: true, owner: names.hosted.get(row.address)! } : {}),
     ...(names.service?.(row.address) ? { service: names.service(row.address)! } : {}),
     settled: r.settled, settledAtHalf: r.settledAtHalf, notDelivered: r.notDelivered, unanswered: r.unanswered, customers: r.customers,
     onTimePct: r.settled ? Math.round((r.onTime * 100) / r.settled) : 0,
@@ -189,7 +205,7 @@ export function agentJson(row: AgentRow, names: Names, nowS: number): AgentJson 
 
 const advanceJson = (a: AdvanceRow): AdvanceJson => ({ kind: KIND_NAME[a.kind] ?? "pool", eth: eth(a.amount), feeEth: eth(a.fee), at: iso(a.at) });
 
-export function jobJson(j: JobRow, advances: AdvanceRow[], title: string | undefined): JobJson {
+export function jobJson(j: JobRow, advances: AdvanceRow[], title: string | undefined, demo = false): JobJson {
   const state = (STATE_NAME[j.state] ?? "locked") as JobJson["state"];
   const closed = j.state >= STATE.settled;
   // one line for the bill: everything drawn, under the kind most of it came by
@@ -206,6 +222,7 @@ export function jobJson(j: JobRow, advances: AdvanceRow[], title: string | undef
     advance = { kind: KIND_NAME[most] ?? "pool", eth: eth(total), feeEth: eth(fee), at: iso(advances[0].at) };
   }
   return {
+    ...(demo ? { demo: true } : {}),
     id: pad(j.id), n: j.id, title: title ?? "", agentId: j.agent, customer: j.customer, priceEth: eth(j.price), state, lockedAt: iso(j.locked_at), dueAt: iso(j.due_at),
     allowEarly: !!j.allow_early, late: !!j.late,
     ...(j.delivered_at ? { deliveredAt: iso(j.delivered_at) } : {}),
@@ -246,7 +263,7 @@ export function eventJson(l: LedgerRow, names: Names): EventJson {
     case "pool_in": (text = l.note === "fees" ? "trading fees arrived in the pool" : l.note === "compute" ? "compute credit nobody spent went back to the pool" : "ETH was added to the pool"), (amount = ethText(l.amount, "+")); break;
     default: text = l.kind;
   }
-  return { n: l.n, at: iso(l.at), kind: l.kind, ...(l.job_id !== null ? { jobId: pad(l.job_id) } : {}), ...(l.agent ? { agentId: l.agent } : {}), text, amount, tx: l.tx_hash };
+  return { n: l.n, at: iso(l.at), kind: l.kind, ...(l.job_id !== null ? { jobId: pad(l.job_id) } : {}), ...(l.agent ? { agentId: l.agent } : {}), text, amount, tx: l.tx_hash, ...(l.job_id !== null && names.demoJobs?.has(l.job_id) ? { demo: true } : {}) };
 }
 
 export class EngineApi {
@@ -290,7 +307,9 @@ export class EngineApi {
     if (path === "/v1/agents") return (v) => ok({ items: this.agents(v) });
     if (path === "/v1/jobs") return (v) => ok(this.jobs(v, limit, before, normalizeAddress(query.get("agent")) ?? undefined, normalizeAddress(query.get("customer")) ?? undefined));
     if (path === "/v1/ledger") return (v) => ok(this.ledger(v, limit, before, SHOW[query.get("show") ?? ""]));
-    let m = /^\/v1\/agents\/([0-9a-zA-Z-]{3,42})$/.exec(path);
+    let m = /^\/v1\/agents\/made\/(0x[0-9a-fA-F]{40})$/.exec(path);
+    if (m) return (v) => ok({ enabled: !!v.house?.cfg.hosted.enabled, items: v.house?.madeBy(m![1]!.toLowerCase()) ?? [] });
+    m = /^\/v1\/agents\/([0-9a-zA-Z-]{3,42})$/.exec(path);
     if (m) return (v) => this.agent(v, m![1]);
     m = /^\/v1\/jobs\/(\d{1,9})$/.exec(path);
     if (m) return (v) => this.job(v, Number(m![1]));
@@ -335,9 +354,48 @@ export class EngineApi {
     return ok(r as Record<string, unknown>);
   }
 
+  // Somebody makes an agent on the site, or pauses one they made. Signed by the address it is made for: a wallet, or
+  // an account without a wallet through one of its keys.
+  private async hostedPost(path: string, body: unknown, from: string): Promise<Answer> {
+    const v = this.view();
+    const no = (status: number, error: string): Answer => ({ status, body: { error } });
+    if (!v.profiles || !v.house || v.state !== "running") return no(503, "the engine is not reading the chain yet");
+    if (!body || typeof body !== "object" || Array.isArray(body)) return no(400, "the body is not a JSON object");
+    if (this.tooMany(from, "make", 6)) return no(429, "too many requests: try again in a minute");
+    const b = body as Record<string, unknown>;
+    const owner = normalizeAddress(b.owner);
+    if (!owner) return no(400, "owner is not an address");
+    const name = typeof b.name === "string" ? b.name.trim() : "";
+    const at = v.profiles.freshAt(b.at);
+    if (at === null) return no(400, "the signature's time is more than ten minutes from now: sign again");
+    if (path === "/v1/agents/pause") {
+      if (typeof b.paused !== "boolean") return no(400, "paused is true or false");
+      if (!(await v.profiles.signed(owner, `Factor: ${b.paused ? "pause" : "resume"} my agent\nowner: ${owner}\nname: ${name}\nat: ${at}`, b.signature))) return no(401, "the signature is not the owner's");
+      this.cache.clear();
+      return v.house.pause(owner, name, b.paused) ? ok({ ok: true }) : notFound("no agent of yours by that name");
+    }
+    const problem = v.profiles.nameProblem(name);
+    if (problem) return no(problem.startsWith("another") ? 409 : 400, problem);
+    const does = oneLine(b.does, 12, 80);
+    if (!does || does !== b.does) return no(400, "what it does is one plain line of 12 to 80 characters, without links, line breaks or double spaces");
+    const instructions = briefText(b.instructions);
+    if (!instructions || instructions !== b.instructions || instructions.length < INSTRUCTIONS_LEAST || instructions.length > INSTRUCTIONS_MOST) return no(400, `the instructions are plain text of ${INSTRUCTIONS_LEAST} to ${INSTRUCTIONS_MOST} characters`);
+    if (typeof b.priceEth !== "string" || !/^\d{1,3}(\.\d{1,6})?$/.test(b.priceEth)) return no(400, "the price is ETH as a plain decimal, like 0.002");
+    const [whole, frac = ""] = b.priceEth.split(".");
+    const priceWei = BigInt(whole!) * 10n ** 18n + BigInt(frac.padEnd(18, "0"));
+    const payout = b.payout === undefined || b.payout === "" ? owner : normalizeAddress(b.payout);
+    if (!payout) return no(400, "payout is not an address");
+    if (!(await v.profiles.signed(owner, hostedMessage(owner, name, does, b.priceEth, payout, keccak256(toHex(instructions)), at), b.signature))) return no(401, "the signature is not the owner's");
+    const made = v.house.make({ owner, name, does, instructions, priceWei, payout });
+    if (!made.ok) return no(made.status, made.error);
+    this.cache.clear();
+    return ok({ ok: true, name: made.name });
+  }
+
   // A signed write. `from` is the caller's address on the network, for the limit on how many one may send.
   async post(path: string, body: unknown, from: string, adminKey?: string): Promise<Answer | null> {
     if (path === "/v1/accounts" || path.startsWith("/v1/accounts/")) return this.accountsPost(path, body, from);
+    if (path === "/v1/agents/make" || path === "/v1/agents/pause") return this.hostedPost(path, body, from);
     if (path !== "/v1/agents/profile" && path !== "/v1/jobs/title" && path !== "/v1/jobs/brief" && path !== "/v1/jobs/delivery" && path !== "/v1/admin/hide" && path !== "/v1/admin/switch") return null;
     const v = this.view();
     if (!v.profiles || v.state !== "running") return { status: 503, body: { error: "the engine is not reading the chain yet" } };
@@ -377,7 +435,13 @@ export class EngineApi {
   // ---- what the answers are made of ----
 
   private names(v: EngineView): Names {
-    return { profiles: v.profiles?.all() ?? new Map(), house: new Set([...v.config.houseAgents, ...(v.house?.addresses() ?? [])]), service: (a) => v.house?.serviceOf(a) ?? null };
+    return { profiles: v.profiles?.all() ?? new Map(), house: new Set([...v.config.houseAgents, ...(v.house?.addresses() ?? [])]), hosted: v.house?.hostedAddresses() ?? new Map(), demoJobs: this.demoJobs(v), service: (a) => v.house?.serviceOf(a) ?? null };
+  }
+
+  /** The jobs whose customer is Factor's own demonstration customer (./house/demo.ts). */
+  private demoJobs(v: EngineView): Set<number> {
+    if (!v.ctx) return new Set();
+    return new Set((v.ctx.db.q("SELECT job_id FROM demo_jobs WHERE job_id IS NOT NULL").all() as { job_id: number }[]).map((r) => r.job_id));
   }
 
   /** The chain's time now: the last block read, and the seconds since. */
@@ -404,7 +468,8 @@ export class EngineApi {
     const ids = rows.map((j) => j.id);
     const advances = store.advancesOf(ids);
     const titles = v.profiles?.titles(ids) ?? new Map<number, string>();
-    return rows.map((j) => jobJson(j, advances.get(j.id) ?? [], titles.get(j.id)));
+    const demo = this.demoJobs(v);
+    return rows.map((j) => jobJson(j, advances.get(j.id) ?? [], titles.get(j.id), demo.has(j.id)));
   }
 
   private jobs(v: EngineView, limit: number, before?: number, agent?: string, customer?: string): Record<string, unknown> {
@@ -474,9 +539,11 @@ export class EngineApi {
     const accounts = v.accounts?.about() ?? { enabled: false, factory: null, ordersPerDay: 0 };
     const hiring = v.ctx ? stopped(v.ctx.db, "hiring") : null;
     const paused = hiring ? hiring.note || "New jobs are paused for now. Jobs already locked run as they were: the contract settles or refunds each one by itself." : null;
-    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused, roster: ROSTER };
+    const h = v.house?.cfg.hosted;
+    const hosted = { enabled: !!h?.enabled && v.state === "running" && !!v.house && v.house.canMake(), perOwner: h?.perOwner ?? 0, fromEth: h ? Number(h.floorWei / 10n ** 12n) / 1e6 : 0 };
+    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused, roster: ROSTER, hosted };
     if (!r) {
-      return { ...base, launched: false, stats: { advancedEth: 0, settledJobs: 0, jobs: 0, poolEth: 0, reserveEth: 0, outEth: 0, heldEth: 0, burnedTokens: 0, supplyLeft: SUPPLY, agents: 0, lostEth: 0 }, agents: [], jobs: [], events: [], burns: [] };
+      return { ...base, launched: false, stats: { advancedEth: 0, settledJobs: 0, jobs: 0, poolEth: 0, reserveEth: 0, outEth: 0, heldEth: 0, burnedTokens: 0, supplyLeft: SUPPLY, agents: 0, demoJobs: 0, lostEth: 0 }, agents: [], jobs: [], events: [], burns: [] };
     }
     const { ctx, snap, store } = r;
     const names = this.names(v);
@@ -496,7 +563,7 @@ export class EngineApi {
       launched: !!snap.token,
       stats: {
         advancedEth: eth(d.totalAdvanced), settledJobs: store.countByState(STATE.settled), jobs: d.jobCount, poolEth: eth(poolAll), reserveEth: eth((poolAll * BigInt(RULES.reserveMinPct)) / 100n),
-        outEth: eth(d.out), heldEth: eth(d.held), burnedTokens: tokens(burned), supplyLeft: tokens(supply), agents: store.agentCount(), lostEth: eth(d.totalLost),
+        outEth: eth(d.out), heldEth: eth(d.held), burnedTokens: tokens(burned), supplyLeft: tokens(supply), agents: store.agentCount(), demoJobs: this.demoJobs(v).size, lostEth: eth(d.totalLost),
       },
       agents: this.agents(v).slice(0, STATE_AGENTS),
       jobs: this.jobsJson(v, store, store.jobs(STATE_JOBS)),
@@ -565,6 +632,7 @@ export class EngineApi {
       ethUsd8: snap?.ethUsd8 ?? null,
       stopped: allStopped(ctx.db),
       house: v.house ? v.house.totals() : null,
+      demo: v.demo ? v.demo.totals() : null,
       accounts: v.accounts ? { ...v.accounts.about(), note: c.accounts.note, ...v.accounts.store.totals(), gasDayWei: c.accounts.gasDayWei.toString() } : null,
       compute: v.gateway ? { ...v.gateway.about(), note: c.compute.note, ...v.gateway.store.totals(), todayMicro: v.gateway.store.spentToday(), dailyMicro: c.compute.dailyMicro } : null,
       rpc: v.rpc ? { ...v.rpc, lastError: v.rpc.lastError ? hostsOnly(v.rpc.lastError) : null } : null,

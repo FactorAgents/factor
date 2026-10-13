@@ -239,6 +239,16 @@ test("the security page says where a report goes, what counts, and what cannot b
   assert.match(bare, /not deployed yet/);
 });
 
+test("making an agent on the site says plainly who holds its key, and is shut until it is switched on", async () => {
+  const t = text((await get("/work")).html);
+  assert.match(t, /Make one here, in a minute\./);
+  assert.match(t, /Factor holds the agent's key/);
+  assert.match(t, /you are trusting Factor to run it/);
+  assert.match(t, /less what the model cost/);
+  assert.match(t, /This opens with the launch\./);
+  assert.match(text((await get("/agents")).html), /Make one here/);
+});
+
 test("before the launch the site makes nothing up: no sample figure, no example line, no burn and no fee that did not happen", async () => {
   for (const path of ["/", "/ledger", "/agents", "/hire", "/work", "/protocol", "/token", "/docs", "/log", "/security"]) {
     const { status, html } = await get(path, BARE);

@@ -12,6 +12,8 @@ export type EventKind = "locked" | "advanced" | "delivered" | "settled" | "half"
 export interface Advance { kind: AdvanceKind; eth: number; feeEth: number; at: string }
 
 export interface Job {
+  /** a demonstration: its customer is Factor itself, and everything else about it is real */
+  demo?: boolean;
   id: string;            // "0412": the job's number, as the site writes it
   n: number;             // the number itself
   title: string;         // what the customer said it is about; empty when they said nothing
@@ -48,6 +50,9 @@ export interface Agent {
   address: string;
   /** an agent Factor runs itself: said on the page wherever it shows */
   house: boolean;
+  /** made on the site by its owner and run by Factor for them: said wherever it shows */
+  hosted?: boolean;
+  owner?: string;
   /** for one of Factor's own: what to put in the brief, what comes back, and the least it takes a job for */
   service?: { needs: string; delivers: string; fromEth: number };
   does: string;          // one line: what it sells
@@ -81,6 +86,8 @@ export interface LedgerEvent {
   text: string;
   amount: string;        // already written the way it is shown: "0.0200 ETH", "18,402 $FACTOR"
   tx: string;
+  /** a line of a demonstration job: its customer is Factor itself. Said wherever the line shows */
+  demo?: boolean;
 }
 
 export interface Burn { n: number; at: string; eth: number; tokens: number; tx: string }
@@ -110,7 +117,7 @@ export interface FactorState {
   asOf: string;
   launched: boolean;
   links: { pons: string | null; github: string | null; x: string | null };
-  stats: { advancedEth: number; settledJobs: number; jobs: number; poolEth: number; reserveEth: number; outEth: number; heldEth: number; burnedTokens: number; supplyLeft: number; agents: number; lostEth: number };
+  stats: { advancedEth: number; settledJobs: number; jobs: number; poolEth: number; reserveEth: number; outEth: number; heldEth: number; burnedTokens: number; supplyLeft: number; agents: number; demoJobs?: number; lostEth: number };
   params: Params;
   agents: Agent[];
   jobs: Job[];
@@ -124,6 +131,8 @@ export interface FactorState {
   paused: string | null;
   /** Factor's own agents, as the engine says them, whether or not they are on the desk yet */
   roster?: RosterAgent[];
+  /** whether an agent can be made on the site right now, how many one address may have, and the least a job of one costs */
+  hosted?: { enabled: boolean; perOwner: number; fromEth: number };
 }
 
 /** One of Factor's own agents: what it does and what it takes a job for. */

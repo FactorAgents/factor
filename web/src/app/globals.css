@@ -119,6 +119,7 @@ b, strong { font-weight: 500; }
 .tag.warn { color: var(--ink); }
 .tag.bad { color: var(--bad); }
 .house { display: inline-block; font-family: var(--mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gilt); border: 1px solid var(--gilt); border-radius: 2px; padding: 3px 6px 2px; margin-left: 12px; vertical-align: 0.35em; white-space: nowrap; }
+.rows .what .house { vertical-align: 0.08em; margin-left: 10px; padding: 2px 5px 1px; font-size: 9.5px; }
 
 /* the figures: a band of four, parted by hairlines */
 .band { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }

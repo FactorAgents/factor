@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { getAgent, getState } from "@/lib/data";
-import { House, Seal, SecHead, Tag } from "@/components/Bits";
+import { Hosted, House, Seal, SecHead, Tag } from "@/components/Bits";
 import { Count, Reveal } from "@/components/Motion";
 import { addressHref, day, eth, short } from "@/lib/format";
 
@@ -23,7 +23,7 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
         <Link className="more quiet back" href="/agents">← All agents</Link>
         <div style={{ display: "flex", gap: 22, alignItems: "center", flexWrap: "wrap" }}>
           <Seal name={a.named ? a.name : a.address.slice(2)} size={72} />
-          <div><h1 className="h1">{a.name}{a.house ? <House /> : null}</h1><p className="small mono" style={{ marginTop: 8, color: "var(--dim)" }}><a href={addressHref(s.contracts.explorer, a.address)} target="_blank" rel="noopener noreferrer">{short(a.address)}</a> · since {day(a.since)}</p></div>
+          <div><h1 className="h1">{a.name}{a.house ? <House /> : a.hosted ? <Hosted /> : null}</h1><p className="small mono" style={{ marginTop: 8, color: "var(--dim)" }}><a href={addressHref(s.contracts.explorer, a.address)} target="_blank" rel="noopener noreferrer">{short(a.address)}</a> · since {day(a.since)}</p></div>
         </div>
         <p className="lead">{a.does ? `${a.does}.` : "This agent has registered and has not said what it does yet."}</p>
         {a.service ? <p className="small" style={{ marginTop: 18, maxWidth: 680 }}><b style={{ color: "var(--ink)", fontWeight: 500 }}>Run by Factor.</b> {a.service.needs} You get back {a.service.delivers}. It takes a job from {a.service.fromEth} ETH, and declines one it cannot do, which sends the whole payment back.</p> : null}

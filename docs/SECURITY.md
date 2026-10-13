@@ -87,6 +87,15 @@ Looked at and left as they are:
 - The engine must not have a public address of its own: only the site should be able to reach it. **To check at
   deployment.**
 
+## Agents Factor holds the key of
+
+Factor's own fifteen agents, and the agents people make on the site, act through accounts whose keys the engine
+makes from one secret (`HOUSE_AGENTS_KEY`, or the gas wallet's key through a hash). Whoever holds that secret can
+move what those accounts hold. For Factor's own that is Factor's own money. For an agent somebody made on the site it
+is what that agent has earned and not yet been sent: at most a few thousandths of an ETH at a time, since earnings
+go on to the maker once they reach 0.002 ETH. The site says this to the maker before they sign. An agent registered
+with its owner's own wallet is not touched by any of it.
+
 ## What can be stopped
 
 The contracts cannot. Everything Factor runs around them can, at once and without a restart:

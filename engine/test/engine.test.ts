@@ -29,7 +29,7 @@ const P = ETH / 25n;
 
 // every key the site's type has (web/src/lib/types.ts), so a change on one side is noticed on the other
 function expectShape(s: FactorState): void {
-  expect(Object.keys(s).sort()).toEqual(["accounts", "agents", "asOf", "burns", "compute", "contracts", "events", "jobs", "launched", "links", "params", "paused", "roster", "source", "stats"]);
+  expect(Object.keys(s).sort()).toEqual(["accounts", "agents", "asOf", "burns", "compute", "contracts", "events", "hosted", "jobs", "launched", "links", "params", "paused", "roster", "source", "stats"]);
   // Factor's own agents are said in every answer, before the launch and after: fifteen, each with what it takes a job for
   const roster = (s as unknown as { roster: { name: string; does: string; fromEth: number }[] }).roster;
   expect(roster).toHaveLength(15);
@@ -37,7 +37,7 @@ function expectShape(s: FactorState): void {
   expect(s.paused).toBeNull();
   expect(Object.keys(s.accounts).sort()).toEqual(["enabled", "factory", "ordersPerDay"]);
   expect(Object.keys(s.compute).sort()).toEqual(["enabled", "markupPct", "maxTokens", "models"]);
-  expect(Object.keys(s.stats).sort()).toEqual(["advancedEth", "agents", "burnedTokens", "heldEth", "jobs", "lostEth", "outEth", "poolEth", "reserveEth", "settledJobs", "supplyLeft"]);
+  expect(Object.keys(s.stats).sort()).toEqual(["advancedEth", "agents", "burnedTokens", "demoJobs", "heldEth", "jobs", "lostEth", "outEth", "poolEth", "reserveEth", "settledJobs", "supplyLeft"]);
   expect(s.params).toEqual({ advanceMaxPct: 50, advanceFeePct: 1, jobFeePct: 2, graceHours: 12, reviewHours: 24, rejectedPct: 50, reserveMinPct: 20, minJobEth: 0.001 });
   expect(Object.keys(s.contracts).sort()).toEqual(["burnPot", "desk", "explorer", "splitter", "token"]);
   expect(Object.keys(s.links).sort()).toEqual(["github", "pons", "x"]);

@@ -468,6 +468,37 @@ try {
   check("the browser asked the network for this site only", requested.every((u) => u.startsWith(SITE) || u.startsWith("data:") || u.startsWith("about:")), requested.find((u) => !u.startsWith(SITE) && !u.startsWith("data:") && !u.startsWith("about:")) ?? `${requested.length} requests`);
   check("the pages raised no error and broke no rule of the content policy", problems.length === 0, problems.slice(0, 3).join(" | "));
 
+  step("5a2 somebody with no agent of their own makes one on the site");
+  {
+    const MAKER = accounts[5];
+    const how = "Write one plain sentence that says what the customer's text is about. Nothing else, and never more than one sentence.";
+    await as(MAKER);
+    await go("/work");
+    await connect();
+    await says("A new agent");
+    check("the page says who holds the key of an agent made here before anything is signed", /Factor holds the agent's key/.test(await text()) && /you are trusting Factor to run it/.test(await text()));
+    await fill("Name", "one-liner", "A new agent");
+    await fill("What it does, in one line", "Says what a text is about in one sentence", "A new agent");
+    await fill("How it should do it", how, "A new agent");
+    await fill("Price of a job, in ETH", "0.002", "A new agent");
+    const signedBefore = wallet.signed, sentBefore = wallet.sent;
+    await press("Sign and make it", "A new agent");
+    await until("the agent to be made", async () => (await text()).includes("one-liner is made"));
+    check("making an agent is one signature and no transaction", wallet.signed === signedBefore + 1 && wallet.sent === sentBefore);
+    const made = await until("the engine to put it on the desk", async () => { const r = await fetch(`${bare.api}/v1/agents/one-liner`); const a = r.ok ? (await r.json()).agent : null; return a?.named && a.service ? a : false; }, 240_000);
+    check("the engine put it on the desk, run by Factor for the wallet that made it", made.hosted === true && made.owner === MAKER.address.toLowerCase() && made.house === false && (await desk("agent", [made.address])).registered);
+    await until("the page to list it as theirs", async () => /Yours[\s\S]*one-liner[\s\S]*takes a job from 0\.002 ETH/.test(await text()), 60_000);
+    await shot("desktop-make-agent");
+    await press("Pause", "Yours");
+    await until("it to be paused", async () => (await text()).includes("one-liner is paused"));
+    const mine = await (await fetch(`${bare.api}/v1/agents/made/${MAKER.address.toLowerCase()}`)).json();
+    check("its maker pauses it with one more signature", mine.items.length === 1 && mine.items[0].paused === true && wallet.signed === signedBefore + 2);
+    await go("/agents/one-liner");
+    check("its own page says it is run by Factor, and never shows its maker's instructions", /Run by Factor/i.test(await text()) && !(await text()).includes("never more than one sentence"));
+    await go("/agents");
+    check("the list of agents marks it apart from Factor's own", /one-liner\s*Run by Factor/i.test(await text()));
+  }
+
   step("5b with no wallet: an account with a passkey, and the gas paid for");
   await send("Page.removeScriptToEvaluateOnNewDocument", { identifier: providerScript });
   await send("Runtime.removeBinding", { name: "__factorWalletBridge" });

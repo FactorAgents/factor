@@ -224,7 +224,7 @@ export async function engineNow(): Promise<number> {
 }
 
 /** Hand a signed name or title to the engine. `patient`: the engine may not have seen a brand new job yet. */
-export async function saveSigned(path: "agents/profile" | "jobs/title" | "jobs/brief" | "jobs/delivery", body: Record<string, unknown>, patient = false): Promise<void> {
+export async function saveSigned(path: "agents/profile" | "agents/make" | "agents/pause" | "jobs/title" | "jobs/brief" | "jobs/delivery", body: Record<string, unknown>, patient = false): Promise<void> {
   for (let tries = 0; ; tries++) {
     const r = await fetch(`/api/v1/${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
     if (r.ok) return;

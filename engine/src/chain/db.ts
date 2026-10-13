@@ -271,6 +271,36 @@ CREATE TABLE IF NOT EXISTS job_deliveries (
 );
 -- The house agents' own notes on the jobs locked for them (../house/house.ts): where each one stands, the work once
 -- it is done (so a restart never pays for it twice), what it cost, and why one was declined.
+-- Agents somebody made on the site and Factor runs for them (../house/house.ts). The instructions are the owner's
+-- own words and are shown to nobody. cost_paid_micro: how much of what its jobs cost in models has been taken out
+-- of what it earned.
+CREATE TABLE IF NOT EXISTS hosted_agents (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  owner TEXT NOT NULL,
+  name TEXT NOT NULL UNIQUE,
+  does TEXT NOT NULL,
+  instructions TEXT NOT NULL,
+  price_wei TEXT NOT NULL,
+  payout TEXT NOT NULL,
+  paused INTEGER NOT NULL DEFAULT 0,
+  cost_paid_micro INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS hosted_agents_owner ON hosted_agents (owner);
+-- Demonstration jobs: a customer of Factor's own hiring Factor's own agents (../house/demo.ts). job_id is null
+-- until the lock is on the chain.
+CREATE TABLE IF NOT EXISTS demo_jobs (
+  n INTEGER PRIMARY KEY AUTOINCREMENT,
+  job_id INTEGER,
+  agent TEXT NOT NULL,
+  title TEXT NOT NULL,
+  brief TEXT NOT NULL,
+  state TEXT NOT NULL,               -- locking | locked | briefed | accepting | done
+  relay TEXT,
+  note TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS house_jobs (
   job_id INTEGER PRIMARY KEY,
   agent TEXT NOT NULL,

@@ -48,6 +48,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
           </Reveal>
         </div>
       </section>
+      {j.demo ? <section className="wrap" style={{ paddingTop: 40 }}><p className="note">A demonstration job. Its customer is Factor itself, hiring one of Factor&apos;s own agents to show the desk at work. The work, the payment and every transaction on this page are real.</p></section> : null}
       {note || brief || work ? (
         <section className="wrap sec" style={{ paddingTop: 72 }}>
           <div className="words">

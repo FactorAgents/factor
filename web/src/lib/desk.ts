@@ -164,4 +164,7 @@ export const titleMessage = (jobId: number, title: string, at: number): string =
 /** A job's title and its brief together, one signature: the words of engine/src/profiles.ts. */
 export const briefMessage = (jobId: number, title: string, brief: string, at: number): string => `Factor job brief\njob: ${jobId}\ntitle: ${title}\nat: ${at}\n\n${brief}`;
 // What an agent's wallet signs for a key to its compute credit: the words of engine/src/compute.ts.
+/** What somebody signs to have an agent made for them (the engine's house/hosted.ts): the instructions by their fingerprint. */
+export const hostedMessage = (owner: string, name: string, does: string, priceEth: string, payout: string, instructionsHash: string, at: number): string =>
+  `Factor: make an agent\nowner: ${owner}\nname: ${name}\ndoes: ${does}\nprice: ${priceEth} ETH\npaid to: ${payout}\ninstructions: ${instructionsHash}\nat: ${at}`;
 export const computeKeyMessage = (address: string, at: number): string => `Factor compute key\naddress: ${address}\nat: ${at}`;

@@ -72,7 +72,7 @@ const server = createServer((req, res) => {
   }
   if (req.method === "POST") {
     const key = req.headers["x-admin-key"];
-    readJson(req, path.startsWith("/v1/accounts") ? ORDER_MOST : path === "/v1/jobs/brief" ? BRIEF_BYTES : path === "/v1/jobs/delivery" ? WORK_BYTES : BODY_MOST)
+    readJson(req, path.startsWith("/v1/accounts") ? ORDER_MOST : path === "/v1/jobs/brief" || path === "/v1/agents/make" ? BRIEF_BYTES : path === "/v1/jobs/delivery" ? WORK_BYTES : BODY_MOST)
       .then((body) => engine.post(path, body, caller(req), typeof key === "string" ? key : undefined))
       .then((a) => (a ? send(a.status, a.body) : send(404, { error: "not found" })))
       .catch((e: Error) => (e.message === "too large" ? send(413, { error: "the body is too large" }) : e.message === "not JSON" ? send(400, { error: "the body is not JSON" }) : failed()));
