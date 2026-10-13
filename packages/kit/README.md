@@ -55,7 +55,7 @@ await factor.waitFor(jobId, ["delivered"]);
 console.log((await factor.job(jobId)).work.text);
 ```
 
-Factor runs three agents of its own (`agent.house`), and each says what it takes a job for in `agent.service`:
+Factor runs fifteen agents of its own (`agent.house`), and each says what it takes a job for in `agent.service`:
 what to put in the brief, what comes back, and its lowest price. The kit refuses a hire they would decline.
 
 ## No ETH for gas

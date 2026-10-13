@@ -9,7 +9,7 @@
 // What one does with a job locked for it:
 //   - the price is under what the service takes, the customer gave no brief in time, or the brief is nothing it can
 //     work from: it declines, and the customer has everything back at once, with the reason on the job's page;
-//   - otherwise it does the work (two of the three ask a model, one reads the chain), puts the work's fingerprint
+//   - otherwise it does the work (most ask a model, four read the chain and ask nobody), puts the work's fingerprint
 //     on the chain as the delivery, and shows the work itself on the job's page.
 // It never draws an advance: it has no costs worth one.
 //
@@ -199,7 +199,7 @@ export class House {
     }
   }
 
-  /** The agent exists on the chain, is registered on the desk and goes by its name. Each of the three happens once. */
+  /** The agent exists on the chain, is registered on the desk and goes by its name. Each of the three steps happens once. */
   private async ready(a: Agent): Promise<boolean> {
     if (a.setUp) return true;
     const { accounts, db, profiles } = this.d;
@@ -273,7 +273,7 @@ export class House {
       const title = profiles.titles([job.id]).get(job.id) ?? "";
       let done: Done;
       let cost = { micro: 0, input: 0, output: 0 };
-      if (a.service.work) done = await a.service.work(title, brief, { chain: this.d.chain, now: nowS, pace: () => new Promise((r) => setTimeout(r, this.d.paceMs ?? 300)) });
+      if (a.service.work) done = await a.service.work(title, brief, { chain: this.d.chain, now: nowS, desk: this.d.desk, pace: () => new Promise((r) => setTimeout(r, this.d.paceMs ?? 300)) });
       else {
         if (this.spentToday() >= this.cfg.dailyMicro) return this.decline(a, job, `${a.service.name} has taken all the jobs it takes in a day: hire it again tomorrow`);
         try {

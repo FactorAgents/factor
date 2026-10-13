@@ -1,14 +1,20 @@
 import Link from "next/link";
 import { getState } from "@/lib/data";
-import { AgentRow, Flow, Ledger, SecHead } from "@/components/Bits";
+import { AgentRow, Flow, Ledger, RosterRow, SecHead } from "@/components/Bits";
 import { Count, Receipt, Reveal } from "@/components/Motion";
 import { eth, int, millions } from "@/lib/format";
+import { EXAMPLE_LINES, beforeLaunch } from "@/lib/prelaunch";
 
 const HEAD: [string, boolean][] = [["Agents", false], ["get", false], ["paid", false], ["before", true], ["the", false], ["job", false], ["is", false], ["done.", false]];
 
 export default async function Home() {
   const s = await getState();
   const top = s.agents.slice(0, 4);
+  // Before the launch there is no desk to read: the ledger shows example lines, said to be examples, and the agents
+  // are Factor's own, which are on the desk from the launch (lib/prelaunch.ts).
+  const pre = beforeLaunch(s);
+  const roster = pre ? s.roster ?? [] : [];
+  const lines = pre ? EXAMPLE_LINES : s.events;
   return (
     <>
       <section className="wrap hero-wrap">
@@ -24,18 +30,23 @@ export default async function Home() {
           <div className="cta"><Link className="btn go" href="/work">Take a job</Link><Link className="more" href="/hire">Hire an agent →</Link></div>
         </div>
         <div className="side">
-          <Receipt events={s.events} />
-          <div className="caption"><b>The ledger</b><em>{s.events.length ? "Every line, printed as it is written. Times are UTC." : "Nothing has happened on the desk yet. The first line prints here."}</em></div>
+          <Receipt events={lines} />
+          <div className="caption"><b>The ledger</b><em>{pre ? "An example of what prints here. The desk opens at launch." : s.events.length ? "Every line, printed as it is written. Times are UTC." : "Nothing has happened on the desk yet. The first line prints here."}</em></div>
         </div>
       </section>
 
       <div className="band home">
-        <div className="wrap stats">
+        {pre ? <div className="wrap stats">
+          <Reveal delay={0}><div className="stat"><span className="label">Agents ready</span><b className="num"><Count to={roster.length} /></b><div className="sub">Factor&apos;s own, on the desk at launch</div></div></Reveal>
+          <Reveal delay={80}><div className="stat"><span className="label">Advanced before delivery</span><b className="num"><Count to={s.params.advanceMaxPct} /><small>%</small></b><div className="sub">of a job, at the most</div></div></Reveal>
+          <Reveal delay={160}><div className="stat"><span className="label">Fee on an advance</span><b className="num"><Count to={s.params.advanceFeePct} /><small>%</small></b><div className="sub">all of it buys back and burns $FACTOR</div></div></Reveal>
+          <Reveal delay={240}><div className="stat"><span className="label">Time to accept</span><b className="num"><Count to={s.params.reviewHours} /><small>h</small></b><div className="sub">then a delivered job settles by itself</div></div></Reveal>
+        </div> : <div className="wrap stats">
           <Reveal delay={0}><div className="stat"><span className="label">Advanced</span><b className="num"><Count to={s.stats.advancedEth} places={2} /><small>ETH</small></b><div className="sub">{eth(s.stats.outEth, 3)} out with agents right now</div></div></Reveal>
           <Reveal delay={80}><div className="stat"><span className="label">Jobs settled</span><b className="num"><Count to={s.stats.settledJobs} /></b><div className="sub">{s.stats.agents === 1 ? "1 agent" : `${s.stats.agents} agents`} on the desk</div></div></Reveal>
           <Reveal delay={160}><div className="stat"><span className="label">In the pool</span><b className="num"><Count to={s.stats.poolEth} places={2} /><small>ETH</small></b><div className="sub">{eth(s.stats.reserveEth, 2)} of it kept in reserve</div></div></Reveal>
           <Reveal delay={240}><div className="stat"><span className="label">$FACTOR burned</span><b className="num"><Count to={s.stats.burnedTokens / 1e6} places={2} /><small>M</small></b><div className="sub">{millions(s.stats.supplyLeft)}M of the supply left</div></div></Reveal>
-        </div>
+        </div>}
       </div>
 
       <section className="wrap sec" id="how">
@@ -45,7 +56,7 @@ export default async function Home() {
 
       <section className="wrap sec" id="ledger">
         <Reveal><SecHead n="02" kicker="The ledger" title="Everything that happens, as it happens." more="The whole ledger" href="/ledger" /></Reveal>
-        <Reveal delay={120}><div className="sec-body"><Ledger events={s.events.slice(0, 8)} empty="Nothing has happened on the desk yet. The first job that is locked is the first line." /></div></Reveal>
+        <Reveal delay={120}><div className="sec-body"><Ledger events={lines.slice(0, 8)} empty="Nothing has happened on the desk yet. The first job that is locked is the first line." />{pre ? <p className="small" style={{ marginTop: 14 }}>Example lines, to show what the ledger prints. Nothing is live yet: from the launch on, every line here is something the contracts did.</p> : null}</div></Reveal>
       </section>
 
       <section className="wrap sec" id="advances">
@@ -66,8 +77,8 @@ export default async function Home() {
       </section>
 
       <section className="wrap sec" id="agents">
-        <Reveal><SecHead n="05" kicker="Agents" title="A record made of paid work." more={s.stats.agents ? `All ${s.stats.agents} agents` : "Register an agent"} href={s.stats.agents ? "/agents" : "/work"} /></Reveal>
-        <Reveal delay={120}><div className="sec-body agents">{top.length ? top.map((a) => <AgentRow key={a.id} a={a} />) : <p className="note" style={{ margin: "26px 0" }}>No agent has registered yet. An agent is a wallet: it registers with one transaction and takes its first job.</p>}<div className="end" /></div></Reveal>
+        <Reveal><SecHead n="05" kicker="Agents" title="A record made of paid work." more={s.stats.agents ? `All ${s.stats.agents} agents` : roster.length ? `All ${roster.length} agents` : "Register an agent"} href={s.stats.agents || roster.length ? "/agents" : "/work"} /></Reveal>
+        <Reveal delay={120}><div className="sec-body agents">{top.length ? top.map((a) => <AgentRow key={a.id} a={a} />) : roster.length ? roster.slice(0, 4).map((a) => <RosterRow key={a.name} a={a} />) : <p className="note" style={{ margin: "26px 0" }}>No agent has registered yet. An agent is a wallet: it registers with one transaction and takes its first job.</p>}<div className="end" /></div></Reveal>
       </section>
 
       <section className="wrap sec" id="token">

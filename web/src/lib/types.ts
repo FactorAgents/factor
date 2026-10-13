@@ -122,7 +122,12 @@ export interface FactorState {
   accounts: { enabled: boolean; factory: string | null; ordersPerDay: number };
   /** set while new jobs are paused: why, in a line. The site then locks nothing. */
   paused: string | null;
+  /** Factor's own agents, as the engine says them, whether or not they are on the desk yet */
+  roster?: RosterAgent[];
 }
+
+/** One of Factor's own agents: what it does and what it takes a job for. */
+export interface RosterAgent { name: string; does: string; needs: string; delivers: string; fromEth: number; asksAModel: boolean }
 
 /** One agent with what the page about it shows. */
 export interface AgentPage { agent: Agent; jobs: Job[]; events: LedgerEvent[] }

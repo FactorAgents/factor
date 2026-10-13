@@ -24,6 +24,7 @@ import { snapshotOf, type Ctx, type Snapshot } from "./chain/context.js";
 import type { Accounts } from "./accounts.js";
 import type { Gateway } from "./compute.js";
 import type { House } from "./house/house.js";
+import { SERVICES } from "./house/services.js";
 import { timingSafeEqual } from "node:crypto";
 import { allStopped, isSwitch, SWITCHES, stopped, turn } from "./switches.js";
 import { DeskStore, KIND_NAME, RULES, STATE, STATE_NAME, type AdvanceRow, type AgentRow, type JobRow, type LedgerRow } from "./desk.js";
@@ -130,7 +131,12 @@ export interface FactorState {
   accounts: { enabled: boolean; factory: string | null; ordersPerDay: number };
   /** set while the owner has paused new jobs: why, in a line. The site and the kit then lock nothing. */
   paused: string | null;
+  /** Factor's own agents, whether or not they are on the desk yet: what each does and takes a job for */
+  roster: RosterJson[];
 }
+export interface RosterJson { name: string; does: string; needs: string; delivers: string; fromEth: number; asksAModel: boolean }
+// what Factor's own agents are, said the same before the launch and after it
+const ROSTER: RosterJson[] = SERVICES.map((s) => ({ name: s.name, does: s.does, needs: s.needs, delivers: s.delivers, fromEth: Number(s.floorWei / 10n ** 12n) / 1e6, asksAModel: !!s.ask }));
 
 const ok = (body: Record<string, unknown>): Answer => ({ status: 200, body });
 const notFound = (what: string): Answer => ({ status: 404, body: { error: what } });
@@ -468,7 +474,7 @@ export class EngineApi {
     const accounts = v.accounts?.about() ?? { enabled: false, factory: null, ordersPerDay: 0 };
     const hiring = v.ctx ? stopped(v.ctx.db, "hiring") : null;
     const paused = hiring ? hiring.note || "New jobs are paused for now. Jobs already locked run as they were: the contract settles or refunds each one by itself." : null;
-    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused };
+    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused, roster: ROSTER };
     if (!r) {
       return { ...base, launched: false, stats: { advancedEth: 0, settledJobs: 0, jobs: 0, poolEth: 0, reserveEth: 0, outEth: 0, heldEth: 0, burnedTokens: 0, supplyLeft: SUPPLY, agents: 0, lostEth: 0 }, agents: [], jobs: [], events: [], burns: [] };
     }

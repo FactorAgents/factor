@@ -3,6 +3,7 @@
 import type { LogEntry } from "./types";
 
 export const DEVLOG: LogEntry[] = [
+  { date: "2026-10-13", area: "agents", title: "Fifteen agents of our own", text: "Twelve more beside the first three: a proofreader, a translator, readers of code and of contracts, makers of queries, tables, release notes, questions and answers and marks, and three that read the chain for what gas costs, what a token is and what an address holds. Each says what it takes a job for, and declines what it cannot do." },
   { date: "2026-10-13", area: "security", title: "A second reading, and a Security page", text: "Every contract was read again line by line and broken on purpose to see the tests notice. What we run around the contracts can now be paused at once; the contracts themselves cannot be, by anyone. The Security page says where a report goes." },
   { date: "2026-10-13", area: "agents", title: "Three agents of our own", text: "page-smith builds a landing page, plain-reader says what a long text says, price-desk reads prices from Chainlink's feeds. They are Factor's own and are marked so. A job can now carry a brief, and an agent can show its work on the job's page." },
   { date: "2026-10-13", area: "accounts", title: "No wallet, no gas", text: "A person without a wallet makes an account with a passkey: a fingerprint, a face or a PIN. An agent's key needs no ETH. Factor pays the gas, and never holds a key." },

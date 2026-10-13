@@ -1,5 +1,5 @@
 // Factor's own agents, on the made-up chain, with a stand-in for the model maker: no model is ever called. What a
-// customer's brief and an agent's published work are, how the three agents are put up, what each does with a job,
+// customer's brief and an agent's published work are, how Factor's own agents are put up, what each does with a job,
 // when one declines, and what none of it ever says.
 
 import { createServer, type IncomingMessage, type Server } from "node:http";
@@ -68,7 +68,8 @@ async function world(more: Record<string, string> = {}, key = true): Promise<Wor
   chain.balances.set(A.bot, ETH);
   const w = await rig("live", { chain, houseSigners: signerFor, more: { HOUSE_MODE: "on", FACTOR_ACCOUNTS: A.accounts, HOUSE_UPSTREAM_URL: m.url, ...(key ? { ANTHROPIC_API_KEY: MODEL_KEY } : {}), ...more } });
   await w.engine.watchOnce();
-  await round(w, 4);
+  // each agent takes an account, then its registration, then its name: a few rounds until all fifteen stand
+  await round(w, 8);
   return { ...w, m };
 }
 
@@ -103,7 +104,7 @@ describe("the settings", () => {
     expect(seed).not.toBe(TEST_KEY);
     expect(takeHouseSeed({ BOT_PRIVATE_KEY: TEST_KEY })).toBe(seed);
     const keys = SERVICES.map((s) => houseSigner(seed, s.name).address);
-    expect(new Set(keys).size).toBe(3);
+    expect(new Set(keys).size).toBe(SERVICES.length);
     expect(keys).not.toContain(privateKeyToAccount(TEST_KEY).address.toLowerCase());
     // the owner's own secret, when there is one, is what they are made from instead
     const own = `0x${"7".repeat(64)}` as Hex;
@@ -198,12 +199,13 @@ describe("a brief, and the work shown", () => {
   });
 });
 
-describe("the three agents", () => {
+describe("Factor's own agents", () => {
   it("are put up by the engine itself: an account each, registered on the desk, under names nobody else can take", async () => {
     const w = await world();
-    expect(w.chain.sends("create")).toHaveLength(3);
+    expect(SERVICES).toHaveLength(15);
+    expect(w.chain.sends("create")).toHaveLength(SERVICES.length);
     const agents = (await get(w, "/v1/agents")).items as Body[];
-    expect(agents.map((a) => a.name).sort()).toEqual(["page-smith", "plain-reader", "price-desk"]);
+    expect(agents.map((a) => a.name).sort()).toEqual(SERVICES.map((s) => s.name).sort());
     for (const a of agents) expect(a).toMatchObject({ house: true, named: true });
     expect(agents.find((a) => a.name === "page-smith")).toMatchObject({ address: PAGE, does: page.does, service: { needs: page.needs, delivers: page.delivers, fromEth: 0.003 } });
     expect(agents.find((a) => a.name === "price-desk")!.service.fromEth).toBe(0.001);
@@ -226,12 +228,16 @@ describe("the three agents", () => {
     const sent = w.chain.sends().length;
     await round(w, 2);
     expect(w.chain.sends()).toHaveLength(sent);
-    expect((await get(w, "/v1/health")).house).toMatchObject({ enabled: true, model: "claude-sonnet-5-5", agents: [{ name: "page-smith", address: PAGE, ready: true }, { name: "plain-reader", ready: true }, { name: "price-desk", ready: true }], delivered: 0 });
+    expect((await get(w, "/v1/health")).house).toMatchObject({ enabled: true, model: "claude-sonnet-5-5", delivered: 0 });
+    const said = (await get(w, "/v1/health")).house.agents as Body[];
+    expect(said).toHaveLength(SERVICES.length);
+    expect(said.slice(0, 3)).toMatchObject([{ name: "page-smith", address: PAGE, ready: true }, { name: "plain-reader", ready: true }, { name: "price-desk", ready: true }]);
+    expect(said.every((a) => a.ready)).toBe(true);
   });
 
   it("without a key for the model only the one that asks nobody is put up", async () => {
     const w = await world({}, false);
-    expect(((await get(w, "/v1/agents")).items as Body[]).map((a) => a.name)).toEqual(["price-desk"]);
+    expect(((await get(w, "/v1/agents")).items as Body[]).map((a) => a.name).sort()).toEqual(["gas-desk", "price-desk", "token-desk", "wallet-desk"]);
     const id = await hire(w, PRICES, ETH / 1000n, "NVDA and ETH");
     await round(w, 3);
     expect((await jobOf(w, id)).job.state).toBe("delivered");

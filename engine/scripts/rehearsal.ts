@@ -48,6 +48,7 @@ import type { AgentJson, EventJson, FactorState, JobJson } from "../src/api.js";
 import { keyMessage } from "../src/compute.js";
 import { ponsEscrowAbi, ponsFactoryAbi } from "../src/chain/pons.js";
 import { FEEDS } from "../src/house/feeds.js";
+import { SERVICES } from "../src/house/services.js";
 import { briefMessage, profileMessage, proofOf, titleMessage } from "../src/profiles.js";
 import { softPasskey } from "./passkey.js";
 
@@ -358,10 +359,10 @@ async function main(): Promise<void> {
     return good;
   }
 
-  // Factor's own three agents are on the desk before the token is: the engine puts them up by itself
-  const own = await waitFor("the three house agents", async () => { const a = (await state()).agents.filter((x) => x.house && x.named && (x as Own).service) as Own[]; return a.length === 3 ? a : null; }, 240_000);
+  // Factor's own agents are on the desk before the token is: the engine puts them up by itself
+  const own = await waitFor("Factor's own agents", async () => { const a = (await state()).agents.filter((x) => x.house && x.named && (x as Own).service) as Own[]; return a.length === SERVICES.length ? a : null; }, 1_200_000);
   const houseOf = (n: string) => own.find((a) => a.name === n)!;
-  check("before the launch the engine has put Factor's three agents on the desk, each through an account it pays the gas for", own.length === 3, own.map((a) => a.name).join(", "));
+  check("before the launch the engine has put Factor's fifteen agents on the desk, each through an account it pays the gas for", own.length === 15, own.map((a) => a.name).join(", "));
 
   // ---------- the launch ----------
   console.log("\n== T+0: the launch");
@@ -486,7 +487,7 @@ async function main(): Promise<void> {
       await send(lumen.address, desk, DESK, "addBond", [], parseEther("0.01"));
       await send(drift.address, desk, DESK, "addBond", [], parseEther("0.001"));
       await seen();
-      await waitFor("the engine to know the three agents", async () => (await state()).agents.length >= 6, 180_000);
+      await waitFor("the engine to know the three agents", async () => (await state()).agents.length >= SERVICES.length + 3, 180_000);
       await signName(lumen, lumen.address, "lumen-07", "Summarises long documents and contracts");
       await signName(drift, drift.address, "drift-03", "Tags and sorts support tickets");
       await signName(idle, idle.address, "idle-11", "Translates product pages");

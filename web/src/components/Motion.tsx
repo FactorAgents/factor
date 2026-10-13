@@ -72,7 +72,8 @@ export function Receipt({ events }: { events: LedgerEvent[] }) {
   const [live, setLive] = useState(false);
   const seen = useRef<number | null>(null);        // the newest line that has been printed
   const queue = useRef<LedgerEvent[]>([]);
-  // Only what is in the ledger is ever printed, with the time it has there. When the page is first looked at, the
+  // Only what it is handed is ever printed, with the time it has there: the ledger's own lines, or before the launch
+  // the example lines, each of which says it is an example (lib/prelaunch.ts). When the page is first looked at, the
   // newest few lines come out of the printer one after another; after that a line is printed when the ledger has a
   // new one, and the paper rests in between.
   useEffect(() => {

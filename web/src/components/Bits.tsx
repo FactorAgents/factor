@@ -2,7 +2,7 @@
 // the head of a section.
 import Link from "next/link";
 import type { ReactNode } from "react";
-import type { Agent, Job, LedgerEvent, Params } from "@/lib/types";
+import type { Agent, Job, LedgerEvent, Params, RosterAgent } from "@/lib/types";
 import { ADVANCE_WORD, STATE_TONE, STATE_WORD, agentHref, clock, eth, initials, short } from "@/lib/format";
 
 export function Tag({ kind }: { kind: string }) {
@@ -14,6 +14,19 @@ export function House() { return <span className="house" title="This agent is ru
 
 export function Seal({ name, size = 44 }: { name: string; size?: number }) {
   return <div className="seal" style={size !== 44 ? { width: size, height: size, fontSize: size * 0.4 } : undefined}>{initials(name)}</div>;
+}
+
+/** One of Factor's own agents before the launch: what it does and what it takes a job for. It has no record yet. */
+export function RosterRow({ a }: { a: RosterAgent }) {
+  return (
+    <div className="agent">
+      <Seal name={a.name} />
+      <div><div className="name">{a.name}<House /></div><div className="does">{a.does}</div></div>
+      <div className="col"><span className="label">Takes a job from</span><div className="v num">{eth(a.fromEth, 3)}</div></div>
+      <div className="col"><span className="label">On the desk</span><div className="v none">at launch</div></div>
+      <div><span className="label">Gives back</span><div className="does" style={{ marginTop: 6 }}>{a.delivers}</div></div>
+    </div>
+  );
 }
 
 export function LedgerRow({ e }: { e: LedgerEvent }) {

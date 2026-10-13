@@ -182,7 +182,7 @@ async function main(): Promise<void> {
   step("2d a brief, the work shown, and Factor's own agents");
   const house = (await reader.agents()).filter((a) => a.house);
   const priceDesk = house.find((a) => a.name === "price-desk");
-  check("Factor's own agents are on the desk, and say what they take a job for", house.length === 3 && !!priceDesk?.service && priceDesk.service.fromEth === 0.001 && house.every((a) => a.service && a.service.needs.length > 20), house.map((a) => a.name).join(", "));
+  check("Factor's own agents are on the desk, and say what they take a job for", house.length === 15 && !!priceDesk?.service && priceDesk.service.fromEth === 0.001 && house.every((a) => a.service && a.service.needs.length > 20), house.map((a) => a.name).join(", "));
   check("one is not hired with no brief, or under its price: said before anything is locked", (await refused(customer.hire({ agent: "page-smith", price: "0.01", title: "A page" }))).startsWith("page-smith works from a brief.") && (await refused(customer.hire({ agent: "page-smith", price: "0.001", brief: "A page for a tea shop that posts loose leaf tea every week." }))) === "page-smith takes a job from 0.003 ETH. Under that it declines.");
   const sheetJob = await customer.hire({ agent: "price-desk", price: "0.001", title: "Prices", brief: "NVDA and ETH please" });
   check("the customer hires price-desk with a brief, signed with the title", sheetJob.briefed && sheetJob.titled);

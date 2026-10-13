@@ -53,6 +53,7 @@ import type { AgentJson, EventJson, FactorState, JobJson } from "../src/api.js";
 import { costMicro, DEFAULT_MODELS, keyMessage, usdMicro } from "../src/compute.js";
 import { ponsFactoryAbi } from "../src/chain/pons.js";
 import { FEED_ABI, FEEDS } from "../src/house/feeds.js";
+import { SERVICES } from "../src/house/services.js";
 import { briefMessage, profileMessage, proofOf, titleMessage } from "../src/profiles.js";
 
 const ENGINE = join(fileURLToPath(new URL(".", import.meta.url)), "..");
@@ -263,7 +264,7 @@ async function main(): Promise<void> {
     // what the kit's and the site's runs start from has Factor's own agents on it too
     await stopPort(ENGINE_PORT);
     startEngine(dataDir, envFile, HOUSE);
-    await waitFor("the house agents to be on the desk", async () => (await state()).agents.filter((a) => a.house && a.named).length === 3, 120_000);
+    await waitFor("the house agents to be on the desk", async () => (await state()).agents.filter((a) => a.house && a.named).length === SERVICES.length, 400_000);
     writeFileSync(join(WORK, "bare.json"), JSON.stringify({ rpc: RPC, api: API, desk, splitter, burnPot, token, accounts: accountsAt, keys, adminKey: ADMIN_KEY, model: `http://127.0.0.1:${MODEL_PORT}` }, null, 2));
     console.log(`\nLeft running: the fork on ${RPC}, the engine on ${API}, the pool holding ${eth(pool0)} ETH. Written to ${join(WORK, "bare.json")}.`);
     console.log("Stop them with: npm run e2e -- --stop");
@@ -539,10 +540,10 @@ async function main(): Promise<void> {
   startEngine(dataDir, envFile, HOUSE);
   await waitFor("the engine to run with its agents", async () => (await health()).state === "running", 60_000);
   type Own = AgentJson & { service?: { needs: string; delivers: string; fromEth: number } };
-  const own = await waitFor("the three agents to be on the desk", async () => { const a = (await state()).agents.filter((x) => x.house && x.named && (x as Own).service) as Own[]; return a.length === 3 ? a : null; }, 120_000);
+  const own = await waitFor("Factor's own agents to be on the desk", async () => { const a = (await state()).agents.filter((x) => x.house && x.named && (x as Own).service) as Own[]; return a.length === SERVICES.length ? a : null; }, 400_000);
   const byName = (n: string) => own.find((a) => a.name === n)!;
   const [pageSmith, plainReader, priceDesk] = [byName("page-smith"), byName("plain-reader"), byName("price-desk")];
-  check("the engine put three agents of its own on the desk: registered, named, and said to be Factor's", !!pageSmith && !!plainReader && !!priceDesk && (await read<{ registered: boolean }>(desk, DESK, "agent", [priceDesk.address])).registered && pageSmith.service!.fromEth === 0.003, own.map((a) => `${a.name} from ${a.service!.fromEth} ETH`).join(", "));
+  check("the engine put fifteen agents of its own on the desk: registered, named, and said to be Factor's", !!pageSmith && !!plainReader && !!priceDesk && (await read<{ registered: boolean }>(desk, DESK, "agent", [priceDesk.address])).registered && pageSmith.service!.fromEth === 0.003, own.map((a) => `${a.name} from ${a.service!.fromEth} ETH`).join(", "));
   // a customer hires one: the price is locked, then the brief is signed, as the site does it
   const hireOwn = async (agent: Own, price: string, title: string, brief: string | null): Promise<number> => {
     const n = Number(await read<bigint>(desk, DESK, "jobCount")) + 1;
