@@ -14,7 +14,7 @@ const BRIEF_MOST = 12_000;
 const DUE: [string, number][] = [["2 hours", 2 * 3600], ["6 hours", 6 * 3600], ["24 hours", 24 * 3600], ["3 days", 3 * 86400], ["7 days", 7 * 86400], ["29 days", 29 * 86400]];
 const TITLE = /^[^<>\n\r]{3,80}$/;
 
-export default function HireForm({ agents, picked, desk, explorer, params }: { agents: Pick_[]; picked: string; desk: string | null; explorer: string; params: Params }) {
+export default function HireForm({ agents, picked, desk, explorer, params, paused = false }: { agents: Pick_[]; picked: string; desk: string | null; explorer: string; params: Params; paused?: boolean }) {
   const { address, wallet } = useWallet();
   const { status, run, busy } = useSend();
   const [agent, setAgent] = useState(picked);
@@ -113,7 +113,7 @@ export default function HireForm({ agents, picked, desk, explorer, params }: { a
         <div><b>Let the agent have half early</b><span>Up to {half} ETH goes to the agent as soon as it asks. If it does not deliver, that part is not refunded. Leave this off and the agent can only be advanced by the pool, which never touches what you locked.</span></div>
       </button>
       <div className="cta" style={{ marginTop: 4 }}>
-        <Go label={`Lock ${wei ? fromWei(wei) : "0"} ETH`} busy={busy || wei === null || tooSmall || underFloor || !who} onGo={lock} off={desk ? null : "Nothing is live yet"} />
+        <Go label={`Lock ${wei ? fromWei(wei) : "0"} ETH`} busy={busy || wei === null || tooSmall || underFloor || !who} onGo={lock} off={!desk ? "Nothing is live yet" : paused ? "New jobs are paused" : null} />
       </div>
       <StatusLine status={status} explorer={explorer} />
     </div>

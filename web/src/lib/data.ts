@@ -28,6 +28,7 @@ const empty = (source: FactorState["source"], reached: boolean): FactorState => 
   params: RULES, agents: [], jobs: [], events: [], burns: [], contracts: { desk: null, splitter: null, burnPot: null, token: null, explorer: "https://robinhoodchain.blockscout.com" },
   compute: { enabled: false, markupPct: 0, maxTokens: 0, models: [] },
   accounts: { enabled: false, factory: null, ordersPerDay: 0 },
+  paused: null,
 });
 
 class Unreachable extends Error {}

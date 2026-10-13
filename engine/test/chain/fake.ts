@@ -130,6 +130,10 @@ export class FakeChain implements Chain {
   fillBps = 10_000n; // under 10000: the pool's price limit stops the swap short
   // the ETH price feed: dollars with 8 decimals
   ethUsd = 2_500n * 10n ** 8n;
+  // shares the splitter could not deliver when it split (somebody called it with too little gas): its retry() sends
+  // them on, unless a test says the destination still refuses
+  waiting = { admin: 0n, burn: 0n, pool: 0n };
+  stillRefused = false;
   feedsDown = false;
   feedPrices = new Map<string, bigint>();
   feedAgeS = 120;
@@ -312,6 +316,16 @@ export class FakeChain implements Chain {
         this.owedTotal -= amount;
         this.emit("desk", "Collected", { who, to: who, amount }, txHash);
         this.give(who, amount, txHash, true);
+      }
+      return undefined;
+    }
+    if (to === A.splitter && fn === "retry") {
+      if (commit && !this.stillRefused) {
+        const { admin, burn, pool } = this.waiting;
+        this.waiting = { admin: 0n, burn: 0n, pool: 0n };
+        if (admin > 0n) this.give(A.admin, admin, txHash);
+        if (burn > 0n) this.give(A.burnPot, burn, txHash);
+        if (pool > 0n) this.poolIn(A.splitter, pool, txHash);
       }
       return undefined;
     }
@@ -638,7 +652,7 @@ export class FakeChain implements Chain {
     if (to === A.splitter) {
       const s: Record<string, unknown> = {
         burnPot: this.wiring.splitterBurn, desk: this.wiring.splitterDesk, admin: A.admin, escrow: A.escrow, unsplit: this.unsplit,
-        adminPending: 0n, burnPending: 0n, poolPending: 0n, totalSplit: this.totalSplit, totalToAdmin: this.totalToAdmin, totalToPool: this.totalToPool,
+        adminPending: this.waiting.admin, burnPending: this.waiting.burn, poolPending: this.waiting.pool, totalSplit: this.totalSplit, totalToAdmin: this.totalToAdmin, totalToPool: this.totalToPool,
         totalToBurn: this.totalSplit - this.totalToAdmin - this.totalToPool,
       };
       if (fn in s) return s[fn];
@@ -793,10 +807,12 @@ export class FakeChain implements Chain {
       if (tx.call) this.run(tx.call, from, true, hash);
       else if (tx.pay) {
         // ETH sent to the desk with no call is the pool
-        if (tx.pay.to.toLowerCase() !== A.desk) throw new Error("the fake chain only takes a payment to the desk");
         if ((this.balances.get(from) ?? 0n) < tx.pay.value) throw new Error("not enough ETH");
         this.balances.set(from, (this.balances.get(from) ?? 0n) - tx.pay.value);
-        this.poolIn(from, tx.pay.value, hash);
+        // to the desk it is the pool; to anybody else, a plain payment
+        const to = tx.pay.to.toLowerCase();
+        if (to === A.desk) this.poolIn(from, tx.pay.value, hash);
+        else this.balances.set(to, (this.balances.get(to) ?? 0n) + tx.pay.value);
       }
     } catch {
       ok = false;

@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 
 const PORT = 3611, BASE = `http://127.0.0.1:${PORT}`, BARE = `http://127.0.0.1:${PORT + 1}`;
-const PAGES = ["/", "/ledger", "/ledger?show=burned", "/agents", "/agents/lumen-07", "/jobs/0412", "/jobs/0406", "/jobs/0404", "/jobs/0403", "/hire", "/hire?agent=page-smith", "/work", "/protocol", "/token", "/docs", "/log"];
+const PAGES = ["/", "/ledger", "/ledger?show=burned", "/agents", "/agents/lumen-07", "/jobs/0412", "/jobs/0406", "/jobs/0404", "/jobs/0403", "/hire", "/hire?agent=page-smith", "/work", "/protocol", "/token", "/docs", "/log", "/security"];
 const NAV = ["/ledger", "/agents", "/hire", "/work", "/protocol", "/token", "/docs"];
 // words the copy does not use: no long dash, no promise of gain
 const FORBIDDEN = [/—/, /\binvest/i, /\breturns?\b/i, /\bprofit/i, /\byield/i, /guarantee/i];
@@ -213,8 +213,30 @@ test("Factor's own agents say what they take a job for, on their page and where 
   for (const path of ["jobs/brief", "jobs/delivery"]) assert.equal((await post(BARE, path, {})).status, 503, path);
 });
 
+test("the security page says where a report goes, what counts, and what cannot be stopped", async () => {
+  const t = text((await get("/security")).html);
+  assert.match(t, /Tell us first/);
+  assert.match(t, /The contracts cannot be stopped/);
+  assert.match(t, /No outside firm has audited these contracts/);
+  assert.match(t, /decided case by case/);
+  assert.match(t, /By direct message on X/);
+  assert.match((await get("/")).html, /href="\/security"/);
+  // the file researchers look for first, once there is somewhere to write to
+  const file = await fetch(`${BASE}/.well-known/security.txt`);
+  assert.equal(file.status, 200);
+  const body = await file.text();
+  assert.match(body, /^Contact: https:\/\/x\.com$/m);
+  assert.match(body, new RegExp(`^Policy: ${BASE}/security$`, "m"));
+  assert.match(body, /^Expires: \d{4}-\d{2}-\d{2}T/m);
+  // with nothing live there is nowhere to write to yet, and the page says so
+  assert.equal((await fetch(`${BARE}/.well-known/security.txt`)).status, 404);
+  const bare = text((await get("/security", BARE)).html);
+  assert.match(bare, /The address to write to will be here when Factor is live/);
+  assert.match(bare, /not deployed yet/);
+});
+
 test("with no engine the site shows an empty desk, and never a sample figure", async () => {
-  for (const path of ["/", "/ledger", "/agents", "/hire", "/work", "/protocol", "/token", "/docs", "/log"]) {
+  for (const path of ["/", "/ledger", "/agents", "/hire", "/work", "/protocol", "/token", "/docs", "/log", "/security"]) {
     const { status, html } = await get(path, BARE);
     assert.equal(status, 200, path);
     const t = text(html);

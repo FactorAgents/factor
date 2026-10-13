@@ -24,7 +24,7 @@ export function state(over: Partial<State> = {}): State {
     params: { advanceMaxPct: 50, advanceFeePct: 1, jobFeePct: 2, graceHours: 12, reviewHours: 24, rejectedPct: 50, reserveMinPct: 20, minJobEth: 0.001 },
     agents: AGENTS, jobs: [JOB], events: [], contracts: { desk: DESK, splitter: null, burnPot: null, token: null, explorer: "https://explorer.example" },
     compute: { enabled: true, markupPct: 5, maxTokens: 16_000, models: [{ id: "claude-sonnet-5-5", inUsd: 2.1, outUsd: 10.5 }] },
-    accounts: { enabled: false, factory: null, ordersPerDay: 40 }, ...over,
+    accounts: { enabled: false, factory: null, ordersPerDay: 40 }, paused: null, ...over,
   };
 }
 

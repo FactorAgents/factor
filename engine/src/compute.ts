@@ -31,6 +31,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { recoverMessageAddress, type Hex } from "viem";
 import { normalizeAddress } from "./chain/address.js";
 import type { EngineDb, EventRow } from "./chain/db.js";
+import { stopped } from "./switches.js";
 
 /** Dollars per million tokens, as the model maker lists them. */
 export interface Price { in: number; out: number; cacheWrite5m: number; cacheWrite1h: number; cacheRead: number }
@@ -202,6 +203,15 @@ export class ComputeStore {
     return { wei: lots.reduce((n, l) => n + BigInt(l.back_wei), 0n), lots };
   }
 
+  /**
+   * ETH the gateway must still be able to give back: the unspent part of credit whose job is not closed yet. If
+   * that job is refunded at a loss, this is what goes back to the pool.
+   */
+  backingWei(): bigint {
+    const open = this.db.q("SELECT wei, usd_micro, spent_micro FROM compute_lots WHERE state = 'open'").all() as { wei: string; usd_micro: number | null; spent_micro: number }[];
+    return open.reduce((n, l) => n + (l.usd_micro && l.usd_micro > 0 ? (BigInt(l.wei) * BigInt(Math.max(0, l.usd_micro - l.spent_micro))) / BigInt(l.usd_micro) : BigInt(l.wei)), 0n);
+  }
+
   sentBack(lots: { tx_hash: string; log_index: number }[], tx: string): void {
     this.db.tx(() => { for (const l of lots) this.db.q("UPDATE compute_lots SET back_tx = ? WHERE tx_hash = ? AND log_index = ?").run(tx, l.tx_hash, l.log_index); });
   }
@@ -279,7 +289,7 @@ export class Gateway {
   /** What anybody may know: whether it is on, the models and what they cost here. */
   about(): { enabled: boolean; markupPct: number; maxTokens: number; models: { id: string; inUsd: number; outUsd: number }[] } {
     const up = (n: number) => Math.round(n * (10_000 + this.cfg.markupBps)) / 10_000;
-    return { enabled: this.cfg.enabled, markupPct: this.cfg.markupBps / 100, maxTokens: this.cfg.maxTokens, models: Object.entries(this.cfg.models).map(([id, p]) => ({ id, inUsd: up(p.in), outUsd: up(p.out) })) };
+    return { enabled: this.cfg.enabled && !stopped(this.db, "compute"), markupPct: this.cfg.markupBps / 100, maxTokens: this.cfg.maxTokens, models: Object.entries(this.cfg.models).map(([id, p]) => ({ id, inUsd: up(p.in), outUsd: up(p.out) })) };
   }
 
   /** Everything under /v1/compute/. Always answers. */
@@ -292,6 +302,8 @@ export class Gateway {
       const credit = /^\/v1\/compute\/credit\/(0x[0-9a-fA-F]{40})$/.exec(path);
       if (credit && req.method === "GET") return json(200, this.balanceOf(credit[1]!.toLowerCase()));
       if (path === "/v1/compute/key" && req.method === "POST") {
+        // a key costs a signature to check, and for an account a question to the chain: a caller gets a few a minute
+        if (this.tooMany(req)) return refuse(fail(429, "rate_limit_error", "Too many requests for a key. Try again in a minute."));
         const r = await this.mint(JSON.parse((await readBody(req, 4096)).toString("utf8")) as Record<string, unknown>);
         return "status" in r ? refuse(r) : json(200, r);
       }
@@ -311,6 +323,17 @@ export class Gateway {
       else res.end();
       if (!big && !bad) this.log(`[compute] failed: ${(e as Error).message?.split("\n")[0]}`);
     }
+  }
+
+  private asked = new Map<string, { n: number; from: number }>();
+  private tooMany(req: IncomingMessage): boolean {
+    const forwarded = req.headers["x-forwarded-for"];
+    const from = (Array.isArray(forwarded) ? forwarded[0] : forwarded)?.split(",")[0]?.trim() || req.socket.remoteAddress || "unknown";
+    const now = Date.now();
+    const seen = this.asked.get(from);
+    if (this.asked.size > 10_000) this.asked.clear();
+    if (!seen || now - seen.from > 60_000) { this.asked.set(from, { n: 1, from: now }); return false; }
+    return ++seen.n > 12;
   }
 
   private who(req: IncomingMessage): string | null {
@@ -350,6 +373,8 @@ export class Gateway {
   private async messages(agent: string, req: IncomingMessage, res: ServerResponse): Promise<Fail | null> {
     const cfg = this.cfg;
     if (!cfg.enabled || !this.modelKey) return fail(503, "api_error", "Compute credit is not switched on yet. Credit that was drawn is kept and can be used when it is.");
+    // the owner's switch (./switches.ts)
+    if (stopped(this.db, "compute")) return fail(503, "api_error", "Compute credit is paused for now. Credit that was drawn is kept and can be used when it is back.");
     const raw = await readBody(req, cfg.maxBodyBytes);
     const body = JSON.parse(raw.toString("utf8")) as Record<string, unknown>;
     if (!body || typeof body !== "object" || Array.isArray(body)) return fail(400, "invalid_request_error", "The body is not a JSON object.");

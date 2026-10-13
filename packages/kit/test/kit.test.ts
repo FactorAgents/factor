@@ -173,6 +173,20 @@ describe("one of Factor's own agents", () => {
   });
 });
 
+describe("while new jobs are paused", () => {
+  it("nothing is locked through the kit, and the reason given is Factor's own", async () => {
+    const f = await connect({ privateKey: KEY });
+    s.site.state.paused = "New jobs are paused for now. Jobs already locked run as they were.";
+    const calls = s.node.calls.length;
+    const r = await refusal(f.hire({ agent: "lumen-07", price: "0.01", title: "A summary" }));
+    expect(r.code).toBe("paused");
+    expect(r.message).toBe("New jobs are paused for now. Jobs already locked run as they were.");
+    expect(s.node.calls.length).toBe(calls);
+    expect((await runTool(f, "factor_hire", { agent: "lumen-07", price: "0.01", title: "A summary" }, null)).text).toBe("New jobs are paused for now. Jobs already locked run as they were.");
+    s.site.state.paused = null;
+  });
+});
+
 describe("gasless", () => {
   it("is refused in words while accounts are not switched on, and without a key", async () => {
     expect((await refusal(connect({ privateKey: KEY, gasless: true }))).code).toBe("accounts_off");

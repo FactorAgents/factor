@@ -28,6 +28,7 @@ import { factorAccountAbi, factorAccountsAbi, factorDeskAbi } from "./abi/index.
 import { normalizeAddress } from "./chain/address.js";
 import { nodeBusy, reason, revertOf, type Chain, type ChainLog, type Receipt } from "./chain/chain.js";
 import type { EngineDb } from "./chain/db.js";
+import { stopped } from "./switches.js";
 
 type Env = Record<string, string | undefined>;
 
@@ -253,11 +254,14 @@ export class Accounts {
   }
 
   about(): { enabled: boolean; factory: string | null; ordersPerDay: number } {
-    return { enabled: this.cfg.enabled && this.live(), factory: this.cfg.factory, ordersPerDay: this.cfg.ordersPerAccountDay };
+    return { enabled: this.cfg.enabled && this.live() && !stopped(this.db, "accounts") && !stopped(this.db, "keeper"), factory: this.cfg.factory, ordersPerDay: this.cfg.ordersPerAccountDay };
   }
 
   private off(): Refused | null {
     if (!this.cfg.enabled || !this.cfg.factory) return no(503, "accounts are not switched on yet");
+    // the owner's switch (./switches.ts): nothing new is taken while it is off. What is in an account stays its
+    // owner's, who can send a signed order to the chain without Factor
+    if (stopped(this.db, "accounts") || stopped(this.db, "keeper")) return no(503, "accounts are paused for now. Nothing in an account is touched by that");
     if (!this.live()) return no(503, "the engine is not sending transactions right now");
     return null;
   }

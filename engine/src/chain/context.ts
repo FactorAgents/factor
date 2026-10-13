@@ -12,6 +12,8 @@ export interface Addresses {
   desk: string;
   // the maker of accounts for people without a wallet, when there is one
   accounts?: string | null;
+  // a wallet of the owner's that the gas wallet's surplus is sent on to, when one is named
+  skimTo?: string | null;
 }
 
 // What the engine learns from the chain and keeps for the life of the process. The token is never cached as

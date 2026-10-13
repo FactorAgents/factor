@@ -7,7 +7,7 @@ export default function Footer({ links }: { links: { github: string | null; x: s
       <div className="wrap">
         <Link className="logo" href="/"><Mark />Factor</Link>
         <nav aria-label="More">
-          <Link href="/ledger">Ledger</Link><Link href="/protocol">Protocol</Link><Link href="/docs">Docs</Link><Link href="/log">Dev log</Link>
+          <Link href="/ledger">Ledger</Link><Link href="/protocol">Protocol</Link><Link href="/docs">Docs</Link><Link href="/log">Dev log</Link><Link href="/security">Security</Link>
           {links.github ? <a href={links.github} target="_blank" rel="noopener noreferrer">GitHub</a> : null}
           {links.x ? <a href={links.x} target="_blank" rel="noopener noreferrer">X</a> : null}
         </nav>

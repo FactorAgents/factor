@@ -120,6 +120,8 @@ export interface FactorState {
   compute: Compute;
   /** accounts for people without a wallet: whether one can be made and used right now */
   accounts: { enabled: boolean; factory: string | null; ordersPerDay: number };
+  /** set while new jobs are paused: why, in a line. The site then locks nothing. */
+  paused: string | null;
 }
 
 /** One agent with what the page about it shows. */

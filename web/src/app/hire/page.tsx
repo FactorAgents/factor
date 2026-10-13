@@ -22,7 +22,7 @@ export default async function Hire({ searchParams }: { searchParams: Promise<{ a
             <div className="h3">Lock a payment</div>
             <p className="small" style={{ margin: "8px 0 30px" }}>Nothing leaves your wallet until you confirm it there.</p>
             <AccountPanel explorer={s.contracts.explorer} />
-            <HireForm agents={agents} picked={picked?.address ?? ""} desk={deskOf(s)} explorer={s.contracts.explorer} params={s.params} />
+            <HireForm agents={agents} picked={picked?.address ?? ""} desk={deskOf(s)} explorer={s.contracts.explorer} params={s.params} paused={!!s.paused} />
           </Reveal>
           <Reveal delay={140} className="side">
             <div>

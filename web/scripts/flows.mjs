@@ -248,6 +248,18 @@ try {
   const agentPage = await text();
   check("the agent's public page carries its name, what it does, and its limit", agentPage.includes("lumen-07") && agentPage.includes("Summarises long documents and contracts.") && /Limit[\s\S]*0\.0040 ETH/.test(agentPage));
 
+  // the owner pauses new jobs (the engine's switch, with the owner's key of this local run): the site says so on
+  // every page and offers nothing to lock, and is as it was when the switch is turned back
+  const flip = (on) => fetch(`${bare.api}/v1/admin/switch`, { method: "POST", headers: { "content-type": "application/json", "x-admin-key": bare.adminKey }, body: JSON.stringify({ what: "hiring", on }) });
+  await flip(false);
+  await as(CUSTOMER);
+  await go("/hire?agent=lumen-07");
+  const pausedText = await text();
+  check("while new jobs are paused the site says so, and offers nothing to lock", pausedText.includes("New jobs are paused for now.") && (await run(`[...document.querySelectorAll(".btn.off")].some((b) => b.textContent.trim() === "New jobs are paused")`)) && !(await has("Connect, or use a passkey")));
+  await flip(true);
+  await go("/hire?agent=lumen-07");
+  check("turned back, the site offers it again", !(await text()).includes("New jobs are paused") && (await has("Connect, or use a passkey")));
+
   step("4b a customer hires it: the price is locked, then the title is signed");
   await as(CUSTOMER);
   await go("/hire?agent=lumen-07");

@@ -26,6 +26,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <WalletProvider accounts={!!deskOf(s) && s.accounts.enabled}>
           <Header links={s.links} launched={s.launched} wallets={!!deskOf(s)} />
           {!s.reached ? <div className="banner" role="status">The figures are not arriving right now. Nothing is lost: the contracts hold everything, and this page fills in again by itself.</div> : null}
+          {s.paused ? <div className="banner" role="status">{s.paused}</div> : null}
           <main>{children}</main>
           <Footer links={s.links} />
           {s.source === "engine" ? <Live /> : null}

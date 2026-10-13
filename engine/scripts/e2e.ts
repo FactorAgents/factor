@@ -29,6 +29,8 @@
 //      agent whose key holds no ETH do a whole job, with the engine paying the gas of every transaction.
 //   9  Factor's own agents: the engine puts three up, and customers hire them. One reads Chainlink's feeds on the
 //      copy of the chain, two ask the model (the stand-in here), one job is under its agent's price and is declined.
+//  10  the owner's switches, turned over HTTP with the owner's key, and a split somebody starved of gas: the pool's
+//      share is left waiting in the splitter, and the engine sends it on.
 //
 // It ends with the list of checks and exits 1 if one failed.
 //
@@ -62,6 +64,8 @@ const ENGINE_PORT = 8789;
 const MODEL_PORT = 8791;
 // what the stand-in for the model maker takes as the owner's key: made up here, a key to nothing
 const MODEL_KEY = "sk-ant-e2e-stand-in-a-key-to-nothing";
+// the owner's key for this run: made up here, and good for nothing but this local engine
+const ADMIN_KEY = "e2e-owner-key-of-this-local-run";
 const RPC = `http://127.0.0.1:${ANVIL_PORT}`;
 const API = `http://127.0.0.1:${ENGINE_PORT}`;
 const WORK = join(tmpdir(), "factor-e2e");
@@ -166,7 +170,7 @@ function startEngine(dataDir: string, envFile: string, more: Record<string, stri
     env: {
       ...process.env, PORT: String(ENGINE_PORT), FACTOR_DATA_DIR: dataDir, ENGINE_MODE: "live", BOT_PRIVATE_KEY: BOT_KEY, FACTOR_ENV_FILE: envFile, FACTOR_RPC_URLS: RPC,
       FACTOR_REHEARSAL_CLOCK: "chain", FACTOR_HOUSE_AGENTS: AGENT2,
-      ACCOUNTS_MODE: "on",
+      ACCOUNTS_MODE: "on", ENGINE_ADMIN_KEY: ADMIN_KEY, ENGINE_BACKUPS: "off",
       COMPUTE_MODE: "on", ANTHROPIC_API_KEY: MODEL_KEY, COMPUTE_UPSTREAM_URL: `http://127.0.0.1:${MODEL_PORT}`,
       ENGINE_WATCH_EVERY_MS: "700", ENGINE_ACT_EVERY_MS: "900", ENGINE_CONFIRMATIONS: "1", ENGINE_API_CACHE_MS: "0", ENGINE_SWEEP_EVERY_S: "60", ...more,
     },
@@ -260,7 +264,7 @@ async function main(): Promise<void> {
     await stopPort(ENGINE_PORT);
     startEngine(dataDir, envFile, HOUSE);
     await waitFor("the house agents to be on the desk", async () => (await state()).agents.filter((a) => a.house && a.named).length === 3, 120_000);
-    writeFileSync(join(WORK, "bare.json"), JSON.stringify({ rpc: RPC, api: API, desk, splitter, burnPot, token, accounts: accountsAt, keys, model: `http://127.0.0.1:${MODEL_PORT}` }, null, 2));
+    writeFileSync(join(WORK, "bare.json"), JSON.stringify({ rpc: RPC, api: API, desk, splitter, burnPot, token, accounts: accountsAt, keys, adminKey: ADMIN_KEY, model: `http://127.0.0.1:${MODEL_PORT}` }, null, 2));
     console.log(`\nLeft running: the fork on ${RPC}, the engine on ${API}, the pool holding ${eth(pool0)} ETH. Written to ${join(WORK, "bare.json")}.`);
     console.log("Stop them with: npm run e2e -- --stop");
     return;
@@ -596,6 +600,50 @@ async function main(): Promise<void> {
   check("declining left no mark on their records", records9.every((r) => r.notDelivered === 0 && r.unanswered === 0 && !r.barred) && records9.reduce((n, r) => n + r.settled, 0) === 1);
   const log9 = readFileSync(join(WORK, "engine.log"), "utf8");
   check("the engine's log names what its agents did, and no key", log9.includes("[house] price-desk delivered job") && !log9.includes(MODEL_KEY) && !log9.includes(BOT_KEY.slice(2)));
+
+  step("10 the owner's switches, and a split somebody starved of gas");
+  const flip = async (what: string, on: boolean, key = ADMIN_KEY) => { const r = await fetch(`${API}/v1/admin/switch`, { method: "POST", headers: { "content-type": "application/json", "x-admin-key": key }, body: JSON.stringify({ what, on }) }); return { status: r.status, body: (await r.json()) as { stopped?: Record<string, unknown> } }; };
+  check("a switch is not turned without the owner's key", (await flip("keeper", false, "not-the-owners-key-at-all-no-no")).status === 401 && Object.keys((await health() as Health & { stopped: Record<string, unknown> }).stopped).length === 0);
+  check("the owner stops everything the gas wallet sends", (await flip("keeper", false)).status === 200);
+  const SPLITTER = factorSplitterAbi as Abi;
+  const sentBefore = await client.getTransactionCount({ address: BOT });
+  // Fees arrive at the splitter and somebody splits them with as little gas as they can get away with, hoping a
+  // share is left behind. It cannot be: a push that runs out of gas takes all but a sixty-fourth of what the call
+  // had left, which is never enough to finish, so a split either delivers every share or does not happen at all.
+  await rpc("eth_sendTransaction", [{ from: TRADER, to: splitter, value: `0x${parseEther("0.01").toString(16)}` }]);
+  await waitFor("the fees to be in the splitter", async () => (await read<bigint>(splitter, SPLITTER, "unsplit")) === parseEther("0.01"));
+  const data = encodeFunctionData({ abi: SPLITTER, functionName: "distribute" });
+  const least = BigInt(await rpc<string>("eth_estimateGas", [{ from: TRADER, to: splitter, data }]));
+  const poolBefore10 = await read<bigint>(desk, DESK, "pool");
+  const tryWith = async (gas: bigint) => {
+    const hash = await rpc<`0x${string}`>("eth_sendTransaction", [{ from: TRADER, to: splitter, data, gas: `0x${gas.toString(16)}` }]);
+    return (await client.waitForTransactionReceipt({ hash, timeout: 60_000, pollingInterval: 250 })).status === "success";
+  };
+  // from well under what it needs, upward in small steps, until one goes through
+  const tried: string[] = [];
+  let through = 0n;
+  for (let gas = (least * 70n) / 100n; gas <= (least * 120n) / 100n && through === 0n; gas += least / 50n) {
+    const ok = await tryWith(gas);
+    const waiting = (await read<bigint>(splitter, SPLITTER, "poolPending")) + (await read<bigint>(splitter, SPLITTER, "burnPending")) + (await read<bigint>(splitter, SPLITTER, "adminPending"));
+    tried.push(`${gas}${ok ? " through" : ""}${waiting > 0n ? " LEFT A SHARE" : ""}`);
+    if (waiting > 0n) break;
+    if (ok) through = gas;
+  }
+  check("a split starved of gas does not happen at all, and one that goes through delivers every share: none can be left behind", through > 0n && !tried.some((t) => t.includes("LEFT")) && tried.length > 3 && (await read<bigint>(splitter, SPLITTER, "unsplit")) === 0n && (await read<bigint>(desk, DESK, "pool")) - poolBefore10 >= parseEther("0.001"), `${tried.length} tries from ${(least * 70n) / 100n} gas, the first through at ${through}`);
+  await warpBy(900);
+  await sleep(4000);
+  check("while the keeper is stopped the gas wallet sends nothing, whatever is waiting", (await client.getTransactionCount({ address: BOT })) === sentBefore);
+  await flip("keeper", true);
+  check("turned back on, the engine goes on as before", (await waitFor("the engine to look again", async () => { const h = await health(); return h.actions.retry_split.result.startsWith("every share") ? h : null; }, 60_000)).actions.retry_split.failed === 0);
+  await flip("hiring", false);
+  const pausedState = await waitFor("the feed to say so", async () => { const st = await state() as FactorState & { paused: string | null }; return st.paused ? st : null; });
+  check("the owner pauses new jobs, and the site's feed carries the reason", pausedState.paused!.startsWith("New jobs are paused for now."));
+  await flip("accounts", false);
+  const refusedNew = await post("/v1/accounts", { kind: "wallet", address: TRADER });
+  check("the owner pauses accounts: nothing new is taken, and an account can still be read", refusedNew.status === 503 && (await get<{ balanceWei: string }>(`/v1/accounts/${low(person)}`)).balanceWei === (await balance(person)).toString());
+  await flip("hiring", true);
+  await flip("accounts", true);
+  check("turned back, everything is as it was", (await state() as FactorState & { paused: string | null }).paused === null && Object.keys((await health() as Health & { stopped: Record<string, unknown> }).stopped).length === 0);
 
   // tidy up
   records.forEach((f, i) => { if (!hadRecords[i]) rmSync(f, { recursive: true, force: true }); });

@@ -9,6 +9,7 @@
 import { mkdirSync } from "node:fs";
 import { createServer, type IncomingMessage } from "node:http";
 import { join } from "node:path";
+import { backups } from "./backup.js";
 import { open } from "./chain/db.js";
 import { Engine } from "./engine.js";
 
@@ -17,6 +18,8 @@ mkdirSync(dir, { recursive: true });
 const db = open(join(dir, "factor.db"));
 const engine = new Engine(db);
 engine.start();
+// a copy of the database a day, beside it (./backup.ts). ENGINE_BACKUPS=off for a run that should leave nothing behind
+const stopBackups = (process.env.ENGINE_BACKUPS ?? "").trim().toLowerCase() === "off" ? () => undefined : backups(db, dir, (line) => console.log(`${new Date().toISOString().slice(11, 19)} ${line}`));
 
 // the most a signed write may carry: a name and a line, or a title
 const BODY_MOST = 4096;
@@ -77,7 +80,7 @@ const server = createServer((req, res) => {
   }
   if (req.method !== "GET" && req.method !== "HEAD") return send(405, { error: "GET or POST" });
   if (path === "/" || path === "/healthz") return send(200, { ok: true });
-  engine.handle(path, new URLSearchParams(search)).then((a) => (a ? send(a.status, a.body) : send(404, { error: "not found" }))).catch(failed);
+  engine.handle(path, new URLSearchParams(search), caller(req)).then((a) => (a ? send(a.status, a.body) : send(404, { error: "not found" }))).catch(failed);
 });
 const port = Number(process.env.PORT) || 8787;
 server.listen(port, () => console.log(`${new Date().toISOString().slice(11, 19)} [engine] listening on ${port}`));
@@ -89,6 +92,7 @@ for (const signal of ["SIGTERM", "SIGINT"] as const) {
     if (stopping) return;
     stopping = true;
     server.close();
+    stopBackups();
     engine.stop().finally(() => { db.close(); process.exit(0); });
   });
 }

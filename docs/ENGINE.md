@@ -15,6 +15,8 @@ wallet that holds a little ETH and nothing else.
 | Settle | A job was delivered and its customer's 24 hours are over | The agent is paid and the pool repaid |
 | Refund | A job is past its due time and the 12 hours of grace | The customer has the payment back |
 | Collect | The desk holds an advance fee the burn pot was not sent | Delivers it to the burn pot |
+| Retry split | The splitter holds a share it could not deliver (the admin wallet refused its ETH) | Calls its `retry()`, at most every ten minutes, and every six hours once a try delivered nothing |
+| Skim | The gas wallet holds more than its gas money and what backs open compute credit | Sends the rest on to `ENGINE_SKIM_TO`, a wallet of the owner's |
 | Return compute | A job with a compute advance was refunded and the pool lost on it | Sends the unspent part back to the pool, as ETH |
 | Relay | The owner of an account without a wallet signed something for it to do | Sends it, and pays the gas. First in every pass |
 
@@ -145,6 +147,15 @@ on nothing else.
 - `GET /v1/health` has the totals under `compute`: credit granted, spent, outstanding, calls, and `unpaidMicro`,
   which is 0 unless a call ever cost more than the worst the gateway had held back for it.
 
+## Switches, and the daily copy
+
+The owner can stop the gas wallet's sending, accounts, compute, the house agents or the offer to lock new jobs at
+once, with `POST /v1/admin/switch` and `ENGINE_ADMIN_KEY`, or from the start with `ENGINE_STOP`
+(`src/switches.ts`). `docs/SECURITY.md` says what each one stops and what to do when something looks wrong.
+
+A copy of the database is written beside it once a day and the last seven are kept (`src/backup.ts`,
+`<FACTOR_DATA_DIR>/backups`). `ENGINE_BACKUPS=off` turns that off.
+
 ## Settings
 
 `engine/.env.example` lists every one. The three secrets, `BOT_PRIVATE_KEY`, `ENGINE_ADMIN_KEY` and
@@ -153,10 +164,10 @@ own), are set on the host only. They are never logged, stored or returned by any
 
 ## Tests
 
-- `npm test`: 196 tests on a made-up chain (reorgs, a node that turns requests away, stuck transactions, every
+- `npm test`: 211 tests on a made-up chain (reorgs, a node that turns requests away, stuck transactions, every
   action, the API, signed names, compute credit against a stand-in for the model maker, accounts and their limits,
-  Factor's own agents).
-- `npm run e2e`: the engine against the real contracts on a local fork of the chain, 80 checks. Its last step has the three house agents hired and paid, one of them reading real price feeds. A passkey made of
+  Factor's own agents, the owner's switches).
+- `npm run e2e`: the engine against the real contracts on a local fork of the chain, 88 checks. Its last step has the three house agents hired and paid, one of them reading real price feeds. A passkey made of
   software and a key with no ETH do a whole job, and the account's own code is run by the real chain to see that
   it takes the passkey's signature there. It compares the
   engine's copy of every job and agent, and its score for each agent, with the desk itself.

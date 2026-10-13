@@ -1,0 +1,54 @@
+// The owner's switches: the few things that can be stopped at once, without a restart, when something looks wrong.
+//
+// The contracts cannot be stopped by anybody. They have no owner and no pause, which is the point of them: nobody
+// can freeze a customer's payment or change a rule. What CAN be stopped is everything Factor itself does around
+// them, and each of these is a switch here:
+//
+//   keeper    everything the gas wallet sends: sweeps, burns, settling and refunding jobs whose time is up, and the
+//             orders of accounts. (Anyone can still make those calls themselves: they are open to all.)
+//   accounts  taking new accounts and orders from people without a wallet
+//   compute   serving models for compute credit. The credit itself is kept.
+//   house     Factor's own agents taking and doing jobs
+//   hiring    the site and the kit offering to lock new jobs. A notice says why. The desk itself still takes a lock
+//             from anyone who calls it directly: this only stops Factor from leading people to it.
+//
+// A switch is turned with POST /v1/admin/switch and the owner's key, or set at start with ENGINE_STOP (names with
+// commas between them). It is kept in the database, so it holds across a restart until it is turned back.
+
+import type { EngineDb } from "./chain/db.js";
+
+export const SWITCHES = ["keeper", "accounts", "compute", "house", "hiring"] as const;
+export type Switch = (typeof SWITCHES)[number];
+const key = (name: Switch) => `switch:${name}`;
+
+export interface Stopped { at: number; note: string }
+
+export const isSwitch = (v: unknown): v is Switch => typeof v === "string" && (SWITCHES as readonly string[]).includes(v);
+
+/** Whether something is stopped, and since when and why. */
+export function stopped(db: EngineDb, name: Switch): Stopped | null {
+  return db.getJson<Stopped>(key(name));
+}
+
+export function turn(db: EngineDb, name: Switch, on: boolean, note = ""): void {
+  if (on) db.unset(key(name));
+  else if (!stopped(db, name)) db.setJson(key(name), { at: db.now(), note: note.replace(/[\u0000-\u001f<>]/g, " ").trim().slice(0, 200) });
+}
+
+/** Everything that is stopped right now. */
+export function allStopped(db: EngineDb): Partial<Record<Switch, Stopped>> {
+  const out: Partial<Record<Switch, Stopped>> = {};
+  for (const name of SWITCHES) {
+    const s = stopped(db, name);
+    if (s) out[name] = s;
+  }
+  return out;
+}
+
+/** ENGINE_STOP at start: the names it holds are stopped. It never turns anything back on. */
+export function stopFromEnv(db: EngineDb, raw: string | undefined, problems: string[] = []): void {
+  for (const name of (raw ?? "").split(",").map((x) => x.trim().toLowerCase()).filter(Boolean)) {
+    if (isSwitch(name)) turn(db, name, false, "stopped by ENGINE_STOP");
+    else problems.push(`ENGINE_STOP holds "${name}", which is not one of ${SWITCHES.join(", ")}`);
+  }
+}

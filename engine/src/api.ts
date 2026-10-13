@@ -24,6 +24,8 @@ import { snapshotOf, type Ctx, type Snapshot } from "./chain/context.js";
 import type { Accounts } from "./accounts.js";
 import type { Gateway } from "./compute.js";
 import type { House } from "./house/house.js";
+import { timingSafeEqual } from "node:crypto";
+import { allStopped, isSwitch, SWITCHES, stopped, turn } from "./switches.js";
 import { DeskStore, KIND_NAME, RULES, STATE, STATE_NAME, type AdvanceRow, type AgentRow, type JobRow, type LedgerRow } from "./desk.js";
 import { Profiles, type Profile, type Written } from "./profiles.js";
 import { canDrawOf, limitOf, scoreOf, scoreParts } from "./score.js";
@@ -126,6 +128,8 @@ export interface FactorState {
   compute: { enabled: boolean; markupPct: number; maxTokens: number; models: { id: string; inUsd: number; outUsd: number }[] };
   /** accounts for people without a wallet: whether one can be made and used right now, and what makes them */
   accounts: { enabled: boolean; factory: string | null; ordersPerDay: number };
+  /** set while the owner has paused new jobs: why, in a line. The site and the kit then lock nothing. */
+  paused: string | null;
 }
 
 const ok = (body: Record<string, unknown>): Answer => ({ status: 200, body });
@@ -248,9 +252,13 @@ export class EngineApi {
 
   // The answer for a path, or null when the path is not one of the engine's. `query` is what followed the ? in the
   // address; a value in it that makes no sense is ignored, never an error.
-  async handle(path: string, query: URLSearchParams = new URLSearchParams()): Promise<Answer | null> {
+  async handle(path: string, query: URLSearchParams = new URLSearchParams(), from = ""): Promise<Answer | null> {
     // accounts are asked about as they change (an order on its way): never answered from the cache
-    if (path.startsWith("/v1/accounts/")) return this.accountsGet(path);
+    if (path.startsWith("/v1/accounts/")) {
+      // what an account holds is asked of the chain: one caller gets a few a second, not as many as it likes
+      if (from && this.tooMany(from, "get", 300)) return { status: 429, body: { error: "too many requests: try again in a minute" } };
+      return this.accountsGet(path);
+    }
     const route = this.route(path, query);
     if (!route) return null;
     const v = this.view();
@@ -324,14 +332,27 @@ export class EngineApi {
   // A signed write. `from` is the caller's address on the network, for the limit on how many one may send.
   async post(path: string, body: unknown, from: string, adminKey?: string): Promise<Answer | null> {
     if (path === "/v1/accounts" || path.startsWith("/v1/accounts/")) return this.accountsPost(path, body, from);
-    if (path !== "/v1/agents/profile" && path !== "/v1/jobs/title" && path !== "/v1/jobs/brief" && path !== "/v1/jobs/delivery" && path !== "/v1/admin/hide") return null;
+    if (path !== "/v1/agents/profile" && path !== "/v1/jobs/title" && path !== "/v1/jobs/brief" && path !== "/v1/jobs/delivery" && path !== "/v1/admin/hide" && path !== "/v1/admin/switch") return null;
     const v = this.view();
     if (!v.profiles || v.state !== "running") return { status: 503, body: { error: "the engine is not reading the chain yet" } };
     if (!body || typeof body !== "object" || Array.isArray(body)) return { status: 400, body: { error: "the body is not a JSON object" } };
     const b = body as Record<string, unknown>;
-    if (path === "/v1/admin/hide") {
+    if (path === "/v1/admin/hide" || path === "/v1/admin/switch") {
       const want = v.config.adminKey;
-      if (!want || !adminKey || adminKey.length !== want.length || adminKey !== want) return { status: 401, body: { error: "not the owner" } };
+      // compared in the same time whatever is sent, and tried a few times a minute at most from one place
+      if (this.tooMany(from, "admin", 10)) return { status: 429, body: { error: "too many requests: try again in a minute" } };
+      const given = Buffer.from(adminKey ?? ""), held = Buffer.from(want ?? "");
+      if (!want || given.length !== held.length || !timingSafeEqual(given, held)) return { status: 401, body: { error: "not the owner" } };
+    }
+    if (path === "/v1/admin/switch") {
+      // one of the owner's switches (./switches.ts): { "what": "accounts", "on": false, "note": "why" }
+      if (!v.ctx) return { status: 503, body: { error: "the engine is not reading the chain yet" } };
+      if (!isSwitch(b.what) || typeof b.on !== "boolean") return { status: 400, body: { error: `what is one of ${SWITCHES.join(", ")}, and on is true or false` } };
+      turn(v.ctx.db, b.what, b.on, typeof b.note === "string" ? b.note : "");
+      this.cache.clear();
+      return ok({ ok: true, stopped: allStopped(v.ctx.db) });
+    }
+    if (path === "/v1/admin/hide") {
       const done = (b.what === "agent" || b.what === "job") && (typeof b.key === "string" || typeof b.key === "number") ? v.profiles.hide(b.what, String(b.key), b.hidden !== false) : false;
       this.cache.clear();
       return done ? ok({ ok: true }) : notFound("nothing by that key");
@@ -445,7 +466,9 @@ export class EngineApi {
     const links = { ...v.links, pons: v.links.pons ?? (contracts.token ? `https://ponsfamily.com/launchpad/${getAddress(contracts.token)}` : null) };
     const compute = v.gateway?.about() ?? { enabled: false, markupPct: 0, maxTokens: 0, models: [] };
     const accounts = v.accounts?.about() ?? { enabled: false, factory: null, ordersPerDay: 0 };
-    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts };
+    const hiring = v.ctx ? stopped(v.ctx.db, "hiring") : null;
+    const paused = hiring ? hiring.note || "New jobs are paused for now. Jobs already locked run as they were: the contract settles or refunds each one by itself." : null;
+    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused };
     if (!r) {
       return { ...base, launched: false, stats: { advancedEth: 0, settledJobs: 0, jobs: 0, poolEth: 0, reserveEth: 0, outEth: 0, heldEth: 0, burnedTokens: 0, supplyLeft: SUPPLY, agents: 0, lostEth: 0 }, agents: [], jobs: [], events: [], burns: [] };
     }
@@ -534,6 +557,7 @@ export class EngineApi {
       burnPot: snap?.burnPot ?? null,
       desk: snap ? { ...snap.desk, agents: store.agentCount(), jobsKnown: store.jobCount(), waitingToBeRead: ctx.db.count("desk_jobs") ? (ctx.db.q("SELECT (SELECT COUNT(*) FROM desk_jobs WHERE dirty = 1) + (SELECT COUNT(*) FROM desk_agents WHERE dirty = 1) AS n").get() as { n: number }).n : 0, dueToSettle: store.dueToSettle(t, 500).length, dueToRefund: store.dueToRefund(t, 500).length } : null,
       ethUsd8: snap?.ethUsd8 ?? null,
+      stopped: allStopped(ctx.db),
       house: v.house ? v.house.totals() : null,
       accounts: v.accounts ? { ...v.accounts.about(), note: c.accounts.note, ...v.accounts.store.totals(), gasDayWei: c.accounts.gasDayWei.toString() } : null,
       compute: v.gateway ? { ...v.gateway.about(), note: c.compute.note, ...v.gateway.store.totals(), todayMicro: v.gateway.store.spentToday(), dailyMicro: c.compute.dailyMicro } : null,

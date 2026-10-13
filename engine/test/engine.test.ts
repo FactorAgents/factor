@@ -29,7 +29,8 @@ const P = ETH / 25n;
 
 // every key the site's type has (web/src/lib/types.ts), so a change on one side is noticed on the other
 function expectShape(s: FactorState): void {
-  expect(Object.keys(s).sort()).toEqual(["accounts", "agents", "asOf", "burns", "compute", "contracts", "events", "jobs", "launched", "links", "params", "source", "stats"]);
+  expect(Object.keys(s).sort()).toEqual(["accounts", "agents", "asOf", "burns", "compute", "contracts", "events", "jobs", "launched", "links", "params", "paused", "source", "stats"]);
+  expect(s.paused).toBeNull();
   expect(Object.keys(s.accounts).sort()).toEqual(["enabled", "factory", "ordersPerDay"]);
   expect(Object.keys(s.compute).sort()).toEqual(["enabled", "markupPct", "maxTokens", "models"]);
   expect(Object.keys(s.stats).sort()).toEqual(["advancedEth", "agents", "burnedTokens", "heldEth", "jobs", "lostEth", "outEth", "poolEth", "reserveEth", "settledJobs", "supplyLeft"]);
@@ -378,7 +379,7 @@ describe("the owner's health answer", () => {
     const h = await health(r.engine);
     expect(h).toMatchObject({ mode: "dry", state: "running", launched: true, gateway: A.gateway, contracts: { desk: A.desk, splitter: A.splitter, burnPot: A.burnPot } });
     expect(h.desk).toMatchObject({ pool: ETH.toString(), jobCount: 2, agents: 1, jobsKnown: 2, waitingToBeRead: 0, dueToSettle: 1, dueToRefund: 1 });
-    expect(Object.keys(h.actions).sort()).toEqual(["burn", "claim_token", "collect", "refund_job", "relay", "return_compute", "settle_job", "sweep"]);
+    expect(Object.keys(h.actions).sort()).toEqual(["burn", "claim_token", "collect", "refund_job", "relay", "retry_split", "return_compute", "settle_job", "skim", "sweep"]);
     expect(h.watchers.map((w: { watcher: string }) => w.watcher)).toEqual(["burnPot", "desk", "splitter", "token"]);
     const text = JSON.stringify(h) + JSON.stringify(await state(r.engine));
     expect(text).not.toContain(key);

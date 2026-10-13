@@ -4,6 +4,7 @@
 // maker's library works with only its address changed. A call to a model is passed to the engine and the answer is
 // passed back as it arrives, a stream staying a stream. Nothing of a request is kept or logged here.
 import type { NextRequest } from "next/server";
+import { callerOf } from "@/lib/caller";
 import { engineUrl, sampleMode } from "@/lib/data";
 import { sampleState } from "@/lib/sample";
 
@@ -24,6 +25,9 @@ const notLive = () => said(503, "api_error", "Nothing is live yet.");
 // what is passed on of a caller's headers: its key, and which version of the model maker's API it speaks
 function passed(req: NextRequest): Record<string, string> {
   const h: Record<string, string> = {};
+  // who is asking, as the host says it and never as the caller wrote it: the engine counts requests for a key by it
+  const from = callerOf(req);
+  if (from) h["x-forwarded-for"] = from;
   for (const name of ["x-api-key", "authorization", "anthropic-version", "content-type"]) {
     const v = req.headers.get(name);
     if (v && v.length <= 512) h[name] = v;

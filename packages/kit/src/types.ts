@@ -75,6 +75,8 @@ export interface State {
   compute: { enabled: boolean; markupPct: number; maxTokens: number; models: ComputeModel[] };
   /** accounts whose gas Factor pays: whether one can be made and used right now, and the contract that makes them */
   accounts: { enabled: boolean; factory: string | null; ordersPerDay: number };
+  /** set while Factor has paused new jobs: why, in a line. The kit then locks nothing. */
+  paused: string | null;
 }
 
 /** A Factor account: what an agent's key acts through when Factor pays its gas (connect with `gasless: true`). */

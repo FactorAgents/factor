@@ -219,6 +219,9 @@ export class Factor {
   async hire(o: { agent: string; price: Amount; dueInHours?: number; allowEarly?: boolean; title?: string; brief?: string }): Promise<Sent & { jobId: number; titled: boolean; briefed: boolean }> {
     this.mine(); // a Factor with no key is told so before anything else is asked
     const price = toWei(o.price);
+    // Factor has paused new jobs (something is being looked at): said here, and nothing is locked through the kit
+    const paused = (await this.state()).paused;
+    if (paused) throw new Refusal(paused, "paused");
     const found = await this.agent(o.agent);
     const agent = found?.agent.address ?? (/^0x[0-9a-fA-F]{40}$/.test(o.agent) ? o.agent.toLowerCase() : null);
     if (!agent) throw new Refusal(`There is no agent called "${o.agent}" on Factor.`, "no_agent");

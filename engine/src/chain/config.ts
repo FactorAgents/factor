@@ -39,7 +39,7 @@ export interface EngineParams {
   burnRetryS: number; // ENGINE_BURN_RETRY_S
   maxGasWei: bigint; // ENGINE_MAX_GAS_GWEI: the most the engine pays per unit of gas
   unstickMaxGasWei: bigint; // ENGINE_UNSTICK_MAX_GAS_GWEI: the same for replacing a transaction that is stuck
-  gasCaps: { sweep: bigint; claim_token: bigint; burn: bigint; settle_job: bigint; refund_job: bigint; collect: bigint; return_compute: bigint; relay: bigint };
+  gasCaps: { sweep: bigint; claim_token: bigint; burn: bigint; settle_job: bigint; refund_job: bigint; collect: bigint; return_compute: bigint; relay: bigint; retry_split: bigint; skim: bigint };
   jobsPerPass: number; // ENGINE_JOBS_PER_PASS: jobs the engine settles or refunds in one pass at most
   deskReadsPerPass: number; // ENGINE_DESK_READS_PER_PASS: jobs and agents read back from the desk in one pass at most
   gasHeadroomBps: number; // on top of the node's estimate
@@ -47,6 +47,8 @@ export interface EngineParams {
   stuckAfterMs: number; // ENGINE_STUCK_AFTER_MS
   lockMs: number; // how long an attempt holds its lock at most
   botGasWarnWei: bigint; // ENGINE_BOT_GAS_WARN_WEI
+  skimKeepWei: bigint; // ENGINE_SKIM_KEEP_WEI: what the gas wallet keeps for gas when its surplus is sent on
+  skimMinWei: bigint; // ENGINE_SKIM_MIN_WEI: a surplus under this is not worth a transaction
   apiCacheMs: number; // ENGINE_API_CACHE_MS
 }
 
@@ -64,7 +66,7 @@ export const DEFAULTS: EngineParams = {
   burnRetryS: 120,
   maxGasWei: 2n * GWEI,
   unstickMaxGasWei: 20n * GWEI,
-  gasCaps: { sweep: 700_000n, claim_token: 400_000n, burn: 900_000n, settle_job: 600_000n, refund_job: 500_000n, collect: 200_000n, return_compute: 150_000n, relay: 1_500_000n },
+  gasCaps: { sweep: 700_000n, claim_token: 400_000n, burn: 900_000n, settle_job: 600_000n, refund_job: 500_000n, collect: 200_000n, return_compute: 150_000n, relay: 1_500_000n, retry_split: 400_000n, skim: 100_000n },
   jobsPerPass: 5,
   deskReadsPerPass: 200,
   gasHeadroomBps: 2500,
@@ -72,6 +74,8 @@ export const DEFAULTS: EngineParams = {
   stuckAfterMs: 90_000,
   lockMs: 180_000,
   botGasWarnWei: 5_000_000_000_000_000n, // 0.005 ETH
+  skimKeepWei: 20_000_000_000_000_000n, // 0.02 ETH
+  skimMinWei: 10_000_000_000_000_000n, // 0.01 ETH
   apiCacheMs: 3000,
 };
 
@@ -83,6 +87,8 @@ export interface EngineConfig {
   desk: string | null;
   // agents Factor runs itself: said on the site wherever they show (FACTOR_HOUSE_AGENTS, addresses with commas)
   houseAgents: string[];
+  // ENGINE_SKIM_TO: a wallet of the owner's that the gas wallet's surplus is sent on to, or null
+  skimTo: string | null;
   token: string | null; // optional: the engine reads it from the burn pot; given, it must be the same
   admin: string | null; // optional, checked against the contracts when given
   deployBlock: bigint | null;
@@ -180,6 +186,8 @@ export function readParams(env: Env, problems: string[] = []): EngineParams {
     stuckAfterMs: wholeNumber(env, "ENGINE_STUCK_AFTER_MS", d.stuckAfterMs, problems, 1000),
     lockMs: d.lockMs,
     botGasWarnWei: weiOf(env, "ENGINE_BOT_GAS_WARN_WEI", d.botGasWarnWei, problems),
+    skimKeepWei: weiOf(env, "ENGINE_SKIM_KEEP_WEI", d.skimKeepWei, problems),
+    skimMinWei: weiOf(env, "ENGINE_SKIM_MIN_WEI", d.skimMinWei, problems),
     apiCacheMs: wholeNumber(env, "ENGINE_API_CACHE_MS", d.apiCacheMs, problems),
   };
   // The burn's tolerance is what a sandwich may take: never all of it, and never so loose the minimum means nothing.
@@ -239,6 +247,9 @@ export function readConfig(processEnv: Env = process.env): EngineConfig {
     if (a) houseAgents.push(a);
     else problems.push(`FACTOR_HOUSE_AGENTS holds something that is not an address: "${raw}"`);
   }
+  // where the gas wallet's surplus is sent on to (ENGINE_SKIM_TO). Not set: it stays in the gas wallet
+  const skimTo = address("ENGINE_SKIM_TO", false);
+  if (skimTo && (skimTo === desk || skimTo === splitter || skimTo === burnPot)) problems.push("ENGINE_SKIM_TO is one of the contracts: it must be a wallet of the owner's");
   const token = address("FACTOR_TOKEN", false);
   const admin = address("FACTOR_ADMIN", false);
   if (splitter && burnPot && splitter === burnPot) problems.push("FACTOR_SPLITTER and FACTOR_BURN_POT are the same address");
@@ -282,6 +293,7 @@ export function readConfig(processEnv: Env = process.env): EngineConfig {
     burnPot,
     desk,
     houseAgents,
+    skimTo,
     token,
     admin,
     deployBlock,

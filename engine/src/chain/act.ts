@@ -7,6 +7,12 @@
 //                pool repaid. refund_job: a job is past its due time and the 12 hours of grace: refund it.
 //   collect      the desk holds an advance fee the burn pot was not sent: deliver it.
 //   return_compute  compute credit that was closed unspent (its job was refunded): the ETH goes back to the pool.
+//   retry_split     a share the splitter could not deliver when it split, which in practice means the admin
+//                   wallet refused its ETH (a wallet can carry code these days): its retry() tries again. A split
+//                   cannot be made to fall short by starving it of gas; the fork run holds it to that.
+//   skim            the gas wallet is also where compute advances are paid, so ETH gathers in it. What it holds
+//                   over its gas money and over what still backs open compute credit is sent on to a wallet the
+//                   owner named (ENGINE_SKIM_TO), so that the key this process holds never guards more than it must.
 //   relay           what the owner of an account without a wallet signed (../accounts.ts): made, or carried out,
 //                   with this wallet paying the gas. First in every pass: somebody is waiting for it.
 //
@@ -23,6 +29,7 @@ import type { Abi } from "viem";
 import { factorBurnPotAbi, factorDeskAbi, factorSplitterAbi, factorTokenAbi } from "../abi/index.js";
 import { DeskStore, rereadJob } from "../desk.js";
 import { AccountStore, callOfRelay, landedRelay } from "../accounts.js";
+import { stopped } from "../switches.js";
 import { ComputeStore } from "../compute.js";
 import { nodeBusy, nodeRejected, reason, revertOf, type CallSpec, type Fees, type Head, type Pay, type Receipt } from "./chain.js";
 import { snapshotOf, type Ctx } from "./context.js";
@@ -30,7 +37,7 @@ import type { ActionKind, ActionRow } from "./db.js";
 import { ponsEscrowAbi } from "./pons.js";
 
 export type SendKind = Exclude<ActionKind, "unstick">;
-export const KINDS: SendKind[] = ["relay", "sweep", "claim_token", "burn", "settle_job", "refund_job", "collect", "return_compute"];
+export const KINDS: SendKind[] = ["relay", "sweep", "retry_split", "claim_token", "burn", "settle_job", "refund_job", "collect", "return_compute", "skim"];
 // In dry mode nothing changes on the chain, so a trigger stays true: what would be sent is shown again this often.
 export const DRY_REPEAT_S = 1800;
 const BPS = 10_000n;
@@ -479,6 +486,33 @@ async function collect(ctx: Ctx, head: Head): Promise<string> {
   return say(ctx, "collect", `${r.status === "dry" ? "would deliver" : "delivered"} ${eth(owed)} ETH to the burn pot`, { lastAt: head.timestamp, fails: 0, nextAt: 0, tx: r.hash ?? st.tx });
 }
 
+// ---------- 4b. a share the splitter could not deliver ----------
+
+async function retrySplit(ctx: Ctx, head: Head): Promise<string> {
+  const st = actState(ctx, "retry_split");
+  if (ctx.now() < st.nextAt) return st.result;
+  const s = snapshotOf(ctx.db)?.splitter;
+  const waiting = s ? BigInt(s.adminPending) + BigInt(s.burnPending) + BigInt(s.poolPending ?? "0") : 0n;
+  if (waiting === 0n) {
+    if (ctx.db.get("retry_split:waiting") !== null) ctx.db.unset("retry_split:waiting");
+    return say(ctx, "retry_split", "every share the splitter split was delivered", { fails: 0, nextAt: 0 });
+  }
+  if (ctx.mode !== "live" && st.lastAt > 0 && head.timestamp < st.lastAt + DRY_REPEAT_S) return st.result;
+  // Tried at most every ten minutes, and only every six hours once a try delivered nothing: a share its
+  // destination keeps refusing stays where it is, and costs next to no gas.
+  const before = ctx.db.get("retry_split:waiting");
+  const stuck = before !== null && waiting >= BigInt(before);
+  if (st.lastAt > 0 && head.timestamp < st.lastAt + (stuck ? 6 * 3600 : 600)) return st.result;
+  const r = await attempt(ctx, "retry_split", "", { to: ctx.addr.splitter, abi: factorSplitterAbi as Abi, functionName: "retry" }, { waiting }, ctx.params.maxGasWei);
+  if (r.status === "failed") return failed(ctx, "retry_split", r.why, 600, 6 * 3600);
+  if (r.status === "skipped") return say(ctx, "retry_split", r.why);
+  if (r.status === "done") {
+    ctx.db.set("retry_split:waiting", waiting.toString());
+    ctx.log(`[retry_split] the splitter was asked again to deliver ${eth(waiting)} ETH it was holding: ${r.hash}`);
+  }
+  return say(ctx, "retry_split", `${r.status === "dry" ? "would deliver" : "sent on"} ${eth(waiting)} ETH the splitter was holding`, { lastAt: head.timestamp, fails: 0, nextAt: 0, tx: r.hash ?? st.tx });
+}
+
 // ---------- 5. compute credit nobody spent goes back to the pool ----------
 
 // A compute advance on a job that was then refunded was never repaid by the job. Whatever of it was not spent on
@@ -594,15 +628,59 @@ async function relay(ctx: Ctx, head: Head): Promise<string> {
   return say(ctx, "relay", `${done} sent and mined${left ? ", more waiting" : ""}`, { lastAt: head.timestamp, fails: 0, nextAt: 0, ...(last ? { tx: last } : {}) });
 }
 
+// ---------- 7. the gas wallet's surplus goes on to the owner ----------
+
+async function skim(ctx: Ctx, head: Head): Promise<string> {
+  const p = ctx.params;
+  const st = actState(ctx, "skim");
+  const to = ctx.addr.skimTo;
+  if (!to) return say(ctx, "skim", "no wallet is named for the gas wallet's surplus (ENGINE_SKIM_TO): it stays where it is", { fails: 0, nextAt: 0 });
+  if (ctx.now() < st.nextAt) return st.result;
+  // looked at once an hour: this is housekeeping, not something anybody waits for
+  if (st.lastAt > 0 && head.timestamp < st.lastAt + 3600) return st.result;
+  const from = ctx.facts.bot;
+  if (!from) return say(ctx, "skim", "the gas wallet's address is not known yet");
+  if (to === from) return say(ctx, "skim", "ENGINE_SKIM_TO is the gas wallet itself: there is nowhere to send to");
+  const store = new ComputeStore(ctx.db);
+  // what it keeps: gas money, what still backs credit whose job could yet be refunded, and what is owed to the pool
+  const keep = p.skimKeepWei + store.backingWei() + store.owedToPool().wei;
+  const balance = await ctx.chain.balance(from);
+  const surplus = balance > keep ? balance - keep : 0n;
+  if (surplus < p.skimMinWei) return say(ctx, "skim", `the gas wallet holds ${eth(balance)} ETH and keeps ${eth(keep)}: nothing worth sending on`, { lastAt: head.timestamp, fails: 0, nextAt: 0 });
+  if (!ctx.db.lock("skim", p.lockMs)) return say(ctx, "skim", "another attempt holds the lock");
+  try {
+    const pay: Pay = { to, value: surplus };
+    const [estimate, fees] = await Promise.all([ctx.chain.estimateGas(null, from, pay), ctx.chain.fees()]);
+    const gas = (estimate * (BPS + BigInt(p.gasHeadroomBps))) / BPS;
+    if (gas > p.gasCaps.skim) return failed(ctx, "skim", `it would need ${gas} gas, over the cap of ${p.gasCaps.skim}: is ENGINE_SKIM_TO a plain wallet?`, 3600, 24 * 3600);
+    if (fees.maxFeePerGas > p.maxGasWei) return say(ctx, "skim", `gas is at ${gwei(fees.maxFeePerGas)} gwei, over the cap of ${gwei(p.maxGasWei)}: waiting for it to fall`);
+    const detail = text({ to, surplus, kept: keep, gasLimit: gas, maxFeePerGas: fees.maxFeePerGas });
+    if (ctx.mode !== "live" || !ctx.signer) {
+      ctx.db.addAction({ kind: "skim", mode: "dry", status: "dry", detail, gasLimit: gas, maxFeeWei: fees.maxFeePerGas });
+      ctx.log(`[dry] would send ${eth(surplus)} ETH of the gas wallet's surplus on to ${to}`);
+      return say(ctx, "skim", `would send ${eth(surplus)} ETH on to ${to}`, { lastAt: head.timestamp, fails: 0, nextAt: 0 });
+    }
+    const r = await dispatch(ctx, "skim", "", { pay }, gas, fees, detail);
+    if (r.status === "failed") return failed(ctx, "skim", r.why, 3600, 24 * 3600);
+    if (r.status === "skipped") return say(ctx, "skim", r.why);
+    ctx.log(`[skim] ${eth(surplus)} ETH of the gas wallet's surplus sent on to ${to}: ${r.hash}`);
+    return say(ctx, "skim", `sent ${eth(surplus)} ETH on to ${to}`, { lastAt: head.timestamp, fails: 0, nextAt: 0, tx: r.hash ?? st.tx });
+  } finally {
+    ctx.db.unlock("skim");
+  }
+}
+
 const STEPS: [SendKind, (ctx: Ctx, head: Head) => Promise<string>][] = [
   ["relay", relay],
   ["sweep", sweep],
+  ["retry_split", retrySplit],
   ["claim_token", claimToken],
   ["burn", burn],
   ["settle_job", settleJobs],
   ["refund_job", refundJobs],
   ["collect", collect],
   ["return_compute", returnCompute],
+  ["skim", skim],
 ];
 
 // One pass over the actions, one after the other: there is one gas wallet, and one transaction at a time.
@@ -611,6 +689,12 @@ const STEPS: [SendKind, (ctx: Ctx, head: Head) => Promise<string>][] = [
 export async function actPass(ctx: Ctx): Promise<ActResult> {
   const out: ActResult = { open: 0, said: {} };
   if (ctx.mode !== "dry" && ctx.mode !== "live") return out;
+  // the owner stopped everything the gas wallet sends (../switches.ts). What is already on its way is still
+  // followed to its end, so nothing is left half written.
+  if (stopped(ctx.db, "keeper")) {
+    out.open = await settle(ctx);
+    return out;
+  }
   const head = await ctx.chain.head();
   out.open = await settle(ctx);
   if (!ctx.facts.from || !snapshotOf(ctx.db)) return out; // the first reading of the chain has not been made yet

@@ -4,6 +4,7 @@
 // Only what a page needs passes: the public reads, and the two writes a wallet signs. The owner's health answer,
 // the hiding of names and anything else the engine has do not: they are not reachable through the site at all.
 import { NextResponse, type NextRequest } from "next/server";
+import { callerOf } from "@/lib/caller";
 import { engineUrl, sampleMode } from "@/lib/data";
 import { sampleAgent, sampleJob, sampleJobs, sampleLedger, sampleState } from "@/lib/sample";
 
@@ -44,7 +45,9 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ path: strin
   const engine = engineUrl();
   if (!engine) return json({ error: "nothing is live yet" }, 503);
   try {
-    const r = await fetch(`${engine}/v1/${path}${q.size ? `?${q}` : ""}`, { cache: "no-store", signal: AbortSignal.timeout(12_000) });
+    // who is asking is passed on for the reads that cost the engine a question to the chain (an account's balance)
+    const from = path.startsWith("accounts/") ? callerOf(req) : "";
+    const r = await fetch(`${engine}/v1/${path}${q.size ? `?${q}` : ""}`, { cache: "no-store", signal: AbortSignal.timeout(12_000), headers: from ? { "x-forwarded-for": from } : {} });
     return json(await r.json(), r.status);
   } catch {
     return json({ error: "the engine is not answering" }, 502);
@@ -61,7 +64,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ path: stri
   const most = path.startsWith("accounts") ? ORDER_MOST : path === "jobs/brief" ? 64_000 : path === "jobs/delivery" ? 900_000 : BODY_MOST;
   if (text.length > most) return json({ error: "the body is too large" }, 413);
   // who is asking is passed on, so the engine's limit on signed writes counts visitors and not this site
-  const from = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "";
+  const from = callerOf(req);
   try {
     const r = await fetch(`${engine}/v1/${path}`, { method: "POST", cache: "no-store", signal: AbortSignal.timeout(12_000), headers: { "content-type": "application/json", ...(from ? { "x-forwarded-for": from } : {}) }, body: text });
     return json(await r.json(), r.status);

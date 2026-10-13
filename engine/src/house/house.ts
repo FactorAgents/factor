@@ -24,6 +24,7 @@ import { normalizeAddress } from "../chain/address.js";
 import { nodeBusy, reason, revertOf, type Chain } from "../chain/chain.js";
 import type { EngineDb } from "../chain/db.js";
 import { costMicro, DEFAULT_MODELS, type Price } from "../compute.js";
+import { stopped } from "../switches.js";
 import { proofOf, type Profiles } from "../profiles.js";
 import { SERVICES, type Asked, type Done, type Service } from "./services.js";
 
@@ -170,7 +171,9 @@ export class House {
 
   /** Everything the house agents have to do right now, one thing at a time. Never throws for one job's sake. */
   async pass(): Promise<void> {
-    if (!this.cfg.enabled || !this.d.live() || this.busy) return;
+    // the owner's switches (../switches.ts): while the agents, or everything the gas wallet sends, are stopped, they
+    // take nothing up. A job locked for them meanwhile is refunded by the desk's own clock like any unanswered one.
+    if (!this.cfg.enabled || !this.d.live() || this.busy || stopped(this.d.db, "house") || stopped(this.d.db, "keeper")) return;
     this.busy = true;
     try {
       for (const a of this.agents) {

@@ -296,7 +296,7 @@ CREATE TABLE IF NOT EXISTS job_titles (
 );
 `;
 
-export type ActionKind = "sweep" | "claim_token" | "burn" | "settle_job" | "refund_job" | "collect" | "return_compute" | "relay" | "unstick";
+export type ActionKind = "sweep" | "retry_split" | "claim_token" | "burn" | "settle_job" | "refund_job" | "collect" | "return_compute" | "skim" | "relay" | "unstick";
 export type ActionStatus = "dry" | "signed" | "sent" | "done" | "failed" | "replaced";
 
 export interface ActionRow {

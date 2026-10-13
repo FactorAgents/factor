@@ -20,6 +20,7 @@ import { addressOfKey, hostsOnly, nodeBusy, reason, revertOf, viemChain, viemSig
 import { Accounts } from "./accounts.js";
 import { ComputeStore, Gateway } from "./compute.js";
 import { House, takeHouseSeed, type HouseSigner } from "./house/house.js";
+import { allStopped, stopFromEnv } from "./switches.js";
 import { Profiles } from "./profiles.js";
 import { configured, readConfig, takeBotKey, takeModelKey, type EngineConfig, type Env } from "./chain/config.js";
 import type { Ctx } from "./chain/context.js";
@@ -103,8 +104,8 @@ export class Engine {
   }
 
   // The answer to one of the engine's API routes, or null when the path is not one of them.
-  handle(path: string, query?: URLSearchParams): Promise<Answer | null> {
-    return this.api.handle(path, query);
+  handle(path: string, query?: URLSearchParams, from?: string): Promise<Answer | null> {
+    return this.api.handle(path, query, from);
   }
 
   // Everything under /v1/compute/: the gateway answers the request itself (a model's answer may be a stream).
@@ -151,7 +152,7 @@ export class Engine {
       params: c.params,
       chainId: c.chainId,
       explorer: c.explorer,
-      addr: { splitter: c.splitter, burnPot: c.burnPot, desk: c.desk, accounts: c.accounts.factory },
+      addr: { splitter: c.splitter, burnPot: c.burnPot, desk: c.desk, accounts: c.accounts.factory, skimTo: c.skimTo },
       accounts: c.accounts,
       deployBlock: c.deployBlock,
       chain: this.chain,
@@ -165,6 +166,12 @@ export class Engine {
       stopping: () => this.stopped,
     };
     this.log(`[engine] mode ${c.mode}: ${c.mode === "watch" ? "reading the chain, sending nothing" : c.mode === "dry" ? "reading the chain and showing what it would send, sending nothing" : `reading the chain and sending from the gas wallet ${signer?.address}`}`);
+    // what the owner asked to be stopped from the start (ENGINE_STOP): kept until it is turned back on
+    const unknown: string[] = [];
+    stopFromEnv(this.ctx.db, this.env.ENGINE_STOP, unknown);
+    for (const u of unknown) this.log(`[engine] WARNING: ${u}`);
+    const off = Object.keys(allStopped(this.ctx.db));
+    if (off.length) this.log(`[engine] STOPPED by the owner: ${off.join(", ")}. Turn one back with POST /v1/admin/switch.`);
     // accounts for people without a wallet: orders are taken only while there is a gas wallet to send them from
     this.accounts = new Accounts(c.accounts, this.ctx.db, this.chain, c.desk, () => this.ctx?.mode === "live" && !!this.ctx.signer && this.state === "running", () => this.kick("act"), this.log);
     const accountSigned = (address: string, message: string, signature: unknown) => this.accounts!.signed(address, message, signature);

@@ -212,4 +212,5 @@ Every rule above is a test in `contracts/test`, and every one of them fails when
 | `DeskAttacks.t.sol` | The twelve attacks of section 7, each carried out against the desk |
 | `invariant/Desk.invariant.t.sol` | Random sequences of every move anybody can make, with the desk's books and every payout checked after each step |
 | `Account.t.sol` | Accounts: what a key can make one do and what nobody else can, with real passkey signatures, and a whole job between two accounts that never pay gas |
+| `review/break-account.py` | Breaks the account on purpose, twenty ways, and sees that the tests notice each one |
 | `fork/Desk.fork.t.sol` | The whole of it against the real Pons on a copy of Robinhood Chain: real trading fees fill the pool, an agent is advanced from it, the advance fee is burned |

@@ -143,6 +143,7 @@ export function sampleState(): FactorState {
     compute: { enabled: true, markupPct: 5, maxTokens: 16_000, models: [{ id: "claude-haiku-4-5-20251001", inUsd: 1.05, outUsd: 5.25 }, { id: "claude-sonnet-5-5", inUsd: 2.1, outUsd: 10.5 }, { id: "claude-opus-5-5", inUsd: 4.2, outUsd: 21 }, { id: "claude-fable-5-1", inUsd: 10.5, outUsd: 52.5 }] },
     // the sample has no engine behind it, so nothing can be made or sent from it
     accounts: { enabled: false, factory: null, ordersPerDay: 40 },
+    paused: null,
   };
 }
 
