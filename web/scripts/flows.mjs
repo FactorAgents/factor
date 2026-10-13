@@ -13,7 +13,9 @@
 //      (window.ethereum): it hands each request out of the page to this script, which answers for one of anvil's
 //      built-in test accounts. The page's own scripts talk to the site only, as on the real one;
 //   4  an agent registers, names itself and posts a bond; a customer hires it; the agent draws from the pool and
-//      early, and delivers; the customer accepts. A second job is rejected and a third declined;
+//      early, and delivers; the customer accepts. A second job is rejected and a third declined. On a fourth the
+//      agent draws as compute, signs for its key on the page, and a program calls a model with the key through the
+//      site (behind the engine is a stand-in for the model maker: no model is called, nothing is spent);
 //   5  checks what the pages say against what the desk holds, what the site says when a wallet says no or the desk
 //      would refuse, what happens with no wallet on a computer and on a phone, and that the pages fit a phone.
 //
@@ -357,10 +359,83 @@ try {
   await until("the rejected job's page", async () => { const t = await text(); return t.includes("SETTLED AT HALF") && /Returned to the customer[\s\S]*0\.0050 ETH/.test(t); });
   await shot("desktop-job-half");
 
+  step("4f compute credit: drawn on the job's page, the key signed for on the agent's page, spent through the site");
+  await go("/hire?agent=lumen-07");
+  await connect();
+  await fill("Price in ETH", "0.01");
+  await fill("What you want done", "Summarise a lease in one line");
+  await press("Lock 0.01 ETH");
+  await until("job 4", async () => (await text()).includes("Job 0004 is locked for lumen-07."), 90_000);
+  await as(AGENT);
+  await go("/jobs/0004");
+  await connect();
+  await until("the desk's own answer on what can be drawn", async () => (await text()).includes("right now."));
+  await press("As compute", "Draw an advance");
+  await says("It becomes credit your agent spends on models.");
+  await fill("Amount in ETH", "0.002", "Draw an advance");
+  const gateway = accounts[1].address;
+  const [gatewayBefore, agentBeforeCompute] = await Promise.all([chain.getBalance({ address: gateway }), chain.getBalance({ address: AGENT.address })]);
+  await press("Draw it", "Draw an advance");
+  await says("0.00198 ETH is compute credit for your agent now.");
+  check("drawn as compute, the ETH went to the gateway and none of it to the agent's wallet", (await chain.getBalance({ address: gateway })) - gatewayBefore > 1_900_000_000_000_000n && (await chain.getBalance({ address: AGENT.address })) < agentBeforeCompute);
+  await shot("desktop-job-compute-drawn");
+  await go("/work");
+  await connect();
+  await until("the credit on the agent's page", async () => /LEFT TO SPEND\s*\$\d+\.\d\d/i.test((await text()).replace(/\n+/g, " ")) && (await text()).includes("Job 0004"));
+  const [signedBefore, sentBeforeKey] = [wallet.signed, wallet.sent];
+  await press("Sign for a key", "Compute credit");
+  await settled("Compute credit", "This is the key.");
+  const computeKey = await run(`document.querySelector("[data-key]")?.textContent ?? ""`);
+  check("the key is one signature and no transaction, and is shown on the page", /^fck_[A-Za-z0-9_-]{32}$/.test(computeKey) && wallet.signed === signedBefore + 1 && wallet.sent === sentBeforeKey);
+  const base = await run(`[...document.querySelectorAll(".keybox .code")].pop()?.textContent ?? ""`);
+  check("the page says which address an agent's program calls", base === `${SITE}/api/v1/compute`, base);
+  check("the key is kept nowhere in the browser", await run(`!JSON.stringify([Object.entries(localStorage), Object.entries(sessionStorage), document.cookie]).includes("fck_")`));
+  await run(`document.querySelector(".keybox").scrollIntoView({ block: "center" })`);
+  await sleep(400);
+  await shot("desktop-work-compute-key");
+  // an agent's program, anywhere: the model maker's request, sent to the site with the key
+  const creditOf = async () => (await (await fetch(`${SITE}/api/v1/compute/credit/${AGENT.address.toLowerCase()}`)).json()).balanceUsd;
+  const credit0 = await creditOf();
+  const askModel = (body) => fetch(`${base}/v1/messages`, { method: "POST", headers: { "x-api-key": computeKey, "content-type": "application/json", "anthropic-version": "2023-06-01" }, body: JSON.stringify({ model: "claude-sonnet-5-5", max_tokens: 400, messages: [{ role: "user", content: "Summarise the lease in one line." }], ...body }) });
+  const plain = await askModel({});
+  const plainBody = await plain.json();
+  check("a call through the site is answered in the model maker's shape and comes off the credit", plain.status === 200 && plainBody.content?.[0]?.text?.startsWith("Summary:") && (await creditOf()) < credit0, `$${(credit0 - (await creditOf())).toFixed(6)}`);
+  const streamed = await askModel({ stream: true });
+  let chunks = 0, streamText = "";
+  const reader = streamed.body.getReader();
+  const firstAt = Date.now();
+  let lastAt = firstAt;
+  for (;;) { const { done, value } = await reader.read(); if (done) break; chunks++; lastAt = Date.now(); streamText += new TextDecoder().decode(value); }
+  check("a stream comes through the site as it is made, not all at once at the end", streamed.headers.get("content-type") === "text/event-stream" && chunks > 3 && lastAt - firstAt > 60 && streamText.trimEnd().endsWith('data: {"type":"message_stop"}'), `${chunks} pieces over ${lastAt - firstAt} ms`);
+  check("through the site too, no key means no model, and the owner's health page is not there", (await fetch(`${base}/v1/messages`, { method: "POST", headers: { "x-api-key": "fck_" + "a".repeat(32), "content-type": "application/json" }, body: "{}" })).status === 401 && (await fetch(`${base}/health`)).status === 404 && (await fetch(`${base}/v1/complete`, { method: "POST", body: "{}" })).status === 404);
+  await until("the page to show what was spent", async () => /\$0\.00\d+ of \$\d+\.\d\d spent/.test(await text()), 40_000);
+  await run(`document.querySelector(".keybox").scrollIntoView({ block: "center" })`);
+  await sleep(400);
+  await shot("desktop-work-compute-spent");
+  await go("/docs");
+  const docsText = await text();
+  await run(`document.getElementById("compute").scrollIntoView({ block: "start" })`);
+  await sleep(900);
+  await shot("desktop-docs-compute");
+  check("the docs list the models with what they cost here", /claude-sonnet-5-5\s*\$2\.10 in · \$10\.50 out/.test(docsText.replace(/\n+/g, " ")) && docsText.includes("credit.baseURL"));
+  // the job is finished, so that nothing of it is left open for the comparisons below
+  await go("/jobs/0004");
+  await connect();
+  await fill("What you delivered", "The lease runs for two years and renews by itself.", "Deliver");
+  await press("Deliver the job", "Deliver");
+  await says("Delivered. The customer has 24 hours");
+  await as(CUSTOMER);
+  await go("/jobs/0004");
+  await connect();
+  await says("lumen-07 has delivered");
+  await press("Accept the delivery");
+  await until("the acceptance", async () => (await text()).includes("Accepted. The agent is paid."), 60_000);
+  check("the job repaid the pool for the compute it advanced", (await desk("agent", [AGENT.address])).advancedNow === 0n);
+
   // ---------- 5: what the pages say, against what the desk holds ----------
 
   step("5a the pages against the desk");
-  const state = await until("the engine to have all three jobs closed", async () => { const s = await (await fetch(SITE + "/api/v1/state")).json(); return s.jobs.length === 3 && s.jobs.every((j) => ["settled", "half", "declined"].includes(j.state)) ? s : null; });
+  const state = await until("the engine to have all four jobs closed", async () => { const s = await (await fetch(SITE + "/api/v1/state")).json(); return s.jobs.length === 4 && s.jobs.every((j) => ["settled", "half", "declined"].includes(j.state)) ? s : null; });
   const rec = await desk("agent", [AGENT.address]);
   const shown = state.agents.find((a) => a.name === "lumen-07");
   check("the agent's record on the site is the desk's", shown && shown.settled === rec.settled && shown.settledAtHalf === rec.settledAtHalf && Math.abs(shown.feesPaidEth - Number(rec.feesPaid) / 1e18) < 1e-9 && shown.drawnEth === 0, `settled ${rec.settled}, at half ${rec.settledAtHalf}`);
@@ -368,10 +443,10 @@ try {
   check("the desk holds exactly what its books say, and no job's money is left in it", balance === pool + held + bonds + owed && held === 0n);
   await go("/ledger");
   const ledger = await text();
-  check("the ledger prints what happened, in words", ["lumen-07 delivered, the pool was repaid", "the customer rejected the delivery, the job settled at half", "lumen-07 declined the job, the customer has it all back", "lumen-07 drew an advance its customer allowed", "trading fees arrived in the pool"].every((l) => ledger.includes(l)));
+  check("the ledger prints what happened, in words", ["lumen-07 delivered, the pool was repaid", "the customer rejected the delivery, the job settled at half", "lumen-07 declined the job, the customer has it all back", "lumen-07 drew an advance its customer allowed", "lumen-07 had its compute paid from the pool", "trading fees arrived in the pool"].every((l) => ledger.includes(l)));
   await go("/");
   const homeText = await text();
-  check("the home page shows the agent and the job that settled", homeText.includes("lumen-07") && /JOBS SETTLED\s*1\b/.test(homeText.replace(/\n+/g, " ")), (homeText.match(/JOBS SETTLED\s*\S+/) ?? [""])[0].replace(/\s+/g, " "));
+  check("the home page shows the agent and the jobs that settled", homeText.includes("lumen-07") && /JOBS SETTLED\s*2\b/.test(homeText.replace(/\n+/g, " ")), (homeText.match(/JOBS SETTLED\s*\S+/) ?? [""])[0].replace(/\s+/g, " "));
   await shot("desktop-home-live");
   check("the browser asked the network for this site only", requested.every((u) => u.startsWith(SITE) || u.startsWith("data:") || u.startsWith("about:")), requested.find((u) => !u.startsWith(SITE) && !u.startsWith("data:") && !u.startsWith("about:")) ?? `${requested.length} requests`);
   check("the pages raised no error and broke no rule of the content policy", problems.length === 0, problems.slice(0, 3).join(" | "));

@@ -57,6 +57,11 @@ const server = createServer((req, res) => {
     res.end(JSON.stringify(body));
   };
   const failed = () => send(500, { error: "the engine could not answer" });
+  // compute credit: the gateway answers these itself, because a model's answer may be a stream
+  if (path.startsWith("/v1/compute/")) {
+    if (!engine.compute(req, res, path)) send(503, { type: "error", error: { type: "api_error", message: "The engine is not reading the chain yet." } });
+    return;
+  }
   if (req.method === "POST") {
     const key = req.headers["x-admin-key"];
     readJson(req)

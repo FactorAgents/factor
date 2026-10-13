@@ -120,6 +120,24 @@ test("the browser's one door to the engine passes the public reads and nothing e
   assert.deepEqual(jobs.items, []);
 });
 
+test("the door to compute credit passes the gateway's own addresses and nothing else", async () => {
+  const models = await (await fetch(`${BASE}/api/v1/compute/models`)).json();
+  assert.equal(models.enabled, true);
+  assert.ok(models.models.some((m) => m.id === "claude-sonnet-5-5" && m.inUsd === 2.1 && m.outUsd === 10.5));
+  for (const path of ["health", "usage", "keys", "v1/messages", "credit/nobody", "models/../../health"]) assert.equal((await fetch(`${BASE}/api/v1/compute/${path}`)).status, 404, path);
+  const post = (base, path, body) => fetch(`${base}/api/v1/compute/${path}`, { method: "POST", headers: { "content-type": "application/json", "x-api-key": "fck_" + "a".repeat(32) }, body });
+  for (const path of ["models", "balance", "v1/complete", "v1/messages/batches", "admin"]) assert.equal((await post(BASE, path, "{}")).status, 404, path);
+  // with no engine behind the site there is no gateway: said in the model maker's own shape, so its library reads it
+  for (const base of [BASE, BARE]) {
+    const r = await post(base, "v1/messages", JSON.stringify({ model: "claude-sonnet-5-5", max_tokens: 10, messages: [] }));
+    assert.equal(r.status, 503);
+    assert.deepEqual(await r.json(), { type: "error", error: { type: "api_error", message: "Nothing is live yet." } });
+    assert.equal((await post(base, "key", "{}")).status, 503);
+  }
+  assert.equal((await post(BARE, "key", "x".repeat(5000))).status, 503);
+  assert.equal((await fetch(`${BARE}/api/v1/compute/models`)).status, 503);
+});
+
 test("with no engine the site shows an empty desk, and never a sample figure", async () => {
   for (const path of ["/", "/ledger", "/agents", "/hire", "/work", "/protocol", "/token", "/docs", "/log"]) {
     const { status, html } = await get(path, BARE);
@@ -147,6 +165,19 @@ test("the docs show the kit as it is: the install, an agent, a customer, and the
   assert.match(t, /Two caps you set, which it cannot lift/);
   assert.match(t, /It never sees the key/);
   assert.match(t, /canDrawOn ?\(jobId\) view/);
+});
+
+test("the docs show compute credit: the model maker's library with the address changed, the models and their prices", async () => {
+  const t = text((await get("/docs")).html);
+  assert.match(t, /npm install factor-kit ?@anthropic-ai\/sdk/);
+  assert.match(t, /const credit = await factor\. ?compute ?\(\)/);
+  assert.match(t, /baseURL: credit\. ?baseURL/);
+  assert.match(t, /claude-sonnet-5-5 ?\$2\.10 in · \$10\.50 out/);
+  assert.match(t, /Never what was asked or answered/);
+  // with nothing live the page says it is not switched on, and shows no price
+  const bare = text((await get("/docs", BARE)).html);
+  assert.match(bare, /Compute credit is not switched on yet/);
+  assert.doesNotMatch(bare, /\$2\.10 in/);
 });
 
 test("an address that does not exist says so", async () => {

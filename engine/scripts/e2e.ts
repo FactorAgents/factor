@@ -17,6 +17,9 @@
 //   4  runs jobs through the desk: one advanced from the pool and as compute, delivered, and settled BY THE ENGINE
 //      when the customer never comes back; one nobody takes up, refunded by the engine; one drawn on and left,
 //      refunded by the engine with the bond paying the pool;
+//   4a the compute advance is credit at the engine's gateway: the agent signs for a key and calls a model with it
+//      (a stand-in for the model maker, scripts/stub-model.ts: no model is called and nothing is spent), and the
+//      credit of a job that is refunded at a loss goes back to the pool as ETH, sent by the engine;
 //   5  an agent signs its name and a customer signs a job's title, and both show;
 //   6  compares the engine's copy of every job and every agent with the desk itself, the engine's score for each
 //      agent with the desk's own score(), and the engine's figures with the desk's books;
@@ -38,6 +41,7 @@ import { createPublicClient, defineChain, encodeFunctionData, http, parseAbi, pa
 import { privateKeyToAccount } from "viem/accounts";
 import { factorBurnPotAbi, factorDeskAbi, factorSplitterAbi, factorTokenAbi } from "../src/abi/index.js";
 import type { AgentJson, EventJson, FactorState, JobJson } from "../src/api.js";
+import { costMicro, DEFAULT_MODELS, keyMessage, usdMicro } from "../src/compute.js";
 import { ponsFactoryAbi } from "../src/chain/pons.js";
 import { profileMessage, titleMessage } from "../src/profiles.js";
 
@@ -47,6 +51,9 @@ const FOUNDRY = join(process.env.HOME ?? "", ".foundry", "bin");
 const LIVE_RPC = process.env.E2E_FORK_URL ?? "https://rpc.mainnet.chain.robinhood.com";
 const ANVIL_PORT = 8646;
 const ENGINE_PORT = 8789;
+const MODEL_PORT = 8791;
+// what the stand-in for the model maker takes as the owner's key: made up here, a key to nothing
+const MODEL_KEY = "sk-ant-e2e-stand-in-a-key-to-nothing";
 const RPC = `http://127.0.0.1:${ANVIL_PORT}`;
 const API = `http://127.0.0.1:${ENGINE_PORT}`;
 const WORK = join(tmpdir(), "factor-e2e");
@@ -151,6 +158,7 @@ function startEngine(dataDir: string, envFile: string, more: Record<string, stri
     env: {
       ...process.env, PORT: String(ENGINE_PORT), FACTOR_DATA_DIR: dataDir, ENGINE_MODE: "live", BOT_PRIVATE_KEY: BOT_KEY, FACTOR_ENV_FILE: envFile, FACTOR_RPC_URLS: RPC,
       FACTOR_REHEARSAL_CLOCK: "chain", FACTOR_HOUSE_AGENTS: AGENT2,
+      COMPUTE_MODE: "on", ANTHROPIC_API_KEY: MODEL_KEY, COMPUTE_UPSTREAM_URL: `http://127.0.0.1:${MODEL_PORT}`,
       ENGINE_WATCH_EVERY_MS: "700", ENGINE_ACT_EVERY_MS: "900", ENGINE_CONFIRMATIONS: "1", ENGINE_API_CACHE_MS: "0", ENGINE_SWEEP_EVERY_S: "60", ...more,
     },
   }).unref();
@@ -164,14 +172,19 @@ async function main(): Promise<void> {
   if (args.includes("--stop")) {
     await stopPort(ENGINE_PORT);
     await stopPort(ANVIL_PORT);
+    await stopPort(MODEL_PORT);
     console.log("stopped");
     return;
   }
   console.log(`The engine against the real contracts on a local fork. Working folder: ${WORK}`);
   await stopPort(ENGINE_PORT);
   await stopPort(ANVIL_PORT);
+  await stopPort(MODEL_PORT);
   rmSync(WORK, { recursive: true, force: true });
   mkdirSync(WORK, { recursive: true });
+  // the stand-in for the model maker: the engine's compute gateway is pointed at it, so no model is ever called
+  const modelLog = openSync(join(WORK, "model.log"), "a");
+  spawn(join(ENGINE, "node_modules", ".bin", "tsx"), ["scripts/stub-model.ts", String(MODEL_PORT), MODEL_KEY], { cwd: ENGINE, stdio: ["ignore", modelLog, modelLog], detached: true }).unref();
   // forge writes a small record of each script run into contracts/cache; what this run puts there is taken away again
   const records = ["Deploy.s.sol", "Launch.s.sol"].map((f) => join(CONTRACTS, "cache", f));
   const hadRecords = records.map((f) => existsSync(f));
@@ -231,7 +244,7 @@ async function main(): Promise<void> {
     const failedSoFar = checks.filter((c) => !c.ok);
     records.forEach((f, i) => { if (!hadRecords[i]) rmSync(f, { recursive: true, force: true }); });
     if (failedSoFar.length) throw new Error(`${failedSoFar.length} check(s) failed before the desk was ready`);
-    writeFileSync(join(WORK, "bare.json"), JSON.stringify({ rpc: RPC, api: API, desk, splitter, burnPot, token, keys }, null, 2));
+    writeFileSync(join(WORK, "bare.json"), JSON.stringify({ rpc: RPC, api: API, desk, splitter, burnPot, token, keys, model: `http://127.0.0.1:${MODEL_PORT}` }, null, 2));
     console.log(`\nLeft running: the fork on ${RPC}, the engine on ${API}, the pool holding ${eth(pool0)} ETH. Written to ${join(WORK, "bare.json")}.`);
     console.log("Stop them with: npm run e2e -- --stop");
     return;
@@ -252,6 +265,40 @@ async function main(): Promise<void> {
   const job1 = await waitFor("job 1 to show as advanced", async () => { const r = await get<{ job?: JobJson }>("/v1/jobs/1"); return r.job?.state === "advanced" && r.job.advances.length === 2 ? r.job : null; });
   check("the engine shows the job with both draws", job1.priceEth === 0.01 && job1.advance?.eth === 0.004 && job1.advances.map((a) => a.kind).join() === "pool,compute" && low(job1.agentId) === low(AGENT));
   check("the compute advance went to the gateway, less its fee, and never to the agent", (await balance(BOT)) >= botBefore + parseEther("0.00198") - parseEther("0.0005"));
+
+  step("4a the compute advance is credit: the agent signs for a key and calls a model with it");
+  type Credit = { balanceUsd: number; enabled: boolean; lots: { job: number; usd: number | null; spentUsd: number; state: string }[] };
+  const creditOf = (a: string) => get<Credit>(`/v1/compute/credit/${low(a)}`);
+  const credit0 = await waitFor("the credit to be priced", async () => { const c = await creditOf(AGENT); return c.balanceUsd > 0 ? c : null; });
+  const ethUsd8 = BigInt((await get<{ ethUsd8: string }>("/v1/health")).ethUsd8);
+  const lotMicro = Math.round(credit0.lots[0]!.usd! * 1e6);
+  // the price moves between the draw and now, so the lot is held to Chainlink's price within a percent
+  check("0.00198 ETH of compute is dollars of credit at Chainlink's ETH price", credit0.enabled && credit0.lots.length === 1 && credit0.lots[0]!.job === 1 && Math.abs(lotMicro - usdMicro(parseEther("0.00198"), ethUsd8)) <= lotMicro / 100, `$${credit0.balanceUsd} at $${Number(ethUsd8) / 1e8} an ETH`);
+  const now4 = await blockTime();
+  const keyFor = async (signer: typeof agentAcct, address: string) => fetch(`${API}/v1/compute/key`, { method: "POST", body: JSON.stringify({ address: low(address), at: now4, signature: await signer.signMessage({ message: keyMessage(low(address), now4) }) }) });
+  check("a key asked for with another wallet's signature is refused", (await keyFor(customerAcct, AGENT)).status === 401);
+  check("a wallet that is no agent gets no key", (await keyFor(customerAcct, CUSTOMER)).status === 404);
+  const computeKey = ((await (await keyFor(agentAcct, AGENT)).json()) as { key: string }).key;
+  check("the agent's own signature gets a key", /^fck_[A-Za-z0-9_-]{32}$/.test(computeKey));
+  const ask = (body: Record<string, unknown>, key = computeKey) => fetch(`${API}/v1/compute/v1/messages`, { method: "POST", headers: { "x-api-key": key, "content-type": "application/json", "anthropic-version": "2023-06-01" }, body: JSON.stringify(body) });
+  const question = { model: "claude-sonnet-5-5", max_tokens: 400, messages: [{ role: "user", content: "Summarise the service agreement in one line." }] };
+  const priceOf = (body: Record<string, unknown>) => costMicro({ input: Math.ceil(Buffer.byteLength(JSON.stringify(body)) / 4), output: 120, cacheWrite5m: 0, cacheWrite1h: 0, cacheRead: 0 }, DEFAULT_MODELS["claude-sonnet-5-5"]!, 500);
+  const answer = await ask(question);
+  const answered = (await answer.json()) as { content: { text: string }[]; usage: { input_tokens: number; output_tokens: number } };
+  // the stand-in only answers the key the engine was given as its owner's: an answer means that key was sent
+  check("the call is answered in the model maker's own shape, sent on with the owner's key", answer.status === 200 && answered.content[0]!.text.startsWith("Summary:") && answered.usage.output_tokens === 120);
+  const credit1 = await creditOf(AGENT);
+  check("it cost what its tokens cost, to the millionth of a dollar", Math.round((credit0.balanceUsd - credit1.balanceUsd) * 1e6) === priceOf(question), `$${(priceOf(question) / 1e6).toFixed(6)}`);
+  const streamed = await ask({ ...question, stream: true });
+  const text = await streamed.text();
+  const credit2 = await creditOf(AGENT);
+  check("a stream comes through as a stream, and is counted the same way", streamed.headers.get("content-type") === "text/event-stream" && text.includes("event: message_start") && text.trimEnd().endsWith('data: {"type":"message_stop"}') && Math.round((credit1.balanceUsd - credit2.balanceUsd) * 1e6) === priceOf({ ...question, stream: true }));
+  check("a tool the model maker runs, another speed, a model not on the list and a key that is no key are refused", (await ask({ ...question, tools: [{ type: "web_search_20250305", name: "web_search" }] })).status === 400 && (await ask({ ...question, speed: "fast" })).status === 400 && (await ask({ ...question, model: "some-other-model" })).status === 400 && (await ask(question, `fck_${"a".repeat(32)}`)).status === 401);
+  check("a request that could cost more than the credit is refused before it is sent", (await ask({ ...question, model: "claude-fable-5-1", max_tokens: 16_000, messages: [{ role: "user", content: "x".repeat(1_500_000) }] })).status === 402 && (await creditOf(AGENT)).balanceUsd === credit2.balanceUsd);
+  const hc = (await get<{ compute: { calls: number; spentMicro: number; unpaidMicro: number } }>("/v1/health")).compute;
+  check("the engine's count of it: two calls, nothing unpaid", hc.calls === 2 && hc.unpaidMicro === 0 && hc.spentMicro === priceOf(question) + priceOf({ ...question, stream: true }));
+  const engineLog = readFileSync(join(WORK, "engine.log"), "utf8");
+  check("the owner's key is not in the engine's log, nor what was asked", !engineLog.includes(MODEL_KEY) && !engineLog.includes("Summarise the service agreement"));
 
   step("5  an agent signs its name, a customer signs a job's title");
   const now5 = await blockTime();
@@ -278,6 +325,8 @@ async function main(): Promise<void> {
   const settledAgent = await read<{ advancedNow: bigint; advancesRepaid: number; feesPaid: bigint }>(desk, DESK, "agent", [AGENT]);
   check("and the pool has its advances back and the job fee", settledAgent.advancedNow === 0n && settledAgent.advancesRepaid === 1 && settledAgent.feesPaid === parseEther("0.0002") && (await read<bigint>(desk, DESK, "totalJobFees")) === parseEther("0.0002") && (await read<bigint>(desk, DESK, "pool")) >= poolBefore + parseEther("0.0042"));
   // its record now has something in it: the engine's score must be the desk's own, while it is not nothing
+  const kept1 = await waitFor("the credit to be the agent's own", async () => { const c = await creditOf(AGENT); return c.lots[0]?.state === "kept" ? c : null; });
+  check("the job settled, so what is left of its compute credit stays with the agent and still buys", kept1.balanceUsd === credit2.balanceUsd && (await ask(question)).status === 200);
   const scored = await waitFor("the agent's record to show", async () => { const r = await get<{ agent?: AgentJson }>(`/v1/agents/${low(AGENT)}`); return r.agent?.settled === 1 ? r.agent : null; });
   const deskScore = Number(await read<bigint>(desk, DESK, "score", [AGENT]));
   check("the engine's score for the agent is the desk's own score(), and is not nothing", scored.score === deskScore && deskScore === 20, `${scored.score} against ${deskScore}`);
@@ -286,24 +335,33 @@ async function main(): Promise<void> {
   const a2 = await read<{ unanswered: number; notDelivered: number; barred: boolean }>(desk, DESK, "agent", [AGENT2]);
   check("the engine refunded the job nobody took up, and the agent's record is not marked", a2.unanswered === 1 && a2.notDelivered === 0 && !a2.barred);
 
-  step("4c a job the agent draws on and leaves: the engine refunds it, and the bond pays the pool");
+  step("4c a job the agent draws on and leaves: the engine refunds it, the bond pays the pool, and unspent compute goes back");
   const due3 = (await blockTime()) + 2 * 3600;
-  await send(CUSTOMER, desk, DESK, "lock", [AGENT, BigInt(due3), true], parseEther("0.01"));
+  await send(CUSTOMER, desk, DESK, "lock", [AGENT, BigInt(due3), true], parseEther("0.012"));
   await send(AGENT, desk, DESK, "draw", [3n, parseEther("0.004"), KIND.pool]);
+  // its limit is its bond plus the fees its first job paid: 0.0002 more, drawn as compute and never spent
+  await send(AGENT, desk, DESK, "draw", [3n, parseEther("0.0002"), KIND.compute]);
   await send(AGENT, desk, DESK, "draw", [3n, parseEther("0.001"), KIND.early]);
+  const creditBefore3 = await waitFor("the second lot of credit", async () => { const c = await creditOf(AGENT); return c.lots.length === 2 && c.lots[1]!.usd ? c : null; });
   const customerBefore = await balance(CUSTOMER);
   await warpBy(14 * 3600 + 60);
   await waitFor("the engine to refund job 3", async () => (await read<{ state: number }>(desk, DESK, "job", [3n])).state === 7, 120_000);
-  check("the customer has the price back, less the early advance it allowed", (await balance(CUSTOMER)) - customerBefore === parseEther("0.009"));
+  check("the customer has the price back, less the early advance it allowed", (await balance(CUSTOMER)) - customerBefore === parseEther("0.011"));
   const a1 = await read<{ barred: boolean; bond: bigint; advancesNotRepaid: number; earlyKept: number }>(desk, DESK, "agent", [AGENT]);
-  check("the bond paid the pool, and the agent is barred", a1.barred && a1.bond === 0n && a1.advancesNotRepaid === 1 && a1.earlyKept === 1 && (await read<bigint>(desk, DESK, "totalLost")) === 0n);
+  check("the bond paid the pool as far as it went, and the agent is barred", a1.barred && a1.bond === 0n && a1.advancesNotRepaid === 1 && a1.earlyKept === 1 && (await read<bigint>(desk, DESK, "totalLost")) === parseEther("0.0002"));
+  // the pool lost 0.0002 ETH; 0.000198 of it was sitting unspent at the gateway as compute credit, and goes home
+  const back = await waitFor("the engine to send the unspent compute back", async () => { const h = await health(); return h.actions.return_compute.done === 1 ? h : null; }, 120_000);
+  const credit3 = await waitFor("the lot to close", async () => { const c = await creditOf(AGENT); return c.lots[1]?.state === "closed" ? c : null; });
+  check("the refunded job's unspent compute credit went back to the pool as ETH, and the agent's other credit is untouched", back.actions.return_compute.result.includes("0.000198 ETH") && credit3.lots[1]!.usd === 0 && credit3.lots[0]!.state === "kept" && Math.round((creditBefore3.balanceUsd - credit3.balanceUsd) * 1e6) === Math.round(creditBefore3.lots[1]!.usd! * 1e6));
+  const homecoming = await waitFor("the ledger's line for it", async () => (await get<{ items: EventJson[] }>("/v1/ledger?show=pool&limit=50")).items.find((e) => e.text === "compute credit nobody spent went back to the pool")).catch(() => null);
+  check("and the ledger says so", homecoming?.amount === "+0.000198 ETH" || homecoming?.amount === "+0.0002 ETH", homecoming?.amount);
 
   step("4d the burn: trading fees and advance fees, bought back and burned by the engine");
   await waitFor("a burn", async () => (await read<bigint>(burnPot, factorBurnPotAbi as Abi, "burnCount")) >= 1n, 120_000);
   const supply = await read<bigint>(token, factorTokenAbi as Abi, "totalSupply");
   const burned = await read<bigint>(burnPot, factorBurnPotAbi as Abi, "totalTokensBurned");
   check("the engine burned, and the supply fell by exactly what was burned", burned > 0n && supply === 10n ** 27n - burned, `${eth(burned)} $FACTOR`);
-  check("every advance fee reached the burn pot", (await read<bigint>(desk, DESK, "owed", [burnPot])) === 0n && (await read<bigint>(desk, DESK, "totalAdvanceFees")) === parseEther("0.00009"));
+  check("every advance fee reached the burn pot", (await read<bigint>(desk, DESK, "owed", [burnPot])) === 0n && (await read<bigint>(desk, DESK, "totalAdvanceFees")) === parseEther("0.000092"));
 
   step("6  the engine's copy against the desk itself");
   // let the engine read the last blocks
@@ -332,7 +390,7 @@ async function main(): Promise<void> {
   check("the engine's figures are the desk's books", near(final.stats.poolEth, pool + out) && near(final.stats.outEth, out) && near(final.stats.heldEth, held) && near(final.stats.lostEth, lost) && final.stats.settledJobs === 1 && final.stats.jobs === 3);
   const kinds = final.events.map((e: EventJson) => e.kind);
   check("the ledger has a line for everything that happened", ["pool_in", "bond", "locked", "advanced", "delivered", "settled", "refunded", "not_repaid", "burned"].every((k) => kinds.includes(k)), `${final.events.length} lines`);
-  check("the ledger words the two refunds differently", final.events.some((e) => e.text === "the job was not taken up, the customer has it all back") && final.events.some((e) => e.text === "lumen-07 did not deliver in time, the customer was refunded") && final.events.some((e) => e.text === "lumen-07 did not deliver: its bond repaid the pool"));
+  check("the ledger words the two refunds differently", final.events.some((e) => e.text === "the job was not taken up, the customer has it all back") && final.events.some((e) => e.text === "lumen-07 did not deliver in time, the customer was refunded") && final.events.some((e) => e.text === "lumen-07 did not deliver: its bond paid first, the pool the rest"));
   const h6 = await waitFor("the engine's own record of the two refunds", async () => { const h = await health(); return h.actions.refund_job.done === 2 ? h : null; });
   check("nothing the engine sent failed, and it warns of nothing", h6.problems.length === 0 && h6.warnings.length === 0 && Object.values(h6.actions).every((a) => a.failed === 0), `${Object.entries(h6.actions).map(([k, a]) => `${k} ${a.done}`).join(", ")}`);
   check("it settled one job and refunded two", h6.actions.settle_job.done === 1 && h6.actions.refund_job.done === 2);
@@ -366,6 +424,7 @@ async function main(): Promise<void> {
   }
   await stopPort(ENGINE_PORT);
   await stopPort(ANVIL_PORT);
+  await stopPort(MODEL_PORT);
   process.exit(failed.length ? 1 : 0);
 }
 
@@ -374,5 +433,6 @@ main().catch(async (e) => {
   console.error(`The engine's log: ${join(WORK, "engine.log")}`);
   await stopPort(ENGINE_PORT);
   await stopPort(ANVIL_PORT);
+  await stopPort(MODEL_PORT);
   process.exit(1);
 });

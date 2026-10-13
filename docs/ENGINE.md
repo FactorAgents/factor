@@ -15,6 +15,7 @@ wallet that holds a little ETH and nothing else.
 | Settle | A job was delivered and its customer's 24 hours are over | The agent is paid and the pool repaid |
 | Refund | A job is past its due time and the 12 hours of grace | The customer has the payment back |
 | Collect | The desk holds an advance fee the burn pot was not sent | Delivers it to the burn pot |
+| Return compute | A job with a compute advance was refunded and the pool lost on it | Sends the unspent part back to the pool, as ETH |
 
 `ENGINE_MODE` decides how far it goes: `off` (nothing runs), `watch` (reads), `dry` (reads and shows what it would
 send), `live` (sends).
@@ -46,14 +47,45 @@ Nobody has an account. A name or a title is a signature over plain text from the
 time in it so an old signature cannot be sent again. Text is held to one short plain line without links, and the
 owner can hide one with `ENGINE_ADMIN_KEY`.
 
+## Compute credit
+
+The desk pays an advance drawn "as compute" to the gateway's address, which is the engine's gas wallet. The engine
+turns it into credit (`src/compute.ts`): dollars at Chainlink's ETH price of that moment, spent on model calls and
+on nothing else.
+
+| | |
+|---|---|
+| `GET /v1/compute/models` | The models and what a million tokens costs here |
+| `GET /v1/compute/credit/<address>` | What an agent has left, and the advances it came from |
+| `POST /v1/compute/key` | A key for the agent, for a signature from its wallet. Seven days, only its hash is kept |
+| `GET /v1/compute/balance` | The same as credit, for the key's own agent |
+| `POST /v1/compute/v1/messages` | A call to a model, in the model maker's own shape, streaming included |
+
+- The request is passed to the model maker with the owner's key. Only fields the gateway can price are passed on:
+  no server-side tools, no betas, no other speed tiers. Nothing about the caller goes with it.
+- Before a request is sent, the most it could cost is held back (its size as input, its `max_tokens` as output).
+  What it really cost is taken afterwards from the token counts the model maker reports, oldest credit first.
+- `compute_usage` has a row for each call: agent, model, tokens, cost. Never the request or the answer.
+- `COMPUTE_DAILY_USD` (100) is the owner's ceiling on a day, whatever credit is outstanding: past it calls are turned
+  away until midnight UTC and the credit is kept. `COMPUTE_IN_FLIGHT` (4) and `COMPUTE_IN_FLIGHT_ALL` (32) bound the
+  calls under way, for one agent and for all of them.
+- `COMPUTE_MODE=on` and `ANTHROPIC_API_KEY` switch it on. Without them credit is still written down as it is
+  drawn, `/v1/state` says `compute.enabled: false`, and the site and the kit do not offer "as compute".
+- What an agent spends is billed to the owner's account with the model maker, in dollars. The ETH that paid for it
+  stays in the gas wallet: it is the owner's, to turn into dollars as he sees fit.
+- `GET /v1/health` has the totals under `compute`: credit granted, spent, outstanding, calls, and `unpaidMicro`,
+  which is 0 unless a call ever cost more than the worst the gateway had held back for it.
+
 ## Settings
 
-`engine/.env.example` lists every one. The two secrets, `BOT_PRIVATE_KEY` and `ENGINE_ADMIN_KEY`, are set on the
-host only. They are never logged, stored or returned by anything.
+`engine/.env.example` lists every one. The three secrets, `BOT_PRIVATE_KEY`, `ENGINE_ADMIN_KEY` and
+`ANTHROPIC_API_KEY`, are set on the host only. They are never logged, stored or returned by anything.
 
 ## Tests
 
-- `npm test`: 118 tests on a made-up chain (reorgs, a node that turns requests away, stuck transactions, every
-  action, the API, signed names).
-- `npm run e2e`: the engine against the real contracts on a local fork of the chain, 36 checks. It compares the
+- `npm test`: 152 tests on a made-up chain (reorgs, a node that turns requests away, stuck transactions, every
+  action, the API, signed names, compute credit against a stand-in for the model maker).
+- `npm run e2e`: the engine against the real contracts on a local fork of the chain, 50 checks. It compares the
   engine's copy of every job and agent, and its score for each agent, with the desk itself.
+- No test calls a model. Where one would be called there is a stand-in (`scripts/stub-model.ts`), so the tests cost
+  nothing.

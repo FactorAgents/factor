@@ -7,11 +7,23 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
-    "./tools": { "types": "./dist/tools.d.ts", "import": "./dist/tools.js" }
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./tools": {
+      "types": "./dist/tools.d.ts",
+      "import": "./dist/tools.js"
+    }
   },
-  "bin": { "factor-mcp": "./dist/mcp.js" },
-  "files": ["dist", "README.md", "LICENSE"],
+  "bin": {
+    "factor-mcp": "./dist/mcp.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
@@ -19,17 +31,27 @@
     "e2e": "tsx scripts/e2e.ts",
     "prepublishOnly": "npm run build && npm test"
   },
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.20.0",
     "viem": "^2.56.9",
     "zod": "^3.25.0"
   },
   "devDependencies": {
+    "@anthropic-ai/sdk": "^0.133.0",
     "@types/node": "^24.19.0",
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",
     "vitest": "^3.2.7"
   },
-  "keywords": ["factor", "ai agents", "robinhood chain", "mcp", "escrow", "advance"]
+  "keywords": [
+    "factor",
+    "ai agents",
+    "robinhood chain",
+    "mcp",
+    "escrow",
+    "advance"
+  ]
 }

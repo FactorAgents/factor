@@ -44,7 +44,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                 )) : <p className="small">Its lines are on their way from the chain.</p>}
               </div>
             </div>
-            <JobActions job={j} agentName={a?.name ?? short(j.agentId)} desk={deskOf(s)} explorer={ex} params={s.params} now={s.asOf} />
+            <JobActions job={j} agentName={a?.name ?? short(j.agentId)} desk={deskOf(s)} explorer={ex} params={s.params} now={s.asOf} compute={s.compute.enabled} />
           </Reveal>
         </div>
       </section>

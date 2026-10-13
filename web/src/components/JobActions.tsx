@@ -12,11 +12,11 @@ type Kind = keyof typeof KIND;
 const KIND_WORD: Record<Kind, string> = { pool: "From the pool", compute: "As compute", customer: "Early, from the job" };
 const KIND_WHY: Record<Kind, string> = {
   pool: "The pool advances it, up to your limit. The job repays it when it settles.",
-  compute: "The pool pays it to the compute gateway for this job, never to a wallet. The job repays it.",
+  compute: "The pool pays it to Factor's compute gateway, never to a wallet. It becomes credit your agent spends on models. The job repays it.",
   customer: "Out of the payment the customer locked. They allowed it for this job.",
 };
 
-export default function JobActions({ job, agentName, desk, explorer, params, now }: { job: Job; agentName: string; desk: string | null; explorer: string; params: Params; now: string }) {
+export default function JobActions({ job, agentName, desk, explorer, params, now, compute }: { job: Job; agentName: string; desk: string | null; explorer: string; params: Params; now: string; compute: boolean }) {
   const { address } = useWallet();
   const open = job.state === "locked" || job.state === "advanced" || job.state === "delivered";
   const isAgent = address === job.agentId.toLowerCase();
@@ -46,7 +46,7 @@ export default function JobActions({ job, agentName, desk, explorer, params, now
       ) : null}
       {address && open && !isAgent && !isCustomer && !canRefund && !canSettle ? <p className="small rest">The connected wallet is neither this job&apos;s agent nor its customer. There is nothing for it to do here.</p> : null}
 
-      {isAgent && working ? <Draw {...shared} params={params} /> : null}
+      {isAgent && working ? <Draw {...shared} params={params} compute={compute} /> : null}
       {isAgent && working ? <Deliver {...shared} late={t > Date.parse(job.dueAt)} /> : null}
       {isAgent && job.state === "locked" && !canRefund ? <One {...shared} fn="decline" label="Decline the job" line title="Not for you?" text="Declining sends the whole payment back to the customer and leaves no mark on your record. It can only be done before you draw on the job." done="Declined. The customer has the payment back." /> : null}
       {isAgent && job.state === "delivered" && !canSettle ? <p className="small rest">You have delivered. Your customer can accept or reject until {dayTime(acceptBy)}, {fromNow(acceptBy, now)}. If they say nothing, the job settles by itself and you are paid.</p> : null}
@@ -86,7 +86,7 @@ function One({ job, desk, explorer, onDone, fn, label, title, text, done, line }
   );
 }
 
-function Draw({ job, desk, explorer, onDone, params }: { job: Job; desk: string; explorer: string; onDone: (d: Done) => void; params: Params }) {
+function Draw({ job, desk, explorer, onDone, params, compute }: { job: Job; desk: string; explorer: string; onDone: (d: Done) => void; params: Params; compute: boolean }) {
   const { address, wallet } = useWallet();
   const { status, run, busy } = useSend(onDone);
   const [kind, setKind] = useState<Kind>("pool");
@@ -102,7 +102,8 @@ function Draw({ job, desk, explorer, onDone, params }: { job: Job; desk: string;
     return () => { on = false; };
   }, [wallet, desk, job.n, key]);
   const max = room ? (kind === "customer" ? room.early : room.fromPool) : null;
-  const kinds: Kind[] = job.allowEarly ? ["pool", "compute", "customer"] : ["pool", "compute"];
+  // compute is offered only while the gateway is serving models: credit nobody can spend helps no job
+  const kinds: Kind[] = (["pool", "compute", "customer"] as Kind[]).filter((k) => (k !== "compute" || compute) && (k !== "customer" || job.allowEarly));
   const wei = toWei(amount);
   const go = () => run(async (on) => {
     const p = wallet();
@@ -111,7 +112,8 @@ function Draw({ job, desk, explorer, onDone, params }: { job: Job; desk: string;
     const { hash } = await send(p, desk, address, "draw", [BigInt(job.n), wei, KIND[kind]], { on });
     const fee = (wei * BigInt(params.advanceFeePct)) / 100n;
     setAmount("");
-    return { note: kind === "compute" ? `${fromWei(wei - fee)} ETH of compute is paid for this job.` : `${fromWei(wei - fee)} ETH is in your wallet. ${fromWei(fee)} ETH buys back and burns $FACTOR.`, hash };
+    if (kind === "compute") return { note: `${fromWei(wei - fee)} ETH is compute credit for your agent now.`, href: "/work", hrefText: "Its key and what is left", hash };
+    return { note: `${fromWei(wei - fee)} ETH is in your wallet. ${fromWei(fee)} ETH buys back and burns $FACTOR.`, hash };
   });
   return (
     <div className="act">

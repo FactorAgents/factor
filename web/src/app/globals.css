@@ -347,6 +347,8 @@ button.toggle { width: 100%; text-align: left; background: transparent; color: i
 .acts > .status { margin: 0 0 18px; }
 .acts > .rest { padding: 22px 0; border-top: 1px solid var(--line); }
 .act .cta { margin-top: 20px; }
+.keybox { display: grid; gap: 8px; margin-top: 22px; min-width: 0; }
+.keybox .code { padding: 12px 14px; word-break: break-all; white-space: normal; }
 .linkish { background: none; border: 0; padding: 0; color: var(--ink); font: inherit; border-bottom: 1px solid var(--line-2); cursor: pointer; }
 .mine a { display: grid; grid-template-columns: 48px minmax(0, 1fr) auto auto; gap: 14px; align-items: baseline; padding: 12px 0; border-top: 1px solid var(--line); font-size: 14.5px; transition: background 0.25s ease; }
 .mine a:last-child { border-bottom: 1px solid var(--line); }

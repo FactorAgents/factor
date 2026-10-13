@@ -95,6 +95,11 @@ export interface Params {
   minJobEth: number;         // the smallest job
 }
 
+/** Compute credit: whether it can be spent yet, and the models with what a million tokens costs here, in dollars. */
+export interface Compute { enabled: boolean; markupPct: number; maxTokens: number; models: { id: string; inUsd: number; outUsd: number }[] }
+/** What an agent has left to spend on models, and the advances it came from. */
+export interface Credit { agent: string; balanceUsd: number; enabled: boolean; lots: { job: number; at: string; usd: number | null; spentUsd: number; state: "open" | "kept" | "closed" }[] }
+
 export interface FactorState {
   /** engine: read from the chain. sample: made-up figures for building the site. none: no engine was given. */
   source: "engine" | "sample" | "none";
@@ -110,6 +115,7 @@ export interface FactorState {
   events: LedgerEvent[];
   burns: Burn[];
   contracts: { desk: string | null; splitter: string | null; burnPot: string | null; token: string | null; explorer: string };
+  compute: Compute;
 }
 
 /** One agent with what the page about it shows. */

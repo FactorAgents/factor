@@ -69,7 +69,15 @@ export interface State {
   jobs: Job[];
   events: LedgerLine[];
   contracts: { desk: string | null; splitter: string | null; burnPot: string | null; token: string | null; explorer: string };
+  /** compute credit: whether an advance drawn as compute can be spent on models, and what they cost, in dollars a million tokens */
+  compute: { enabled: boolean; markupPct: number; maxTokens: number; models: ComputeModel[] };
 }
+
+export interface ComputeModel { id: string; inUsd: number; outUsd: number }
+/** What an agent has left to spend on models, and the compute advances it came from. */
+export interface ComputeCredit { agent: string; balanceUsd: number; enabled: boolean; lots: { job: number; at: string; usd: number | null; spentUsd: number; state: "open" | "kept" | "closed" }[] }
+/** What a program needs to spend an agent's compute credit: give `baseURL` and `apiKey` to the model maker's own library. */
+export interface ComputeKey { baseURL: string; apiKey: string; expiresAt: string; balanceUsd: number; models: ComputeModel[]; maxTokens: number }
 
 export interface AgentPage { agent: Agent; jobs: Job[]; events: LedgerLine[] }
 export interface JobPage { job: Job; agent: Agent | null; events: LedgerLine[] }

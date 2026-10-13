@@ -10,3 +10,4 @@ data/
 .DS_Store
 *.log
 docs/shots/flows/
+docs/reference/

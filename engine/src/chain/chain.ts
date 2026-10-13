@@ -83,16 +83,23 @@ export interface Chain {
   read<T = unknown>(call: CallSpec): Promise<T>;
   // Run a call as `from` without sending it. Throws when it would revert (see revertOf).
   simulate<T = unknown>(call: CallSpec, from: string): Promise<T>;
-  // The gas a call would use; with no call, the gas of an empty transfer from the wallet to itself.
-  estimateGas(call: CallSpec | null, from: string): Promise<bigint>;
+  // The gas a call would use; with no call, the gas of an empty transfer from the wallet to itself, or of `pay`.
+  estimateGas(call: CallSpec | null, from: string, pay?: Pay): Promise<bigint>;
   fees(): Promise<Fees>;
   nonces(address: string): Promise<{ latest: number; pending: number }>;
   receipt(hash: string): Promise<Receipt | null>;
   health(): RpcHealth;
 }
 
+// ETH sent to an address with no call: how the gateway gives unspent compute credit back to the pool.
+export interface Pay {
+  to: string;
+  value: bigint;
+}
+
 export interface TxRequest {
-  call: CallSpec | null; // null: an empty transfer to the signer itself (the replacement for a stuck transaction)
+  call: CallSpec | null; // null: an empty transfer to the signer itself (the replacement for a stuck transaction), or `pay`
+  pay?: Pay;
   gas: bigint;
   nonce: number;
   fees: Fees;
@@ -340,8 +347,8 @@ export function viemChain(urls: string[], chainId: number, now: () => number = D
       const r = await plain.simulateContract({ ...(contract(c) as object), account: from as Hex } as never);
       return (r as { result: T }).result;
     },
-    estimateGas: (c, from) =>
-      c ? plain.estimateContractGas({ ...(contract(c) as object), account: from as Hex } as never) : plain.estimateGas({ account: from as Hex, to: from as Hex, value: 0n }),
+    estimateGas: (c, from, pay) =>
+      c ? plain.estimateContractGas({ ...(contract(c) as object), account: from as Hex } as never) : plain.estimateGas({ account: from as Hex, to: (pay?.to ?? from) as Hex, value: pay?.value ?? 0n }),
     async fees() {
       const f = await plain.estimateFeesPerGas();
       return { maxFeePerGas: f.maxFeePerGas ?? 0n, maxPriorityFeePerGas: f.maxPriorityFeePerGas ?? 0n };
@@ -398,9 +405,9 @@ export function viemSigner(key: `0x${string}`, urls: string[], chainId: number, 
       const serialized = await account.signTransaction({
         chainId,
         type: "eip1559",
-        to: (tx.call ? tx.call.to : address) as Hex,
+        to: (tx.call ? tx.call.to : (tx.pay?.to ?? address)) as Hex,
         data: tx.call ? encodeFunctionData({ abi: tx.call.abi, functionName: tx.call.functionName, args: tx.call.args ?? [] } as never) : undefined,
-        value: 0n,
+        value: tx.call ? 0n : (tx.pay?.value ?? 0n),
         gas: tx.gas,
         nonce: tx.nonce,
         maxFeePerGas: tx.fees.maxFeePerGas,

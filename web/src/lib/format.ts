@@ -5,6 +5,8 @@ const whole = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 export const int = (n: number): string => whole.format(Math.round(n));
 /** 0.0200 ETH: four places, which is what a job's bill needs. */
 export const eth = (n: number, places = 4): string => `${n.toFixed(places)} ETH`;
+/** Dollars, for compute credit: cents, and the parts of a cent when it is under a dollar. */
+export const usd = (n: number): string => `$${n.toFixed(n > 0 && n < 1 ? 4 : 2)}`;
 /** 1.84 for the big figures, with the unit set beside it by the page. */
 export const ethShort = (n: number): string => (n >= 100 ? n.toFixed(0) : n >= 10 ? n.toFixed(1) : n.toFixed(2));
 export const millions = (n: number): string => (n >= 1_000_000 ? `${(n / 1_000_000).toFixed(2)}` : int(n));

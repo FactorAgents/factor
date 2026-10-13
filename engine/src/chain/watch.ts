@@ -14,6 +14,7 @@
 
 import { decodeEventLog, encodeEventTopics, pad, parseAbi, type Abi, type Hex } from "viem";
 import { factorBurnPotAbi, factorDeskAbi, factorSplitterAbi, factorTokenAbi } from "../abi/index.js";
+import { applyCompute, ComputeStore } from "../compute.js";
 import { applyBurn, applyDesk, refreshDesk } from "../desk.js";
 import { normalizeAddress } from "./address.js";
 import { readLogs, type ChainLog, type Head, type LogFilter } from "./chain.js";
@@ -72,7 +73,11 @@ export const WATCHERS: Watcher[] = [
     name: "desk",
     abi: factorDeskAbi as Abi,
     filter: (ctx) => ({ address: ctx.addr.desk }),
-    apply: (db, e, ctx) => applyDesk(db, e, ctx.addr),
+    apply(db, e, ctx) {
+      // a compute advance is also credit at the gateway, priced at the ETH price of the last reading
+      applyCompute(new ComputeStore(db), e, snapshotOf(db)?.ethUsd8 ?? null);
+      return applyDesk(db, e, { splitter: ctx.addr.splitter, gateway: ctx.facts.gateway });
+    },
   },
   {
     // The token's mint: what "burned so far" is measured from. Only transfers from nobody are asked for, so the
@@ -227,6 +232,8 @@ async function learnToken(ctx: Ctx): Promise<void> {
 export async function refresh(ctx: Ctx, head: Head): Promise<Snapshot> {
   const snapshot = await readSnapshot(ctx, head);
   ctx.db.setJson(SNAPSHOT_KEY, snapshot);
+  // compute credit drawn before any ETH price was known is priced now
+  new ComputeStore(ctx.db).priceWaiting(snapshot.ethUsd8);
   return snapshot;
 }
 

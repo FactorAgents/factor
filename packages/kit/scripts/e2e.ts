@@ -6,6 +6,9 @@
 // It starts from what the engine's own script leaves running (engine/scripts/e2e.ts --bare): the fork, the three
 // contracts, the engine, and a launched and traded token, so there is a pool.
 //
+// Compute credit is spent here with the model maker's own library (@anthropic-ai/sdk), pointed at the engine. Behind
+// the engine is a stand-in (engine/scripts/stub-model.ts): no model is called and the run costs nothing.
+//
 // Keys: only anvil's built-in test keys, which anvil prints for anybody. They hold nothing on any real chain.
 
 import { spawnSync } from "node:child_process";
@@ -13,6 +16,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import Anthropic from "@anthropic-ai/sdk";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { createPublicClient, http, parseAbi, parseEther } from "viem";
@@ -114,6 +118,41 @@ async function main(): Promise<void> {
   check("and the ledger in words", (await reader.ledger({ limit: 30 })).some((l) => l.text === "lumen-07 declined the job, the customer has it all back"));
   check("a job that is closed cannot be acted on, and the kit says so", (await refused(customer.accept(1))) === "The job is not in a state where that can be done. Read the job again.");
 
+  step("2b compute credit, spent with the model maker's own library");
+  const fourth = await customer.hire({ agent: "lumen-07", price: "0.01", title: "Summarise a lease in one line" });
+  const room = await agent.canDraw(fourth.jobId);
+  check("with no bond, the pool goes as far as the fees the agent's jobs have paid in", room.fromPoolWei > 0n && room.fromPoolWei < parseEther("0.001"), `${room.fromPool} ETH`);
+  const gatewayBefore = await balance(privateKeyToAccount(bare.keys[1]).address);
+  const agentEth = await balance(agent.address!);
+  const drew = await agent.draw(fourth.jobId, room.fromPoolWei, "compute");
+  const drewReceipt = await chain.getTransactionReceipt({ hash: drew.hash });
+  const gasPaid = drewReceipt.gasUsed * drewReceipt.effectiveGasPrice;
+  check("drawn as compute, the ETH goes to the gateway and none of it to the agent", (await balance(agent.address!)) === agentEth - gasPaid && (await balance(privateKeyToAccount(bare.keys[1]).address)) - gatewayBefore >= (room.fromPoolWei * 99n) / 100n - parseEther("0.0001"));
+  let left = await agent.computeCredit();
+  for (let i = 0; i < 40 && left.balanceUsd === 0; i++) { await new Promise((r) => setTimeout(r, 700)); left = await agent.computeCredit(); }
+  check("it is credit in dollars, which anybody can read", left.balanceUsd > 0 && left.lots.length === 1 && left.lots[0].job === fourth.jobId && (await reader.computeCredit("lumen-07")).balanceUsd === left.balanceUsd, `$${left.balanceUsd}`);
+  const credit = await agent.compute();
+  check("the agent signs for its key", /^fck_/.test(credit.apiKey) && credit.baseURL === `${where.api}/compute` && credit.balanceUsd === left.balanceUsd && credit.models.some((m) => m.id === "claude-sonnet-5-5"));
+  check("a wallet that is no agent gets no key, in words", (await refused(customer.compute())) === "This wallet has not registered as an agent on the desk.");
+  const claude = new Anthropic({ baseURL: credit.baseURL, apiKey: credit.apiKey, maxRetries: 0 });
+  const answer = await claude.messages.create({ model: "claude-sonnet-5-5", max_tokens: 400, messages: [{ role: "user", content: "Summarise the lease in one line." }] });
+  const after1 = await agent.computeCredit();
+  check("the model maker's own library, with only its address changed, gets its answer", answer.content[0]?.type === "text" && answer.content[0].text.startsWith("Summary:") && answer.usage.output_tokens === 120);
+  check("and the call came off the credit", after1.balanceUsd < left.balanceUsd && after1.lots[0].spentUsd > 0, `$${(left.balanceUsd - after1.balanceUsd).toFixed(6)}`);
+  const stream = claude.messages.stream({ model: "claude-sonnet-5-5", max_tokens: 400, messages: [{ role: "user", content: "And again, as it comes." }] });
+  let pieces = 0;
+  stream.on("text", () => { pieces++; });
+  const whole = await stream.finalMessage();
+  const after2 = await agent.computeCredit();
+  check("a stream arrives piece by piece through the same library, and is counted", pieces > 3 && whole.content[0]?.type === "text" && whole.content[0].text.trim().endsWith("renews by itself.") && after2.balanceUsd < after1.balanceUsd, `${pieces} pieces`);
+  const tooMuch = await claude.messages.create({ model: "claude-fable-5-1", max_tokens: 16_000, messages: [{ role: "user", content: "x".repeat(400_000) }] }).then(() => "", (e: { status?: number; message?: string }) => `${e.status} ${e.message}`);
+  check("a request the credit cannot cover is refused in the library's own way, and costs nothing", tooMuch.startsWith("402") && tooMuch.includes("compute credit") && (await agent.computeCredit()).balanceUsd === after2.balanceUsd, tooMuch.slice(0, 90));
+  await agent.deliver(fourth.jobId, "The lease runs for two years and renews by itself.");
+  await customer.accept(fourth.jobId);
+  let keptCredit = await agent.computeCredit();
+  for (let i = 0; i < 40 && keptCredit.lots[0].state !== "kept"; i++) { await new Promise((r) => setTimeout(r, 700)); keptCredit = await agent.computeCredit(); }
+  check("the job settled and repaid the pool: what is left of the credit is the agent's", keptCredit.lots[0].state === "kept" && keptCredit.balanceUsd === after2.balanceUsd && (await desk<{ advancedNow: bigint }>("agent", [agent.address])).advancedNow === 0n);
+
   step("3  the assistant's tools, through a real client");
   const dir = mkdtempSync(join(tmpdir(), "factor-kit-e2e-"));
   const serve = async (env: Record<string, string>) => {
@@ -127,8 +166,10 @@ async function main(): Promise<void> {
   const said: string[] = [];
   const ask = async (name: string, args: Record<string, unknown> = {}) => { const r = await assistant.call(name, args); said.push(r.text); return r; };
   const tools = (await assistant.client.listTools()).tools;
-  check("the assistant is offered seventeen tools, each described", tools.length === 17 && tools.every((t) => (t.description ?? "").length > 40), tools.map((t) => t.name).slice(0, 4).join(", ") + ", …");
+  check("the assistant is offered eighteen tools, each described", tools.length === 18 && tools.every((t) => (t.description ?? "").length > 40), tools.map((t) => t.name).slice(0, 4).join(", ") + ", …");
   const overview = await ask("factor_overview");
+  const creditSaid = await ask("factor_compute_credit", { agent: "lumen-07" });
+  check("it can say what compute credit an agent has left, and what the models cost", !creditSaid.isError && /^\$\d+\.\d+ of compute credit left\. From job 4: /.test(creditSaid.text) && creditSaid.text.includes("claude-sonnet-5-5 $2.10 in / $10.50 out"), creditSaid.text.slice(0, 70));
   check("it can read Factor, and is told which wallet it acts as", !overview.isError && overview.text.includes("a rejected job settles at half") && overview.text.includes(`acts as the wallet ${me}`));
   check("it finds the agent", (await ask("factor_agents")).text.includes("lumen-07: Summarises long documents and contracts."));
   const jobsBefore = await desk<bigint>("jobCount");

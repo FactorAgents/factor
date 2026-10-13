@@ -5,9 +5,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { factorDeskAbi } from "../src/abi/FactorDesk.js";
-import { Factor, profileMessage, proofOf, Refusal, titleMessage, toWei } from "../src/index.js";
+import { computeKeyMessage, Factor, profileMessage, proofOf, Refusal, titleMessage, toWei } from "../src/index.js";
 import { limitsFrom, runTool, Spending, TOOLS } from "../src/tools.js";
 import { WORDS } from "../src/words.js";
+import { keyMessage as engineComputeKey } from "../../../engine/src/compute.js";
 import { profileMessage as engineProfile, titleMessage as engineTitle } from "../../../engine/src/profiles.js";
 import { AGENTS, DESK, KEY, stub, type Stub } from "./stub.js";
 
@@ -37,6 +38,7 @@ describe("what a wallet signs", () => {
   it("is to the letter what the engine checks", () => {
     expect(profileMessage("0xabc", "lumen-07", "Summarises long documents", 1_791_000_000)).toBe(engineProfile("0xabc", "lumen-07", "Summarises long documents", 1_791_000_000));
     expect(titleMessage(12, "Summarise a contract", 1_791_000_000)).toBe(engineTitle(12, "Summarise a contract", 1_791_000_000));
+    expect(computeKeyMessage("0xabc", 1_791_000_000)).toBe(engineComputeKey("0xabc", 1_791_000_000));
   });
 
   it("fingerprints a delivery the same way every time, and differently for different work", () => {
@@ -93,6 +95,46 @@ describe("connecting", () => {
     const f = await connect({ privateKey: KEY });
     const r = await refusal(f.hire({ agent: "nobody-here", price: "0.01" }));
     expect(JSON.stringify([r.message, s.posts, JSON.stringify(f)])).not.toContain(KEY.slice(2));
+  });
+});
+
+describe("compute credit", () => {
+  it("signs for a key and hands back what the model maker's own library needs", async () => {
+    const f = await connect({ privateKey: KEY });
+    const before = s.posts.length;
+    const c = await f.compute();
+    expect(c).toEqual({ baseURL: `${s.api}/api/v1/compute`, apiKey: "fck_a-key-from-the-stub-0123456789ab", expiresAt: "2026-10-20T00:00:00.000Z", balanceUsd: 49.5, models: [{ id: "claude-sonnet-5-5", inUsd: 2.1, outUsd: 10.5 }], maxTokens: 16_000 });
+    const sent = s.posts[before]!;
+    expect(sent.path).toBe("/compute/key");
+    const body = sent.body as { address: string; at: number; signature: string };
+    expect(Object.keys(body).sort()).toEqual(["address", "at", "signature"]);
+    expect(body.address).toBe(f.address!.toLowerCase());
+    expect(body.signature).toMatch(/^0x[0-9a-f]{130}$/);
+    expect(JSON.stringify(sent)).not.toContain(KEY.slice(2));
+    s.posts.splice(before); // the tests after this one count what was sent
+  });
+
+  it("reads what any agent has left, by name or address, without a key", async () => {
+    const f = await connect();
+    expect((await f.computeCredit("lumen-07")).balanceUsd).toBe(12.5);
+    expect((await f.computeCredit(AGENTS[1].address)).balanceUsd).toBe(49.5);
+    expect((await refusal(f.computeCredit("nobody-here"))).code).toBe("no_agent");
+    expect((await refusal(f.computeCredit())).code).toBe("read_only");
+    expect((await refusal(f.compute())).code).toBe("read_only");
+    const said = await runTool(f, "factor_compute_credit", { agent: "lumen-07" }, null);
+    expect(said).toEqual({ isError: false, text: "$12.50 of compute credit left. From job 12: $0.00 of $49.50 spent. Models, per million tokens: claude-sonnet-5-5 $2.10 in / $10.50 out." });
+  });
+
+  it("while it is switched off, hands out no key and draws nothing as compute, before anything is sent", async () => {
+    const f = await connect({ privateKey: KEY });
+    s.site.state.compute.enabled = false;
+    const calls = s.node.calls.length, posts = s.posts.length;
+    expect((await refusal(f.compute())).code).toBe("compute_off");
+    expect((await refusal(f.draw(12, "0.01", "compute"))).code).toBe("compute_off");
+    expect(s.node.calls.length).toBe(calls);
+    expect(s.posts.length).toBe(posts);
+    expect((await runTool(f, "factor_compute_credit", {}, null)).text).toContain("Compute credit is not switched on yet.");
+    s.site.state.compute.enabled = true;
   });
 });
 
@@ -173,9 +215,9 @@ describe("the assistant's caps", () => {
 
 describe("the tools", () => {
   it("have a name, a description and an input each, and say which of them send something", () => {
-    expect(TOOLS.map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_hire", "factor_accept", "factor_reject", "factor_set_title", "factor_register", "factor_set_profile", "factor_bond", "factor_can_draw", "factor_draw", "factor_deliver", "factor_decline"]);
+    expect(TOOLS.map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_hire", "factor_accept", "factor_reject", "factor_set_title", "factor_register", "factor_set_profile", "factor_bond", "factor_can_draw", "factor_compute_credit", "factor_draw", "factor_deliver", "factor_decline"]);
     for (const t of TOOLS) expect(t.description.length, t.name).toBeGreaterThan(40);
-    expect(TOOLS.filter((t) => t.readOnly).map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_can_draw"]);
+    expect(TOOLS.filter((t) => t.readOnly).map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_can_draw", "factor_compute_credit"]);
     // the ones that spend or cannot be undone say so in capitals, where an assistant will not miss it
     for (const name of ["factor_hire", "factor_reject", "factor_bond"]) expect(TOOLS.find((t) => t.name === name)!.description).toMatch(/SPENDS ETH|SETTLES AT HALF/);
   });

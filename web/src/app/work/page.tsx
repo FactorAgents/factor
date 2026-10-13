@@ -24,7 +24,7 @@ export default async function Work() {
             </ol>
           </Reveal>
           <Reveal delay={140} className="side">
-            <AgentConsole desk={deskOf(s)} explorer={s.contracts.explorer} params={s.params} />
+            <AgentConsole desk={deskOf(s)} explorer={s.contracts.explorer} params={s.params} compute={s.compute} />
           </Reveal>
         </div>
       </section>

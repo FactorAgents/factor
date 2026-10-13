@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS engine_locks (name TEXT PRIMARY KEY, holder TEXT NOT 
 -- Everything the engine sent, would have sent (dry), or could not send: what, why, and how it ended.
 CREATE TABLE IF NOT EXISTS engine_actions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  kind TEXT NOT NULL,                -- sweep, claim_token, burn, settle_job, refund_job, collect, unstick
+  kind TEXT NOT NULL,                -- sweep, claim_token, burn, settle_job, refund_job, collect, return_compute, unstick
   ref TEXT NOT NULL DEFAULT '',
   mode TEXT NOT NULL,                -- dry or live
   status TEXT NOT NULL,              -- dry, signed, sent, done, failed, replaced
@@ -170,6 +170,45 @@ CREATE TABLE IF NOT EXISTS agent_profiles (
   signed_at INTEGER NOT NULL,
   hidden INTEGER NOT NULL DEFAULT 0
 );
+-- Compute credit (../compute.ts). A lot is one compute advance: the ETH the gateway was paid, what that was in dollars,
+-- and how much of it has been spent on model calls. Lots are never taken back by a reindex: what was spent is real.
+CREATE TABLE IF NOT EXISTS compute_lots (
+  tx_hash TEXT NOT NULL,
+  log_index INTEGER NOT NULL,
+  block INTEGER NOT NULL,
+  at INTEGER NOT NULL,
+  job_id INTEGER NOT NULL,
+  agent TEXT NOT NULL,
+  wei TEXT NOT NULL,                 -- what reached the gateway: the advance less its fee
+  usd_micro INTEGER,                 -- millionths of a dollar; null until an ETH price is known
+  spent_micro INTEGER NOT NULL DEFAULT 0,
+  state TEXT NOT NULL DEFAULT 'open',-- open: the job is not closed. kept: the agent's own. closed: all taken back
+  back_wei TEXT NOT NULL DEFAULT '0',-- unspent ETH the pool took back when the job was refunded at a loss
+  back_tx TEXT,
+  PRIMARY KEY (tx_hash, log_index)
+);
+CREATE INDEX IF NOT EXISTS compute_lots_agent ON compute_lots (agent, block);
+CREATE INDEX IF NOT EXISTS compute_lots_job ON compute_lots (job_id);
+-- Each model call: who, which model, how many tokens, what it cost. Never what was asked or answered.
+CREATE TABLE IF NOT EXISTS compute_usage (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  at INTEGER NOT NULL,               -- ms
+  agent TEXT NOT NULL,
+  model TEXT NOT NULL,
+  input INTEGER NOT NULL,
+  output INTEGER NOT NULL,
+  cache_write INTEGER NOT NULL,
+  cache_read INTEGER NOT NULL,
+  cost_micro INTEGER NOT NULL,
+  unpaid_micro INTEGER NOT NULL DEFAULT 0,
+  status INTEGER NOT NULL,
+  request_id TEXT NOT NULL DEFAULT '',
+  ms INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS compute_usage_agent ON compute_usage (agent, id);
+-- The keys agents call the gateway with: only their hashes.
+CREATE TABLE IF NOT EXISTS compute_keys (hash TEXT PRIMARY KEY, agent TEXT NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS compute_keys_agent ON compute_keys (agent, created_at);
 CREATE TABLE IF NOT EXISTS job_titles (
   job_id INTEGER PRIMARY KEY,
   title TEXT NOT NULL,
@@ -179,7 +218,7 @@ CREATE TABLE IF NOT EXISTS job_titles (
 );
 `;
 
-export type ActionKind = "sweep" | "claim_token" | "burn" | "settle_job" | "refund_job" | "collect" | "unstick";
+export type ActionKind = "sweep" | "claim_token" | "burn" | "settle_job" | "refund_job" | "collect" | "return_compute" | "unstick";
 export type ActionStatus = "dry" | "signed" | "sent" | "done" | "failed" | "replaced";
 
 export interface ActionRow {

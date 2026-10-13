@@ -6,6 +6,7 @@
 //   settle_job   a job was delivered and its customer's 24 hours are over: settle it, so the agent is paid and the
 //                pool repaid. refund_job: a job is past its due time and the 12 hours of grace: refund it.
 //   collect      the desk holds an advance fee the burn pot was not sent: deliver it.
+//   return_compute  compute credit that was closed unspent (its job was refunded): the ETH goes back to the pool.
 //
 // Every attempt goes the same way (attempt(), below): the lock, a last simulation of exactly the call that would
 // be sent, the gas against its cap, the gas price against its cap, then in dry mode a record of what would have
@@ -19,13 +20,14 @@
 import type { Abi } from "viem";
 import { factorBurnPotAbi, factorDeskAbi, factorSplitterAbi, factorTokenAbi } from "../abi/index.js";
 import { DeskStore, rereadJob } from "../desk.js";
-import { nodeBusy, nodeRejected, reason, revertOf, type CallSpec, type Fees, type Head, type Receipt } from "./chain.js";
+import { ComputeStore } from "../compute.js";
+import { nodeBusy, nodeRejected, reason, revertOf, type CallSpec, type Fees, type Head, type Pay, type Receipt } from "./chain.js";
 import { snapshotOf, type Ctx } from "./context.js";
 import type { ActionKind, ActionRow } from "./db.js";
 import { ponsEscrowAbi } from "./pons.js";
 
 export type SendKind = Exclude<ActionKind, "unstick">;
-export const KINDS: SendKind[] = ["sweep", "claim_token", "burn", "settle_job", "refund_job", "collect"];
+export const KINDS: SendKind[] = ["sweep", "claim_token", "burn", "settle_job", "refund_job", "collect", "return_compute"];
 // In dry mode nothing changes on the chain, so a trigger stays true: what would be sent is shown again this often.
 export const DRY_REPEAT_S = 1800;
 const BPS = 10_000n;
@@ -130,48 +132,64 @@ export async function attempt(ctx: Ctx, kind: SendKind, ref: string, call: CallS
       return { status: "dry", why: "simulated, not sent", id };
     }
 
-    const signer = ctx.signer!;
-    const [balance, nonces] = await Promise.all([chain.balance(signer.address), chain.nonces(signer.address)]);
-    if (nonces.pending > nonces.latest) return { status: "skipped", why: "a transaction from the gas wallet is still on its way" };
-    if (balance < gas * fees.maxFeePerGas) {
-      const why = `the gas wallet holds ${eth(balance)} ETH: not enough for the gas (${eth(gas * fees.maxFeePerGas)} ETH at most)`;
-      const id = db.addAction({ kind, ref, mode, status: "failed", detail: full, error: why });
-      return { status: "failed", why, id };
-    }
-    const id = db.addAction({ kind, ref, mode, status: "signed", detail: full, nonce: nonces.latest, gasLimit: gas, maxFeeWei: fees.maxFeePerGas });
-    let hash: string | null = null;
-    try {
-      await signer.send({ call, gas, nonce: nonces.latest, fees }, (h) => {
-        hash = h;
-        db.updateAction(id, { status: "sent", txHash: h });
-      });
-    } catch (e) {
-      // Three ways a send can go wrong. The node refused it (no funds, a used nonce): it is not on its way, and
-      // the action is tried again by its own trigger. The node says it has it already: it is on its way. Or the
-      // request itself failed (no connection, a timeout), which says nothing about whether the node took it: it
-      // stays written down as sent, and the next passes look for it before anything else goes out.
-      const known = /already known|already imported|already exists/i.test((e as Error).message ?? "");
-      if (!hash || (nodeRejected(e) && !known)) {
-        db.updateAction(id, { status: "failed", error: reason(e) });
-        return { status: "failed", why: `it could not be sent: ${reason(e)}`, id };
-      }
-      if (!known) {
-        db.updateAction(id, { error: `the node did not confirm taking it: ${reason(e)}` });
-        return { status: "sent", why: `sent, but the node did not confirm taking it (${reason(e)}): looking for it`, id, hash };
-      }
-    }
-    const receipt = await waitForReceipt(ctx, hash!);
-    if (!receipt) return { status: "sent", why: "sent, and not mined yet", id, hash: hash! };
-    close(ctx, id, receipt);
-    return receipt.ok ? { status: "done", why: "sent and mined", id, hash: hash!, receipt } : { status: "failed", why: "the transaction reverted on the chain", id, hash: hash!, receipt };
+    return await dispatch(ctx, kind, ref, { call }, gas, fees, full);
   } finally {
     db.unlock(kind);
   }
 }
 
+// The sending itself: the gas wallet's balance and nonce looked at, the transaction written down as it is signed,
+// sent, and followed to its receipt. `what` is a call, or a plain payment of ETH.
+async function dispatch(ctx: Ctx, kind: SendKind, ref: string, what: { call?: CallSpec; pay?: Pay }, gas: bigint, fees: Fees, full: Record<string, unknown>): Promise<Outcome> {
+  const { chain, db } = ctx;
+  const signer = ctx.signer!;
+  const mode = "live" as const;
+  const value = what.pay?.value ?? 0n;
+  const [balance, nonces] = await Promise.all([chain.balance(signer.address), chain.nonces(signer.address)]);
+  if (nonces.pending > nonces.latest) return { status: "skipped", why: "a transaction from the gas wallet is still on its way" };
+  if (balance < gas * fees.maxFeePerGas + value) {
+    const why = `the gas wallet holds ${eth(balance)} ETH: not enough for ${value > 0n ? `the ${eth(value)} ETH and ` : ""}the gas (${eth(gas * fees.maxFeePerGas)} ETH at most)`;
+    const id = db.addAction({ kind, ref, mode, status: "failed", detail: full, error: why });
+    return { status: "failed", why, id };
+  }
+  const id = db.addAction({ kind, ref, mode, status: "signed", detail: full, nonce: nonces.latest, gasLimit: gas, maxFeeWei: fees.maxFeePerGas });
+  let hash: string | null = null;
+  try {
+    await signer.send({ call: what.call ?? null, ...(what.pay ? { pay: what.pay } : {}), gas, nonce: nonces.latest, fees }, (h) => {
+      hash = h;
+      db.updateAction(id, { status: "sent", txHash: h });
+    });
+  } catch (e) {
+    // Three ways a send can go wrong. The node refused it (no funds, a used nonce): it is not on its way, and
+    // the action is tried again by its own trigger. The node says it has it already: it is on its way. Or the
+    // request itself failed (no connection, a timeout), which says nothing about whether the node took it: it
+    // stays written down as sent, and the next passes look for it before anything else goes out.
+    const known = /already known|already imported|already exists/i.test((e as Error).message ?? "");
+    if (!hash || (nodeRejected(e) && !known)) {
+      db.updateAction(id, { status: "failed", error: reason(e) });
+      return { status: "failed", why: `it could not be sent: ${reason(e)}`, id };
+    }
+    if (!known) {
+      db.updateAction(id, { error: `the node did not confirm taking it: ${reason(e)}` });
+      return { status: "sent", why: `sent, but the node did not confirm taking it (${reason(e)}): looking for it`, id, hash };
+    }
+  }
+  const receipt = await waitForReceipt(ctx, hash!);
+  if (!receipt) return { status: "sent", why: "sent, and not mined yet", id, hash: hash! };
+  close(ctx, id, receipt);
+  return receipt.ok ? { status: "done", why: "sent and mined", id, hash: hash!, receipt } : { status: "failed", why: "the transaction reverted on the chain", id, hash: hash!, receipt };
+}
+
 // What a finished transaction changes in the engine's own notes, whenever its receipt is seen.
 function landed(ctx: Ctx, a: ActionRow, r: Receipt): void {
   if (a.kind === "unstick") return;
+  if (a.kind === "return_compute") {
+    const pending = ctx.db.getJson<{ hash: string; lots: { tx_hash: string; log_index: number }[] }>("return_compute:pending");
+    if (pending && pending.hash === a.tx_hash) {
+      if (r.ok) new ComputeStore(ctx.db).sentBack(pending.lots, pending.hash);
+      ctx.db.unset("return_compute:pending");
+    }
+  }
   if (r.ok) say(ctx, a.kind, `sent and mined (${a.tx_hash})`, { fails: 0, nextAt: 0, tx: a.tx_hash });
   else say(ctx, a.kind, `the transaction reverted on the chain (${a.tx_hash})`, { tx: a.tx_hash });
 }
@@ -447,6 +465,60 @@ async function collect(ctx: Ctx, head: Head): Promise<string> {
   return say(ctx, "collect", `${r.status === "dry" ? "would deliver" : "delivered"} ${eth(owed)} ETH to the burn pot`, { lastAt: head.timestamp, fails: 0, nextAt: 0, tx: r.hash ?? st.tx });
 }
 
+// ---------- 5. compute credit nobody spent goes back to the pool ----------
+
+// A compute advance on a job that was then refunded was never repaid by the job. Whatever of it was not spent on
+// models is still ETH in the gateway's wallet, which is this wallet: it is sent to the desk, where ETH that arrives
+// is the pool. Lots are sent together, and marked only once the transaction is mined.
+async function returnCompute(ctx: Ctx, head: Head): Promise<string> {
+  const p = ctx.params;
+  const st = actState(ctx, "return_compute");
+  if (ctx.now() < st.nextAt) return st.result;
+  const store = new ComputeStore(ctx.db);
+  // one that was sent on an earlier pass and not seen mined then: it is looked up before anything else is sent
+  const pending = ctx.db.getJson<{ hash: string; lots: { tx_hash: string; log_index: number }[] }>("return_compute:pending");
+  if (pending) {
+    const r = await ctx.chain.receipt(pending.hash);
+    if (r?.ok) store.sentBack(pending.lots, pending.hash);
+    else if (!r && ctx.db.openActions().some((a) => a.tx_hash === pending.hash)) return say(ctx, "return_compute", "the ETH going back to the pool is on its way");
+    ctx.db.unset("return_compute:pending");
+  }
+  const owed = store.owedToPool();
+  if (owed.wei === 0n) return say(ctx, "return_compute", "no unspent compute credit is waiting to go back to the pool", { fails: 0, nextAt: 0 });
+  // only the gateway's own wallet holds that ETH: with another wallet's key there is nothing to send it from
+  if (ctx.facts.gateway && ctx.facts.bot && ctx.facts.gateway !== ctx.facts.bot) return say(ctx, "return_compute", `${eth(owed.wei)} ETH of unspent compute credit is owed to the pool, and the gas wallet is not the desk's gateway (${ctx.facts.gateway}): its owner sends it to the desk by hand`);
+  if (ctx.mode !== "live" && st.lastAt > 0 && head.timestamp < st.lastAt + DRY_REPEAT_S) return st.result;
+  const from = ctx.facts.from;
+  if (!from) return say(ctx, "return_compute", "the gas wallet's address is not known yet");
+  if (!ctx.db.lock("return_compute", p.lockMs)) return say(ctx, "return_compute", "another attempt holds the lock");
+  try {
+    const pay: Pay = { to: ctx.addr.desk, value: owed.wei };
+    const [estimate, fees] = await Promise.all([ctx.chain.estimateGas(null, from, pay), ctx.chain.fees()]);
+    const gas = (estimate * (BPS + BigInt(p.gasHeadroomBps))) / BPS;
+    if (gas > p.gasCaps.return_compute) return failed(ctx, "return_compute", `it would need ${gas} gas, over the cap of ${p.gasCaps.return_compute}`, 600, 6 * 3600);
+    if (fees.maxFeePerGas > p.maxGasWei) return say(ctx, "return_compute", `gas is at ${gwei(fees.maxFeePerGas)} gwei, over the cap of ${gwei(p.maxGasWei)}: waiting for it to fall`);
+    const detail = text({ toPool: owed.wei, lots: owed.lots.length, gasLimit: gas, maxFeePerGas: fees.maxFeePerGas });
+    if (ctx.mode !== "live" || !ctx.signer) {
+      ctx.db.addAction({ kind: "return_compute", mode: "dry", status: "dry", detail, gasLimit: gas, maxFeeWei: fees.maxFeePerGas });
+      ctx.log(`[dry] would send ${eth(owed.wei)} ETH of unspent compute credit back to the pool`);
+      return say(ctx, "return_compute", `would send ${eth(owed.wei)} ETH back to the pool`, { lastAt: head.timestamp, fails: 0, nextAt: 0 });
+    }
+    const r = await dispatch(ctx, "return_compute", "", { pay }, gas, fees, detail);
+    if (r.status === "failed") return failed(ctx, "return_compute", r.why, 600, 6 * 3600);
+    if (r.status === "skipped") return say(ctx, "return_compute", r.why);
+    if (r.status === "done") {
+      store.sentBack(owed.lots, r.hash!);
+      ctx.log(`[return_compute] ${eth(owed.wei)} ETH of unspent compute credit sent back to the pool: ${r.hash}`);
+      return say(ctx, "return_compute", `sent ${eth(owed.wei)} ETH back to the pool`, { lastAt: head.timestamp, fails: 0, nextAt: 0, tx: r.hash ?? st.tx });
+    }
+    // on its way: the lots are marked when its receipt is seen (settle(), below, calls landed())
+    ctx.db.setJson("return_compute:pending", { hash: r.hash, lots: owed.lots });
+    return say(ctx, "return_compute", `sending ${eth(owed.wei)} ETH back to the pool`, { lastAt: head.timestamp, tx: r.hash ?? st.tx });
+  } finally {
+    ctx.db.unlock("return_compute");
+  }
+}
+
 // ---------- one pass ----------
 
 export interface ActResult {
@@ -461,6 +533,7 @@ const STEPS: [SendKind, (ctx: Ctx, head: Head) => Promise<string>][] = [
   ["settle_job", settleJobs],
   ["refund_job", refundJobs],
   ["collect", collect],
+  ["return_compute", returnCompute],
 ];
 
 // One pass over the actions, one after the other: there is one gas wallet, and one transaction at a time.

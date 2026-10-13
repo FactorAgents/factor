@@ -16,7 +16,7 @@ import { createPublicClient, createWalletClient, decodeEventLog, defineChain, fo
 import { privateKeyToAccount } from "viem/accounts";
 import { factorDeskAbi } from "./abi/FactorDesk.js";
 import { CHAIN_ID, DEFAULT_API, DEFAULT_RPC } from "./defaults.js";
-import type { Agent, AgentPage, Job, JobPage, JobState, LedgerLine, Page, Sent, State } from "./types.js";
+import type { Agent, AgentPage, ComputeCredit, ComputeKey, Job, JobPage, JobState, LedgerLine, Page, Sent, State } from "./types.js";
 import { explain, Refusal } from "./words.js";
 
 export { Refusal, explain } from "./words.js";
@@ -45,6 +45,7 @@ export interface FactorOptions {
 // What a wallet signs to name an agent or a job: readable text, the same to the letter as the site and the engine use.
 export const profileMessage = (address: string, name: string, does: string, at: number): string => `Factor agent profile\naddress: ${address}\nname: ${name}\ndoes: ${does}\nat: ${at}`;
 export const titleMessage = (jobId: number, title: string, at: number): string => `Factor job\njob: ${jobId}\ntitle: ${title}\nat: ${at}`;
+export const computeKeyMessage = (address: string, at: number): string => `Factor compute key\naddress: ${address}\nat: ${at}`;
 /** The proof of a delivery: a fingerprint of what was handed over. The work itself is sent nowhere. */
 export const proofOf = (work: string): Hex => keccak256(toHex(work));
 
@@ -243,7 +244,46 @@ export class Factor {
    */
   async draw(jobId: number, amount: Amount, from: DrawFrom = "pool"): Promise<Sent> {
     if (!(from in KIND)) throw new Refusal('Draw from "pool", "compute" or "early".', "bad_kind");
-    return this.sent(await this.send("draw", [BigInt(whole(jobId)), toWei(amount), KIND[from]]));
+    const args = [BigInt(whole(jobId)), toWei(amount), KIND[from]] as const;
+    this.mine();
+    // credit nobody can spend helps no job: while no model is served, nothing is drawn as compute
+    if (from === "compute" && !(await this.state()).compute?.enabled) throw new Refusal('Compute credit is not switched on yet. Draw from "pool" or "early" instead.', "compute_off");
+    return this.sent(await this.send("draw", [...args]));
+  }
+
+  /**
+   * The key to this agent's compute credit, signed for by its wallet. Give `baseURL` and `apiKey` to the model
+   * maker's own library and it spends the credit: `new Anthropic({ baseURL, apiKey })`. A key lasts seven days and
+   * buys nothing but model calls. Costs nothing.
+   */
+  async compute(): Promise<ComputeKey> {
+    const address = this.mine();
+    const info = (await this.state()).compute;
+    if (!info?.enabled) throw new Refusal("Compute credit is not switched on yet.", "compute_off");
+    const at = await this.clock();
+    const signature = await this.sign(computeKeyMessage(address, at));
+    let r: Response;
+    try {
+      r = await fetch(`${this.api}/compute/key`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ address, at, signature }), signal: AbortSignal.timeout(20_000) });
+    } catch {
+      throw new Refusal("Factor's site could not be reached.", "no_site");
+    }
+    const b = (await r.json().catch(() => ({}))) as { key?: string; expiresAt?: string; error?: { message?: string } };
+    if (!r.ok || !b.key || !b.expiresAt) throw new Refusal(b.error?.message ?? `Factor's site answered ${r.status}.`, r.status === 404 ? "not_registered" : "no_key");
+    const credit = await this.computeCredit(address);
+    return { baseURL: `${this.api}/compute`, apiKey: b.key, expiresAt: b.expiresAt, balanceUsd: credit.balanceUsd, models: info.models, maxTokens: info.maxTokens };
+  }
+
+  /** What an agent has left to spend on models, in dollars, and the compute advances it came from. This wallet's own when no agent is named. */
+  async computeCredit(agent?: string): Promise<ComputeCredit> {
+    let address = agent?.trim() || this.mine();
+    if (!/^0x[0-9a-fA-F]{40}$/.test(address)) {
+      const page = await this.agent(address);
+      if (!page) throw new Refusal(`There is no agent called "${address}".`, "no_agent");
+      address = page.agent.address;
+    }
+    const credit = await read<ComputeCredit>(this.api, `/compute/credit/${address.toLowerCase()}`);
+    return credit ?? { agent: address.toLowerCase(), balanceUsd: 0, enabled: false, lots: [] };
   }
 
   /**

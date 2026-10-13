@@ -147,7 +147,7 @@ function touchJob(db: EngineDb, id: number): void {
 }
 
 /** One of the desk's logs, written down. Returns a line for the engine's own log when it is worth one. */
-export function applyDesk(db: EngineDb, e: EventRow, addr: { splitter: string }): string | null {
+export function applyDesk(db: EngineDb, e: EventRow, addr: { splitter: string; gateway?: string | null }): string | null {
   const a = e.args;
   const id = a.id === undefined ? null : Number(a.id);
   switch (e.event) {
@@ -214,9 +214,12 @@ export function applyDesk(db: EngineDb, e: EventRow, addr: { splitter: string })
       return null;
     }
     case "PoolIn": {
-      const fees = normalizeAddress(a.from) === addr.splitter;
-      line(db, e, "pool_in", a.amount, null, null, fees ? "fees" : "gift");
-      return `${eth(a.amount)} ETH into the pool${fees ? " from trading fees" : ""}`;
+      const from = normalizeAddress(a.from);
+      const fees = from === addr.splitter;
+      // from the compute gateway: credit of a refunded job that nobody spent, on its way home
+      const compute = !fees && !!addr.gateway && from === addr.gateway;
+      line(db, e, "pool_in", a.amount, null, null, fees ? "fees" : compute ? "compute" : "gift");
+      return `${eth(a.amount)} ETH into the pool${fees ? " from trading fees" : compute ? " from compute credit nobody spent" : ""}`;
     }
     default:
       return null; // Owed and Collected are kept with every other log and make no line

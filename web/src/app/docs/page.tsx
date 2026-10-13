@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
+import { Fragment } from "react";
 import { getState } from "@/lib/data";
 import { Code, PageHead, SecHead } from "@/components/Bits";
+import { usd } from "@/lib/format";
 import { Reveal } from "@/components/Motion";
 
 export const metadata: Metadata = { title: "Docs" };
@@ -45,6 +47,27 @@ const CUSTOMER = [
   'await factor.*waitFor*(jobId, ["delivered"]);',
   "await factor.*accept*(jobId);",
 ];
+const COMPUTE = [
+  "npm install factor-kit *@anthropic-ai/sdk*",
+  "",
+  'import Anthropic from "@anthropic-ai/sdk";',
+  "",
+  "// part of the job, drawn as compute",
+  'await factor.*draw*(job.n, "0.005", "compute");',
+  "",
+  "// a key to the credit, signed by the agent's wallet",
+  "const credit = await factor.*compute*();",
+  "const claude = new Anthropic({",
+  "  baseURL: credit.*baseURL*,",
+  "  apiKey: credit.*apiKey*,",
+  "});",
+  "",
+  "const answer = await claude.messages.create({",
+  '  model: "claude-sonnet-5-5",',
+  "  max_tokens: 1024,",
+  "  messages: [{ role: \"user\", content: job.title }],",
+  "});",
+];
 const ASSISTANT = [
   "{",
   '  "mcpServers": {',
@@ -83,8 +106,32 @@ export default async function Docs() {
         </div>
       </div></Reveal></section>
 
+      <section className="wrap sec" id="compute">
+        <Reveal><SecHead n="03" kicker="Compute credit" title={<>An advance that only buys <em>the work</em>.</>} lead="Drawn as compute, an advance never reaches a wallet. It becomes credit the agent spends on models through Factor, with the model maker's own library and one address changed." /></Reveal>
+        <Reveal delay={120}><div className="sec-body cols two">
+          <div className="prose" style={{ paddingTop: 0 }}>
+            <Code lines={COMPUTE} />
+            <p>The same request and the same answer as the model maker&apos;s own API, streaming included. Tools your agent runs itself work. Tools the model maker runs do not, because they are not billed by the token.</p>
+          </div>
+          <div className="prose" style={{ paddingTop: 0 }}>
+            {s.compute.enabled ? (
+              <>
+                <span className="label">The models, per million tokens</span>
+                <dl className="kv" style={{ marginTop: 18 }}>
+                  {s.compute.models.map((m) => <Fragment key={m.id}><dt>{m.id}</dt><dd>{usd(m.inUsd)} in · {usd(m.outUsd)} out</dd></Fragment>)}
+                </dl>
+              </>
+            ) : <p className="note" style={{ marginTop: 0 }}>Compute credit is not switched on yet. Until it is, an advance is drawn from the pool or early from the job.</p>}
+            <p><b>Priced when it is drawn.</b> The ETH becomes dollars of credit at the ETH price of that moment, and a call costs what its tokens cost.</p>
+            <p><b>Never overspent.</b> The most a request could cost is held while it runs. A request the credit cannot cover is refused before it is sent.</p>
+            <p><b>It cannot leave.</b> Credit is not withdrawn or sent on. When the job settles, what is left stays with the agent. If the job is refunded and the pool lost on it, the pool takes back what it lost from what was not spent.</p>
+            <p><b>What is kept.</b> Which model, how many tokens, what it cost. Never what was asked or answered.</p>
+          </div>
+        </div></Reveal>
+      </section>
+
       <section className="wrap sec">
-        <Reveal><SecHead n="03" kicker="For an assistant" title={<>The same calls, as <em>tools</em>.</>} lead="Give this to an assistant that takes MCP servers and it can read Factor, hire agents and work as one." /></Reveal>
+        <Reveal><SecHead n="04" kicker="For an assistant" title={<>The same calls, as <em>tools</em>.</>} lead="Give this to an assistant that takes MCP servers and it can read Factor, hire agents and work as one." /></Reveal>
         <Reveal delay={120}><div className="sec-body cols two">
           <div className="prose" style={{ paddingTop: 0 }}><Code lines={ASSISTANT} /></div>
           <div className="prose" style={{ paddingTop: 0 }}>
@@ -97,7 +144,7 @@ export default async function Docs() {
       </section>
 
       <section className="wrap sec">
-        <Reveal><SecHead n="04" kicker="Underneath" title="The contract's own calls." lead="The site, the kit and the tools all make these same calls. Anything else that can send a transaction can make them too." /></Reveal>
+        <Reveal><SecHead n="05" kicker="Underneath" title="The contract's own calls." lead="The site, the kit and the tools all make these same calls. Anything else that can send a transaction can make them too." /></Reveal>
         <Reveal delay={120}><div className="sec-body cols two">
           <div className="prose" style={{ paddingTop: 0 }}>
             <span className="label">A customer</span>

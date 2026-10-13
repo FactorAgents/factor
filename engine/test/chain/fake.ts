@@ -6,7 +6,7 @@
 
 import { encodeAbiParameters, encodeEventTopics, type Abi, type AbiEvent, type Hex } from "viem";
 import { factorBurnPotAbi, factorDeskAbi, factorSplitterAbi, factorTokenAbi } from "../../src/abi/index.js";
-import { Reverted, type CallSpec, type Chain, type ChainLog, type Fees, type Head, type LogFilter, type Receipt, type RpcHealth, type Signer, type TxRequest } from "../../src/chain/chain.js";
+import { Reverted, type CallSpec, type Chain, type ChainLog, type Fees, type Head, type LogFilter, type Pay, type Receipt, type RpcHealth, type Signer, type TxRequest } from "../../src/chain/chain.js";
 import { ETH_USD_FEED } from "../../src/chain/watch.js";
 
 export const A = {
@@ -104,6 +104,7 @@ export class FakeChain implements Chain {
   totalSettled = 0n;
   totalPoolIn = 0n;
   totalLost = 0n;
+  gatewayAddr = A.gateway; // where the desk pays compute advances: a test may make it the gas wallet itself
   potRefuses = false; // the burn pot refuses an advance fee, which then waits in the desk
   paid = new Map<string, bigint>(); // what the desk has paid out, by wallet
   // the burn pot
@@ -325,6 +326,8 @@ export class FakeChain implements Chain {
       return;
     }
     if (who === A.burnPot) this.potEth += amount;
+    // the gateway's wallet really holds what it is paid: it may have to send some of it back
+    if (who === this.gatewayAddr) this.balances.set(who, (this.balances.get(who) ?? 0n) + amount);
     this.paid.set(who, (this.paid.get(who) ?? 0n) + amount);
   }
 
@@ -387,7 +390,7 @@ export class FakeChain implements Chain {
     this.totalAdvanceFees += fee;
     const tx = this.emit("desk", "Advanced", { id: BigInt(id), agent: j.agent, kind, amount, fee }).transactionHash;
     this.give(A.burnPot, fee, tx);
-    this.give(kind === K.compute ? A.gateway : j.agent, amount - fee, tx);
+    this.give(kind === K.compute ? this.gatewayAddr : j.agent, amount - fee, tx);
   }
 
   deliver(id: number): void {
@@ -470,6 +473,12 @@ export class FakeChain implements Chain {
     this.give(j.customer, j.price, tx);
   }
 
+  /** Anybody may refund a job whose time is up: here, somebody did. */
+  refund(id: number): void {
+    this.mine();
+    this.refundJob(id);
+  }
+
   private refundJob(id: number, txHash?: string): void {
     const j = this.jobs.get(id)!;
     const a = this.agentOf(j.agent);
@@ -528,7 +537,7 @@ export class FakeChain implements Chain {
     }
     if (to === A.desk) {
       const d: Record<string, unknown> = {
-        burnPot: this.wiring.deskBurn, gateway: A.gateway, pool: this.pool, out: this.out, held: this.deskHeld, bonds: this.bonds, owedTotal: this.owedTotal, jobCount: BigInt(this.jobCount),
+        burnPot: this.wiring.deskBurn, gateway: this.gatewayAddr, pool: this.pool, out: this.out, held: this.deskHeld, bonds: this.bonds, owedTotal: this.owedTotal, jobCount: BigInt(this.jobCount),
         totalAdvanced: this.totalAdvanced, totalAdvanceFees: this.totalAdvanceFees, totalJobFees: this.totalJobFees, totalSettled: this.totalSettled, totalPoolIn: this.totalPoolIn, totalLost: this.totalLost,
       };
       if (fn in d) return d[fn];
@@ -604,9 +613,9 @@ export class FakeChain implements Chain {
     return this.ask("simulate", call.functionName, call.args, () => this.run(call, from, false) as T);
   }
 
-  estimateGas(call: CallSpec | null, from: string): Promise<bigint> {
-    return this.ask("estimateGas", call?.functionName ?? "transfer", call?.args, () => {
-      if (!call) return 21_000n;
+  estimateGas(call: CallSpec | null, from: string, pay?: Pay): Promise<bigint> {
+    return this.ask("estimateGas", call?.functionName ?? (pay ? "pay" : "transfer"), call?.args, () => {
+      if (!call) return pay ? 55_000n : 21_000n;
       this.run(call, from, false);
       return this.gasOf[call.functionName] ?? 100_000n;
     });
@@ -638,7 +647,7 @@ export class FakeChain implements Chain {
       send: async (tx, onSigned) => {
         const hash = this.newHash();
         onSigned(hash);
-        this.calls.push({ kind: "send", what: tx.call?.functionName ?? "transfer", args: tx.call?.args });
+        this.calls.push({ kind: "send", what: tx.call?.functionName ?? (tx.pay ? "pay" : "transfer"), args: tx.call?.args });
         if (this.dropSends) throw new Error("fetch failed");
         if (this.rejectSends) throw Object.assign(new Error("insufficient funds for gas * price + value"), { code: -32000 });
         if (tx.nonce < this.nonce) throw new Error("nonce too low");
@@ -660,6 +669,13 @@ export class FakeChain implements Chain {
     let ok = true;
     try {
       if (tx.call) this.run(tx.call, from, true, hash);
+      else if (tx.pay) {
+        // ETH sent to the desk with no call is the pool
+        if (tx.pay.to.toLowerCase() !== A.desk) throw new Error("the fake chain only takes a payment to the desk");
+        if ((this.balances.get(from) ?? 0n) < tx.pay.value) throw new Error("not enough ETH");
+        this.balances.set(from, (this.balances.get(from) ?? 0n) - tx.pay.value);
+        this.poolIn(from, tx.pay.value, hash);
+      }
     } catch {
       ok = false;
     }
@@ -678,6 +694,6 @@ export class FakeChain implements Chain {
 
   // What was really sent, by function name.
   sends(fn?: string): { hash: string; tx: TxRequest }[] {
-    return fn ? this.sent.filter((s) => (s.tx.call?.functionName ?? "transfer") === fn) : this.sent;
+    return fn ? this.sent.filter((s) => (s.tx.call?.functionName ?? (s.tx.pay ? "pay" : "transfer")) === fn) : this.sent;
   }
 }

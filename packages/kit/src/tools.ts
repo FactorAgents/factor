@@ -216,7 +216,18 @@ export const TOOLS: Tool[] = [
     },
   },
   {
-    name: "factor_draw", readOnly: false, input: { job: jobId, amount, from: z.enum(["pool", "compute", "early"]).describe("pool: the pool advances it to the agent. compute: the pool pays it to the compute gateway for this job. early: out of the customer's own payment, when they allowed it") },
+    name: "factor_compute_credit", readOnly: true, input: { agent: z.string().optional().describe("The agent's name or address. Left out: this wallet's own") },
+    description: "What an agent has left of its compute credit, in dollars: advances drawn as compute, which are spent on model calls through Factor and cannot be withdrawn. Also says which models it buys and what they cost.",
+    async run(f, a) {
+      const [c, s] = await Promise.all([f.computeCredit(a.agent as string | undefined), f.state()]);
+      const usd = (n: number) => `$${n.toFixed(n > 0 && n < 1 ? 4 : 2)}`;
+      const lots = c.lots.map((l) => `job ${l.job}: ${l.usd === null ? "being priced" : `${usd(l.spentUsd)} of ${usd(l.usd)} spent`}${l.state === "closed" ? " (refunded, closed)" : ""}`).join("; ");
+      const models = s.compute?.enabled ? ` Models, per million tokens: ${s.compute.models.map((m) => `${m.id} ${usd(m.inUsd)} in / ${usd(m.outUsd)} out`).join(", ")}.` : " Compute credit is not switched on yet.";
+      return `${usd(c.balanceUsd)} of compute credit left.${lots ? ` From ${lots}.` : " No advance has been drawn as compute."}${models}`;
+    },
+  },
+  {
+    name: "factor_draw", readOnly: false, input: { job: jobId, amount, from: z.enum(["pool", "compute", "early"]).describe("pool: the pool advances it to the agent. compute: the pool pays it to Factor's compute gateway, where it is credit for model calls and never reaches a wallet. early: out of the customer's own payment, when they allowed it") },
     description: "Draw an advance on a job this agent was hired for, before delivering it. A 1% fee comes off what is drawn. The job repays a pool or compute advance when it settles; if the agent does not deliver, its bond pays and the pool never advances it again.",
     async run(f, a) {
       const wei = toWei(String(a.amount));

@@ -17,8 +17,9 @@ import { factorBurnPotAbi, factorDeskAbi, factorSplitterAbi } from "./abi/index.
 import { actPass, type ActResult } from "./chain/act.js";
 import { normalizeAddress } from "./chain/address.js";
 import { addressOfKey, hostsOnly, nodeBusy, reason, revertOf, viemChain, viemSigner, type Chain, type Signer } from "./chain/chain.js";
+import { ComputeStore, Gateway } from "./compute.js";
 import { Profiles } from "./profiles.js";
-import { configured, readConfig, takeBotKey, type EngineConfig, type Env } from "./chain/config.js";
+import { configured, readConfig, takeBotKey, takeModelKey, type EngineConfig, type Env } from "./chain/config.js";
 import type { Ctx } from "./chain/context.js";
 import { EngineDb } from "./chain/db.js";
 import { watchPass, type WatchResult } from "./chain/watch.js";
@@ -60,6 +61,7 @@ export class Engine {
   lastError: { at: number; where: string; message: string } | null = null;
   ctx: Ctx | null = null;
   profiles: Profiles | null = null;
+  gateway: Gateway | null = null;
   private chain: (Chain & { stop?: () => void }) | null = null;
   private loops = new Map<string, Loop>();
   private stopped = false;
@@ -89,13 +91,21 @@ export class Engine {
     for (const [name, l] of this.loops) loops[name] = { lastRunAt: l.lastRunAt, lastOkAt: l.lastOkAt, runs: l.runs, failures: l.failures, waitMs: l.waitMs, backingOff: l.backingOff };
     return {
       config: this.config, state: this.state, problems: this.problems, warnings: this.warnings, lastError: this.lastError, loops, ctx: this.ctx, rpc: this.chain?.health() ?? null, now: this.now,
-      links: { pons: link(this.env.FACTOR_PONS_URL), github: link(this.env.FACTOR_GITHUB_URL), x: link(this.env.FACTOR_X_URL) }, dataDirSet: !!this.env.FACTOR_DATA_DIR?.trim(), profiles: this.profiles,
+      links: { pons: link(this.env.FACTOR_PONS_URL), github: link(this.env.FACTOR_GITHUB_URL), x: link(this.env.FACTOR_X_URL) }, dataDirSet: !!this.env.FACTOR_DATA_DIR?.trim(), profiles: this.profiles, gateway: this.gateway,
     };
   }
 
   // The answer to one of the engine's API routes, or null when the path is not one of them.
   handle(path: string, query?: URLSearchParams): Promise<Answer | null> {
     return this.api.handle(path, query);
+  }
+
+  // Everything under /v1/compute/: the gateway answers the request itself (a model's answer may be a stream).
+  // False when there is no gateway to answer, which is when the engine is not reading the chain.
+  compute(req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse, path: string): boolean {
+    if (!this.gateway || this.state !== "running") return false;
+    void this.gateway.http(req, res, path);
+    return true;
   }
 
   // The answer to a signed write (an agent's name, a job's title), or null when the path is not one.
@@ -148,6 +158,9 @@ export class Engine {
     };
     this.log(`[engine] mode ${c.mode}: ${c.mode === "watch" ? "reading the chain, sending nothing" : c.mode === "dry" ? "reading the chain and showing what it would send, sending nothing" : `reading the chain and sending from the gas wallet ${signer?.address}`}`);
     this.profiles = new Profiles(this.ctx.db, this.now);
+    this.gateway = new Gateway(c.compute, new ComputeStore(this.ctx.db), this.ctx.db, c.compute.enabled ? takeModelKey(this.env) : null, this.log);
+    if (c.compute.enabled) this.log(`[compute] on: ${Object.keys(c.compute.models).join(", ")}, at the list price plus ${c.compute.markupBps / 100}%`);
+    else if (c.compute.note) this.log(`[compute] NOT ON: ${c.compute.note}`);
     this.log(`[engine] desk ${c.desk}, splitter ${c.splitter}, burn pot ${c.burnPot}, from block ${c.deployBlock}; ${c.rpcUrls.length} node(s): ${c.rpcUrls.map((u) => hostsOnly(u)).join(", ")}`);
     this.booting = this.boot();
   }

@@ -8,6 +8,7 @@
 
 import { readFileSync } from "node:fs";
 import { normalizeAddress } from "./address.js";
+import { readCompute, type ComputeConfig } from "../compute.js";
 
 // the chain the token lives on, written down once
 export const CHAIN = { id: 4663, name: "Robinhood Chain", rpcUrl: "https://rpc.mainnet.chain.robinhood.com", explorer: "https://robinhoodchain.blockscout.com" } as const;
@@ -36,7 +37,7 @@ export interface EngineParams {
   burnRetryS: number; // ENGINE_BURN_RETRY_S
   maxGasWei: bigint; // ENGINE_MAX_GAS_GWEI: the most the engine pays per unit of gas
   unstickMaxGasWei: bigint; // ENGINE_UNSTICK_MAX_GAS_GWEI: the same for replacing a transaction that is stuck
-  gasCaps: { sweep: bigint; claim_token: bigint; burn: bigint; settle_job: bigint; refund_job: bigint; collect: bigint };
+  gasCaps: { sweep: bigint; claim_token: bigint; burn: bigint; settle_job: bigint; refund_job: bigint; collect: bigint; return_compute: bigint };
   jobsPerPass: number; // ENGINE_JOBS_PER_PASS: jobs the engine settles or refunds in one pass at most
   deskReadsPerPass: number; // ENGINE_DESK_READS_PER_PASS: jobs and agents read back from the desk in one pass at most
   gasHeadroomBps: number; // on top of the node's estimate
@@ -61,7 +62,7 @@ export const DEFAULTS: EngineParams = {
   burnRetryS: 120,
   maxGasWei: 2n * GWEI,
   unstickMaxGasWei: 20n * GWEI,
-  gasCaps: { sweep: 700_000n, claim_token: 400_000n, burn: 900_000n, settle_job: 600_000n, refund_job: 500_000n, collect: 200_000n },
+  gasCaps: { sweep: 700_000n, claim_token: 400_000n, burn: 900_000n, settle_job: 600_000n, refund_job: 500_000n, collect: 200_000n, return_compute: 150_000n },
   jobsPerPass: 5,
   deskReadsPerPass: 200,
   gasHeadroomBps: 2500,
@@ -98,6 +99,9 @@ export interface EngineConfig {
   // ENGINE_ADMIN_KEY: what the owner sends to hide a name or a title somebody signed. A secret, set on the host;
   // null when it is not set, and then nothing can be hidden. It is compared and never printed or returned.
   adminKey: string | null;
+  // Compute credit: whether it is served, the models and their prices. The model maker's key itself is taken with
+  // `takeModelKey` and kept nowhere else.
+  compute: ComputeConfig;
 }
 
 // A factor.env-style file: NAME=value lines. What the environment already says wins.
@@ -254,6 +258,7 @@ export function readConfig(processEnv: Env = process.env): EngineConfig {
   if (hasBotKey && !/^(0x)?[0-9a-fA-F]{64}$/.test(env.BOT_PRIVATE_KEY!.trim())) {
     problems.push("BOT_PRIVATE_KEY must be 32 bytes of hex, with or without the 0x in front");
   }
+  const compute = readCompute(env, problems);
   const rawAdmin = env.ENGINE_ADMIN_KEY?.trim() ?? "";
   if (rawAdmin && rawAdmin.length < 24) problems.push("ENGINE_ADMIN_KEY must be at least 24 characters");
   const adminKey = rawAdmin.length >= 24 ? rawAdmin : null;
@@ -279,6 +284,7 @@ export function readConfig(processEnv: Env = process.env): EngineConfig {
     problems: mode === "off" ? problems.filter((p) => p.startsWith("ENGINE_MODE")) : problems,
     hasBotKey,
     adminKey,
+    compute,
   };
 }
 
@@ -288,6 +294,12 @@ export function takeBotKey(env: Env = process.env): `0x${string}` | null {
   const raw = env.BOT_PRIVATE_KEY?.trim();
   if (!raw || !/^(0x)?[0-9a-fA-F]{64}$/.test(raw)) return null;
   return (raw.startsWith("0x") ? raw : `0x${raw}`) as `0x${string}`;
+}
+
+// The owner's key with the model maker, for the compute gateway. Read at the moment the gateway is made, sent only
+// to the model maker, and never logged, stored or returned.
+export function takeModelKey(env: Env = process.env): string | null {
+  return env.ANTHROPIC_API_KEY?.trim() || null;
 }
 
 // The addresses are all there and nothing is wrong: the engine may start.

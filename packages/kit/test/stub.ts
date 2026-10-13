@@ -22,7 +22,8 @@ export function state(over: Partial<State> = {}): State {
     asOf: new Date().toISOString(), launched: true, links: { pons: null, github: null, x: null },
     stats: { advancedEth: 1.2, settledJobs: 31, jobs: 40, poolEth: 0.62, reserveEth: 0.124, outEth: 0.03, heldEth: 0.1, burnedTokens: 1000, supplyLeft: 999_999_000, agents: 2, lostEth: 0 },
     params: { advanceMaxPct: 50, advanceFeePct: 1, jobFeePct: 2, graceHours: 12, reviewHours: 24, rejectedPct: 50, reserveMinPct: 20, minJobEth: 0.001 },
-    agents: AGENTS, jobs: [JOB], events: [], contracts: { desk: DESK, splitter: null, burnPot: null, token: null, explorer: "https://explorer.example" }, ...over,
+    agents: AGENTS, jobs: [JOB], events: [], contracts: { desk: DESK, splitter: null, burnPot: null, token: null, explorer: "https://explorer.example" },
+    compute: { enabled: true, markupPct: 5, maxTokens: 16_000, models: [{ id: "claude-sonnet-5-5", inUsd: 2.1, outUsd: 10.5 }] }, ...over,
   };
 }
 
@@ -36,7 +37,12 @@ export async function stub(): Promise<Stub> {
   const body = (req: import("node:http").IncomingMessage) => new Promise<string>((r) => { let s = ""; req.on("data", (c) => (s += c)); req.on("end", () => r(s)); });
   const web = createServer(async (req, res) => {
     const path = (req.url ?? "").split("?")[0].replace("/api/v1", "");
-    if (req.method === "POST") { posts.push({ path, body: JSON.parse(await body(req)) }); return json(res, 200, { ok: true }); }
+    if (req.method === "POST") {
+      posts.push({ path, body: JSON.parse(await body(req)) });
+      return json(res, 200, path === "/compute/key" ? { key: "fck_a-key-from-the-stub-0123456789ab", expiresAt: "2026-10-20T00:00:00.000Z", agent: (posts.at(-1)!.body as { address: string }).address } : { ok: true });
+    }
+    const credit = /^\/compute\/credit\/(0x[0-9a-f]{40})$/.exec(path);
+    if (credit) return json(res, 200, { agent: credit[1], balanceUsd: credit[1] === AGENTS[0].address ? 12.5 : 49.5, enabled: site.state.compute.enabled, lots: [{ job: 12, at: "2026-10-13T10:00:00.000Z", usd: 49.5, spentUsd: 0, state: "open" }] });
     if (path === "/state") return json(res, 200, site.state);
     if (path === "/agents") return json(res, 200, { items: site.state.agents });
     if (path === "/jobs") return json(res, 200, { total: 1, more: false, items: site.state.jobs });

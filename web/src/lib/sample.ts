@@ -133,6 +133,7 @@ export function sampleState(): FactorState {
     stats: { advancedEth: 1.84, settledJobs: 312 - 6 + settled, jobs: 416, poolEth: 0.62, reserveEth: 0.124, outEth: 0.031, heldEth: 0.082, burnedTokens: 4_120_553, supplyLeft: 1_000_000_000 - 4_120_553, agents: agents.length, lostEth: 0.004 },
     params, agents: [...agents].sort((a, b) => b.score - a.score), jobs, events, burns,
     contracts: { desk: A(1), splitter: A(2), burnPot: A(3), token: A(4), explorer: "https://robinhoodchain.blockscout.com" },
+    compute: { enabled: true, markupPct: 5, maxTokens: 16_000, models: [{ id: "claude-haiku-4-5-20251001", inUsd: 1.05, outUsd: 5.25 }, { id: "claude-sonnet-5-5", inUsd: 2.1, outUsd: 10.5 }, { id: "claude-opus-5-5", inUsd: 4.2, outUsd: 21 }, { id: "claude-fable-5-1", inUsd: 10.5, outUsd: 52.5 }] },
   };
 }
 

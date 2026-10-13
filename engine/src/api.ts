@@ -21,6 +21,7 @@ import { normalizeAddress, shortAddress } from "./chain/address.js";
 import { hostsOnly, type RpcHealth } from "./chain/chain.js";
 import type { EngineConfig } from "./chain/config.js";
 import { snapshotOf, type Ctx, type Snapshot } from "./chain/context.js";
+import type { Gateway } from "./compute.js";
 import { DeskStore, KIND_NAME, RULES, STATE, STATE_NAME, type AdvanceRow, type AgentRow, type JobRow, type LedgerRow } from "./desk.js";
 import { Profiles, type Profile, type Written } from "./profiles.js";
 import { canDrawOf, limitOf, scoreOf, scoreParts } from "./score.js";
@@ -46,6 +47,7 @@ export interface EngineView {
   links: { pons: string | null; github: string | null; x: string | null };
   dataDirSet: boolean;
   profiles: Profiles | null;
+  gateway: Gateway | null;
 }
 
 // ---- the site's shape: web/src/lib/types.ts. Keep the two in step by hand. ----
@@ -114,6 +116,8 @@ export interface FactorState {
   events: EventJson[];
   burns: BurnJson[];
   contracts: { desk: string | null; splitter: string | null; burnPot: string | null; token: string | null; explorer: string };
+  /** compute credit: whether an advance drawn "as compute" can be spent on models yet, and what they cost here */
+  compute: { enabled: boolean; markupPct: number; maxTokens: number; models: { id: string; inUsd: number; outUsd: number }[] };
 }
 
 const ok = (body: Record<string, unknown>): Answer => ({ status: 200, body });
@@ -219,7 +223,7 @@ export function eventJson(l: LedgerRow, names: Names): EventJson {
     }
     case "burned": (text = "bought back and burned"), (amount = `${whole.format(Math.floor(tokens(BigInt(l.amount))))} $FACTOR`); break;
     case "bond": text = l.note === "taken" ? `${who} took bond out` : `${who} added to its bond`; break;
-    case "pool_in": (text = l.note === "fees" ? "trading fees arrived in the pool" : "ETH was added to the pool"), (amount = ethText(l.amount, "+")); break;
+    case "pool_in": (text = l.note === "fees" ? "trading fees arrived in the pool" : l.note === "compute" ? "compute credit nobody spent went back to the pool" : "ETH was added to the pool"), (amount = ethText(l.amount, "+")); break;
     default: text = l.kind;
   }
   return { n: l.n, at: iso(l.at), kind: l.kind, ...(l.job_id !== null ? { jobId: pad(l.job_id) } : {}), ...(l.agent ? { agentId: l.agent } : {}), text, amount, tx: l.tx_hash };
@@ -382,7 +386,8 @@ export class EngineApi {
     // Where the token is bought: the address the owner set, or, once there is a token and nothing was set, the
     // token's own page on Pons. So the site's buy button works from the launch on whether or not anybody remembered.
     const links = { ...v.links, pons: v.links.pons ?? (contracts.token ? `https://ponsfamily.com/launchpad/${getAddress(contracts.token)}` : null) };
-    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts };
+    const compute = v.gateway?.about() ?? { enabled: false, markupPct: 0, maxTokens: 0, models: [] };
+    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute };
     if (!r) {
       return { ...base, launched: false, stats: { advancedEth: 0, settledJobs: 0, jobs: 0, poolEth: 0, reserveEth: 0, outEth: 0, heldEth: 0, burnedTokens: 0, supplyLeft: SUPPLY, agents: 0, lostEth: 0 }, agents: [], jobs: [], events: [], burns: [] };
     }
@@ -471,6 +476,7 @@ export class EngineApi {
       burnPot: snap?.burnPot ?? null,
       desk: snap ? { ...snap.desk, agents: store.agentCount(), jobsKnown: store.jobCount(), waitingToBeRead: ctx.db.count("desk_jobs") ? (ctx.db.q("SELECT (SELECT COUNT(*) FROM desk_jobs WHERE dirty = 1) + (SELECT COUNT(*) FROM desk_agents WHERE dirty = 1) AS n").get() as { n: number }).n : 0, dueToSettle: store.dueToSettle(t, 500).length, dueToRefund: store.dueToRefund(t, 500).length } : null,
       ethUsd8: snap?.ethUsd8 ?? null,
+      compute: v.gateway ? { ...v.gateway.about(), note: c.compute.note, ...v.gateway.store.totals(), todayMicro: v.gateway.store.spentToday(), dailyMicro: c.compute.dailyMicro } : null,
       rpc: v.rpc ? { ...v.rpc, lastError: v.rpc.lastError ? hostsOnly(v.rpc.lastError) : null } : null,
       events: ctx.db.count("chain_events"),
       ledger: ctx.db.count("ledger"),
