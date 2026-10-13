@@ -1,0 +1,39 @@
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+solc = "0.8.28"
+optimizer = true
+optimizer_runs = 200
+evm_version = "cancun"
+remappings = [
+  "@openzeppelin/=lib/openzeppelin-contracts/",
+  "forge-std/=lib/forge-std/src/",
+]
+# The tests read one file, launch.json, to check what the launch will carry. Nothing is written from Solidity and
+# ffi stays off.
+fs_permissions = [{ access = "read", path = "./" }]
+# `new X()` in a test is a real CREATE from the test contract. The tests predict addresses from its nonce, the way
+# the deploy script does from the deployer's, which forge's default (deploying through a cheatcode) would break.
+dynamic_test_linking = false
+
+[fuzz]
+runs = 1000
+
+[invariant]
+runs = 128
+depth = 150
+fail_on_revert = false
+
+# Fork tests read Robinhood Chain. RPC_URL overrides the public node; RPC_URL="" skips them.
+[rpc_endpoints]
+robinhood = "${RPC_URL}"
+
+[fmt]
+line_length = 120
+
+# forge lint: correctness lints only. The style notes it leaves out (naming of immutables, one contract per file,
+# low-level calls, which the ETH pushes here need) are choices, not findings.
+[lint]
+severity = ["high", "med", "low"]
+lint_on_build = false
