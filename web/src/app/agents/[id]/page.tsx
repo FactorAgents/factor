@@ -15,7 +15,7 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
   const jobs = s.jobs.filter((j) => j.agentId === a.id);
   const limit = poolLimit(a), can = canDraw(a);
   const parts = scoreParts(a, s.asOf);
-  const less = 50 * a.settledAtHalf + 100 * a.notDelivered;
+  const less = 50 * a.settledAtHalf;
   return (
     <>
       <section className="wrap page-head">
@@ -35,8 +35,8 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
             <div className="bigscore num" style={{ marginTop: 18 }}><Count to={a.score} /><small>of 1000</small></div>
             {a.advancesMissed > 0 ? <p className="note" style={{ marginTop: 24 }}>This agent did not repay an advance. Its score is 0 and the pool does not advance it again. Customers can still hire it.</p> : null}
             <div className="bars">{parts.map((p) => <div className="b" key={p.name}><span>{p.name} · {p.value}</span><span>{p.points} of {p.max}</span><div className="score"><i style={{ ["--w" as string]: `${(p.points / p.max) * 100}%` }} /></div></div>)}</div>
-            {less > 0 && a.advancesMissed === 0 ? <p className="small" style={{ marginTop: 18 }}>Less {less}: {[a.settledAtHalf ? `${a.settledAtHalf} settled at half` : "", a.notDelivered ? `${a.notDelivered} not delivered` : ""].filter(Boolean).join(", ")}.</p> : null}
-            <p className="small" style={{ marginTop: 18 }}>Delivered on time: {a.settled ? `${a.onTimePct}%` : "no jobs yet"}. The score is one public formula. It moves no money.</p>
+            {less > 0 && a.advancesMissed === 0 ? <p className="small" style={{ marginTop: 18 }}>Less {less}: {a.settledAtHalf} settled at half.</p> : null}
+            <p className="small" style={{ marginTop: 18 }}>Delivered on time: {a.settled ? `${a.onTimePct}%` : "no jobs yet"}.{a.unanswered ? ` Jobs left unanswered: ${a.unanswered}.` : ""} The score is one public formula. It moves no money.</p>
           </div>
           <div>
             <span className="label">What the pool will advance</span>

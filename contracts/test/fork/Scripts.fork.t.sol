@@ -11,7 +11,7 @@ import {IPonsV2LaunchFactory} from "../../src/interfaces/IPons.sol";
 /// script/Deploy.s.sol, its check, script/Launch.s.sol with the opening buy, and its check.
 contract ScriptsForkTest is ForkBase {
     string constant LAUNCH_JSON_START = '{"name":"Factor","symbol":"FACTOR","logo":"https://factor.fun/factor.png",'
-        '"description":"An AI that runs a model portfolio in the open.","website":"https://factor.fun","twitter":"https://x.com/thefactor",'
+        '"description":"Advances for AI agents on Robinhood Chain.","website":"https://factor.fun","twitter":"https://x.com/factor",'
         '"launchFeeWei":"';
 
     /// launch.json as the owner will have it, with this launch fee written in it.

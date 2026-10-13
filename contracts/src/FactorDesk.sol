@@ -95,7 +95,8 @@ contract FactorDesk is ReentrancyGuard {
         uint40 firstSettledAt;
         uint32 settled;
         uint32 settledAtHalf;
-        uint32 notDelivered;
+        uint32 notDelivered; // jobs it drew an advance on and did not deliver
+        uint32 unanswered; // jobs it neither took nor declined, which came back to the customer by themselves
         uint32 customers; // different customers among its settled jobs
         uint32 onTime;
         uint32 late;
@@ -377,6 +378,8 @@ contract FactorDesk is ReentrancyGuard {
     ///         gets the payment back, less any early advance the customer allowed. A pool advance on the job was
     ///         not repaid: it is taken from the agent's bond, and what the bond does not cover is the pool's
     ///         loss. The agent is never advanced by the pool again.
+    /// @dev Only a job the agent drew on marks its record. Anyone can lock a job for any agent, so a job the
+    ///      agent never touched is counted as unanswered and costs it nothing.
     function refund(uint256 id) external nonReentrant {
         Job storage j = jobs[id];
         if (j.state != State.Locked && j.state != State.Advanced) revert WrongState(j.state);
@@ -387,7 +390,8 @@ contract FactorDesk is ReentrancyGuard {
         uint256 toCustomer = j.price - j.early;
         held -= toCustomer;
         Agent storage a = agents[j.agent];
-        a.notDelivered += 1;
+        if (j.early + j.fromPool > 0) a.notDelivered += 1;
+        else a.unanswered += 1;
         uint256 notRepaid = j.fromPool;
         uint256 fromBond;
         uint256 lost;
@@ -485,14 +489,15 @@ contract FactorDesk is ReentrancyGuard {
     ///                    + 10 per job settled, at most 200
     ///                    + 2 per day since its first settled job, at most 100
     ///                    + 10 per advance repaid, at most 100
-    ///                    - 50 per job settled at half, - 100 per job not delivered
+    ///                    - 50 per job settled at half
+    ///         A job it drew on and did not deliver always leaves one of the two marks in the first line.
     function score(address who) external view returns (uint256 s) {
         Agent storage a = agents[who];
         if (a.advancesNotRepaid > 0 || a.earlyKept > 0) return 0;
         s = _capped(a.feesPaid / 0.0005 ether, 350) + _capped(uint256(a.customers) * 25, 250)
             + _capped(uint256(a.settled) * 10, 200) + _capped(uint256(a.advancesRepaid) * 10, 100);
         if (a.firstSettledAt != 0) s += _capped(((block.timestamp - a.firstSettledAt) / 1 days) * 2, 100);
-        uint256 less = uint256(a.settledAtHalf) * 50 + uint256(a.notDelivered) * 100;
+        uint256 less = uint256(a.settledAtHalf) * 50;
         s = s > less ? s - less : 0;
     }
 

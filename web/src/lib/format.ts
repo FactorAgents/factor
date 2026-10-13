@@ -30,7 +30,7 @@ export const canDraw = (a: Pick<Agent, "bondEth" | "feesPaidEth" | "drawnEth" | 
 
 /** The score, part by part, by the one public formula. Nobody sets it by hand, and it moves no money. */
 export type ScorePart = { name: string; value: string; points: number; max: number };
-type Scored = Pick<Agent, "feesPaidEth" | "customers" | "settled" | "since" | "advancesRepaid" | "advancesMissed" | "settledAtHalf" | "notDelivered">;
+type Scored = Pick<Agent, "feesPaidEth" | "customers" | "settled" | "since" | "advancesRepaid" | "advancesMissed" | "settledAtHalf">;
 export function scoreParts(a: Scored, asOf: string): ScorePart[] {
   const days = a.settled ? Math.max(0, Math.floor((Date.parse(asOf) - Date.parse(a.since)) / 86_400_000)) : 0;
   const part = (name: string, value: string, raw: number, max: number): ScorePart => ({ name, value, points: Math.min(max, Math.floor(raw + 1e-9)), max });
@@ -42,7 +42,7 @@ export function scoreParts(a: Scored, asOf: string): ScorePart[] {
     part("Advances repaid", `${a.advancesRepaid} of ${a.advancesRepaid + a.advancesMissed}`, a.advancesRepaid * 10, 100),
   ];
 }
-export const scoreOf = (a: Scored, asOf: string): number => (a.advancesMissed > 0 ? 0 : Math.max(0, scoreParts(a, asOf).reduce((n, p) => n + p.points, 0) - 50 * a.settledAtHalf - 100 * a.notDelivered));
+export const scoreOf = (a: Scored, asOf: string): number => (a.advancesMissed > 0 ? 0 : Math.max(0, scoreParts(a, asOf).reduce((n, p) => n + p.points, 0) - 50 * a.settledAtHalf));
 
 export const STATE_WORD: Record<string, string> = { locked: "Locked", advanced: "Advanced", delivered: "Delivered", settled: "Settled", half: "Settled at half", declined: "Declined", refunded: "Refunded", not_repaid: "Not repaid", burned: "Burned", bond: "Bond", pool_in: "Pool" };
 export const STATE_TONE: Record<string, "" | "go" | "warn" | "bad"> = { locked: "", advanced: "go", delivered: "warn", settled: "go", half: "warn", declined: "", refunded: "bad", not_repaid: "bad", burned: "go", bond: "", pool_in: "" };

@@ -1,75 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-import {FactorTest} from "./FactorTest.sol";
+import {DeskBase} from "./DeskBase.sol";
 import {FactorDesk} from "../src/FactorDesk.sol";
 import {ForceSend, GasEater, Reenterer, Rejecter} from "./mocks/Actors.sol";
 
 /// The desk, rule by rule, in the order of docs/RULEBOOK.md. Every test ends by checking the desk's books against
 /// the ETH it really holds.
-contract DeskTest is FactorTest {
-    address internal customer = makeAddr("customer");
-    address internal other = makeAddr("another customer");
-    address internal agentA = makeAddr("agent a");
-    address internal agentB = makeAddr("agent b");
-
-    function setUp() public override {
-        super.setUp();
-        vm.prank(agentA);
-        desk.register();
-        vm.prank(agentB);
-        desk.register();
-    }
-
-    // ---------- the moves ----------
-
-    function _fund(uint256 amount) internal {
-        vm.deal(address(this), amount);
-        (bool ok,) = address(desk).call{value: amount}("");
-        assertTrue(ok);
-    }
-
-    function _bond(address who, uint256 amount) internal {
-        vm.deal(who, who.balance + amount);
-        vm.prank(who);
-        desk.addBond{value: amount}();
-    }
-
-    function _lockFrom(address from, address to, uint256 price, bool early) internal returns (uint256 id) {
-        vm.deal(from, from.balance + price);
-        vm.prank(from);
-        id = desk.lock{value: price}(to, block.timestamp + 1 days, early);
-    }
-
-    function _lock(address to, uint256 price, bool early) internal returns (uint256 id) {
-        return _lockFrom(customer, to, price, early);
-    }
-
-    function _draw(address who, uint256 id, uint256 amount, FactorDesk.Kind kind) internal {
-        vm.prank(who);
-        desk.draw(id, amount, kind);
-    }
-
-    function _deliver(address who, uint256 id) internal {
-        vm.prank(who);
-        desk.deliver(id, keccak256("the work"));
-    }
-
-    function _accept(uint256 id) internal {
-        vm.prank(desk.job(id).customer);
-        desk.accept(id);
-    }
-
-    /// The four parts of the desk's ETH are exactly what it holds (nothing in these tests forces ETH into it
-    /// unless the test says so).
-    function _books() internal view {
-        assertEq(
-            address(desk).balance,
-            desk.pool() + desk.held() + desk.bonds() + desk.owedTotal(),
-            "the desk holds exactly what its books say"
-        );
-    }
-
+contract DeskTest is DeskBase {
     // ---------- the numbers ----------
 
     function test_theNumbersAreTheRulebooks() public view {
@@ -519,7 +457,8 @@ contract DeskTest is FactorTest {
         assertEq(customer.balance, 0.5 ether);
         assertEq(uint8(desk.job(id).state), uint8(FactorDesk.State.Refunded));
         FactorDesk.Agent memory a = desk.agent(agentA);
-        assertEq(a.notDelivered, 1);
+        assertEq(a.notDelivered, 0, "it never touched the job, so its record is not marked");
+        assertEq(a.unanswered, 1);
         assertFalse(a.barred, "it borrowed nothing, so it is not barred");
         _books();
     }
@@ -888,11 +827,19 @@ contract DeskTest is FactorTest {
         desk.reject(three);
         assertEq(desk.score(agentA), 166 + 20 - 50);
 
-        // a job not delivered takes 100 off
+        // a job it never answered costs it nothing but the days that pass
         uint256 four = _lock(agentA, 1 ether, false);
         vm.warp(block.timestamp + 1 days + 12 hours + 1);
         desk.refund(four);
-        assertEq(desk.score(agentA), 166 + 20 - 50 - 100 + 2);
+        assertEq(desk.score(agentA), 166 + 20 - 50 + 2);
+
+        // a job it drew on and did not deliver ends the score
+        uint256 five = _lock(agentA, 1 ether, true);
+        _draw(agentA, five, 0.001 ether, FactorDesk.Kind.Early);
+        vm.warp(block.timestamp + 1 days + 12 hours + 1);
+        desk.refund(five);
+        assertEq(desk.score(agentA), 0);
+        assertEq(desk.agent(agentA).notDelivered, 1);
     }
 
     function test_theScoreStopsAtItsCaps() public {

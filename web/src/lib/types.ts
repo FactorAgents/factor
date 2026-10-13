@@ -41,7 +41,8 @@ export interface Agent {
   since: string;
   settled: number;       // jobs delivered and paid
   settledAtHalf: number; // jobs the customer rejected
-  notDelivered: number;  // jobs that ran past the due time and were refunded
+  notDelivered: number;  // jobs it drew an advance on and did not deliver
+  unanswered: number;    // jobs it neither took nor declined, which went back to the customer by themselves
   customers: number;     // different customers among them
   onTimePct: number;
   volumeEth: number;     // what its settled jobs were worth

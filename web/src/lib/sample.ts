@@ -10,21 +10,21 @@ const A = (n: number) => "0x" + ((BigInt(n) + 7n) * 0x9e3779b97f4a7c15f39cc0605c
 const TX = (n: number) => "0x" + ((BigInt(n) + 11n) * 0xbf58476d1ce4e5b994d049bb133111eb9e3779b97f4a7c15f39cc0605cedc835n % (1n << 256n)).toString(16).padStart(64, "0");
 const at = (min: number) => new Date(Date.UTC(2026, 9, 14, 18, 42, 7) - min * 60_000).toISOString();
 
-// half and missed: jobs settled at half, and [jobs not delivered, advances not repaid]. The score is worked out, never typed in.
-const agent = (id: string, name: string, house: boolean, does: string, daysOld: number, settled: number, customers: number, onTimePct: number, volumeEth: number, bondEth: number, drawnEth: number, repaid: number, half: number, missed: [number, number], n: number): Agent => {
-  const a = { id, name, house, does, address: A(n), since: at(daysOld * 1440), settled, settledAtHalf: half, notDelivered: missed[0], customers, onTimePct, volumeEth, feesPaidEth: +(volumeEth * params.jobFeePct / 100).toFixed(5), bondEth, drawnEth, advancesRepaid: repaid, advancesMissed: missed[1] };
+// half and missed: jobs settled at half, and [jobs drawn on and not delivered, advances not repaid, jobs left unanswered]. The score is worked out, never typed in.
+const agent = (id: string, name: string, house: boolean, does: string, daysOld: number, settled: number, customers: number, onTimePct: number, volumeEth: number, bondEth: number, drawnEth: number, repaid: number, half: number, missed: [number, number, number], n: number): Agent => {
+  const a = { id, name, house, does, address: A(n), since: at(daysOld * 1440), settled, settledAtHalf: half, notDelivered: missed[0], unanswered: missed[2], customers, onTimePct, volumeEth, feesPaidEth: +(volumeEth * params.jobFeePct / 100).toFixed(5), bondEth, drawnEth, advancesRepaid: repaid, advancesMissed: missed[1] };
   return { ...a, score: scoreOf(a, at(0)) };
 };
 
 const agents: Agent[] = [
-  agent("lumen-07", "lumen-07", false, "Summarises long documents and contracts", 9, 41, 19, 98, 1.42, 0.02, 0, 33, 0, [0, 0], 11),
-  agent("page-smith", "page-smith", true, "Builds a landing page from a short brief", 12, 36, 22, 100, 1.31, 0.03, 0.0125, 30, 0, [0, 0], 12),
-  agent("ledger-scout", "ledger-scout", true, "Reads a wallet's history and writes it up", 12, 29, 17, 97, 0.88, 0.03, 0, 21, 0, [0, 0], 13),
-  agent("orbit-ops", "orbit-ops", false, "Watches a contract and reports what changed", 7, 22, 9, 95, 0.61, 0.015, 0.006, 15, 0, [0, 0], 14),
-  agent("quill-02", "quill-02", false, "Writes release notes from a list of commits", 6, 17, 8, 94, 0.36, 0.01, 0.0125, 11, 1, [0, 0], 15),
-  agent("price-desk", "price-desk", true, "A daily price sheet from the Chainlink feeds", 12, 14, 6, 100, 0.22, 0.03, 0, 6, 0, [0, 0], 16),
-  agent("tally-bot", "tally-bot", false, "Turns a spreadsheet into charts and a summary", 4, 6, 4, 83, 0.09, 0, 0, 3, 0, [2, 1], 17),
-  agent("new-agent-01", "new-agent-01", false, "Translates product pages into five languages", 0, 0, 0, 0, 0, 0, 0, 0, 0, [0, 0], 18),
+  agent("lumen-07", "lumen-07", false, "Summarises long documents and contracts", 9, 41, 19, 98, 1.42, 0.02, 0, 33, 0, [0, 0, 0], 11),
+  agent("page-smith", "page-smith", true, "Builds a landing page from a short brief", 12, 36, 22, 100, 1.31, 0.03, 0.0125, 30, 0, [0, 0, 0], 12),
+  agent("ledger-scout", "ledger-scout", true, "Reads a wallet's history and writes it up", 12, 29, 17, 97, 0.88, 0.03, 0, 21, 0, [0, 0, 0], 13),
+  agent("orbit-ops", "orbit-ops", false, "Watches a contract and reports what changed", 7, 22, 9, 95, 0.61, 0.015, 0.006, 15, 0, [0, 0, 0], 14),
+  agent("quill-02", "quill-02", false, "Writes release notes from a list of commits", 6, 17, 8, 94, 0.36, 0.01, 0.0125, 11, 1, [0, 0, 0], 15),
+  agent("price-desk", "price-desk", true, "A daily price sheet from the Chainlink feeds", 12, 14, 6, 100, 0.22, 0.03, 0, 6, 0, [0, 0, 0], 16),
+  agent("tally-bot", "tally-bot", false, "Turns a spreadsheet into charts and a summary", 4, 6, 4, 83, 0.09, 0, 0, 3, 0, [1, 1, 1], 17),
+  agent("new-agent-01", "new-agent-01", false, "Translates product pages into five languages", 0, 0, 0, 0, 0, 0, 0, 0, 0, [0, 0, 0], 18),
 ];
 
 const job = (id: string, title: string, agentId: string, priceEth: number, state: Job["state"], lockedMin: number, kind?: "customer" | "pool" | "compute", n = 1): Job => {

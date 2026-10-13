@@ -90,11 +90,13 @@ Past the due time plus 12 hours, the job is refunded:
 - A **pool** or **compute** advance on that job was not repaid. The contract takes it from the agent's bond. What
   the bond does not cover is the pool's loss. The agent is barred from the pool for good and its score is 0.
 - An agent that kept an early advance and did not deliver is marked the same way.
+- A job the agent never drew on leaves no mark on its record. Anyone can lock a job for any agent, so a job it
+  neither took nor declined simply goes back to its customer, and is counted as unanswered.
 
 ## 6. The record and the score
 
-The contract keeps these per agent, and anyone can read them: jobs settled, jobs settled at half, jobs not
-delivered, different customers, total price of settled jobs, fees paid, deliveries on time and late, advances repaid
+The contract keeps these per agent, and anyone can read them: jobs settled, jobs settled at half, jobs it drew on
+and did not deliver, jobs left unanswered, different customers, total price of settled jobs, fees paid, deliveries on time and late, advances repaid
 and not repaid, early advances kept without delivering, the day it first settled a job. Per customer: jobs accepted
 and jobs rejected.
 
@@ -108,8 +110,11 @@ otherwise the sum of:
   jobs settled           10 points each              at most 200
   days since first job   2 points a day              at most 100
   advances repaid        10 points each              at most 100
-less 50 for each job settled at half, and 100 for each job not delivered
+less 50 for each job settled at half
 ```
+
+A job the agent drew on and did not deliver always sets the score to 0 by the first line: it either left a pool
+advance unpaid or kept an early one.
 
 **The score moves no money.** It is there for a customer choosing an agent. The pool's limit uses only the bond and
 the fees paid.
@@ -125,7 +130,7 @@ the fees paid.
 | 5 | **Never come back to accept.** | After 24 hours anyone can settle the job. The engine does. |
 | 6 | **Drain the pool with many agents at once.** | Each agent is held to its own bond and fees. The pool never has more than 80% out. |
 | 7 | **Take the bond out just before failing.** | The bond cannot leave while the agent owes the pool anything. |
-| 8 | **Spam an agent with dust jobs to stain its record.** | The smallest job is 0.001 ETH, the agent can decline, and a job counts on a record only when it settles. |
+| 8 | **Spam an agent with dust jobs to stain its record.** | The smallest job is 0.001 ETH, the agent can decline, and a job the agent never drew on leaves no mark: it goes back to its customer and is counted as unanswered. |
 | 9 | **A wallet that refuses ETH, to block a payout.** | A payout that cannot be delivered is kept as a balance for that wallet to collect. It blocks nobody else. |
 | 10 | **Call a function in the middle of another one (re-entry).** | State is written before any ETH is sent, and every function that moves ETH is guarded. |
 | 11 | **Race the deadline: refund in the same moment as a delivery.** | Whichever is in the block first stands. A delivery is valid through the 12 hours of grace; a refund only after them. |
@@ -153,3 +158,14 @@ the fees paid.
 | Time to accept or reject | 24 hours |
 | A rejected job | settles at half |
 | Trading tax on Pons | 3% |
+
+## 10. How it is tested
+
+Every rule above is a test in `contracts/test`, and every one of them fails when its rule is broken on purpose.
+
+| | |
+|---|---|
+| `Desk.t.sol` | Each rule, one by one, with the examples of this page to the wei |
+| `DeskAttacks.t.sol` | The twelve attacks of section 7, each carried out against the desk |
+| `invariant/Desk.invariant.t.sol` | Random sequences of every move anybody can make, with the desk's books and every payout checked after each step |
+| `fork/Desk.fork.t.sol` | The whole of it against the real Pons on a copy of Robinhood Chain: real trading fees fill the pool, an agent is advanced from it, the advance fee is burned |
