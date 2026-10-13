@@ -11,3 +11,4 @@ data/
 *.log
 docs/shots/flows/
 docs/reference/
+web/test/forbidden.local.json

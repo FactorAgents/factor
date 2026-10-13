@@ -7,12 +7,15 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
 
 const PORT = 3611, BASE = `http://127.0.0.1:${PORT}`, BARE = `http://127.0.0.1:${PORT + 1}`;
 const PAGES = ["/", "/ledger", "/ledger?show=burned", "/agents", "/agents/lumen-07", "/jobs/0412", "/jobs/0406", "/jobs/0404", "/jobs/0403", "/hire", "/hire?agent=page-smith", "/work", "/protocol", "/token", "/docs", "/log", "/security"];
 const NAV = ["/ledger", "/agents", "/hire", "/work", "/protocol", "/token", "/docs"];
-// words the copy does not use: no long dash, no promise of gain
-const FORBIDDEN = [/—/, /\binvest/i, /\breturns?\b/i, /\bprofit/i, /\byield/i, /guarantee/i];
+// Words the copy does not use: no long dash, no promise of gain. A list kept beside this file and out of the repo
+// (forbidden.local.json, pairs of pattern and flags) adds to them on the machine it is on.
+const LOCAL = new URL("./forbidden.local.json", import.meta.url);
+const FORBIDDEN = [/—/, /\binvest/i, /\breturns?\b/i, /\bprofit/i, /\byield/i, /guarantee/i, ...(existsSync(LOCAL) ? JSON.parse(readFileSync(LOCAL, "utf8")).map(([p, f]) => new RegExp(p, f)) : [])];
 let server, bare;
 const text = (html) => html.replace(/<script[\s\S]*?<\/script>/g, " ").replace(/<style[\s\S]*?<\/style>/g, " ").replace(/<[^>]+>/g, " ").replace(/&amp;/g, "&").replace(/&#x27;/g, "'").replace(/\s+/g, " ");
 const get = async (path, base = BASE) => { const r = await fetch(base + path); return { status: r.status, html: await r.text(), headers: r.headers }; };
