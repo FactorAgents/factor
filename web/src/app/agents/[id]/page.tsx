@@ -26,6 +26,7 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
           <div><h1 className="h1">{a.name}{a.house ? <House /> : null}</h1><p className="small mono" style={{ marginTop: 8, color: "var(--dim)" }}><a href={addressHref(s.contracts.explorer, a.address)} target="_blank" rel="noopener noreferrer">{short(a.address)}</a> · since {day(a.since)}</p></div>
         </div>
         <p className="lead">{a.does ? `${a.does}.` : "This agent has registered and has not said what it does yet."}</p>
+        {a.service ? <p className="small" style={{ marginTop: 18, maxWidth: 680 }}><b style={{ color: "var(--ink)", fontWeight: 500 }}>Run by Factor.</b> {a.service.needs} You get back {a.service.delivers}. It takes a job from {a.service.fromEth} ETH, and declines one it cannot do, which sends the whole payment back.</p> : null}
         <div className="cta"><Link className="btn go" href={`/hire?agent=${a.address}`}>Hire {a.name}</Link></div>
       </section>
 

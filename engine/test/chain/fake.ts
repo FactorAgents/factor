@@ -8,6 +8,7 @@ import { decodeFunctionData, encodeAbiParameters, encodeEventTopics, keccak256, 
 import { factorAccountAbi, factorAccountsAbi, factorBurnPotAbi, factorDeskAbi, factorSplitterAbi, factorTokenAbi } from "../../src/abi/index.js";
 import { Reverted, type CallSpec, type Chain, type ChainLog, type Fees, type Head, type LogFilter, type Pay, type RawCall, type Receipt, type RpcHealth, type Signer, type TxRequest } from "../../src/chain/chain.js";
 import { ETH_USD_FEED } from "../../src/chain/watch.js";
+import { FEEDS } from "../../src/house/feeds.js";
 
 export const A = {
   splitter: "0x00000000000000000000000000000000000051f7",
@@ -130,6 +131,8 @@ export class FakeChain implements Chain {
   // the ETH price feed: dollars with 8 decimals
   ethUsd = 2_500n * 10n ** 8n;
   feedsDown = false;
+  feedPrices = new Map<string, bigint>();
+  feedAgeS = 120;
 
   // the bot's wallet and the node
   balances = new Map<string, bigint>([[A.bot, ETH / 100n]]);
@@ -434,14 +437,14 @@ export class FakeChain implements Chain {
     this.give(kind === K.compute ? this.gatewayAddr : j.agent, amount - fee, tx);
   }
 
-  deliver(id: number): void {
+  deliver(id: number, proof?: string): void {
     this.mine();
     const j = this.jobs.get(id)!;
     if (this.time > j.dueAt + GRACE) throw new Reverted("TooLate");
     j.state = S.delivered;
     j.deliveredAt = this.time;
     j.late = this.time > j.dueAt;
-    j.proof = `0x${id.toString(16).padStart(64, "a")}`;
+    j.proof = proof ?? `0x${id.toString(16).padStart(64, "a")}`;
     this.emit("desk", "Delivered", { id: BigInt(id), agent: j.agent, proof: j.proof, late: j.late });
   }
 
@@ -590,7 +593,14 @@ export class FakeChain implements Chain {
     } else if (d.functionName === "deliver") {
       const j = this.jobs.get(Number(args[0]));
       if (!j || j.agent !== account) throw new Reverted("NotAgent");
-      if (commit) this.deliver(Number(args[0]));
+      if (j.state !== S.locked && j.state !== S.advanced) throw new Reverted("WrongState", [j.state]);
+      if (this.time > j.dueAt + GRACE) throw new Reverted("TooLate");
+      if (commit) this.deliver(Number(args[0]), String(args[1]));
+    } else if (d.functionName === "decline") {
+      const j = this.jobs.get(Number(args[0]));
+      if (!j || j.agent !== account) throw new Reverted("NotAgent");
+      if (j.state !== S.locked) throw new Reverted("WrongState", [j.state]);
+      if (commit) this.decline(Number(args[0]));
     } else if (d.functionName === "accept") {
       const j = this.jobs.get(Number(args[0]));
       if (!j || j.customer !== account) throw new Reverted("NotCustomer");
@@ -604,7 +614,7 @@ export class FakeChain implements Chain {
       const to = raw.to.toLowerCase();
       if (to === A.desk && raw.data.length >= 10) {
         const d = decodeFunctionData({ abi: factorDeskAbi as Abi, data: raw.data });
-        if (["register", "lock", "deliver", "accept"].includes(d.functionName)) this.asAccount(raw.from.toLowerCase(), { to, value: raw.value ?? 0n, data: raw.data }, false);
+        if (["register", "lock", "deliver", "decline", "accept"].includes(d.functionName)) this.asAccount(raw.from.toLowerCase(), { to, value: raw.value ?? 0n, data: raw.data }, false);
         return "0x" as Hex;
       }
       if ((raw.value ?? 0n) > (this.balances.get(raw.from.toLowerCase()) ?? 0n)) throw new Error("insufficient funds for transfer");
@@ -651,6 +661,12 @@ export class FakeChain implements Chain {
       // a number never given out reads as a job in state none, as on the real desk
       if (fn === "job") return this.jobs.get(Number(a[0])) ?? { customer: ZERO, agent: ZERO, price: 0n, dueAt: 0, deliveredAt: 0, state: S.none, allowEarly: false, late: false, early: 0n, fromPool: 0n, proof: `0x${"0".repeat(64)}` };
       if (fn === "agent") return this.agents.get(String(a[0]).toLowerCase()) ?? { registered: false };
+    }
+    // any other price feed: a price a test set for it, or one made from its address, updated a while before
+    if (fn === "latestRoundData" && to !== ETH_USD_FEED && (this.feedPrices.has(to) || FEEDS.some((f) => f.address === to))) {
+      if (this.feedsDown) throw new Error("fetch failed");
+      const price = this.feedPrices.get(to) ?? BigInt(1 + FEEDS.findIndex((f) => f.address === to)) * 10n ** 9n;
+      return [1n, price, BigInt(this.time - this.feedAgeS), BigInt(this.time - this.feedAgeS), 1n];
     }
     if (fn === "latestRoundData" && to === ETH_USD_FEED) {
       if (this.feedsDown) throw new Error("fetch failed");

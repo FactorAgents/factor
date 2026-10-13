@@ -165,12 +165,61 @@ test("the site offers a passkey only where an engine can pay for it, and the doc
   assert.match(t, /Nobody can bring an account back/);
 });
 
+test("a job's page carries its brief and the work, and a delivered page is served to run nothing", async () => {
+  const reading = text((await get("/jobs/0411")).html);
+  assert.match(reading, /THE BRIEF/i);
+  assert.match(reading, /This lease is made between the landlord and the tenant/);
+  assert.match(reading, /WHAT TO WATCH FOR/);
+  assert.match(reading, /Its fingerprint is the proof the contract holds for this job/);
+  assert.match(text((await get("/jobs/0410")).html), /NVDA\s+\$224\.15/);
+  // a job with no words shows no such part
+  assert.doesNotMatch(text((await get("/jobs/0412")).html), /THE WORK/i);
+  // a page: in a frame on the job's page that can run nothing...
+  const built = (await get("/jobs/0408")).html;
+  assert.match(built, /<iframe[^>]*src="\/jobs\/0408\/work\?frame"[^>]*sandbox=""/);
+  // ...and by itself under a policy of its own: no script, no form, no request, no origin
+  const page = await fetch(`${BASE}/jobs/0408/work`);
+  assert.equal(page.status, 200);
+  const policy = page.headers.get("content-security-policy") ?? "";
+  for (const part of ["sandbox", "default-src 'none'", "form-action 'none'", "frame-ancestors 'self'"]) assert.ok(policy.split("; ").includes(part), `the delivered page's policy lacks ${part}: ${policy}`);
+  assert.doesNotMatch(policy, /script-src|allow-scripts|allow-same-origin|allow-forms/);
+  assert.equal(page.headers.get("x-frame-options"), "SAMEORIGIN");
+  assert.match(page.headers.get("x-robots-tag") ?? "", /noindex/);
+  const body = await page.text();
+  assert.match(body, /A page delivered by page-smith for job 0408 on Factor\. It is not a page of Factor's/);
+  assert.match(body, /Charts from the sheet you already have/);
+  // saved, it is the file as it was delivered, with nothing added
+  const saved = await fetch(`${BASE}/jobs/0408/work?save`);
+  assert.match(saved.headers.get("content-disposition") ?? "", /attachment; filename="factor-job-0408\.html"/);
+  assert.doesNotMatch(await saved.text(), /A page delivered by/);
+  // every other page keeps the site's own policy, and may be framed by nobody
+  const job = await fetch(`${BASE}/jobs/0408`);
+  assert.match(job.headers.get("content-security-policy") ?? "", /frame-ancestors 'none'/);
+  assert.equal(job.headers.get("x-frame-options"), "DENY");
+  for (const path of ["/jobs/0411/work", "/jobs/0412/work", "/jobs/9999/work", "/jobs/x/work"]) assert.equal((await fetch(`${BASE}${path}`)).status, 404, path);
+});
+
+test("Factor's own agents say what they take a job for, on their page and where they are hired", async () => {
+  const t = text((await get("/agents/page-smith")).html);
+  assert.match(t, /House agent/);
+  assert.match(t, /Run by Factor\. Say what the page is for/);
+  assert.match(t, /It takes a job from 0\.003 ETH/);
+  assert.doesNotMatch(text((await get("/agents/lumen-07")).html), /Run by Factor/);
+  const hire = text((await get("/hire?agent=plain-reader")).html);
+  assert.match(hire, /THE BRIEF/i);
+  assert.match(hire, /Paste the text itself into the brief/);
+  assert.match(hire, /Anyone can read a brief on the job.s page/);
+  const post = (base, path, body) => fetch(`${base}/api/v1/${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  for (const path of ["jobs/brief", "jobs/delivery"]) assert.equal((await post(BARE, path, {})).status, 503, path);
+});
+
 test("with no engine the site shows an empty desk, and never a sample figure", async () => {
   for (const path of ["/", "/ledger", "/agents", "/hire", "/work", "/protocol", "/token", "/docs", "/log"]) {
     const { status, html } = await get(path, BARE);
     assert.equal(status, 200, path);
     const t = text(html);
-    assert.doesNotMatch(t, /lumen-07|page-smith|4,120,553|0\.62 ETH/, `${path} shows a sample figure`);
+    // (page-smith is a real agent's name now, and the dev log says so: the sample's own names are the mark)
+    assert.doesNotMatch(t, /lumen-07|quill-02|orbit-ops|4,120,553|0\.62 ETH/, `${path} shows a sample figure`);
     assert.match(html, /NOT LIVE YET/, path);
     assert.doesNotMatch(html, />CONNECT</, `${path} offers a wallet with nothing to send to`);
   }

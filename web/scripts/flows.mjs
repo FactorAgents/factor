@@ -158,7 +158,7 @@ ws.addEventListener("message", (m) => {
   // the browser writes a line for every 404, and two are answers, not faults: "this wallet has not registered", and
   // "the engine has not seen this brand new job yet" (asked again a moment later)
   // and so is the account's "that would not go through" (400), said to the visitor in words before anything is signed
-  if (x.method === "Log.entryAdded" && x.params.entry.level === "error" && !(/status of 404/.test(x.params.entry.text) && /\/api\/v1\/(agents\/0x[0-9a-f]{40}|jobs\/title)$/.test(x.params.entry.url ?? "")) && !(/status of (400|409)/.test(x.params.entry.text) && /\/api\/v1\/accounts\/(check|call|relay)$/.test(x.params.entry.url ?? ""))) problems.push(`log: ${x.params.entry.text.slice(0, 200)} ${x.params.entry.url ?? ""}`);
+  if (x.method === "Log.entryAdded" && x.params.entry.level === "error" && !(/status of 404/.test(x.params.entry.text) && /\/api\/v1\/(agents\/0x[0-9a-f]{40}|jobs\/title|jobs\/brief)$/.test(x.params.entry.url ?? "")) && !(/status of (400|409)/.test(x.params.entry.text) && /\/api\/v1\/accounts\/(check|call|relay)$/.test(x.params.entry.url ?? ""))) problems.push(`log: ${x.params.entry.text.slice(0, 200)} ${x.params.entry.url ?? ""}`);
   if (x.method === "Page.windowOpen") opened.push(x.params.url);
   if (x.method === "Network.requestWillBeSent") requested.push(x.params.request.url);
 });
@@ -513,6 +513,35 @@ try {
   await says("That wallet is a key of your account now.");
   const keyCount = await chain.readContract({ address: person, abi: parseAbi(["function keyCount() view returns (uint256)"]), functionName: "keyCount" });
   check("a wallet is added as a second way in", keyCount === 2n);
+  // one of Factor's own agents, hired with a brief: two fingerprints (the payment, then the words), and the page it
+  // builds is on the job's page a little later
+  await go("/hire?agent=page-smith");
+  await says("YOUR ACCOUNT");
+  check("the form says what one of Factor's own agents needs and takes a job for", (await text()).includes("Say what the page is for, who it is for, and the words that must be on it.") && (await text()).includes("One of Factor's own agents."));
+  await fill("Price in ETH", "0.001");
+  await until("the price to be read", async () => (await text()).includes("page-smith takes a job from 0.003 ETH. Under that it declines"));
+  check("a price under what the agent takes cannot be locked", !(await has("Lock 0.001 ETH")));
+  await fill("Price in ETH", "0.004");
+  await fill("What you want done", "Tide Tea");
+  await fill("The brief", "A page for Tide Tea, a small shop that posts loose leaf tea every week. Calm and plain, for people who like tea.");
+  await press("Lock 0.004 ETH");
+  await until("job 6", async () => (await text()).includes("Job 0006 is locked for page-smith."), 120_000);
+  await until("the page to be delivered and shown", async () => { await go("/jobs/0006"); return (await run(`!!document.querySelector("iframe.workpage")`)) && (await text()).includes("has delivered"); }, 150_000);
+  const jobText = await text();
+  check("the job's page carries the brief the passkey signed, and the work", jobText.includes("A page for Tide Tea, a small shop that posts loose leaf tea every week.") && /THE WORK/i.test(jobText) && jobText.includes("Its fingerprint is the proof the contract holds for this job."));
+  check("the page is shown in a frame that can run nothing", await run(`(() => { const f = document.querySelector("iframe.workpage"); return f.getAttribute("sandbox") === "" && f.getAttribute("src") === "/jobs/0006/work?frame"; })()`));
+  const delivered6 = await fetch(`${SITE}/jobs/0006/work`);
+  const policy6 = delivered6.headers.get("content-security-policy") ?? "";
+  const body6 = await delivered6.text();
+  check("by itself it is served under its own policy: no script, no form, no request, and a line saying what it is", policy6.split("; ").includes("sandbox") && policy6.includes("default-src 'none'") && !/script-src|allow-/.test(policy6) && body6.includes("Tide Tea") && body6.includes("A page delivered by page-smith for job 0006 on Factor.") && !/<script/i.test(body6));
+  await run(`document.querySelector("iframe.workpage").scrollIntoView({ block: "center" })`);
+  await sleep(900);
+  await shot("desktop-job-own-agent");
+  await press("Accept the delivery");
+  await until("the acceptance", async () => (await text()).includes("Accepted. The agent is paid."), 60_000);
+  check("the passkey accepts, and Factor's own agent is paid like anybody's", (await desk("job", [6n])).state === 4);
+  await go("/hire?agent=lumen-07");
+  await says("YOUR ACCOUNT");
   // signed out, and back in with nothing but the passkey
   await run(`document.querySelector("button.wallet").click()`);
   await until("signed out", async () => (await run("localStorage.getItem('factor-account')")) === null && (await text()).includes("CONNECT"));
@@ -521,7 +550,7 @@ try {
   await until("signed in again", async () => (await run("localStorage.getItem('factor-account')")) !== null && !(await text()).includes("An account with a passkey"), 30_000);
   check("the passkey alone finds the account again", JSON.parse(await run("localStorage.getItem('factor-account')")).address === person);
   const paid = (await chain.getTransactionCount({ address: accounts[1].address })) - botTxs;
-  check("every transaction of it was sent and paid for by the engine's gas wallet", paid === 4, `${paid} transactions: the account, the job, the ETH out, the key`);
+  check("every transaction of it was sent and paid for by the engine's gas wallet", paid === 7, `${paid} transactions: the account, the job, the ETH out, the key, then the second job, its agent's delivery and the acceptance`);
   check("the pages raised no error and broke no rule of the content policy, with a passkey too", problems.length === 0, problems.slice(0, 3).join(" | "));
   await send("Emulation.setDeviceMetricsOverride", PHONE);
   await send("Emulation.setTouchEmulationEnabled", { enabled: true });

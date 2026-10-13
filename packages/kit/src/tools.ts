@@ -108,18 +108,25 @@ export const TOOLS: Tool[] = [
       const page = await f.agent(String(a.agent));
       if (!page) return `There is no agent "${a.agent}" on Factor.`;
       const g = page.agent;
-      return [agentLine(g), `Bond ${g.bondEth} ETH, fees paid in ${g.feesPaidEth} ETH, limit with the pool ${g.limitEth} ETH, can draw ${g.canDrawEth} ETH now. On time ${g.onTimePct}%.`, ...page.jobs.slice(0, 8).map(jobLine)].join("\n");
+      return [agentLine(g), ...(g.service ? [`One of Factor's own agents. What to put in the brief: ${g.service.needs} It delivers ${g.service.delivers}, and takes a job from ${g.service.fromEth} ETH.`] : []), `Bond ${g.bondEth} ETH, fees paid in ${g.feesPaidEth} ETH, limit with the pool ${g.limitEth} ETH, can draw ${g.canDrawEth} ETH now. On time ${g.onTimePct}%.`, ...page.jobs.slice(0, 8).map(jobLine)].join("\n");
     },
   },
   {
     name: "factor_job", readOnly: true, input: { job: jobId },
-    description: "One job: its state, its price, what was advanced on it, what it paid, and everything that happened to it.",
+    description: "One job: its state, its price, what was advanced on it, what it paid, everything that happened to it, its brief, and the work itself when the agent showed it.",
     async run(f, a) {
       const page = await f.job(a.job as number);
       if (!page) return `There is no job ${a.job} on Factor (a new one shows up a few seconds after it is locked).`;
       const j = page.job;
       const closed = j.state === "settled" || j.state === "half" ? ` Paid to the agent ${j.paidEth} ETH, job fee ${j.feeEth} ETH.` : j.backEth !== undefined ? ` ${j.backEth} ETH went back to the customer.` : "";
-      return [jobLine(j) + closed, ...page.events.map((e) => `${e.at} ${e.kind}: ${e.text} (${e.amount})`)].join("\n");
+      const cut = (t: string, most: number) => (t.length > most ? `${t.slice(0, most)}\n[... ${t.length - most} more characters on the job's page]` : t);
+      return [
+        jobLine(j) + closed,
+        ...(page.note ? [`The agent declined it: ${page.note}.`] : []),
+        ...page.events.map((e) => `${e.at} ${e.kind}: ${e.text} (${e.amount})`),
+        ...(page.brief ? [`The brief:\n${cut(page.brief, 1500)}`] : []),
+        ...(page.work ? [page.work.kind === "html" ? `The work is a page of ${page.work.text.length} characters of HTML, shown on the job's page.` : `The work:\n${cut(page.work.text, 6000)}`] : []),
+      ].join("\n");
     },
   },
   {
@@ -141,15 +148,15 @@ export const TOOLS: Tool[] = [
   },
   {
     name: "factor_hire", readOnly: false,
-    input: { agent: z.string().describe("The agent's name or address"), price: amount, title: z.string().min(3).max(80).describe("What you want done, in one line without links"), due_in_hours: z.number().min(1).max(720).optional().describe("24 when not given"), allow_early: z.boolean().optional().describe("true lets the agent take up to half of this payment before delivering; that part is NOT refunded if it does not deliver. false when not given") },
+    input: { agent: z.string().describe("The agent's name or address"), price: amount, title: z.string().min(3).max(80).describe("What you want done, in one line without links"), brief: z.string().min(1).max(12000).optional().describe("The details the agent works from, at any length up to 12,000 characters. Anyone can read it on the job's page. Factor's own agents need one: factor_agent says what to put in it"), due_in_hours: z.number().min(1).max(720).optional().describe("24 when not given"), allow_early: z.boolean().optional().describe("true lets the agent take up to half of this payment before delivering; that part is NOT refunded if it does not deliver. false when not given") },
     description: "Hire an agent: lock the price of a job for it. THIS SPENDS ETH from the wallet: it is held by the desk and paid to the agent when it delivers, or comes back if it does not deliver in time. It cannot be cancelled. Confirm the agent, the price and the due time with the user first unless they already gave them.",
     async run(f, a, spending) {
       need(f);
       const price = toWei(String(a.price));
       spending?.check(price, true);
-      const r = await f.hire({ agent: String(a.agent), price, title: String(a.title), dueInHours: a.due_in_hours as number | undefined, allowEarly: a.allow_early === true });
+      const r = await f.hire({ agent: String(a.agent), price, title: String(a.title), ...(typeof a.brief === "string" ? { brief: a.brief } : {}), dueInHours: a.due_in_hours as number | undefined, allowEarly: a.allow_early === true });
       spending?.add(price);
-      return `Job ${r.jobId} is locked: ${eth(price)} ETH for ${a.agent}${r.titled ? `, titled "${a.title}"` : " (its title could not be saved; set it with factor_set_title)"}. Transaction ${r.explorer}. The agent now has until the due time to deliver; use factor_job to follow it.`;
+      return `Job ${r.jobId} is locked: ${eth(price)} ETH for ${a.agent}${r.titled ? `, titled "${a.title}"` : " (its title could not be saved; set it with factor_set_title)"}${typeof a.brief === "string" ? (r.briefed ? ", with its brief" : " (its brief could not be saved)") : ""}. Transaction ${r.explorer}. The agent now has until the due time to deliver; use factor_job to follow it.`;
     },
   },
   {
@@ -245,11 +252,11 @@ export const TOOLS: Tool[] = [
     },
   },
   {
-    name: "factor_deliver", readOnly: false, input: { job: jobId, work: z.string().min(1).describe("What was handed to the customer: the text itself, or the link to it. Only its fingerprint goes on the chain") },
+    name: "factor_deliver", readOnly: false, input: { job: jobId, work: z.string().min(1).describe("What was handed to the customer: the text itself, or the link to it. Only its fingerprint goes on the chain"), show: z.boolean().optional().describe("true also puts the work itself on the job's page, where anybody can read it") },
     description: "Deliver a job as its agent. Hand the work to the customer the way you agreed first; this records the fingerprint of it on the chain as the proof of what was delivered and when. The customer then has 24 hours to accept or reject, after which the job settles by itself and the agent is paid.",
     async run(f, a) {
-      const r = await f.deliver(a.job as number, String(a.work));
-      return `Job ${a.job} is delivered. Fingerprint ${r.proof}. Transaction ${r.explorer}. Keep the work exactly as it was given: the same text gives the same fingerprint.`;
+      const r = await f.deliver(a.job as number, String(a.work), { show: a.show === true });
+      return `Job ${a.job} is delivered${a.show === true ? (r.shown ? ", and the work is on its page" : " (the work could not be put on its page)") : ""}. Fingerprint ${r.proof}. Transaction ${r.explorer}. Keep the work exactly as it was given: the same text gives the same fingerprint.`;
     },
   },
   {

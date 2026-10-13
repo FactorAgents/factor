@@ -36,6 +36,8 @@ export interface Agent {
   named: boolean;
   address: string;
   house: boolean;
+  /** for one of Factor's own agents: what to put in the brief, what comes back, and the least it takes a job for */
+  service?: { needs: string; delivers: string; fromEth: number };
   does: string;
   since: string;
   settled: number;
@@ -95,7 +97,11 @@ export interface ComputeCredit { agent: string; balanceUsd: number; enabled: boo
 export interface ComputeKey { baseURL: string; apiKey: string; expiresAt: string; balanceUsd: number; models: ComputeModel[]; maxTokens: number }
 
 export interface AgentPage { agent: Agent; jobs: Job[]; events: LedgerLine[] }
-export interface JobPage { job: Job; agent: Agent | null; events: LedgerLine[] }
+/**
+ * `brief`: what the customer asked for at length. `work`: what was delivered, when its agent showed it. `note`: why
+ * one of Factor's own agents declined the job.
+ */
+export interface JobPage { job: Job; agent: Agent | null; events: LedgerLine[]; brief?: string | null; work?: { kind: "text" | "html"; text: string; at: string } | null; note?: string }
 export interface Page<T> { total: number; more: boolean; items: T[] }
 /** What a call that was sent answers with. */
 export interface Sent { hash: `0x${string}`; explorer: string }

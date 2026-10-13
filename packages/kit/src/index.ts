@@ -70,6 +70,8 @@ export function orderTypedData(account: string, chainId: number, calls: { to: st
 export const profileMessage = (address: string, name: string, does: string, at: number): string => `Factor agent profile\naddress: ${address}\nname: ${name}\ndoes: ${does}\nat: ${at}`;
 export const titleMessage = (jobId: number, title: string, at: number): string => `Factor job\njob: ${jobId}\ntitle: ${title}\nat: ${at}`;
 export const computeKeyMessage = (address: string, at: number): string => `Factor compute key\naddress: ${address}\nat: ${at}`;
+/** A job's title and its brief together, one signature: what the customer wants done, at length. */
+export const briefMessage = (jobId: number, title: string, brief: string, at: number): string => `Factor job brief\njob: ${jobId}\ntitle: ${title}\nat: ${at}\n\n${brief}`;
 /** The proof of a delivery: a fingerprint of what was handed over. The work itself is sent nowhere. */
 export const proofOf = (work: string): Hex => keccak256(toHex(work));
 
@@ -210,9 +212,11 @@ export class Factor {
 
   /**
    * Hire an agent: lock the price of a job for it. The ETH leaves this wallet and is held by the desk until the job
-   * settles or is refunded. A title, when given, is signed afterwards and costs nothing.
+   * settles or is refunded. A title and a brief, when given, are signed afterwards and cost nothing. The brief is
+   * what the agent works from, at whatever length it needs (up to 12,000 characters); anyone can read it on the
+   * job's page. Factor's own agents need one: `agent.service.needs` says what to put in it.
    */
-  async hire(o: { agent: string; price: Amount; dueInHours?: number; allowEarly?: boolean; title?: string }): Promise<Sent & { jobId: number; titled: boolean }> {
+  async hire(o: { agent: string; price: Amount; dueInHours?: number; allowEarly?: boolean; title?: string; brief?: string }): Promise<Sent & { jobId: number; titled: boolean; briefed: boolean }> {
     this.mine(); // a Factor with no key is told so before anything else is asked
     const price = toWei(o.price);
     const found = await this.agent(o.agent);
@@ -221,14 +225,28 @@ export class Factor {
     const hours = o.dueInHours ?? 24;
     if (!(hours >= 1 && hours <= 720)) throw new Refusal("The due time must be between 1 hour and 30 days from now.", "bad_due");
     const title = o.title === undefined ? undefined : oneLine(o.title);
+    const brief = o.brief === undefined ? undefined : briefText(o.brief);
+    // one of Factor's own agents declines a job under its price or with no brief: said here, before anything is locked
+    const service = found?.agent.service;
+    if (service && !brief) throw new Refusal(`${found.agent.name} works from a brief. ${service.needs}`, "no_brief");
+    if (service && price < parseEther(String(service.fromEth))) throw new Refusal(`${found.agent.name} takes a job from ${service.fromEth} ETH. Under that it declines.`, "under_price");
     // measured on the chain's own clock, with a few minutes to spare at either end
     const now = Number((await this.pub.getBlock()).timestamp);
     const dueAt = now + Math.min(Math.max(Math.round(hours * 3600), 3600 + 300), 30 * 86400 - 300);
     const sent = await this.send("lock", [agent, BigInt(dueAt), o.allowEarly === true], price);
     const jobId = lockedJob(sent.receipt.logs as { address: string; topics: Hex[]; data: Hex }[], this.desk);
     if (jobId === null) throw new Refusal(`The payment is locked (${sent.hash}), and the job's number could not be read from the transaction.`, "no_job_id");
-    let titled = false;
-    if (title) {
+    let titled = false, briefed = false;
+    if (brief) {
+      // the title and the brief are signed together, once. The money is locked whatever happens next.
+      try {
+        await this.brief(jobId, brief, title ?? "");
+        briefed = true;
+        titled = !!title;
+      } catch {
+        briefed = false;
+      }
+    } else if (title) {
       // the money is locked whatever happens next: a title that could not be saved only leaves the job without one
       try {
         await this.title(jobId, title);
@@ -237,7 +255,16 @@ export class Factor {
         titled = false;
       }
     }
-    return { hash: sent.hash, explorer: sent.explorer, jobId, titled };
+    return { hash: sent.hash, explorer: sent.explorer, jobId, titled, briefed };
+  }
+
+  /** Say what you want done, at length, on a job you locked (with its title, when given). Signed; costs nothing. */
+  async brief(jobId: number, brief: string, title = ""): Promise<void> {
+    const text = briefText(brief);
+    const line = title ? oneLine(title) : "";
+    const at = await this.clock();
+    const signature = await this.sign(briefMessage(whole(jobId), line, text, at));
+    await this.save("/jobs/brief", { job: jobId, title: line, brief: text, at, signature }, true);
   }
 
   /** Say what a job is about: one line, signed by the customer who locked it. Costs nothing. */
@@ -345,12 +372,26 @@ export class Factor {
 
   /**
    * Deliver a job. `work` is what was handed to the customer (the text, or the link to it): only its fingerprint
-   * goes on the chain, as the proof of what was delivered and when.
+   * goes on the chain, as the proof of what was delivered and when. With `show: true` the work itself is also put
+   * on the job's page, where anybody can read it and see that its fingerprint is the one on the chain.
    */
-  async deliver(jobId: number, work: string): Promise<Sent & { proof: Hex }> {
+  async deliver(jobId: number, work: string, o: { show?: boolean } = {}): Promise<Sent & { proof: Hex; shown: boolean }> {
     if (typeof work !== "string" || work.trim().length < 1) throw new Refusal("Give what was delivered, or the link to it.", "no_work");
+    if (o.show && work.length > 200_000) throw new Refusal("Work shown on the job's page is 200,000 characters at most. Deliver a link to it, or do not show it.", "too_long");
     const proof = proofOf(work);
-    return { ...this.sent(await this.send("deliver", [BigInt(whole(jobId)), proof])), proof };
+    const sent = this.sent(await this.send("deliver", [BigInt(whole(jobId)), proof]));
+    let shown = false;
+    if (o.show) {
+      // the site takes it only because its fingerprint is the proof that is on the chain now. A delivery that could
+      // not be shown is delivered all the same.
+      try {
+        await this.save("/jobs/delivery", { job: jobId, work }, true);
+        shown = true;
+      } catch {
+        shown = false;
+      }
+    }
+    return { ...sent, proof, shown };
   }
 
   /** Say no to a job, before drawing on it. The customer has everything back and the agent's record is not marked. */
@@ -540,7 +581,8 @@ export class Factor {
       const r = await fetch(`${this.api}${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(20_000) });
       if (r.ok) return;
       const said = ((await r.json().catch(() => ({}))) as { error?: string }).error ?? `the site answered ${r.status}`;
-      if (!(patient && r.status === 404 && tries < 20)) throw new Refusal(`It could not be saved: ${said}.`, "not_saved");
+      // a brand new job or agent, or a delivery the site has not read from the chain yet: a few seconds, then again
+      if (!(patient && (r.status === 404 || (r.status === 409 && path === "/jobs/delivery")) && tries < 20)) throw new Refusal(`It could not be saved: ${said}.`, "not_saved");
       await sleep(2000);
     }
   }
@@ -549,6 +591,13 @@ export class Factor {
 function whole(jobId: number): number {
   if (!Number.isSafeInteger(jobId) || jobId < 1) throw new Refusal("A job's number is a whole number, like 12.", "bad_job");
   return jobId;
+}
+
+/** A brief as the site keeps it: plain text of up to 12,000 characters, of any number of lines. */
+function briefText(raw: string): string {
+  const text = typeof raw === "string" ? raw.replace(/\r\n?/g, "\n").trim() : "";
+  if (text.length < 1 || text.length > 12_000) throw new Refusal("A brief is plain text of up to 12,000 characters.", "bad_text");
+  return text;
 }
 
 const sentence = (text: string): string => { const t = text.charAt(0).toUpperCase() + text.slice(1); return /[.!?]$/.test(t) ? t : `${t}.`; };

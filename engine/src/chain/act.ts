@@ -548,7 +548,9 @@ export interface ActResult {
 async function relay(ctx: Ctx, head: Head): Promise<string> {
   const cfg = ctx.accounts;
   const factory = ctx.addr.accounts;
-  if (!cfg?.enabled || !factory) return say(ctx, "relay", "accounts are switched off", { fails: 0, nextAt: 0 });
+  // with no maker of accounts there is nothing to send to. Strangers' orders are taken only while accounts are
+  // switched on (../accounts.ts); the engine's own agents queue theirs either way.
+  if (!cfg || !factory) return say(ctx, "relay", "there is no maker of accounts", { fails: 0, nextAt: 0 });
   const store = new AccountStore(ctx.db);
   const waiting = store.queued(cfg.perPass);
   if (waiting.length === 0) return say(ctx, "relay", "no order is waiting", { fails: 0, nextAt: 0 });

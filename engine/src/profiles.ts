@@ -9,12 +9,31 @@
 // These are shown to everybody, so they are held to a narrow shape (short, one line, no links), and the owner can
 // hide one (see hide()).
 
-import { recoverMessageAddress, type Hex } from "viem";
+import { keccak256, recoverMessageAddress, toHex, type Hex } from "viem";
 import { normalizeAddress } from "./chain/address.js";
 import type { EngineDb } from "./chain/db.js";
 
 export const profileMessage = (address: string, name: string, does: string, at: number): string => `Factor agent profile\naddress: ${address}\nname: ${name}\ndoes: ${does}\nat: ${at}`;
 export const titleMessage = (jobId: number, title: string, at: number): string => `Factor job\njob: ${jobId}\ntitle: ${title}\nat: ${at}`;
+/** A job's title and its brief together, one signature: what the customer wants done, at length. */
+export const briefMessage = (jobId: number, title: string, brief: string, at: number): string => `Factor job brief\njob: ${jobId}\ntitle: ${title}\nat: ${at}\n\n${brief}`;
+/** The fingerprint of a piece of work: what an agent puts on the chain when it delivers (the kit's and the site's proofOf). */
+export const proofOf = (work: string): Hex => keccak256(toHex(work));
+
+export const BRIEF_MOST = 12_000;
+export const WORK_MOST = 200_000;
+
+/**
+ * A brief as it is kept: plain text of any number of lines, or null when it is not one. Line breaks and tabs stay;
+ * every other control character, and the invisible ones text is hidden in, do not.
+ */
+export function briefText(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const text = raw.replace(/\r\n?/g, "\n").trim();
+  if (text.length < 1 || text.length > BRIEF_MOST) return null;
+  if (/[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202f\u2060-\u206f\ufeff]/.test(text)) return null;
+  return text;
+}
 
 export interface Profile {
   address: string;
@@ -30,7 +49,12 @@ const WINDOW_S = 600;
 const NAME = /^[a-z0-9](?:[a-z0-9-]{1,22})[a-z0-9]$/;
 // Names nobody can take: ones that would pass for Factor itself, and the ones Factor's own docs use as examples,
 // so that a hire copied from the docs can never reach somebody who registered the example's name.
-const RESERVED = new Set(["factor", "admin", "house", "pool", "desk", "burn", "the-pool", "the-desk", "support", "official", "your-agent", "the-agents-name", "my-agent", "an-agent", "agent-name"]);
+// And the names of Factor's own agents, which the engine gives them itself (house()).
+export const HOUSE_NAMES = ["page-smith", "plain-reader", "price-desk"];
+const RESERVED = new Set(["factor", "admin", "house", "pool", "desk", "burn", "the-pool", "the-desk", "support", "official", "your-agent", "the-agents-name", "my-agent", "an-agent", "agent-name", ...HOUSE_NAMES]);
+
+/** A whole page of HTML is shown as a page (in a frame that can run nothing); anything else as text. */
+const kindOf = (work: string): "text" | "html" => (/^\s*<!doctype html[\s>]/i.test(work) && /<\/html>\s*$/i.test(work) ? "html" : "text");
 
 /** One line of plain text, or null when it is not: no line breaks or control characters, no markup, no links. */
 export function oneLine(raw: unknown, min: number, max: number): string | null {
@@ -111,10 +135,76 @@ export class Profiles {
     return this.accountSigned ? this.accountSigned(address, message, signature) : false;
   }
 
-  /** The owner hides (or shows again) a name or a title. Nothing is deleted. */
+  /**
+   * What a customer wants done, at length, with the job's title: one signature for both, by the wallet that locked
+   * the job. Shown on the job's page to everybody, and what its agent works from.
+   */
+  async setBrief(body: Record<string, unknown>): Promise<Written> {
+    const jobId = typeof body.job === "number" && Number.isSafeInteger(body.job) && body.job > 0 ? body.job : null;
+    if (jobId === null) return no(400, "job is not a job's number");
+    const title = body.title === "" || body.title === undefined ? "" : oneLine(body.title, 3, 80);
+    if (title === null || (title !== "" && title !== body.title)) return no(400, "a title is one plain line of 3 to 80 characters, without links, line breaks or double spaces");
+    const brief = briefText(body.brief);
+    if (!brief || brief !== body.brief) return no(400, `a brief is plain text of up to ${BRIEF_MOST} characters`);
+    const at = this.fresh(body.at);
+    if (at === null) return no(400, "the signature's time is more than ten minutes from now: sign again");
+    const job = this.db.q("SELECT customer FROM desk_jobs WHERE id = ?").get(jobId) as { customer: string } | undefined;
+    if (!job) return no(404, "the desk has no such job yet (a new job shows up a few seconds after it is locked)");
+    if (!(await this.signedBy(job.customer, briefMessage(jobId, title, brief, at), body.signature))) return no(401, "the signature is not the wallet that locked this job");
+    const had = this.db.q("SELECT signed_at FROM job_briefs WHERE job_id = ?").get(jobId) as { signed_at: number } | undefined;
+    if (had && at <= had.signed_at) return no(409, "a newer brief is already stored");
+    this.db.tx(() => {
+      this.db.q("INSERT INTO job_briefs (job_id, brief, by, signed_at) VALUES (?, ?, ?, ?) ON CONFLICT(job_id) DO UPDATE SET brief = excluded.brief, by = excluded.by, signed_at = excluded.signed_at").run(jobId, brief, job.customer, at);
+      const t = this.db.q("SELECT signed_at FROM job_titles WHERE job_id = ?").get(jobId) as { signed_at: number } | undefined;
+      if (title && (!t || at > t.signed_at)) this.db.q("INSERT INTO job_titles (job_id, title, by, signed_at) VALUES (?, ?, ?, ?) ON CONFLICT(job_id) DO UPDATE SET title = excluded.title, by = excluded.by, signed_at = excluded.signed_at").run(jobId, title, job.customer, at);
+    });
+    return { ok: true };
+  }
+
+  brief(jobId: number): string | null {
+    return (this.db.q("SELECT brief FROM job_briefs WHERE job_id = ? AND hidden = 0").get(jobId) as { brief: string } | undefined)?.brief ?? null;
+  }
+
+  /**
+   * The work of a job, shown on its page. Nobody signs this: it is taken from anyone, and only when its fingerprint
+   * is the very proof the desk holds for the job, which only the job's agent could have put there.
+   */
+  publish(body: Record<string, unknown>): Written {
+    const jobId = typeof body.job === "number" && Number.isSafeInteger(body.job) && body.job > 0 ? body.job : null;
+    if (jobId === null) return no(400, "job is not a job's number");
+    const work = body.work;
+    if (typeof work !== "string" || work.length < 1 || work.length > WORK_MOST) return no(400, `the work is text of up to ${WORK_MOST} characters`);
+    const job = this.db.q("SELECT proof, state FROM desk_jobs WHERE id = ?").get(jobId) as { proof: string; state: number } | undefined;
+    if (!job) return no(404, "the desk has no such job");
+    if (job.state < 3 || job.state === 6 || job.state === 7 || !/^0x[0-9a-f]{64}$/.test(job.proof) || /^0x0+$/.test(job.proof)) return no(409, "the job has not been delivered (a delivery shows up a few seconds after it is made)");
+    if (proofOf(work) !== job.proof) return no(400, "that is not what was delivered: its fingerprint is not the one the desk holds for this job");
+    this.db.q("INSERT INTO job_deliveries (job_id, kind, body, at) VALUES (?, ?, ?, ?) ON CONFLICT(job_id) DO NOTHING").run(jobId, kindOf(work), work, this.now());
+    return { ok: true };
+  }
+
+  /** The work of one of the engine's own agents, kept as it is delivered: the engine made it and put its proof on the chain itself. */
+  keep(jobId: number, work: string): void {
+    this.db.q("INSERT INTO job_deliveries (job_id, kind, body, at) VALUES (?, ?, ?, ?) ON CONFLICT(job_id) DO NOTHING").run(jobId, kindOf(work), work, this.now());
+  }
+
+  work(jobId: number): { kind: "text" | "html"; body: string; at: number } | null {
+    return (this.db.q("SELECT kind, body, at FROM job_deliveries WHERE job_id = ? AND hidden = 0").get(jobId) as { kind: "text" | "html"; body: string; at: number } | undefined) ?? null;
+  }
+
+  /** A name the engine gives one of its own agents (../house/house.ts). Reserved names are theirs to have. */
+  house(address: string, name: string, does: string): void {
+    // the name goes with the agent that does the work now: an address that held it before (the agents' keys were
+    // changed) keeps its record on the desk and loses the name
+    this.db.q("DELETE FROM agent_profiles WHERE name_key = ? AND address != ?").run(name, address);
+    this.db.q("INSERT INTO agent_profiles (address, name, name_key, does, signed_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(address) DO UPDATE SET name = excluded.name, name_key = excluded.name_key, does = excluded.does").run(address, name, name, does, Math.floor(this.now() / 1000));
+  }
+
+  /** The owner hides (or shows again) a name, or everything people wrote about a job: its title, brief and work. */
   hide(what: "agent" | "job", key: string, hidden: boolean): boolean {
     if (what === "agent") return this.db.q("UPDATE agent_profiles SET hidden = ? WHERE address = ?").run(hidden ? 1 : 0, key.toLowerCase()).changes === 1;
-    return this.db.q("UPDATE job_titles SET hidden = ? WHERE job_id = ?").run(hidden ? 1 : 0, Number(key)).changes === 1;
+    const h = hidden ? 1 : 0, id = Number(key);
+    const n = this.db.q("UPDATE job_titles SET hidden = ? WHERE job_id = ?").run(h, id).changes + this.db.q("UPDATE job_briefs SET hidden = ? WHERE job_id = ?").run(h, id).changes + this.db.q("UPDATE job_deliveries SET hidden = ? WHERE job_id = ?").run(h, id).changes;
+    return n > 0;
   }
 
   /** Every profile that is shown, by address. */

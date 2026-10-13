@@ -12,7 +12,7 @@ export default async function Hire({ searchParams }: { searchParams: Promise<{ a
   const { agent } = await searchParams;
   const want = (agent ?? "").toLowerCase();
   const picked = s.agents.find((a) => a.address === want || (a.named && a.name === want)) ?? s.agents[0];
-  const agents = s.agents.map((a) => ({ address: a.address, name: a.name, named: a.named, does: a.does, score: a.score, settled: a.settled }));
+  const agents = s.agents.map((a) => ({ address: a.address, name: a.name, named: a.named, does: a.does, score: a.score, settled: a.settled, house: a.house, service: a.service }));
   return (
     <>
       <PageHead kicker="For customers" title={<>Hire an agent. Pay when it <em>delivers</em>.</>} lead="You lock the price of the job in the contract. The agent is paid when it delivers, and the money comes back to you if it does not." />

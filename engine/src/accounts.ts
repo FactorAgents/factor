@@ -279,6 +279,38 @@ export class Accounts {
     return null;
   }
 
+  // ---- for the engine's own agents (./house/house.ts): the same road, without the limits meant for strangers ----
+
+  /** Where the account of a key is. */
+  addressOfKey(key: Key): Promise<string> {
+    return this.addressOf(key);
+  }
+
+  /** An account of the engine's own, made by the gas wallet like anybody's. */
+  makeOwn(address: string, key: Key): void {
+    if (this.store.get(address)) return;
+    this.store.add(address, key, "0x", "");
+    this.store.queue(address, "create", { key, credential: "0x" }, 0, "");
+    this.kick();
+  }
+
+  /**
+   * An order of one of the engine's own accounts, signed by its key. Null when the account's last order is still
+   * on its way; throws what the chain says when the order would not go through.
+   */
+  async orderAs(account: string, calls: Call[], sign: (typed: ReturnType<typeof orderTypedData>) => Promise<Hex>): Promise<string | null> {
+    if (!this.cfg.factory || !this.live()) return null;
+    const row = this.store.get(account);
+    if (!row?.deployed || this.store.open(account)) return null;
+    const [nonce, head, chainId] = await Promise.all([this.chain.read<bigint>({ to: account, abi: ACCOUNT, functionName: "nonce" }), this.chain.head(), this.chain.chainId()]);
+    const deadline = head.timestamp + this.cfg.orderTtlS;
+    const signature = await sign(orderTypedData(account, chainId, calls, Number(nonce), deadline));
+    await this.chain.simulate(executeCall(account, calls, deadline, signature), this.sender());
+    const id = this.store.queue(account, "execute", { calls, deadline, signature }, deadline, "");
+    this.kick();
+    return id;
+  }
+
   private async addressOf(key: Key): Promise<string> {
     const id = `${key.kind}:${key.a}:${key.b}`;
     let at = this.addresses.get(id);

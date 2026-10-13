@@ -179,6 +179,28 @@ async function main(): Promise<void> {
   check("it signs for a compute key with the same key, as the account", /^fck_/.test(gKey.apiKey) && gKey.balanceUsd === 0);
   check("and through all of it the key itself never held a wei", (await balance(fresh)) === 0n && (await chain.getTransactionCount({ address: fresh })) === 0);
 
+  step("2d a brief, the work shown, and Factor's own agents");
+  const house = (await reader.agents()).filter((a) => a.house);
+  const priceDesk = house.find((a) => a.name === "price-desk");
+  check("Factor's own agents are on the desk, and say what they take a job for", house.length === 3 && !!priceDesk?.service && priceDesk.service.fromEth === 0.001 && house.every((a) => a.service && a.service.needs.length > 20), house.map((a) => a.name).join(", "));
+  check("one is not hired with no brief, or under its price: said before anything is locked", (await refused(customer.hire({ agent: "page-smith", price: "0.01", title: "A page" }))).startsWith("page-smith works from a brief.") && (await refused(customer.hire({ agent: "page-smith", price: "0.001", brief: "A page for a tea shop that posts loose leaf tea every week." }))) === "page-smith takes a job from 0.003 ETH. Under that it declines.");
+  const sheetJob = await customer.hire({ agent: "price-desk", price: "0.001", title: "Prices", brief: "NVDA and ETH please" });
+  check("the customer hires price-desk with a brief, signed with the title", sheetJob.briefed && sheetJob.titled);
+  await customer.waitFor(sheetJob.jobId, ["delivered"], { timeoutMs: 120_000 });
+  let sheet = await reader.job(sheetJob.jobId);
+  for (let i = 0; i < 30 && !sheet?.work; i++) { await new Promise((r) => setTimeout(r, 700)); sheet = await reader.job(sheetJob.jobId); }
+  check("price-desk delivers, and anybody reads the brief and the work on the job", sheet?.brief === "NVDA and ETH please" && sheet.work?.kind === "text" && /NVDA\s+\$[\d,]+\.\d\d/.test(sheet.work.text) && (await desk<{ proof: string }>("job", [BigInt(sheetJob.jobId)])).proof === proofOf(sheet.work.text));
+  await customer.accept(sheetJob.jobId);
+  // any agent may show its work: the site takes it because its fingerprint is the proof on the chain
+  const shownJob = await customer.hire({ agent: "lumen-07", price: "0.002", title: "A haiku about a ledger", brief: "Three lines. No rhyme." });
+  const haiku = "Ink that will not fade\nEvery line somebody's word\nKept where all can read";
+  const shownDelivery = await agent.deliver(shownJob.jobId, haiku, { show: true });
+  const shown = await reader.job(shownJob.jobId);
+  check("an agent delivers and shows its work: the job's page carries it, and its fingerprint is the proof", shownDelivery.shown && shown?.work?.text === haiku && shownDelivery.proof === proofOf(haiku) && shown.brief === "Three lines. No rhyme.");
+  const fake = await fetch(`${where.api}/jobs/delivery`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ job: shownJob.jobId, work: "Something the agent never delivered." }) });
+  check("nobody can put other words on a job's page than the ones that were delivered", fake.status === 400);
+  await customer.accept(shownJob.jobId);
+
   step("3  the assistant's tools, through a real client");
   const dir = mkdtempSync(join(tmpdir(), "factor-kit-e2e-"));
   const serve = async (env: Record<string, string>) => {

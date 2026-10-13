@@ -23,6 +23,7 @@ import type { EngineConfig } from "./chain/config.js";
 import { snapshotOf, type Ctx, type Snapshot } from "./chain/context.js";
 import type { Accounts } from "./accounts.js";
 import type { Gateway } from "./compute.js";
+import type { House } from "./house/house.js";
 import { DeskStore, KIND_NAME, RULES, STATE, STATE_NAME, type AdvanceRow, type AgentRow, type JobRow, type LedgerRow } from "./desk.js";
 import { Profiles, type Profile, type Written } from "./profiles.js";
 import { canDrawOf, limitOf, scoreOf, scoreParts } from "./score.js";
@@ -50,6 +51,7 @@ export interface EngineView {
   profiles: Profiles | null;
   gateway: Gateway | null;
   accounts: Accounts | null;
+  house: House | null;
 }
 
 // ---- the site's shape: web/src/lib/types.ts. Keep the two in step by hand. ----
@@ -84,6 +86,8 @@ export interface AgentJson {
   named: boolean; // false: the name is only its address, shortened
   address: string;
   house: boolean;
+  /** for one of Factor's own agents: what to put in the brief, what comes back, and the least it takes a job for */
+  service?: { needs: string; delivers: string; fromEth: number };
   does: string;
   since: string;
   settled: number;
@@ -155,6 +159,7 @@ export const link = (raw: string | undefined): string | null => (raw && /^https:
 interface Names {
   profiles: Map<string, Profile>;
   house: Set<string>;
+  service?: (address: string) => AgentJson["service"] | null;
 }
 const nameOf = (names: Names, address: string | null): string => (address ? (names.profiles.get(address)?.name ?? shortAddress(address)) : "an agent");
 
@@ -163,6 +168,7 @@ export function agentJson(row: AgentRow, names: Names, nowS: number): AgentJson 
   const p = names.profiles.get(row.address);
   return {
     id: row.address, name: p?.name ?? shortAddress(row.address), named: !!p, address: row.address, house: names.house.has(row.address), does: p?.does ?? "", since: iso(row.registered_at),
+    ...(names.service?.(row.address) ? { service: names.service(row.address)! } : {}),
     settled: r.settled, settledAtHalf: r.settledAtHalf, notDelivered: r.notDelivered, unanswered: r.unanswered, customers: r.customers,
     onTimePct: r.settled ? Math.round((r.onTime * 100) / r.settled) : 0,
     volumeEth: eth(r.volume), feesPaidEth: eth(r.feesPaid), bondEth: eth(r.bond), drawnEth: eth(r.advancedNow), limitEth: eth(limitOf(r)), canDrawEth: eth(canDrawOf(r)),
@@ -318,7 +324,7 @@ export class EngineApi {
   // A signed write. `from` is the caller's address on the network, for the limit on how many one may send.
   async post(path: string, body: unknown, from: string, adminKey?: string): Promise<Answer | null> {
     if (path === "/v1/accounts" || path.startsWith("/v1/accounts/")) return this.accountsPost(path, body, from);
-    if (path !== "/v1/agents/profile" && path !== "/v1/jobs/title" && path !== "/v1/admin/hide") return null;
+    if (path !== "/v1/agents/profile" && path !== "/v1/jobs/title" && path !== "/v1/jobs/brief" && path !== "/v1/jobs/delivery" && path !== "/v1/admin/hide") return null;
     const v = this.view();
     if (!v.profiles || v.state !== "running") return { status: 503, body: { error: "the engine is not reading the chain yet" } };
     if (!body || typeof body !== "object" || Array.isArray(body)) return { status: 400, body: { error: "the body is not a JSON object" } };
@@ -335,7 +341,7 @@ export class EngineApi {
     if (!seen || now - seen.from > 60_000) this.posts.set(from, { n: 1, from: now });
     else if (++seen.n > 10) return { status: 429, body: { error: "too many requests: try again in a minute" } };
     if (this.posts.size > 5000) this.posts.clear();
-    const r: Written = path === "/v1/agents/profile" ? await v.profiles.setProfile(b) : await v.profiles.setTitle(b);
+    const r: Written = path === "/v1/agents/profile" ? await v.profiles.setProfile(b) : path === "/v1/jobs/brief" ? await v.profiles.setBrief(b) : path === "/v1/jobs/delivery" ? v.profiles.publish(b) : await v.profiles.setTitle(b);
     if (!r.ok) return { status: r.status, body: { error: r.error } };
     this.cache.clear();
     return ok({ ok: true });
@@ -344,7 +350,7 @@ export class EngineApi {
   // ---- what the answers are made of ----
 
   private names(v: EngineView): Names {
-    return { profiles: v.profiles?.all() ?? new Map(), house: new Set(v.config.houseAgents) };
+    return { profiles: v.profiles?.all() ?? new Map(), house: new Set([...v.config.houseAgents, ...(v.house?.addresses() ?? [])]), service: (a) => v.house?.serviceOf(a) ?? null };
   }
 
   /** The chain's time now: the last block read, and the seconds since. */
@@ -409,10 +415,16 @@ export class EngineApi {
     if (!r || !row) return notFound("no such job");
     const names = this.names(v);
     const agent = r.store.agent(row.agent);
+    const work = v.profiles?.work(id) ?? null;
+    const note = v.house?.note(id) ?? null;
     return ok({
       job: this.jobsJson(v, r.store, [row])[0],
       agent: agent ? agentJson(agent, names, this.chainNow(v, r.snap)) : null,
       events: r.store.ledger(50, { jobId: id }).map((l) => eventJson(l, names)),
+      // what the customer asked for at length, the work when its agent showed it, and a house agent's reason for declining
+      brief: v.profiles?.brief(id) ?? null,
+      work: work ? { kind: work.kind, text: work.body, at: new Date(work.at).toISOString() } : null,
+      ...(note ? { note } : {}),
     });
   }
 
@@ -522,6 +534,7 @@ export class EngineApi {
       burnPot: snap?.burnPot ?? null,
       desk: snap ? { ...snap.desk, agents: store.agentCount(), jobsKnown: store.jobCount(), waitingToBeRead: ctx.db.count("desk_jobs") ? (ctx.db.q("SELECT (SELECT COUNT(*) FROM desk_jobs WHERE dirty = 1) + (SELECT COUNT(*) FROM desk_agents WHERE dirty = 1) AS n").get() as { n: number }).n : 0, dueToSettle: store.dueToSettle(t, 500).length, dueToRefund: store.dueToRefund(t, 500).length } : null,
       ethUsd8: snap?.ethUsd8 ?? null,
+      house: v.house ? v.house.totals() : null,
       accounts: v.accounts ? { ...v.accounts.about(), note: c.accounts.note, ...v.accounts.store.totals(), gasDayWei: c.accounts.gasDayWei.toString() } : null,
       compute: v.gateway ? { ...v.gateway.about(), note: c.compute.note, ...v.gateway.store.totals(), todayMicro: v.gateway.store.spentToday(), dailyMicro: c.compute.dailyMicro } : null,
       rpc: v.rpc ? { ...v.rpc, lastError: v.rpc.lastError ? hostsOnly(v.rpc.lastError) : null } : null,

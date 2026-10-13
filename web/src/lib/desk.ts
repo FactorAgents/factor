@@ -161,5 +161,7 @@ export function lockedJob(receipt: Receipt, desk: string): number | null {
 // What a wallet signs to name an agent or a job. The same words, to the letter, as engine/src/profiles.ts.
 export const profileMessage = (address: string, name: string, does: string, at: number): string => `Factor agent profile\naddress: ${address}\nname: ${name}\ndoes: ${does}\nat: ${at}`;
 export const titleMessage = (jobId: number, title: string, at: number): string => `Factor job\njob: ${jobId}\ntitle: ${title}\nat: ${at}`;
+/** A job's title and its brief together, one signature: the words of engine/src/profiles.ts. */
+export const briefMessage = (jobId: number, title: string, brief: string, at: number): string => `Factor job brief\njob: ${jobId}\ntitle: ${title}\nat: ${at}\n\n${brief}`;
 // What an agent's wallet signs for a key to its compute credit: the words of engine/src/compute.ts.
 export const computeKeyMessage = (address: string, at: number): string => `Factor compute key\naddress: ${address}\nat: ${at}`;

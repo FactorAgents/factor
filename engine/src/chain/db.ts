@@ -251,6 +251,42 @@ CREATE TABLE IF NOT EXISTS relays (
 );
 CREATE INDEX IF NOT EXISTS relays_status ON relays (status, created_at);
 CREATE INDEX IF NOT EXISTS relays_account ON relays (account, created_at);
+-- What a customer wants done, in their own words and at length: signed by the wallet that locked the job, like its
+-- title. Shown to everybody on the job's page, and what an agent works from.
+CREATE TABLE IF NOT EXISTS job_briefs (
+  job_id INTEGER PRIMARY KEY,
+  brief TEXT NOT NULL,
+  by TEXT NOT NULL,
+  signed_at INTEGER NOT NULL,
+  hidden INTEGER NOT NULL DEFAULT 0
+);
+-- The work itself, when its agent chose to show it. It is taken only when its fingerprint is the proof the desk
+-- holds for the job, so what is shown here is what was delivered on the chain.
+CREATE TABLE IF NOT EXISTS job_deliveries (
+  job_id INTEGER PRIMARY KEY,
+  kind TEXT NOT NULL,                -- text | html
+  body TEXT NOT NULL,
+  at INTEGER NOT NULL,               -- ms
+  hidden INTEGER NOT NULL DEFAULT 0
+);
+-- The house agents' own notes on the jobs locked for them (../house/house.ts): where each one stands, the work once
+-- it is done (so a restart never pays for it twice), what it cost, and why one was declined.
+CREATE TABLE IF NOT EXISTS house_jobs (
+  job_id INTEGER PRIMARY KEY,
+  agent TEXT NOT NULL,
+  state TEXT NOT NULL,               -- worked | delivering | delivered | declining | declined | gave_up
+  kind TEXT NOT NULL DEFAULT 'text',
+  work TEXT NOT NULL DEFAULT '',
+  note TEXT NOT NULL DEFAULT '',     -- said on the job's page: why it was declined
+  relay TEXT,                        -- the order that delivers or declines it
+  tries INTEGER NOT NULL DEFAULT 0,
+  next_at INTEGER NOT NULL DEFAULT 0,-- ms: not looked at again before
+  cost_micro INTEGER NOT NULL DEFAULT 0,
+  input INTEGER NOT NULL DEFAULT 0,
+  output INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS job_titles (
   job_id INTEGER PRIMARY KEY,
   title TEXT NOT NULL,

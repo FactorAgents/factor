@@ -5,6 +5,7 @@ import type Database from "better-sqlite3";
 import type { EngineMode, Env } from "../../src/chain/config.js";
 import { EngineDb, open } from "../../src/chain/db.js";
 import { Engine } from "../../src/engine.js";
+import type { HouseSigner } from "../../src/house/house.js";
 import { A, FakeChain } from "./fake.js";
 
 // anvil's first built-in test key: public, printed by anvil itself, worth nothing anywhere. Live mode will not
@@ -38,7 +39,7 @@ export interface Rig {
   turn(): Promise<void>;
 }
 
-export async function rig(mode: EngineMode, o: { chain?: FakeChain; more?: Env; sqlite?: Database.Database; signer?: boolean } = {}): Promise<Rig> {
+export async function rig(mode: EngineMode, o: { chain?: FakeChain; more?: Env; sqlite?: Database.Database; signer?: boolean; houseSigners?: (name: string) => HouseSigner } = {}): Promise<Rig> {
   const chain = o.chain ?? new FakeChain();
   const wall = { extra: 0 };
   const now = () => chain.time * 1000 + wall.extra;
@@ -52,6 +53,7 @@ export async function rig(mode: EngineMode, o: { chain?: FakeChain; more?: Env; 
     now,
     pollMs: 5,
     manual: true,
+    ...(o.houseSigners ? { houseSigners: o.houseSigners } : {}),
   });
   engine.start();
   await engine.ready();

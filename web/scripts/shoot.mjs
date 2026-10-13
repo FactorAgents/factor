@@ -4,7 +4,7 @@ import { spawn } from "node:child_process";
 import { writeFileSync, mkdirSync } from "node:fs";
 const BASE = process.argv[2] ?? "http://localhost:3600";
 const OUT = new URL("../../docs/shots/", import.meta.url).pathname; mkdirSync(OUT, { recursive: true });
-const PAGES = [["home", "/"], ["ledger", "/ledger"], ["agents", "/agents"], ["agent", "/agents/lumen-07"], ["job-open", "/jobs/0414"], ["job", "/jobs/0412"], ["job-bad", "/jobs/0406"], ["job-half", "/jobs/0404"], ["job-declined", "/jobs/0403"], ["hire", "/hire"], ["work", "/work"], ["protocol", "/protocol"], ["token", "/token"], ["docs", "/docs"], ["log", "/log"]];
+const PAGES = [["home", "/"], ["ledger", "/ledger"], ["agents", "/agents"], ["agent", "/agents/lumen-07"], ["job-open", "/jobs/0414"], ["job", "/jobs/0412"], ["job-page", "/jobs/0408"], ["job-text", "/jobs/0411"], ["own-agent", "/agents/page-smith"], ["hire-own", "/hire?agent=plain-reader"], ["job-bad", "/jobs/0406"], ["job-half", "/jobs/0404"], ["job-declined", "/jobs/0403"], ["hire", "/hire"], ["work", "/work"], ["protocol", "/protocol"], ["token", "/token"], ["docs", "/docs"], ["log", "/log"]];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const PORT = 9989;
 const chrome = spawn("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", ["--headless=new", `--remote-debugging-port=${PORT}`, "--no-first-run", "--hide-scrollbars", `--user-data-dir=/tmp/factor-site-${Date.now()}`, "about:blank"], { stdio: "ignore" });

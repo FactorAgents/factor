@@ -2,7 +2,7 @@
 // What can be done to a job, by whoever is looking at it: its agent draws an advance, delivers or declines; its
 // customer accepts or rejects, or says what the job is about; and once a job's time is up anyone may close it.
 import { useEffect, useState } from "react";
-import { canDrawOn, fromWei, KIND, proofOf, Refusal, send, titleMessage, toWei } from "@/lib/desk";
+import { briefMessage, canDrawOn, fromWei, KIND, proofOf, Refusal, send, titleMessage, toWei } from "@/lib/desk";
 import { signText } from "@/lib/wallet";
 import { dayTime, eth, fromNow } from "@/lib/format";
 import type { Job, Params } from "@/lib/types";
@@ -16,7 +16,7 @@ const KIND_WHY: Record<Kind, string> = {
   customer: "Out of the payment the customer locked. They allowed it for this job.",
 };
 
-export default function JobActions({ job, agentName, desk, explorer, params, now, compute }: { job: Job; agentName: string; desk: string | null; explorer: string; params: Params; now: string; compute: boolean }) {
+export default function JobActions({ job, agentName, desk, explorer, params, now, compute, hasBrief = false, briefHint = "" }: { job: Job; agentName: string; desk: string | null; explorer: string; params: Params; now: string; compute: boolean; hasBrief?: boolean; briefHint?: string }) {
   const { address } = useWallet();
   const open = job.state === "locked" || job.state === "advanced" || job.state === "delivered";
   const isAgent = address === job.agentId.toLowerCase();
@@ -32,6 +32,7 @@ export default function JobActions({ job, agentName, desk, explorer, params, now
   const [last, setLast] = useState<Done | null>(null);
   if (!desk) return null;
   if (!open && !last && !(isCustomer && !job.title)) return null;
+  // (a job that is closed is past needing a brief: only a missing title is still asked for)
   const acceptBy = new Date(settleFrom).toISOString();
   const shared = { job, desk, explorer, onDone: setLast };
   return (
@@ -58,7 +59,7 @@ export default function JobActions({ job, agentName, desk, explorer, params, now
           <One {...shared} fn="reject" label="Reject it" line title="Not what you asked for?" text={`Rejecting settles the job at half: ${eth(job.priceEth * params.rejectedPct / 100)} comes back to you and the other half is the agent's. There is no judge, and it cannot be undone. Your rejections are public, like the agent's.`} done="Rejected. The job settled at half." />
         </>
       ) : null}
-      {isCustomer && !job.title ? <Title job={job} explorer={explorer} onDone={setLast} /> : null}
+      {isCustomer && (!job.title || (working && !hasBrief)) ? <Title job={job} explorer={explorer} onDone={setLast} needsBrief={working && !hasBrief} briefHint={briefHint} /> : null}
 
       {canSettle ? <One {...shared} fn="settle" label="Settle the job" title="The customer's day is over" text={`It was delivered ${dayTime(job.deliveredAt!)} and nobody rejected it. Anyone can settle it now: the pool is repaid and the agent is paid. The engine does this by itself within a minute or two.`} done="Settled. The agent is paid." /> : null}
       {canRefund ? <One {...shared} fn="refund" label="Refund the customer" title="It was not delivered in time" text={`The due time and the ${params.graceHours} hours of grace are past. Anyone can refund it now: the payment goes back to the customer. The engine does this by itself within a minute or two.`} done="Refunded to the customer." /> : null}
@@ -140,52 +141,84 @@ function Deliver({ job, desk, explorer, onDone, late }: { job: Job; desk: string
   const { address, wallet } = useWallet();
   const { status, run, busy } = useSend(onDone);
   const [work, setWork] = useState("");
+  const [show, setShow] = useState(false);
   const go = () => run(async (on) => {
     const p = wallet();
     if (!p || !address) throw new Refusal("Connect a wallet first.");
-    if (work.trim().length < 3) throw new Refusal("Paste what you delivered, or the link to it.");
-    const { hash } = await send(p, desk, address, "deliver", [BigInt(job.n), proofOf(work.trim())], { on });
+    const text = work.trim();
+    if (text.length < 3) throw new Refusal("Paste what you delivered, or the link to it.");
+    if (show && text.length > 200_000) throw new Refusal("Work shown on the job's page is 200,000 characters at most. Deliver a link to it instead, or do not show it.");
+    const { hash } = await send(p, desk, address, "deliver", [BigInt(job.n), proofOf(text)], { on });
+    if (show) {
+      // taken by the site only because its fingerprint is the one that is on the chain now
+      try {
+        on("saving");
+        await saveSigned("jobs/delivery", { job: job.n, work: text }, true);
+      } catch {
+        return { note: "Delivered. The work could not be put on the job's page: the delivery itself is on the chain and stands.", hash };
+      }
+    }
     return { note: "Delivered. The customer has 24 hours to accept or reject; after that the job settles by itself.", hash };
   });
   return (
     <div className="act">
       <div className="h3">Deliver</div>
-      <p className="small">Hand the work to your customer the way you agreed. Then paste it here, or the link to it: only its fingerprint goes on the chain, as the proof of what you delivered and when. The text itself is sent nowhere.{late ? " The due time has passed: a delivery now still counts, and is marked late." : ""}</p>
+      <p className="small">Hand the work to your customer the way you agreed. Then paste it here, or the link to it: only its fingerprint goes on the chain, as the proof of what you delivered and when. The text itself is sent nowhere, unless you choose below to show it.{late ? " The due time has passed: a delivery now still counts, and is marked late." : ""}</p>
       <label className="field" style={{ marginTop: 18 }}>
         <span className="label">What you delivered</span>
         <textarea value={work} onChange={(e) => setWork(e.target.value)} rows={3} placeholder="The summary, or a link to it" disabled={busy} />
         <div className="hint">{work.trim().length >= 3 ? <>Fingerprint <span className="mono">{proofOf(work.trim()).slice(0, 18)}…</span></> : "Keep a copy exactly as you paste it: the same text gives the same fingerprint."}</div>
       </label>
+      <button type="button" className={`toggle${show ? "" : " off"}`} role="switch" aria-checked={show} onClick={() => setShow((v) => !v)} disabled={busy} style={{ marginTop: 16 }}>
+        <i />
+        <div><b>Show the work on the job&apos;s page</b><span>Anybody can then read it there, and see that its fingerprint is the one on the chain. Leave this off and the work stays between you and your customer.</span></div>
+      </button>
       <div className="cta"><Go label="Deliver the job" busy={busy} onGo={go} /></div>
       <StatusLine status={status} explorer={explorer} />
     </div>
   );
 }
 
-function Title({ job, explorer, onDone }: { job: Job; explorer: string; onDone: (d: Done) => void }) {
+function Title({ job, explorer, onDone, needsBrief, briefHint }: { job: Job; explorer: string; onDone: (d: Done) => void; needsBrief: boolean; briefHint: string }) {
   const { address, wallet } = useWallet();
   const { status, run, busy } = useSend(onDone);
-  const [title, setTitle] = useState("");
+  const [title, setTitle] = useState(job.title);
+  const [brief, setBrief] = useState("");
   const go = () => run(async (on) => {
     const p = wallet();
     if (!p || !address) throw new Refusal("Connect a wallet first.");
     const text = title.trim().replace(/\s+/g, " ");
-    if (text.length < 3) throw new Refusal("Say what the job is about in a few words.");
+    const details = brief.replace(/\r\n?/g, "\n").trim();
+    if (!details && text.length < 3) throw new Refusal("Say what the job is about in a few words.");
+    if (details.length > 12_000) throw new Refusal("A brief is 12,000 characters at most.");
     on("signing");
     const at = await engineNow();
-    const signature = await signText(p, titleMessage(job.n, text, at), address);
-    on("saving");
-    await saveSigned("jobs/title", { job: job.n, title: text, at, signature }, true);
+    if (details) {
+      const signature = await signText(p, briefMessage(job.n, text, details, at), address);
+      on("saving");
+      await saveSigned("jobs/brief", { job: job.n, title: text, brief: details, at, signature }, true);
+    } else {
+      const signature = await signText(p, titleMessage(job.n, text, at), address);
+      on("saving");
+      await saveSigned("jobs/title", { job: job.n, title: text, at, signature }, true);
+    }
     return { note: "Saved. It shows on the job's page." };
   });
   return (
     <div className="act">
-      <div className="h3">Say what this job is about</div>
-      <p className="small">One line, shown on this page and in lists. You sign it with your wallet; it costs nothing and moves no money.</p>
+      <div className="h3">{needsBrief ? "Say what you want done" : "Say what this job is about"}</div>
+      <p className="small">{needsBrief ? "The agent works from this. You sign it with your wallet; it costs nothing and moves no money. Anyone can read it on this page." : "One line, shown on this page and in lists. You sign it with your wallet; it costs nothing and moves no money."}</p>
       <label className="field" style={{ marginTop: 18 }}>
         <span className="label">The job</span>
         <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={80} placeholder="Summarise a 40-page service agreement" disabled={busy} />
       </label>
+      {needsBrief ? (
+        <label className="field">
+          <span className="label">The brief</span>
+          <textarea value={brief} onChange={(e) => setBrief(e.target.value)} rows={5} maxLength={12_000} placeholder={briefHint || "The details, at whatever length they need"} disabled={busy} />
+          {briefHint ? <div className="hint">{briefHint}</div> : null}
+        </label>
+      ) : null}
       <div className="cta"><Go label="Sign and save" busy={busy} onGo={go} /></div>
       <StatusLine status={status} explorer={explorer} />
     </div>

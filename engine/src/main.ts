@@ -22,6 +22,9 @@ engine.start();
 const BODY_MOST = 4096;
 // an order of an account carries its calls and a passkey's answer: more than a signed name, and still small
 const ORDER_MOST = 32_768;
+// a brief is up to 12,000 characters and the work up to 200,000: as bytes, with room for what carries them
+const BRIEF_BYTES = 64_000;
+const WORK_BYTES = 900_000;
 
 function readJson(req: IncomingMessage, most = BODY_MOST): Promise<unknown> {
   return new Promise((resolve, reject) => {
@@ -66,7 +69,7 @@ const server = createServer((req, res) => {
   }
   if (req.method === "POST") {
     const key = req.headers["x-admin-key"];
-    readJson(req, path.startsWith("/v1/accounts") ? ORDER_MOST : BODY_MOST)
+    readJson(req, path.startsWith("/v1/accounts") ? ORDER_MOST : path === "/v1/jobs/brief" ? BRIEF_BYTES : path === "/v1/jobs/delivery" ? WORK_BYTES : BODY_MOST)
       .then((body) => engine.post(path, body, caller(req), typeof key === "string" ? key : undefined))
       .then((a) => (a ? send(a.status, a.body) : send(404, { error: "not found" })))
       .catch((e: Error) => (e.message === "too large" ? send(413, { error: "the body is too large" }) : e.message === "not JSON" ? send(400, { error: "the body is not JSON" }) : failed()));

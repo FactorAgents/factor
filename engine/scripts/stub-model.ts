@@ -23,7 +23,20 @@ createServer((req, res) => {
     const json = (status: number, body: unknown) => { res.writeHead(status, { "content-type": "application/json", "request-id": `req_stub_${status}` }); res.end(JSON.stringify(body)); };
     if (req.method !== "POST" || req.url !== "/v1/messages") return json(404, { type: "error", error: { type: "not_found_error", message: "not found" } });
     if (req.headers["x-api-key"] !== takes) return json(401, { type: "error", error: { type: "authentication_error", message: "invalid x-api-key" } });
-    const body = JSON.parse(raw.toString("utf8")) as { model: string; max_tokens: number; stream?: boolean };
+    const body = JSON.parse(raw.toString("utf8")) as { model: string; max_tokens: number; stream?: boolean; system?: string; messages?: { content?: unknown }[] };
+    // Factor's own agents ask here too (src/house): each is answered in the shape its service hands over
+    const asked = typeof body.messages?.[0]?.content === "string" ? body.messages[0].content : "";
+    if (typeof body.system === "string" && body.system.includes("page-smith")) {
+      const name = (/The job: (.+)/.exec(asked)?.[1] ?? "A page").replace(/[<>&]/g, "").slice(0, 60);
+      const html = /recovery phrase|seed phrase/i.test(asked)
+        ? "DECLINE: the brief asks for a page that takes a visitor's recovery phrase."
+        : `<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${name}</title><style>body{margin:0;font-family:system-ui,sans-serif;background:#f6f3ec;color:#1b1b1b}main{max-width:720px;margin:0 auto;padding:72px 24px}h1{font-size:44px;line-height:1.1;margin:0 0 16px}p{font-size:18px;line-height:1.6}a{display:inline-block;margin-top:24px;padding:14px 22px;background:#1b1b1b;color:#f6f3ec;text-decoration:none}</style></head><body><main><h1>${name}</h1><p>A page built from the brief by a stand-in for the model, for the end-to-end run.</p><a href="#">Start</a></main></body></html>`;
+      return json(200, { id: "msg_stub", type: "message", role: "assistant", model: body.model, content: [{ type: "text", text: html }], stop_reason: "end_turn", usage: { input_tokens: Math.ceil(raw.length / 4), output_tokens: 600 } });
+    }
+    if (typeof body.system === "string" && body.system.includes("plain-reader")) {
+      const reading = "IN ONE LINE\nA lease for a flat, for two years.\n\nWHAT IT SAYS\n- The tenant pays the rent on the first of each month.\n- The tenant keeps the flat in good order.\n\nWHAT TO WATCH FOR\n- It renews by itself unless either side gives three months of notice.\n\nDATES AND AMOUNTS\n- Two years: how long it runs.\n- Three months: the notice either side must give.";
+      return json(200, { id: "msg_stub", type: "message", role: "assistant", model: body.model, content: [{ type: "text", text: reading }], stop_reason: "end_turn", usage: { input_tokens: Math.ceil(raw.length / 4), output_tokens: 180 } });
+    }
     const usage = { input_tokens: Math.ceil(raw.length / 4), output_tokens: Math.min(120, body.max_tokens) };
     if (!body.stream) return json(200, { id: "msg_stub", type: "message", role: "assistant", model: body.model, content: [{ type: "text", text: said }], stop_reason: "end_turn", usage });
     res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", "request-id": "req_stub_stream" });

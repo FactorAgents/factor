@@ -9,7 +9,7 @@ import { sampleAgent, sampleJob, sampleJobs, sampleLedger, sampleState } from "@
 
 const READS = /^(state|agents|agents\/[0-9a-zA-Z-]{3,42}|jobs|jobs\/\d{1,9}|ledger|burns|accounts\/0x[0-9a-fA-F]{40}|accounts\/relay\/0x[0-9a-f]{64}|accounts\/by-credential\/0x[0-9a-f]{2,2046})$/;
 // two things a wallet signs, and what an account without a wallet asks of the engine (lib/passkey.ts)
-const WRITES = /^(agents\/profile|jobs\/title|accounts|accounts\/check|accounts\/call|accounts\/relay)$/;
+const WRITES = /^(agents\/profile|jobs\/title|jobs\/brief|jobs\/delivery|accounts|accounts\/check|accounts\/call|accounts\/relay)$/;
 const QUERY = ["limit", "before", "show", "agent", "customer"];
 const BODY_MOST = 4096;
 // an order of an account carries its calls and a passkey's answer
@@ -57,7 +57,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ path: stri
   const engine = engineUrl();
   if (!engine) return json({ error: "nothing is live yet" }, 503);
   const text = await req.text();
-  if (text.length > (path.startsWith("accounts") ? ORDER_MOST : BODY_MOST)) return json({ error: "the body is too large" }, 413);
+  // a brief is up to 12,000 characters and a piece of work up to 200,000
+  const most = path.startsWith("accounts") ? ORDER_MOST : path === "jobs/brief" ? 64_000 : path === "jobs/delivery" ? 900_000 : BODY_MOST;
+  if (text.length > most) return json({ error: "the body is too large" }, 413);
   // who is asking is passed on, so the engine's limit on signed writes counts visitors and not this site
   const from = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "";
   try {

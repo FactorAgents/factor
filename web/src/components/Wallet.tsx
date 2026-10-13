@@ -224,12 +224,13 @@ export async function engineNow(): Promise<number> {
 }
 
 /** Hand a signed name or title to the engine. `patient`: the engine may not have seen a brand new job yet. */
-export async function saveSigned(path: "agents/profile" | "jobs/title", body: Record<string, unknown>, patient = false): Promise<void> {
+export async function saveSigned(path: "agents/profile" | "jobs/title" | "jobs/brief" | "jobs/delivery", body: Record<string, unknown>, patient = false): Promise<void> {
   for (let tries = 0; ; tries++) {
     const r = await fetch(`/api/v1/${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
     if (r.ok) return;
     const said = ((await r.json().catch(() => ({}))) as { error?: string }).error ?? "It could not be saved.";
-    if (!(patient && r.status === 404 && tries < 15)) throw new Refusal(said.charAt(0).toUpperCase() + said.slice(1) + (said.endsWith(".") ? "" : "."));
+    // a brand new job, or a delivery the engine has not read yet, shows up a few seconds later: asked again
+    if (!(patient && (r.status === 404 || (r.status === 409 && path === "jobs/delivery")) && tries < 15)) throw new Refusal(said.charAt(0).toUpperCase() + said.slice(1) + (said.endsWith(".") ? "" : "."));
     await new Promise((res) => setTimeout(res, 2000));
   }
 }

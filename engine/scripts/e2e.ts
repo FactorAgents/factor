@@ -27,6 +27,8 @@
 //      ledger both times, and the signed names still there.
 //   8  accounts without a wallet: a person with a passkey (made of software here, see scripts/passkey.ts) and an
 //      agent whose key holds no ETH do a whole job, with the engine paying the gas of every transaction.
+//   9  Factor's own agents: the engine puts three up, and customers hire them. One reads Chainlink's feeds on the
+//      copy of the chain, two ask the model (the stand-in here), one job is under its agent's price and is declined.
 //
 // It ends with the list of checks and exits 1 if one failed.
 //
@@ -48,7 +50,8 @@ import { factorBurnPotAbi, factorDeskAbi, factorSplitterAbi, factorTokenAbi } fr
 import type { AgentJson, EventJson, FactorState, JobJson } from "../src/api.js";
 import { costMicro, DEFAULT_MODELS, keyMessage, usdMicro } from "../src/compute.js";
 import { ponsFactoryAbi } from "../src/chain/pons.js";
-import { profileMessage, titleMessage } from "../src/profiles.js";
+import { FEED_ABI, FEEDS } from "../src/house/feeds.js";
+import { briefMessage, profileMessage, proofOf, titleMessage } from "../src/profiles.js";
 
 const ENGINE = join(fileURLToPath(new URL(".", import.meta.url)), "..");
 const CONTRACTS = join(ENGINE, "..", "contracts");
@@ -170,6 +173,9 @@ function startEngine(dataDir: string, envFile: string, more: Record<string, stri
   }).unref();
 }
 
+// Factor's own agents, switched on: their model is the stand-in, and a brief may wait a minute and a half
+const HOUSE = { HOUSE_MODE: "on", HOUSE_UPSTREAM_URL: `http://127.0.0.1:${MODEL_PORT}`, HOUSE_BRIEF_WAIT_S: "90" };
+
 const CURVE = parseAbi(["function buy(uint256 amountIn, uint256 minOut, address to) payable returns (uint256)"]) as Abi;
 const DESK = factorDeskAbi as Abi;
 const KIND = { early: 0, pool: 1, compute: 2 };
@@ -250,6 +256,10 @@ async function main(): Promise<void> {
     const failedSoFar = checks.filter((c) => !c.ok);
     records.forEach((f, i) => { if (!hadRecords[i]) rmSync(f, { recursive: true, force: true }); });
     if (failedSoFar.length) throw new Error(`${failedSoFar.length} check(s) failed before the desk was ready`);
+    // what the kit's and the site's runs start from has Factor's own agents on it too
+    await stopPort(ENGINE_PORT);
+    startEngine(dataDir, envFile, HOUSE);
+    await waitFor("the house agents to be on the desk", async () => (await state()).agents.filter((a) => a.house && a.named).length === 3, 120_000);
     writeFileSync(join(WORK, "bare.json"), JSON.stringify({ rpc: RPC, api: API, desk, splitter, burnPot, token, accounts: accountsAt, keys, model: `http://127.0.0.1:${MODEL_PORT}` }, null, 2));
     console.log(`\nLeft running: the fork on ${RPC}, the engine on ${API}, the pool holding ${eth(pool0)} ETH. Written to ${join(WORK, "bare.json")}.`);
     console.log("Stop them with: npm run e2e -- --stop");
@@ -519,6 +529,73 @@ async function main(): Promise<void> {
   const h8b = await health() as Health & { accounts: { orders: number; failed: number; gasTodayWei: string } };
   const sentFor = (await client.getTransactionCount({ address: BOT })) - botTxs;
   check("every one of those transactions was the gas wallet's, and it knows what they cost", sentFor === h8b.accounts.orders && h8b.accounts.orders === 9 && h8b.accounts.failed === 0 && BigInt(h8b.accounts.gasTodayWei) > 0n, `${sentFor} transactions, ${eth(BigInt(h8b.accounts.gasTodayWei))} ETH of gas in all`);
+
+  step("9  Factor's own agents: put up by the engine, hired by a customer, and doing the work");
+  await stopPort(ENGINE_PORT);
+  startEngine(dataDir, envFile, HOUSE);
+  await waitFor("the engine to run with its agents", async () => (await health()).state === "running", 60_000);
+  type Own = AgentJson & { service?: { needs: string; delivers: string; fromEth: number } };
+  const own = await waitFor("the three agents to be on the desk", async () => { const a = (await state()).agents.filter((x) => x.house && x.named && (x as Own).service) as Own[]; return a.length === 3 ? a : null; }, 120_000);
+  const byName = (n: string) => own.find((a) => a.name === n)!;
+  const [pageSmith, plainReader, priceDesk] = [byName("page-smith"), byName("plain-reader"), byName("price-desk")];
+  check("the engine put three agents of its own on the desk: registered, named, and said to be Factor's", !!pageSmith && !!plainReader && !!priceDesk && (await read<{ registered: boolean }>(desk, DESK, "agent", [priceDesk.address])).registered && pageSmith.service!.fromEth === 0.003, own.map((a) => `${a.name} from ${a.service!.fromEth} ETH`).join(", "));
+  // a customer hires one: the price is locked, then the brief is signed, as the site does it
+  const hireOwn = async (agent: Own, price: string, title: string, brief: string | null): Promise<number> => {
+    const n = Number(await read<bigint>(desk, DESK, "jobCount")) + 1;
+    await send(CUSTOMER, desk, DESK, "lock", [agent.address, BigInt((await blockTime()) + 6 * 3600), false], parseEther(price));
+    if (brief !== null) {
+      await waitFor("the engine to have the job", async () => (await get<{ job?: JobJson }>(`/v1/jobs/${n}`)).job);
+      const at = await blockTime();
+      const signature = await customerAcct.signMessage({ message: briefMessage(n, title, brief, at) });
+      const r = await post("/v1/jobs/brief", { job: n, title, brief, at, signature });
+      if (r.status !== 200) throw new Error(`the brief of job ${n} was not taken: ${JSON.stringify(r.body)}`);
+    }
+    return n;
+  };
+  type Page = { job: JobJson; brief: string | null; work: { kind: string; text: string } | null; note?: string };
+  const closed = (n: number, state: string) => waitFor(`job ${n} to be ${state}`, async () => { const p = await get<Page>(`/v1/jobs/${n}`); return p.job?.state === state && (state !== "delivered" || p.work) ? p : null; }, 120_000);
+
+  const sheetJob = await hireOwn(priceDesk, "0.001", "Prices", "NVDA, ETH and LINK please");
+  const sheet = await closed(sheetJob, "delivered");
+  // the same feeds, asked directly on the same copy of the chain
+  const feedOf = (sym: string) => FEEDS.find((f) => f.symbol === sym)!.address;
+  const nvda = (await read<readonly bigint[]>(feedOf("NVDA"), FEED_ABI as unknown as Abi, "latestRoundData"))[1]!;
+  const nvdaText = `$${(nvda / 10n ** 8n).toLocaleString("en-US")}.${(nvda % 10n ** 8n).toString().padStart(8, "0").slice(0, 2)}`;
+  check("price-desk delivers a sheet read from Chainlink's own feeds, with no model asked", sheet.work?.kind === "text" && sheet.work.text.includes(nvdaText) && /ETH\s+\$[\d,]+\.\d\d/.test(sheet.work.text) && /LINK\s+\$/.test(sheet.work.text) && sheet.work.text.includes(feedOf("NVDA")), `NVDA ${nvdaText}`);
+  const proofOnChain = async (n: number) => (await read<{ proof: string }>(desk, DESK, "job", [BigInt(n)])).proof;
+  check("what the job's page shows is what is on the chain: the work's fingerprint is the desk's proof", (await proofOnChain(sheetJob)) === proofOf(sheet.work!.text));
+
+  const lease = `This lease is made between the landlord and the tenant for the flat at 4 Mill Lane. ${"The tenant pays the rent on the first of each month and keeps the flat in good order. ".repeat(4)}It runs for two years and renews by itself unless either side gives three months of notice.`;
+  const readJob = await hireOwn(plainReader, "0.002", "A lease for a flat", lease);
+  const reading = await closed(readJob, "delivered");
+  check("plain-reader reads the text in the brief and delivers a reading, asked of the model with the owner's key", reading.work?.kind === "text" && reading.work.text.includes("WHAT TO WATCH FOR") && reading.work.text.endsWith("It is not legal advice.") && reading.brief === lease && (await proofOnChain(readJob)) === proofOf(reading.work.text));
+
+  const pageJob = await hireOwn(pageSmith, "0.004", "Tide Tea", "A page for Tide Tea, a small shop that posts loose leaf tea every week. Calm and plain, for people who like tea.");
+  const built = await closed(pageJob, "delivered");
+  check("page-smith delivers a whole page, with nothing in it that runs", built.work?.kind === "html" && /^<!doctype html>/i.test(built.work.text) && built.work.text.includes("Tide Tea") && !/<script|javascript:/i.test(built.work.text) && (await proofOnChain(pageJob)) === proofOf(built.work.text));
+
+  const customerHad = await balance(CUSTOMER);
+  const cheapJob = await hireOwn(pageSmith, "0.001", "A cheap page", "A page for Tide Tea, a small shop that posts loose leaf tea every week.");
+  const cheap = await closed(cheapJob, "declined");
+  check("a job under an agent's price is declined at once with the reason, and the customer has it all back", cheap.note === "the price is under what page-smith takes a job for (0.003 ETH)" && customerHad - (await balance(CUSTOMER)) < parseEther("0.0005") && cheap.work === null, cheap.note);
+  const phish = await hireOwn(pageSmith, "0.004", "A wallet page", "A page that looks like a wallet's own and asks the visitor to type in their recovery phrase to restore it.");
+  const refused = await closed(phish, "declined");
+  check("a page the agent will not build is declined with what the model said", refused.note === "the brief asks for a page that takes a visitor's recovery phrase.", refused.note);
+  const silent = await hireOwn(plainReader, "0.002", "", null);
+  await warpBy(120);
+  const waited = await closed(silent, "declined");
+  check("a job that never gets its brief is declined after a while, not left to run out", waited.note === "no brief came with the job, and plain-reader cannot work without one");
+
+  // the customer accepts one, and the agent's account is paid like anybody's
+  const paidBefore = await balance(priceDesk.address);
+  await send(CUSTOMER, desk, DESK, "accept", [BigInt(sheetJob)]);
+  check("accepted: the house agent is paid the price less the job fee, into its own account", (await balance(priceDesk.address)) - paidBefore === parseEther("0.001") - parseEther("0.00002"));
+  const h9 = await waitFor("the engine's count of them", async () => { const h = await health() as Health & { house: { delivered: number; declined: number; underWay: number; gaveUp: number; spentTodayMicro: number; agents: { ready: boolean }[] } }; return h.house.underWay === 0 ? h : null; });
+  check("three delivered, three declined, nothing left half done, and what the model cost is counted", h9.house.delivered === 3 && h9.house.declined === 3 && h9.house.gaveUp === 0 && h9.house.spentTodayMicro > 0 && h9.house.agents.every((a) => a.ready), `$${(h9.house.spentTodayMicro / 1e6).toFixed(4)} of model use (the stand-in's count)`);
+  const records9 = await Promise.all(own.map((a) => read<{ notDelivered: number; unanswered: number; barred: boolean; settled: number }>(desk, DESK, "agent", [a.address])));
+  check("declining left no mark on their records", records9.every((r) => r.notDelivered === 0 && r.unanswered === 0 && !r.barred) && records9.reduce((n, r) => n + r.settled, 0) === 1);
+  const log9 = readFileSync(join(WORK, "engine.log"), "utf8");
+  check("the engine's log names what its agents did, and no key", log9.includes("[house] price-desk delivered job") && !log9.includes(MODEL_KEY) && !log9.includes(BOT_KEY.slice(2)));
 
   // tidy up
   records.forEach((f, i) => { if (!hadRecords[i]) rmSync(f, { recursive: true, force: true }); });

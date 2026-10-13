@@ -19,6 +19,7 @@ import { normalizeAddress } from "./chain/address.js";
 import { addressOfKey, hostsOnly, nodeBusy, reason, revertOf, viemChain, viemSigner, type Chain, type Signer } from "./chain/chain.js";
 import { Accounts } from "./accounts.js";
 import { ComputeStore, Gateway } from "./compute.js";
+import { House, takeHouseSeed, type HouseSigner } from "./house/house.js";
 import { Profiles } from "./profiles.js";
 import { configured, readConfig, takeBotKey, takeModelKey, type EngineConfig, type Env } from "./chain/config.js";
 import type { Ctx } from "./chain/context.js";
@@ -34,6 +35,7 @@ export interface EngineOptions {
   now?: () => number; // the wall clock
   pollMs?: number; // how often a sent transaction's receipt is asked for
   manual?: boolean; // no loops: the caller runs each pass itself (tests)
+  houseSigners?: (name: string) => HouseSigner; // instead of the keys made from the seed (tests)
 }
 
 const ZERO = "0x0000000000000000000000000000000000000000";
@@ -66,6 +68,7 @@ export class Engine {
   profiles: Profiles | null = null;
   gateway: Gateway | null = null;
   accounts: Accounts | null = null;
+  house: House | null = null;
   private chain: (Chain & { stop?: () => void }) | null = null;
   private loops = new Map<string, Loop>();
   private stopped = false;
@@ -95,7 +98,7 @@ export class Engine {
     for (const [name, l] of this.loops) loops[name] = { lastRunAt: l.lastRunAt, lastOkAt: l.lastOkAt, runs: l.runs, failures: l.failures, waitMs: l.waitMs, backingOff: l.backingOff };
     return {
       config: this.config, state: this.state, problems: this.problems, warnings: this.warnings, lastError: this.lastError, loops, ctx: this.ctx, rpc: this.chain?.health() ?? null, now: this.now,
-      links: { pons: link(this.env.FACTOR_PONS_URL), github: link(this.env.FACTOR_GITHUB_URL), x: link(this.env.FACTOR_X_URL) }, dataDirSet: !!this.env.FACTOR_DATA_DIR?.trim(), profiles: this.profiles, gateway: this.gateway, accounts: this.accounts,
+      links: { pons: link(this.env.FACTOR_PONS_URL), github: link(this.env.FACTOR_GITHUB_URL), x: link(this.env.FACTOR_X_URL) }, dataDirSet: !!this.env.FACTOR_DATA_DIR?.trim(), profiles: this.profiles, gateway: this.gateway, accounts: this.accounts, house: this.house,
     };
   }
 
@@ -167,6 +170,15 @@ export class Engine {
     const accountSigned = (address: string, message: string, signature: unknown) => this.accounts!.signed(address, message, signature);
     this.profiles = new Profiles(this.ctx.db, this.now, accountSigned);
     this.gateway = new Gateway(c.compute, new ComputeStore(this.ctx.db), this.ctx.db, c.compute.enabled ? takeModelKey(this.env) : null, this.log, accountSigned);
+    // Factor's own agents: put up only while there is a gas wallet to send what they sign
+    this.house = new House(c.house, {
+      db: this.ctx.db, chain: this.chain, desk: c.desk, accounts: this.accounts, profiles: this.profiles,
+      modelKey: c.house.enabled ? takeModelKey(this.env) : null, seed: c.house.enabled ? takeHouseSeed(this.env) : null,
+      live: () => this.ctx?.mode === "live" && !!this.ctx.signer && this.state === "running", now: this.now, log: this.log,
+      ...(this.opts.houseSigners ? { signers: this.opts.houseSigners, paceMs: 0 } : {}),
+    });
+    if (c.house.enabled) this.log(`[house] on: ${this.house.agents.map((a) => a.service.name).join(", ") || "no agent (no key for the model, and none that works without)"}; model ${c.house.model}, up to $${c.house.dailyMicro / 1e6} a day`);
+    else if (c.house.note) this.log(`[house] NOT ON: ${c.house.note}`);
     if (c.accounts.enabled) this.log(`[accounts] on: made by ${c.accounts.factory}; the gas wallet pays up to ${Number(c.accounts.gasDayWei / 10n ** 12n) / 1e6} ETH a day for them`);
     else if (c.accounts.note) this.log(`[accounts] NOT ON: ${c.accounts.note}`);
     if (c.compute.enabled) this.log(`[compute] on: ${Object.keys(c.compute.models).join(", ")}, at the list price plus ${c.compute.markupBps / 100}%`);
@@ -201,6 +213,7 @@ export class Engine {
     const p = this.ctx.params;
     this.every("watch", p.watchEveryMs, () => this.watchOnce().then(() => undefined));
     if (this.ctx.mode === "dry" || this.ctx.mode === "live") this.every("act", p.actEveryMs, () => this.actOnce().then(() => undefined), false);
+    if (this.ctx.mode === "live" && this.config.house.enabled) this.every("house", 5000, () => this.houseOnce(), false);
   }
 
   // Everything about the deployment that can be read back. Throws Wrong with the first thing that is not so.
@@ -347,6 +360,11 @@ export class Engine {
   async actOnce(): Promise<ActResult> {
     if (!this.ctx) throw new Error("the engine is not running");
     return actPass(this.ctx);
+  }
+
+  // One pass of Factor's own agents: whatever each has to do for the jobs locked for it.
+  async houseOnce(): Promise<void> {
+    await this.house?.pass();
   }
 
   // The boot check, when a test wants to wait for it.

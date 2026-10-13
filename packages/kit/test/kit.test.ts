@@ -5,12 +5,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { factorDeskAbi } from "../src/abi/FactorDesk.js";
-import { computeKeyMessage, Factor, orderTypedData, profileMessage, proofOf, Refusal, titleMessage, toWei } from "../src/index.js";
+import { briefMessage, computeKeyMessage, Factor, orderTypedData, profileMessage, proofOf, Refusal, titleMessage, toWei } from "../src/index.js";
 import { orderTypedData as engineOrder } from "../../../engine/src/accounts.js";
 import { limitsFrom, runTool, Spending, TOOLS } from "../src/tools.js";
 import { WORDS } from "../src/words.js";
 import { keyMessage as engineComputeKey } from "../../../engine/src/compute.js";
-import { profileMessage as engineProfile, titleMessage as engineTitle } from "../../../engine/src/profiles.js";
+import { briefMessage as engineBrief, profileMessage as engineProfile, proofOf as engineProof, titleMessage as engineTitle } from "../../../engine/src/profiles.js";
 import { AGENTS, DESK, KEY, stub, type Stub } from "./stub.js";
 
 let s: Stub;
@@ -40,6 +40,9 @@ describe("what a wallet signs", () => {
     expect(profileMessage("0xabc", "lumen-07", "Summarises long documents", 1_791_000_000)).toBe(engineProfile("0xabc", "lumen-07", "Summarises long documents", 1_791_000_000));
     expect(titleMessage(12, "Summarise a contract", 1_791_000_000)).toBe(engineTitle(12, "Summarise a contract", 1_791_000_000));
     expect(computeKeyMessage("0xabc", 1_791_000_000)).toBe(engineComputeKey("0xabc", 1_791_000_000));
+    expect(briefMessage(12, "A lease", "Line one.\n\nLine two.", 1_791_000_000)).toBe(engineBrief(12, "A lease", "Line one.\n\nLine two.", 1_791_000_000));
+    // the fingerprint an agent puts on the chain is the one the site holds shown work to
+    expect(proofOf("The summary: twelve points.")).toBe(engineProof("The summary: twelve points."));
     // an order of an account: the kit's typed data is the engine's, which the end-to-end run holds to the contract's
     const calls = [{ to: DESK, value: 40_000_000_000_000_000n, data: "0x12345678" as const }, { to: AGENTS[0].address, value: 1n, data: "0x" as const }];
     expect(orderTypedData(AGENTS[1].address, 4663, calls, 7n, 1_791_000_600n)).toEqual(engineOrder(AGENTS[1].address, 4663, calls, 7, 1_791_000_600));
@@ -139,6 +142,34 @@ describe("compute credit", () => {
     expect(s.posts.length).toBe(posts);
     expect((await runTool(f, "factor_compute_credit", {}, null)).text).toContain("Compute credit is not switched on yet.");
     s.site.state.compute.enabled = true;
+  });
+});
+
+describe("one of Factor's own agents", () => {
+  it("is not hired with no brief or under its price: said before anything is locked", async () => {
+    const f = await connect({ privateKey: KEY });
+    s.site.state.agents[1].service = { needs: "Say what the page is for.", delivers: "a page", fromEth: 0.003 };
+    const calls = s.node.calls.length, posts = s.posts.length;
+    const none = await refusal(f.hire({ agent: "page-smith", price: "0.01", title: "A page" }));
+    expect(none.code).toBe("no_brief");
+    expect(none.message).toBe("page-smith works from a brief. Say what the page is for.");
+    expect((await refusal(f.hire({ agent: "page-smith", price: "0.001", brief: "A page for a tea shop." }))).code).toBe("under_price");
+    expect((await refusal(f.hire({ agent: "lumen-07", price: "0.01", brief: "x".repeat(12_001) }))).code).toBe("bad_text");
+    expect(s.node.calls.length).toBe(calls);
+    expect(s.posts.length).toBe(posts);
+    expect((await runTool(f, "factor_agent", { agent: "page-smith" }, null)).text).toContain("What to put in the brief: Say what the page is for. It delivers a page, and takes a job from 0.003 ETH.");
+    delete s.site.state.agents[1].service;
+  });
+
+  it("a brief is signed with the job's title, by the wallet that locked it", async () => {
+    const f = await connect({ privateKey: KEY });
+    const before = s.posts.length;
+    await f.brief(12, "Line one.\r\nLine two.", "Summarise a contract");
+    const sent = s.posts[before]!;
+    expect(sent.path).toBe("/jobs/brief");
+    expect(sent.body).toMatchObject({ job: 12, title: "Summarise a contract", brief: "Line one.\nLine two." });
+    expect((sent.body as { signature: string }).signature).toMatch(/^0x[0-9a-f]{130}$/);
+    s.posts.splice(before);
   });
 });
 
