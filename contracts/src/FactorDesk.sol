@@ -50,6 +50,9 @@ contract FactorDesk is ReentrancyGuard {
     uint256 public constant GRACE = 12 hours;
     /// @notice The customer's time to accept or reject a delivery. After it anyone can settle the job.
     uint256 public constant REVIEW = 24 hours;
+    /// @notice A customer counts toward an agent's score once its settled jobs with that agent have paid this much
+    ///         in job fees (0.05 ETH of settled work). Dust jobs from many wallets do not make customers.
+    uint256 public constant CUSTOMER_FEES_MIN = 0.001 ether;
     /// @dev A wallet can carry code. A bounded push keeps such code from eating all the gas of a settlement.
     uint256 internal constant PUSH_GAS = 50_000;
     /// @dev What a caller must still have when a push starts, so that nobody can make a payout fail (and land in
@@ -97,7 +100,7 @@ contract FactorDesk is ReentrancyGuard {
         uint32 settledAtHalf;
         uint32 notDelivered; // jobs it drew an advance on and did not deliver
         uint32 unanswered; // jobs it neither took nor declined, which came back to the customer by themselves
-        uint32 customers; // different customers among its settled jobs
+        uint32 customers; // different customers whose settled jobs with it have paid CUSTOMER_FEES_MIN in fees
         uint32 onTime;
         uint32 late;
         uint32 advancesRepaid;
@@ -123,7 +126,8 @@ contract FactorDesk is ReentrancyGuard {
     mapping(uint256 id => Job) internal jobs;
     mapping(address agent => Agent) internal agents;
     mapping(address customer => Customer) public customers;
-    mapping(address agent => mapping(address customer => bool)) public served;
+    /// @notice The job fees one customer's settled jobs with one agent have paid.
+    mapping(address agent => mapping(address customer => uint256)) public feesFrom;
 
     /// @notice Pool ETH that is here, and pool ETH that is out with agents. The pool is both together.
     uint256 public pool;
@@ -485,7 +489,7 @@ contract FactorDesk is ReentrancyGuard {
     ///         the bond and the fees paid.
     ///           0 if an advance was ever not repaid, or an early advance was kept without delivering
     ///           otherwise  fees paid, 1 point per 0.0005 ETH, at most 350
-    ///                    + 25 per different customer, at most 250
+    ///                    + 25 per different customer whose jobs have paid 0.001 ETH in fees, at most 250
     ///                    + 10 per job settled, at most 200
     ///                    + 2 per day since its first settled job, at most 100
     ///                    + 10 per advance repaid, at most 100
@@ -525,10 +529,10 @@ contract FactorDesk is ReentrancyGuard {
         if (j.late) a.late += 1;
         else a.onTime += 1;
         if (a.firstSettledAt == 0) a.firstSettledAt = uint40(block.timestamp);
-        if (!served[j.agent][j.customer]) {
-            served[j.agent][j.customer] = true;
-            a.customers += 1;
-        }
+        // a customer is counted the moment its fees with this agent reach the floor, and only then
+        uint256 before = feesFrom[j.agent][j.customer];
+        feesFrom[j.agent][j.customer] = before + fee;
+        if (before < CUSTOMER_FEES_MIN && before + fee >= CUSTOMER_FEES_MIN) a.customers += 1;
         customers[j.customer].accepted += 1;
         emit Settled(id, j.agent, toAgent, j.fromPool, fee);
         _pay(j.agent, toAgent);

@@ -107,6 +107,7 @@ score = 0 if an advance was ever not repaid, or an early advance was kept withou
 otherwise the sum of:
   fees paid              1 point per 0.0005 ETH      at most 350
   different customers    25 points each              at most 250
+                         (a customer counts once its settled jobs with the agent have paid 0.001 ETH in fees)
   jobs settled           10 points each              at most 200
   days since first job   2 points a day              at most 100
   advances repaid        10 points each              at most 100
@@ -115,6 +116,9 @@ less 50 for each job settled at half
 
 A job the agent drew on and did not deliver always sets the score to 0 by the first line: it either left a pool
 advance unpaid or kept an early one.
+
+**Why a customer has to have paid fees to count.** Twenty wallets with one dust job each would otherwise be twenty
+customers for next to nothing. With the floor, each counted customer has put 0.001 ETH into the pool.
 
 **The score moves no money.** It is there for a customer choosing an agent. The pool's limit uses only the bond and
 the fees paid.

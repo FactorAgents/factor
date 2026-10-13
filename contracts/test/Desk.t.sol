@@ -105,7 +105,8 @@ contract DeskTest is DeskBase {
 
         FactorDesk.Agent memory a = desk.agent(agentA);
         assertEq(a.settled, 1);
-        assertEq(a.customers, 1);
+        assertEq(a.customers, 0, "0.0008 in fees is not yet a customer that counts");
+        assertEq(desk.feesFrom(agentA, customer), 0.0008 ether);
         assertEq(a.onTime, 1);
         assertEq(a.advancesRepaid, 1);
         assertEq(a.feesPaid, 0.0008 ether);
@@ -840,6 +841,45 @@ contract DeskTest is DeskBase {
         desk.refund(five);
         assertEq(desk.score(agentA), 0);
         assertEq(desk.agent(agentA).notDelivered, 1);
+    }
+
+    /// A customer counts once its settled jobs with the agent have paid 0.001 ETH in fees, which is 0.05 ETH of
+    /// work. Dust jobs from many wallets make no customers.
+    function test_aCustomerCountsOnlyOnceItsJobsHavePaidRealFees() public {
+        // twenty wallets, one smallest job each: twenty settled jobs and not one customer
+        for (uint256 i = 0; i < 20; ++i) {
+            address c = address(uint160(0xD057 + i));
+            uint256 id = _lockFrom(c, agentA, 0.001 ether, false);
+            _deliver(agentA, id);
+            vm.prank(c);
+            desk.accept(id);
+        }
+        assertEq(desk.agent(agentA).settled, 20);
+        assertEq(desk.agent(agentA).customers, 0);
+
+        // one customer, small jobs: it counts when their fees add up to the floor, and it counts once
+        for (uint256 i = 0; i < 4; ++i) {
+            uint256 id = _lock(agentA, 0.02 ether, false);
+            _deliver(agentA, id);
+            _accept(id);
+            assertEq(desk.agent(agentA).customers, i < 2 ? 0 : 1, "three jobs of 0.02 reach 0.0012 in fees");
+        }
+        assertEq(desk.feesFrom(agentA, customer), 0.0016 ether);
+
+        // a rejected job pays a fee to the pool but does not make its customer count
+        uint256 half = _lockFrom(other, agentA, 1 ether, false);
+        _deliver(agentA, half);
+        vm.prank(other);
+        desk.reject(half);
+        assertEq(desk.agent(agentA).customers, 1);
+        assertEq(desk.feesFrom(agentA, other), 0);
+
+        // and one job of 0.05 ETH is exactly enough
+        uint256 exact = _lockFrom(other, agentA, 0.05 ether, false);
+        _deliver(agentA, exact);
+        vm.prank(other);
+        desk.accept(exact);
+        assertEq(desk.agent(agentA).customers, 2);
     }
 
     function test_theScoreStopsAtItsCaps() public {
