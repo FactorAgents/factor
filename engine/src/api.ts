@@ -37,6 +37,7 @@ import type { Pulse } from "./pulse.js";
 import { ethOf, type DeskMind, type Facts, type Note } from "./deskmind.js";
 import type { LaunchList } from "./launchlist.js";
 import type { HouseActivity } from "./activity.js";
+import type { Matcher } from "./match.js";
 import { signerOf } from "./profiles.js";
 
 export interface Answer {
@@ -68,6 +69,8 @@ export interface EngineView {
   deskMind?: DeskMind | null;
   launchList?: LaunchList | null;
   activity?: HouseActivity | null;
+  /** "just say what you need" (./match.ts) */
+  matcher?: Matcher | null;
 }
 
 // ---- the site's shape: web/src/lib/types.ts. Keep the two in step by hand. ----
@@ -409,6 +412,19 @@ export class EngineApi {
     return ++seen.n > most;
   }
 
+  // "Just say what you need": the job in the customer's words, matched to an agent on the desk with a brief written
+  // for it (./match.ts). Nothing is hired here: the customer locks the job themselves.
+  private async matchPost(body: unknown, from: string): Promise<Answer> {
+    const v = this.view();
+    if (!v.matcher) return { status: 503, body: { error: "matching is not switched on" } };
+    if (this.tooMany(from, "match", 8)) return { status: 429, body: { error: "too many requests: try again in a minute" } };
+    const text = body && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>).text : undefined;
+    if (typeof text !== "string") return { status: 400, body: { error: "send { \"text\": \"what you need\" }" } };
+    const candidates = this.agents(v).filter((a) => a.named && a.does.trim()).map((a) => ({ name: a.name, does: a.does, needs: a.service?.needs, fromEth: a.service?.fromEth ?? null }));
+    const r = await v.matcher.match(text, candidates);
+    return r.ok ? ok({ ...r.match, cached: r.cached }) : { status: r.status, body: { error: r.error } };
+  }
+
   private async accountsPost(path: string, body: unknown, from: string): Promise<Answer | null> {
     const what = path.slice("/v1/accounts".length);
     if (what !== "" && what !== "/check" && what !== "/call" && what !== "/relay") return null;
@@ -475,6 +491,7 @@ export class EngineApi {
 
   // A signed write. `from` is the caller's address on the network, for the limit on how many one may send.
   async post(path: string, body: unknown, from: string, adminKey?: string): Promise<Answer | null> {
+    if (path === "/v1/match") return this.matchPost(body, from);
     if (path === "/v1/accounts" || path.startsWith("/v1/accounts/")) return this.accountsPost(path, body, from);
     if (path === "/v1/agents/make" || path === "/v1/agents/pause") return this.hostedPost(path, body, from);
     if (path !== "/v1/agents/profile" && path !== "/v1/jobs/title" && path !== "/v1/jobs/brief" && path !== "/v1/jobs/delivery" && path !== "/v1/admin/hide" && path !== "/v1/admin/switch") return null;

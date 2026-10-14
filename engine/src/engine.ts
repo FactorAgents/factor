@@ -32,6 +32,7 @@ import { Pulse, pulseOn } from "./pulse.js";
 import { DeskMind, anthropicWriter, deskOn } from "./deskmind.js";
 import { LaunchList } from "./launchlist.js";
 import { HouseActivity, activityOn, anthropicAsk } from "./activity.js";
+import { Matcher, matchOn } from "./match.js";
 import { DEFAULT_MODELS } from "./compute.js";
 
 export interface EngineOptions {
@@ -85,6 +86,8 @@ export class Engine {
   launchList: LaunchList;
   /** Factor's own agents at work before the launch (./activity.ts) */
   activity: HouseActivity | null = null;
+  /** "just say what you need" (./match.ts): on whenever there is a model key, off with MATCH=off */
+  matcher: Matcher | null = null;
   private carryTimer: ReturnType<typeof setInterval> | null = null;
   private deskTimer: ReturnType<typeof setInterval> | null = null;
   private deskBusy = false;
@@ -142,7 +145,7 @@ export class Engine {
     for (const [name, l] of this.loops) loops[name] = { lastRunAt: l.lastRunAt, lastOkAt: l.lastOkAt, runs: l.runs, failures: l.failures, waitMs: l.waitMs, backingOff: l.backingOff };
     return {
       config: this.config, state: this.state, problems: this.problems, warnings: this.warnings, lastError: this.lastError, loops, ctx: this.ctx, rpc: this.chain?.health() ?? null, now: this.now,
-      links: { pons: link(this.env.FACTOR_PONS_URL), github: link(this.env.FACTOR_GITHUB_URL), x: link(this.env.FACTOR_X_URL) }, dataDirSet: !!this.env.FACTOR_DATA_DIR?.trim(), profiles: this.profiles, gateway: this.gateway, accounts: this.accounts, house: this.house, demo: this.demo, pulse: this.pulse, deskMind: this.deskMind, launchList: this.launchList, activity: this.activity,
+      links: { pons: link(this.env.FACTOR_PONS_URL), github: link(this.env.FACTOR_GITHUB_URL), x: link(this.env.FACTOR_X_URL) }, dataDirSet: !!this.env.FACTOR_DATA_DIR?.trim(), profiles: this.profiles, gateway: this.gateway, accounts: this.accounts, house: this.house, demo: this.demo, pulse: this.pulse, deskMind: this.deskMind, launchList: this.launchList, activity: this.activity, matcher: this.matcher,
     };
   }
 
@@ -174,6 +177,12 @@ export class Engine {
       this.pulse.start();
     }
     // Before the launch Factor's own agents do small real jobs every few minutes, for the home page's receipt.
+    if (!this.matcher && matchOn(this.env) && this.env.ANTHROPIC_API_KEY?.trim()) {
+      const model = this.env.MATCH_MODEL?.trim() || "claude-haiku-4-5-20251001";
+      const p = DEFAULT_MODELS[model] ?? DEFAULT_MODELS["claude-haiku-4-5-20251001"]!;
+      const daily = Number(this.env.MATCH_DAILY_USD);
+      this.matcher = new Matcher({ ask: anthropicAsk(this.env.ANTHROPIC_API_KEY.trim(), model, this.env.HOUSE_UPSTREAM_URL?.trim() || undefined), price: { in: p.in, out: p.out }, dailyUsd: Number.isFinite(daily) && daily > 0 ? daily : 1 });
+    }
     if (!this.activity && activityOn(this.env) && !this.opts.chain && !this.opts.manual && !process.env.VITEST && c.rpcUrls.length) {
       const key = this.env.ANTHROPIC_API_KEY?.trim();
       const model = this.env.HOUSE_MODEL?.trim() || "claude-sonnet-5-5";
