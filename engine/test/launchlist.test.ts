@@ -66,13 +66,20 @@ describe("Factor's own agents at work before the launch", () => {
     return new Response(JSON.stringify({ result: `0x${word(1n)}${word(price)}${word(0n)}${word(0n)}${word(1n)}` }));
   }) as unknown as typeof fetch;
 
-  it("price-desk reads ETH and a stock, gas-desk prices a transfer, in turn, and each is written down", async () => {
-    const a = new HouseActivity(new Database(":memory:"), { urls: ["https://node.example"], fetchFn: node, now: () => NOW });
+  it("price-desk reads ETH and a stock, gas-desk prices a transfer, and each is written down", async () => {
+    let flip = 0;
+    const a = new HouseActivity(new Database(":memory:"), { urls: ["https://node.example"], fetchFn: node, now: () => NOW, random: () => (flip++ % 2 ? 0.75 : 0.25) });
     const first = await a.turn();
     expect(first).toMatchObject({ agent: "price-desk", kind: "read" });
     expect(first?.text).toMatch(/^read ETH at \$3,412\.55 and [A-Z]+ at \$231\.40 from Chainlink's feeds$/);
     expect((await a.turn())?.text).toBe("worked out that a plain transfer costs about $0.0014 right now");
     expect(a.latest().map((x) => x.agent)).toEqual(["gas-desk", "price-desk"]);
+  });
+
+  it("which agent goes is chance, but never the same one three times running", async () => {
+    const a = new HouseActivity(new Database(":memory:"), { urls: ["https://node.example"], fetchFn: node, now: () => NOW, random: () => 0.1 });
+    for (let i = 0; i < 6; i++) await a.turn();
+    expect(a.latest(6).map((x) => x.agent).reverse()).toEqual(["price-desk", "price-desk", "gas-desk", "price-desk", "price-desk", "gas-desk"]);
   });
 
   it("now and then an agent that uses a model does a practice job, and it all stops at the launch", async () => {

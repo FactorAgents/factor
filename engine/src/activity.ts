@@ -1,7 +1,8 @@
 // Before the launch: Factor's own agents at work, for real, a little at a time.
 //
 // Nothing happens on the desk before the launch, and the site makes nothing up. What can happen is the agents doing
-// what they do, on their own account: every few minutes (ACTIVITY_EVERY_MIN, 5) one of them does one small real job and
+// what they do, on their own account: every few minutes (about ACTIVITY_EVERY_MIN, 5, on average, never on the dot) one
+// of them does one small real job and
 // it is written down, so the receipt on the home page shows the platform working:
 //   - price-desk reads ETH and a stock from Chainlink's feeds on the chain, the prices as the feeds have them
 //   - gas-desk works out what a plain transfer costs right now, in dollars, from the chain's gas price and ETH's price
@@ -55,6 +56,8 @@ export interface ActivityOptions {
   practiceEvery?: number;
   launched?: () => boolean;
   now?: () => number;
+  /** a number from 0 to 1: how long the next wait is, and which agent goes */
+  random?: () => number;
   fetchFn?: typeof fetch;
 }
 
@@ -64,7 +67,9 @@ const STOCKS = FEEDS.filter((f) => f.kind === "equity");
 const PRACTISED = SERVICES.filter((s) => s.ask && BRIEFS[s.name]?.length);
 
 export class HouseActivity {
-  private timer: ReturnType<typeof setInterval> | null = null;
+  private timer: ReturnType<typeof setTimeout> | null = null;
+  private on = false;
+  private last: ("prices" | "gas")[] = [];
   private busy = false;
   private turnN = 0;
   private ethUsd: number | null = null;
@@ -72,6 +77,7 @@ export class HouseActivity {
   private readonly practiceEvery: number;
   private readonly now: () => number;
   private readonly fetchFn: typeof fetch;
+  private readonly random: () => number;
 
   constructor(private sqlite: Database.Database, private o: ActivityOptions) {
     sqlite.exec(SCHEMA);
@@ -79,19 +85,28 @@ export class HouseActivity {
     this.practiceEvery = Math.max(2, o.practiceEvery ?? 24);
     this.now = o.now ?? Date.now;
     this.fetchFn = o.fetchFn ?? fetch;
+    this.random = o.random ?? Math.random;
     this.turnN = (sqlite.prepare("SELECT COUNT(*) AS n FROM house_activity").get() as { n: number }).n;
   }
 
   start(): void {
-    if (this.timer) return;
-    setTimeout(() => void this.turn(), 20_000).unref?.();
-    this.timer = setInterval(() => void this.turn(), this.everyMs);
-    this.timer.unref?.();
+    if (this.on) return;
+    this.on = true;
+    this.next(20_000);
   }
 
   stop(): void {
-    if (this.timer) clearInterval(this.timer);
+    this.on = false;
+    if (this.timer) clearTimeout(this.timer);
     this.timer = null;
+  }
+
+  // the wait before the next job is anywhere from two fifths of the usual to nearly twice it, so the lines never come
+  // on a beat: with the usual 5 minutes, between 2 and 9
+  private next(ms = Math.round(this.everyMs * (0.4 + 1.4 * this.random()))): void {
+    if (!this.on) return;
+    this.timer = setTimeout(() => { void this.turn().finally(() => this.next()); }, ms);
+    this.timer.unref?.();
   }
 
   latest(limit = 8): Activity[] {
@@ -165,7 +180,11 @@ export class HouseActivity {
     try {
       const n = this.turnN++;
       if (this.o.ask && n % this.practiceEvery === this.practiceEvery - 1) return (await this.practice().catch(() => null)) ?? (await this.prices());
-      return n % 2 === 0 ? await this.prices() : await this.gas();
+      // either agent, by chance, but not the same one three times running
+      const [a, b] = this.last.slice(-2);
+      const go = a && a === b ? (a === "prices" ? "gas" : "prices") : this.random() < 0.5 ? "prices" : "gas";
+      this.last = [...this.last.slice(-1), go];
+      return go === "prices" ? await this.prices() : await this.gas();
     } catch {
       return null;
     } finally {
