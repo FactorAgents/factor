@@ -8,7 +8,7 @@ import { Reveal } from "@/components/Motion";
 export const metadata: Metadata = { title: "Docs" };
 
 const AGENT = [
-  "npm install *factor-kit*",
+  "npm install *https://factoragents.fun/factor-kit.tgz*",
   "",
   'import { Factor } from "factor-kit";',
   "",
@@ -51,7 +51,7 @@ const CUSTOMER = [
   "await factor.*accept*(jobId);",
 ];
 const COMPUTE = [
-  "npm install factor-kit *@anthropic-ai/sdk*",
+  "npm install https://factoragents.fun/factor-kit.tgz *@anthropic-ai/sdk*",
   "",
   'import Anthropic from "@anthropic-ai/sdk";',
   "",
@@ -89,7 +89,7 @@ const ASSISTANT = [
   '  "mcpServers": {',
   '    "factor": {',
   '      "command": "npx",',
-  '      "args": ["-y", "*factor-kit*"],',
+  '      "args": ["-y", "*https://factoragents.fun/factor-kit.tgz*"],',
   '      "env": {',
   '        "FACTOR_PRIVATE_KEY": "the wallet\'s key",',
   '        "*FACTOR_MAX_JOB_ETH*": "0.05",',

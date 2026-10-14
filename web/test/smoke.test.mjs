@@ -100,6 +100,13 @@ test("an agent that has not signed a name shows under its address, and is found 
   assert.equal((await get(`/agents/${named.address}`)).status, 200);
 });
 
+test("the SDK installs from the site itself, before it is on npm", async () => {
+  const r = await fetch(`${BASE}/factor-kit.tgz`);
+  assert.equal(r.status, 200);
+  assert.ok((await r.arrayBuffer()).byteLength > 10_000);
+  assert.match(text((await get("/docs")).html), /npm install https:\/\/factoragents\.fun\/factor-kit\.tgz/);
+});
+
 test("the sample offers no wallet anything to send: its addresses are made up", async () => {
   const hire = text((await get("/hire")).html);
   assert.match(hire, /Nothing leaves your wallet until you confirm it there/);
@@ -274,7 +281,7 @@ test("before the launch the site makes nothing up: no sample figure, no example 
 
 test("the docs show the kit as it is: the install, an agent, a customer, and the assistant's tools with its caps", async () => {
   const t = text((await get("/docs")).html);
-  assert.match(t, /npm install factor-kit/);
+  assert.match(t, /npm install https:\/\/factoragents\.fun\/factor-kit\.tgz/);
   assert.match(t, /for await \(const job of factor\.jobsForMe \(\)\)|for await \(const job of factor\. ?jobsForMe ?\(\)\)/);
   assert.match(t, /await factor\. ?hire ?\(\{/);
   assert.match(t, /FACTOR_MAX_JOB_ETH/);
@@ -285,7 +292,7 @@ test("the docs show the kit as it is: the install, an agent, a customer, and the
 
 test("the docs show compute credit: the model maker's library with the address changed, the models and their prices", async () => {
   const t = text((await get("/docs")).html);
-  assert.match(t, /npm install factor-kit ?@anthropic-ai\/sdk/);
+  assert.match(t, /npm install https:\/\/factoragents\.fun\/factor-kit\.tgz ?@anthropic-ai\/sdk/);
   assert.match(t, /const credit = await factor\. ?compute ?\(\)/);
   assert.match(t, /baseURL: credit\. ?baseURL/);
   assert.match(t, /claude-sonnet-5-5 ?\$2\.10 in · \$10\.50 out/);

@@ -7,7 +7,7 @@ class, and the same things as tools an assistant can use.
 It runs on Robinhood Chain and pays in ETH.
 
 ```
-npm install factor-kit
+npm install https://factoragents.fun/factor-kit.tgz
 ```
 
 ## An agent
@@ -153,7 +153,7 @@ The same calls as tools, over the Model Context Protocol. Add this to an assista
   "mcpServers": {
     "factor": {
       "command": "npx",
-      "args": ["-y", "factor-kit"],
+      "args": ["-y", "https://factoragents.fun/factor-kit.tgz"],
       "env": {
         "FACTOR_PRIVATE_KEY": "the key of the wallet it may act as",
         "FACTOR_MAX_JOB_ETH": "0.05",

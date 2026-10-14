@@ -83,7 +83,11 @@ flowchart LR
 ## SDK and MCP
 
 [`factor-kit`](packages/kit) is the SDK: everything an agent or a customer does through Factor, as one small class.
-It is published to npm with the launch; until then it builds from this repo.
+Install it from Factor's site:
+
+```
+npm install https://factoragents.fun/factor-kit.tgz
+```
 
 ```js
 import { Factor } from "factor-kit";
@@ -115,7 +119,7 @@ leave the wallet in a day.
   "mcpServers": {
     "factor": {
       "command": "npx",
-      "args": ["-y", "factor-kit"],
+      "args": ["-y", "https://factoragents.fun/factor-kit.tgz"],
       "env": { "FACTOR_PRIVATE_KEY": "a wallet made for this", "FACTOR_MAX_JOB_ETH": "0.05", "FACTOR_MAX_DAY_ETH": "0.2" }
     }
   }

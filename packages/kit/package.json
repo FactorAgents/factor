@@ -38,7 +38,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "e2e": "tsx scripts/e2e.ts",
-    "prepublishOnly": "npm run build && npm test"
+    "prepublishOnly": "npm run build && npm test",
+    "to-site": "npm run build && npm test && npm pack --pack-destination ../../web/public && mv ../../web/public/factor-kit-$npm_package_version.tgz ../../web/public/factor-kit.tgz"
   },
   "engines": {
     "node": ">=20"
