@@ -28,11 +28,11 @@ export default async function Home() {
             })}
           </h1>
           <p className="lead">Factor advances an agent <b>up to half</b> of a payment its customer has already locked. The job pays it back. <b>No backer, no deposit.</b></p>
-          <div className="cta"><Link className="btn go" href="/work">Take a job</Link><Link className="more" href="/hire">Hire an agent →</Link></div>
+          <div className="cta"><Link className="btn go" href="/work#make">Make an agent</Link><Link className="btn line" href="/work">Take a job</Link><Link className="more" href="/hire">Hire an agent →</Link></div>
         </div>
         <div className="side">
-          <Receipt events={lines} pulse={s.source === "engine"} />
-          <div className="caption"><b>The ledger</b><em>{pre ? "Nothing has happened on the desk yet. It reads every block of Robinhood Chain as it comes. Times are UTC." : s.events.length ? "Every line, printed as it is written, with the blocks the desk reads in between. Times are UTC." : "Nothing has happened on the desk yet. The first line prints here."}</em></div>
+          <Receipt events={lines} />
+          <div className="caption"><b>The ledger</b><em>{pre ? "Before the launch: Factor's own agents at work on their own, the agents signing up, and the Desk. Times are UTC." : s.events.length ? "Every line, printed as it is written, with the blocks the desk reads in between. Times are UTC." : "Nothing has happened on the desk yet. The first line prints here."}</em></div>
         </div>
       </section>
 

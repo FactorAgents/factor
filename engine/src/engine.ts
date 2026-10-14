@@ -30,6 +30,9 @@ import { watchPass, type WatchResult } from "./chain/watch.js";
 import { EngineApi, link, type Answer, type EngineView } from "./api.js";
 import { Pulse, pulseOn } from "./pulse.js";
 import { DeskMind, anthropicWriter, deskOn } from "./deskmind.js";
+import { LaunchList } from "./launchlist.js";
+import { HouseActivity, activityOn, anthropicAsk } from "./activity.js";
+import { DEFAULT_MODELS } from "./compute.js";
 
 export interface EngineOptions {
   env?: Env; // instead of process.env (tests)
@@ -78,6 +81,11 @@ export class Engine {
   pulse: Pulse | null = null;
   /** the Desk, Factor's own mind (./deskmind.ts) */
   deskMind: DeskMind | null = null;
+  /** agents signed up before the launch (./launchlist.ts) */
+  launchList: LaunchList;
+  /** Factor's own agents at work before the launch (./activity.ts) */
+  activity: HouseActivity | null = null;
+  private carryTimer: ReturnType<typeof setInterval> | null = null;
   private deskTimer: ReturnType<typeof setInterval> | null = null;
   private deskBusy = false;
   private chain: (Chain & { stop?: () => void }) | null = null;
@@ -102,6 +110,31 @@ export class Engine {
     const print = opts.log ?? ((line: string) => console.log(`${new Date().toISOString().slice(11, 19)} ${line}`));
     this.log = (line) => print(hostsOnly(line));
     this.api = new EngineApi(() => this.view());
+    // the sign-ups are kept in the same file whatever the mode, so they are there at the launch
+    this.launchList = new LaunchList(sqlite, { perOwner: this.config.house.hosted.perOwner, most: this.config.house.hosted.most, floorWei: this.config.house.hosted.floorWei, now: this.now });
+  }
+
+  /**
+   * At the launch, the sign-ups are carried onto the desk: an agent made before it is made now, run by Factor like any
+   * other (when making agents is on), and an agent with a wallet of its own gets the name its wallet signed.
+   */
+  carrySignups(): number {
+    if (this.state !== "running" || !this.ctx || !this.house) return 0;
+    let n = 0;
+    for (const r of this.launchList.waiting()) {
+      if (r.kind === "made") {
+        if (!this.house.canMake()) continue;
+        const made = this.house.make({ owner: r.owner, name: r.name, does: r.does, instructions: r.instructions ?? "", priceWei: BigInt(r.price_wei ?? "0"), payout: r.payout ?? r.owner });
+        if (!made.ok && made.status !== 409) continue;
+        if (made.ok && r.paused) this.house.pause(r.owner, r.name, true);
+      } else {
+        this.ctx.db.q("INSERT INTO agent_profiles (address, name, name_key, does, signed_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(address) DO NOTHING").run(r.owner, r.name, r.name.toLowerCase(), r.does, r.signed_at);
+      }
+      this.launchList.carried(r.id);
+      n++;
+    }
+    if (n) this.log(`[launch list] carried ${n} sign-up${n === 1 ? "" : "s"} onto the desk`);
+    return n;
   }
 
   private view(): EngineView {
@@ -109,7 +142,7 @@ export class Engine {
     for (const [name, l] of this.loops) loops[name] = { lastRunAt: l.lastRunAt, lastOkAt: l.lastOkAt, runs: l.runs, failures: l.failures, waitMs: l.waitMs, backingOff: l.backingOff };
     return {
       config: this.config, state: this.state, problems: this.problems, warnings: this.warnings, lastError: this.lastError, loops, ctx: this.ctx, rpc: this.chain?.health() ?? null, now: this.now,
-      links: { pons: link(this.env.FACTOR_PONS_URL), github: link(this.env.FACTOR_GITHUB_URL), x: link(this.env.FACTOR_X_URL) }, dataDirSet: !!this.env.FACTOR_DATA_DIR?.trim(), profiles: this.profiles, gateway: this.gateway, accounts: this.accounts, house: this.house, demo: this.demo, pulse: this.pulse, deskMind: this.deskMind,
+      links: { pons: link(this.env.FACTOR_PONS_URL), github: link(this.env.FACTOR_GITHUB_URL), x: link(this.env.FACTOR_X_URL) }, dataDirSet: !!this.env.FACTOR_DATA_DIR?.trim(), profiles: this.profiles, gateway: this.gateway, accounts: this.accounts, house: this.house, demo: this.demo, pulse: this.pulse, deskMind: this.deskMind, launchList: this.launchList, activity: this.activity,
     };
   }
 
@@ -139,6 +172,22 @@ export class Engine {
     if (!this.pulse && pulseOn(this.env) && !this.opts.chain && !this.opts.manual && !process.env.VITEST && c.rpcUrls.length) {
       this.pulse = new Pulse(c.rpcUrls, { everyMs: Number(this.env.ENGINE_PULSE_MS) || undefined, now: this.now });
       this.pulse.start();
+    }
+    // Before the launch Factor's own agents do small real jobs every few minutes, for the home page's receipt.
+    if (!this.activity && activityOn(this.env) && !this.opts.chain && !this.opts.manual && !process.env.VITEST && c.rpcUrls.length) {
+      const key = this.env.ANTHROPIC_API_KEY?.trim();
+      const model = this.env.HOUSE_MODEL?.trim() || "claude-sonnet-5-5";
+      const p = DEFAULT_MODELS[model] ?? DEFAULT_MODELS["claude-sonnet-5-5"]!;
+      this.activity = new HouseActivity(this.sqlite, {
+        urls: c.rpcUrls, ask: key ? anthropicAsk(key, model, this.env.HOUSE_UPSTREAM_URL?.trim() || undefined) : null, price: { in: p.in, out: p.out },
+        everyMin: Number(this.env.ACTIVITY_EVERY_MIN) || undefined, practiceEvery: Number(this.env.ACTIVITY_PRACTICE_EVERY) || undefined,
+        launched: () => this.state === "running", now: this.now,
+      });
+      this.activity.start();
+    }
+    if (!this.carryTimer && !this.opts.manual) {
+      this.carryTimer = setInterval(() => { try { this.carrySignups(); } catch (e) { this.log(`[launch list] carrying failed: ${e instanceof Error ? e.message : String(e)}`); } }, 60_000);
+      this.carryTimer.unref?.();
     }
     // the Desk writes whatever the mode is too: its opening files before the launch, then the rest as the desk works.
     // Its notes are worded by the model when there is a key, and written plainly from the facts when there is not.
@@ -427,6 +476,8 @@ export class Engine {
   // followed to the end, so nothing is left half written.
   async stop(): Promise<void> {
     this.pulse?.stop();
+    this.activity?.stop();
+    if (this.carryTimer) clearInterval(this.carryTimer);
     if (this.deskTimer) clearInterval(this.deskTimer);
     this.stopped = true;
     if (this.bootTimer) clearTimeout(this.bootTimer);

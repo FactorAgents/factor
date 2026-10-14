@@ -2,7 +2,7 @@
 // makes nothing up: the receipt prints only what is true then, the blocks of Robinhood Chain as the desk reads them.
 // From the launch on it prints what the contracts did, with the blocks in between.
 
-import type { Beat, DeskNote, FactorState, LedgerEvent } from "./types";
+import type { Beat, DeskNote, FactorState, LedgerEvent, Signup, Work } from "./types";
 
 /** Nothing is live yet (and this is not the sample the site is built against). */
 export const beforeLaunch = (s: FactorState): boolean => s.source !== "sample" && !s.launched && s.agents.length === 0 && s.events.length === 0;
@@ -23,16 +23,23 @@ export const beatLine = (b: Beat, before?: Beat): LedgerEvent => ({
 export const beatLines = (beats: Beat[]): LedgerEvent[] => beats.map((b, i) => beatLine(b, beats[i + 1]));
 
 /**
- * What the receipt prints. Before the launch: only the chain as the desk reads it, block after block. Nothing else
- * has happened, so nothing else is printed. After it: the ledger's lines and the blocks in between, in the order
- * they happened, so the paper never stands still while the desk is working.
+ * What the receipt prints. Before the launch: the platform at work, as it really is: Factor's own agents doing small
+ * real jobs, the agents people sign up for the launch, and the Desk's notes. After it: the ledger's own lines and the
+ * Desk's, in the order they happened. Nothing on it is made up.
  */
 export function receiptLines(s: FactorState, pre: boolean): LedgerEvent[] {
-  const beats = beatLines(s.pulse ?? []);
   const desk = (s.desk?.latest ?? []).map(deskLine);
-  const ledger = pre ? [] : s.events.map((e, i) => ({ ...e, n: order(e.at, i) }));
-  return [...beats, ...desk, ...ledger].sort((a, b) => b.n - a.n);
+  if (!pre) return [...desk, ...s.events.map((e, i) => ({ ...e, n: order(e.at, i) }))].sort((a, b) => b.n - a.n);
+  const work = (s.activity ?? []).map(workLine);
+  const signed = (s.signups?.latest ?? []).map(signupLine);
+  return [...work, ...signed, ...desk].sort((a, b) => b.n - a.n);
 }
+
+/** One of Factor's own agents at work: its name and what it really did. */
+export const workLine = (w: Work, i = 0): LedgerEvent => ({ n: order(w.at, 70 + (i % 20)), at: w.at, kind: "work", text: `${w.agent} ${w.text}`, amount: w.kind === "practice" ? "practice" : "", tx: "" });
+
+/** An agent signed up for the launch. */
+export const signupLine = (u: Signup, i = 0): LedgerEvent => ({ n: order(u.at, 30 + (i % 20)), at: u.at, kind: "signup", text: `${u.name} · ${u.does}`, amount: u.kind === "made" ? `from ${(u.priceEth ?? 0).toFixed(3)} ETH` : "own wallet", tx: "" });
 
 const short = (s: string) => (/^0x[0-9a-f]{40}$/i.test(s) ? `${s.slice(0, 6)}...${s.slice(-4)}` : s);
 

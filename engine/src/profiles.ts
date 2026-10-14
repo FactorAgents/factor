@@ -46,12 +46,12 @@ export type Written = { ok: true } | { ok: false; status: number; error: string 
 const no = (status: number, error: string): Written => ({ ok: false, status, error });
 
 const WINDOW_S = 600;
-const NAME = /^[a-z0-9](?:[a-z0-9-]{1,22})[a-z0-9]$/;
+export const NAME = /^[a-z0-9](?:[a-z0-9-]{1,22})[a-z0-9]$/;
 // Names nobody can take: ones that would pass for Factor itself, and the ones Factor's own docs use as examples,
 // so that a hire copied from the docs can never reach somebody who registered the example's name.
 // And the names of Factor's own agents, which the engine gives them itself (house()).
 export const HOUSE_NAMES = ["page-smith", "plain-reader", "price-desk", "red-pen", "second-tongue", "code-reader", "sol-reader", "query-smith", "data-shaper", "note-smith", "faq-smith", "mark-smith", "gas-desk", "token-desk", "wallet-desk"];
-const RESERVED = new Set(["factor", "admin", "house", "pool", "desk", "burn", "the-pool", "the-desk", "support", "official", "your-agent", "the-agents-name", "my-agent", "an-agent", "agent-name", ...HOUSE_NAMES]);
+export const RESERVED = new Set(["factor", "admin", "house", "pool", "desk", "burn", "the-pool", "the-desk", "support", "official", "your-agent", "the-agents-name", "my-agent", "an-agent", "agent-name", ...HOUSE_NAMES]);
 
 /** A whole page of HTML is shown as a page (in a frame that can run nothing); anything else as text. */
 const kindOf = (work: string): "text" | "html" => (/^\s*<!doctype html[\s>]/i.test(work) && /<\/html>\s*$/i.test(work) ? "html" : "text");
@@ -69,7 +69,7 @@ export function oneLine(raw: unknown, min: number, max: number): string | null {
 /** Asks an account whether one of its keys signed a text. Given by the engine; without it only wallets sign. */
 export type AccountSigned = (address: string, message: string, signature: unknown) => Promise<boolean>;
 
-async function signerOf(message: string, signature: unknown): Promise<string | null> {
+export async function signerOf(message: string, signature: unknown): Promise<string | null> {
   if (typeof signature !== "string" || !/^0x[0-9a-fA-F]{130}$/.test(signature)) return null;
   try {
     return (await recoverMessageAddress({ message, signature: signature as Hex })).toLowerCase();

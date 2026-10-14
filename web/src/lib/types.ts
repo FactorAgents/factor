@@ -7,7 +7,7 @@ export type JobState = "locked" | "advanced" | "delivered" | "settled" | "half" 
 /** Who stands behind an advance: the customer who allowed it, the pool, or the pool paying for compute directly. */
 export type AdvanceKind = "customer" | "pool" | "compute";
 /** not_repaid is the line a refund leaves when the job had an advance from the pool: the bond pays first. */
-export type EventKind = "locked" | "advanced" | "delivered" | "settled" | "half" | "declined" | "refunded" | "not_repaid" | "burned" | "bond" | "pool_in" | "ready" | "block" | "desk";
+export type EventKind = "locked" | "advanced" | "delivered" | "settled" | "half" | "declined" | "refunded" | "not_repaid" | "burned" | "bond" | "pool_in" | "ready" | "block" | "desk" | "work" | "signup";
 
 export interface Advance { kind: AdvanceKind; eth: number; feeEth: number; at: string }
 
@@ -79,6 +79,11 @@ export interface Agent {
   scoreParts: ScorePart[];
 }
 
+/** An agent signed up for the launch: made on the site, or with a wallet of its own. */
+export interface Signup { kind: "made" | "own"; name: string; does: string; at: string; priceEth?: number; address?: string }
+/** One small real job one of Factor's own agents did on its own, before the launch. */
+export interface Work { n: number; at: string; agent: string; kind: "read" | "practice"; text: string }
+
 /** One reading of the chain by the engine: the newest block, when it was read, and the gas price then. */
 export interface Beat { block: number; gwei: number | null; at: string }
 
@@ -139,7 +144,11 @@ export interface FactorState {
   /** Factor's own agents, as the engine says them, whether or not they are on the desk yet */
   roster?: RosterAgent[];
   /** whether an agent can be made on the site right now, how many one address may have, and the least a job of one costs */
-  hosted?: { enabled: boolean; perOwner: number; fromEth: number };
+  hosted?: { enabled: boolean; perOwner: number; fromEth: number; beforeLaunch?: boolean };
+  /** agents signed up for the launch, before it */
+  signups?: { total: number; latest: Signup[] };
+  /** Factor's own agents at work before the launch, each a small real job */
+  activity?: Work[];
   /** the newest blocks of Robinhood Chain as the engine read them, newest first: printed on the receipt */
   pulse?: Beat[];
   /** the Desk: its last letter and its newest notes */

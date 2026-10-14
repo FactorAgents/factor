@@ -6,6 +6,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import type Database from "better-sqlite3";
 import type { AgentJson, EngineApi, EngineView, EventJson, FactorState, JobJson } from "../src/api.js";
 import { DeskMind } from "../src/deskmind.js";
+import { hostedMessage } from "../src/house/hosted.js";
+import { keccak256, toHex } from "viem";
 import { open } from "../src/chain/db.js";
 import { Engine } from "../src/engine.js";
 import { oneLine, profileMessage, titleMessage } from "../src/profiles.js";
@@ -31,7 +33,7 @@ const P = ETH / 25n;
 
 // every key the site's type has (web/src/lib/types.ts), so a change on one side is noticed on the other
 function expectShape(s: FactorState): void {
-  expect(Object.keys(s).sort()).toEqual(["accounts", "agents", "asOf", "burns", "compute", "contracts", "desk", "events", "hosted", "jobs", "launched", "links", "params", "paused", "pulse", "roster", "source", "stats"]);
+  expect(Object.keys(s).sort()).toEqual(["accounts", "activity", "agents", "asOf", "burns", "compute", "contracts", "desk", "events", "hosted", "jobs", "launched", "links", "params", "paused", "pulse", "roster", "signups", "source", "stats"]);
   // Factor's own agents are said in every answer, before the launch and after: fifteen, each with what it takes a job for
   const roster = (s as unknown as { roster: { name: string; does: string; fromEth: number }[] }).roster;
   expect(roster).toHaveLength(15);
@@ -64,6 +66,25 @@ async function busy(more: Record<string, string> = {}): Promise<Rig & { settled:
   return { ...r, settled, openJob };
 }
 
+describe("signing up before there is anything", () => {
+  it("takes an agent made on the site with the engine off, says making is open, and lists the sign-up", async () => {
+    const engine = new Engine(open(":memory:"), { env: {}, chain: new FakeChain(), log: () => {} });
+    engine.start();
+    await engine.ready();
+    const maker = privateKeyToAccount("0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d");
+    const owner = maker.address.toLowerCase(), at = Math.floor(Date.now() / 1000);
+    const instructions = "Write a haiku about whatever the customer names. Three lines of five, seven and five syllables.";
+    const signature = await maker.signMessage({ message: hostedMessage(owner, "haiku-maker", "Writes a haiku about anything you name", "0.002", owner, keccak256(toHex(instructions)), at) });
+    const r = await engine.post("/v1/agents/make", { owner, name: "haiku-maker", does: "Writes a haiku about anything you name", instructions, priceEth: "0.002", at, signature }, "1.2.3.4");
+    expect(r).toMatchObject({ status: 200, body: { ok: true, waiting: true } });
+    const s = (await state(engine)) as unknown as { hosted: { enabled: boolean; beforeLaunch?: boolean }; signups: { total: number; latest: { name: string }[] } };
+    expect(s.hosted).toMatchObject({ enabled: true, beforeLaunch: true });
+    expect(s.signups).toMatchObject({ total: 1, latest: [{ name: "haiku-maker" }] });
+    expect(((await get(engine, `/v1/agents/made/${owner}`)).body as { items: { name: string; waiting: boolean }[] }).items).toEqual([expect.objectContaining({ name: "haiku-maker", waiting: true })]);
+    await engine.stop();
+  });
+});
+
 describe("before there is anything", () => {
   it("answers the empty state with the engine off, and asks no node anything", async () => {
     const chain = new FakeChain();
@@ -82,7 +103,7 @@ describe("before there is anything", () => {
     expect((await get(engine, "/v1/ledger")).body).toEqual({ total: 0, more: false, items: [] });
     expect((await get(engine, "/v1/agents/0x0000000000000000000000000000000000000001")).status).toBe(404);
     expect(await engine.handle("/v1/nothing")).toBeNull();
-    expect((await engine.post("/v1/agents/profile", {}, "1.2.3.4"))!.status).toBe(503);
+    expect((await engine.post("/v1/agents/profile", {}, "1.2.3.4"))!.status).toBe(400); // before the launch a name goes on the launch list: an empty one is refused
   });
 
   it("shows the desk before the token is launched: the contracts are open from the moment they exist", async () => {

@@ -35,6 +35,9 @@ import { briefText, oneLine, Profiles, type Profile, type Written } from "./prof
 import { canDrawOf, limitOf, scoreOf, scoreParts } from "./score.js";
 import type { Pulse } from "./pulse.js";
 import { ethOf, type DeskMind, type Facts, type Note } from "./deskmind.js";
+import type { LaunchList } from "./launchlist.js";
+import type { HouseActivity } from "./activity.js";
+import { signerOf } from "./profiles.js";
 
 export interface Answer {
   status: number;
@@ -63,6 +66,8 @@ export interface EngineView {
   demo: Demo | null;
   pulse?: Pulse | null;
   deskMind?: DeskMind | null;
+  launchList?: LaunchList | null;
+  activity?: HouseActivity | null;
 }
 
 // ---- the site's shape: web/src/lib/types.ts. Keep the two in step by hand. ----
@@ -171,7 +176,11 @@ export interface FactorState {
   /** Factor's own agents, whether or not they are on the desk yet: what each does and takes a job for */
   roster: RosterJson[];
   /** whether somebody can make an agent on the site right now, how many one address may have, and the least a job of one costs */
-  hosted: { enabled: boolean; perOwner: number; fromEth: number };
+  hosted: { enabled: boolean; perOwner: number; fromEth: number; beforeLaunch?: boolean };
+  /** agents signed up for the launch, before it (./launchlist.ts) */
+  signups: { total: number; latest: { kind: string; name: string; does: string; at: string; priceEth?: number; address?: string }[] };
+  /** Factor's own agents at work before the launch (./activity.ts) */
+  activity: { n: number; at: string; agent: string; kind: string; text: string }[];
   /** the newest blocks the engine read, newest first: what the receipt prints between the ledger's lines */
   pulse: PulseJson[];
   /** the Desk: its last letter and newest notes */
@@ -346,7 +355,7 @@ export class EngineApi {
     if (path === "/v1/jobs") return (v) => ok(this.jobs(v, limit, before, normalizeAddress(query.get("agent")) ?? undefined, normalizeAddress(query.get("customer")) ?? undefined));
     if (path === "/v1/ledger") return (v) => ok(this.ledger(v, limit, before, SHOW[query.get("show") ?? ""]));
     let m = /^\/v1\/agents\/made\/(0x[0-9a-fA-F]{40})$/.exec(path);
-    if (m) return (v) => ok({ enabled: !!v.house?.cfg.hosted.enabled, items: v.house?.madeBy(m![1]!.toLowerCase()) ?? [] });
+    if (m) return (v) => (v.house && v.state === "running" ? ok({ enabled: !!v.house.cfg.hosted.enabled, items: v.house.madeBy(m![1]!.toLowerCase()) }) : ok({ enabled: !!v.launchList, beforeLaunch: true, items: v.launchList?.madeBy(m![1]!.toLowerCase()) ?? [] }));
     m = /^\/v1\/agents\/([0-9a-zA-Z-]{3,42})$/.exec(path);
     if (m) return (v) => this.agent(v, m![1]);
     m = /^\/v1\/jobs\/(\d{1,9})$/.exec(path);
@@ -397,22 +406,34 @@ export class EngineApi {
   private async hostedPost(path: string, body: unknown, from: string): Promise<Answer> {
     const v = this.view();
     const no = (status: number, error: string): Answer => ({ status, body: { error } });
-    if (!v.profiles || !v.house || v.state !== "running") return no(503, "the engine is not reading the chain yet");
+    const before = !v.profiles || !v.house || v.state !== "running";
+    if (before && !v.launchList) return no(503, "the engine is not reading the chain yet");
     if (!body || typeof body !== "object" || Array.isArray(body)) return no(400, "the body is not a JSON object");
     if (this.tooMany(from, "make", 6)) return no(429, "too many requests: try again in a minute");
     const b = body as Record<string, unknown>;
+    // Before the launch an agent made here signs up for it (./launchlist.ts): signed the same way, on the desk at the launch.
+    if (before) {
+      const list = v.launchList!;
+      if (path === "/v1/agents/make") { const r = await list.make(b); if (r.status === 200) this.cache.clear(); return r; }
+      const owner = normalizeAddress(b.owner), name = typeof b.name === "string" ? b.name.trim() : "", at = Number(b.at);
+      if (!owner || typeof b.paused !== "boolean" || !Number.isSafeInteger(at) || Math.abs(at - Math.floor(v.now() / 1000)) > 600) return no(400, "owner, name, paused and a fresh at are needed");
+      if ((await signerOf(`Factor: ${b.paused ? "pause" : "resume"} my agent\nowner: ${owner}\nname: ${name}\nat: ${at}`, b.signature)) !== owner) return no(401, "the signature is not the owner's");
+      this.cache.clear();
+      return list.pause(owner, name, b.paused) ? ok({ ok: true }) : notFound("no agent of yours by that name");
+    }
+    const vp = v.profiles!, vh = v.house!;
     const owner = normalizeAddress(b.owner);
     if (!owner) return no(400, "owner is not an address");
     const name = typeof b.name === "string" ? b.name.trim() : "";
-    const at = v.profiles.freshAt(b.at);
+    const at = vp.freshAt(b.at);
     if (at === null) return no(400, "the signature's time is more than ten minutes from now: sign again");
     if (path === "/v1/agents/pause") {
       if (typeof b.paused !== "boolean") return no(400, "paused is true or false");
-      if (!(await v.profiles.signed(owner, `Factor: ${b.paused ? "pause" : "resume"} my agent\nowner: ${owner}\nname: ${name}\nat: ${at}`, b.signature))) return no(401, "the signature is not the owner's");
+      if (!(await vp.signed(owner, `Factor: ${b.paused ? "pause" : "resume"} my agent\nowner: ${owner}\nname: ${name}\nat: ${at}`, b.signature))) return no(401, "the signature is not the owner's");
       this.cache.clear();
-      return v.house.pause(owner, name, b.paused) ? ok({ ok: true }) : notFound("no agent of yours by that name");
+      return vh.pause(owner, name, b.paused) ? ok({ ok: true }) : notFound("no agent of yours by that name");
     }
-    const problem = v.profiles.nameProblem(name);
+    const problem = vp.nameProblem(name);
     if (problem) return no(problem.startsWith("another") ? 409 : 400, problem);
     const does = oneLine(b.does, 12, 80);
     if (!does || does !== b.does) return no(400, "what it does is one plain line of 12 to 80 characters, without links, line breaks or double spaces");
@@ -423,8 +444,8 @@ export class EngineApi {
     const priceWei = BigInt(whole!) * 10n ** 18n + BigInt(frac.padEnd(18, "0"));
     const payout = b.payout === undefined || b.payout === "" ? owner : normalizeAddress(b.payout);
     if (!payout) return no(400, "payout is not an address");
-    if (!(await v.profiles.signed(owner, hostedMessage(owner, name, does, b.priceEth, payout, keccak256(toHex(instructions)), at), b.signature))) return no(401, "the signature is not the owner's");
-    const made = v.house.make({ owner, name, does, instructions, priceWei, payout });
+    if (!(await vp.signed(owner, hostedMessage(owner, name, does, b.priceEth, payout, keccak256(toHex(instructions)), at), b.signature))) return no(401, "the signature is not the owner's");
+    const made = vh.make({ owner, name, does, instructions, priceWei, payout });
     if (!made.ok) return no(made.status, made.error);
     this.cache.clear();
     return ok({ ok: true, name: made.name });
@@ -436,6 +457,12 @@ export class EngineApi {
     if (path === "/v1/agents/make" || path === "/v1/agents/pause") return this.hostedPost(path, body, from);
     if (path !== "/v1/agents/profile" && path !== "/v1/jobs/title" && path !== "/v1/jobs/brief" && path !== "/v1/jobs/delivery" && path !== "/v1/admin/hide" && path !== "/v1/admin/switch") return null;
     const v = this.view();
+    if ((!v.profiles || v.state !== "running") && path === "/v1/agents/profile" && v.launchList && body && typeof body === "object" && !Array.isArray(body)) {
+      if (this.tooMany(from, "make", 6)) return { status: 429, body: { error: "too many requests: try again in a minute" } };
+      const r = await v.launchList.own(body as Record<string, unknown>);
+      if (r.status === 200) this.cache.clear();
+      return r;
+    }
     if (!v.profiles || v.state !== "running") return { status: 503, body: { error: "the engine is not reading the chain yet" } };
     if (!body || typeof body !== "object" || Array.isArray(body)) return { status: 400, body: { error: "the body is not a JSON object" } };
     const b = body as Record<string, unknown>;
@@ -665,8 +692,13 @@ export class EngineApi {
     const hiring = v.ctx ? stopped(v.ctx.db, "hiring") : null;
     const paused = hiring ? hiring.note || "New jobs are paused for now. Jobs already locked run as they were: the contract settles or refunds each one by itself." : null;
     const h = v.house?.cfg.hosted;
-    const hosted = { enabled: !!h?.enabled && v.state === "running" && !!v.house && v.house.canMake(), perOwner: h?.perOwner ?? 0, fromEth: h ? Number(h.floorWei / 10n ** 12n) / 1e6 : 0 };
-    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused, roster: this.rosterJson(v), hosted, pulse: pulseJson(v, 8), desk: this.deskJson(v) };
+    const running = v.state === "running" && !!v.house;
+    const hosted = running
+      ? { enabled: !!h?.enabled && v.house!.canMake(), perOwner: h?.perOwner ?? 0, fromEth: h ? Number(h.floorWei / 10n ** 12n) / 1e6 : 0 }
+      : { enabled: !!v.launchList, perOwner: v.launchList?.perOwner ?? 0, fromEth: v.launchList ? Number(v.launchList.floorWei / 10n ** 12n) / 1e6 : 0, beforeLaunch: true };
+    const signups = v.launchList ? { total: v.launchList.total(), latest: v.launchList.list(8) } : { total: 0, latest: [] };
+    const activity = (v.activity?.latest(8) ?? []).map((x) => ({ n: x.n, at: new Date(x.at).toISOString(), agent: x.agent, kind: x.kind, text: x.text }));
+    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused, roster: this.rosterJson(v), hosted, pulse: pulseJson(v, 8), desk: this.deskJson(v), signups, activity };
     if (!r) {
       return { ...base, launched: false, stats: { advancedEth: 0, settledJobs: 0, jobs: 0, poolEth: 0, reserveEth: 0, outEth: 0, heldEth: 0, burnedTokens: 0, supplyLeft: SUPPLY, agents: 0, demoJobs: 0, lostEth: 0 }, agents: [], jobs: [], events: [], burns: [] };
     }
