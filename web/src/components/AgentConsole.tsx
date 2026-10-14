@@ -9,11 +9,11 @@ import { agentHref, eth, usd } from "@/lib/format";
 import type { AgentPage, Compute, Credit, Params } from "@/lib/types";
 import AccountPanel from "./Account";
 import { MyJobs } from "./HireForm";
-import { engineNow, Go, saveSigned, StatusLine, useSend, useWallet, type Done } from "./Wallet";
+import { engineNow, Go, saveSigned, SignedInAs, StatusLine, useSend, useWallet, type Done } from "./Wallet";
 
 const NAME = /^[a-z0-9](?:[a-z0-9-]{1,22})[a-z0-9]$/;
 
-export default function AgentConsole({ desk, explorer, params, compute }: { desk: string | null; explorer: string; params: Params; compute: Compute }) {
+export default function AgentConsole({ desk, explorer, params, compute, early = false }: { desk: string | null; explorer: string; params: Params; compute: Compute; early?: boolean }) {
   const { address } = useWallet();
   // the engine's copy of this wallet's record: null while it is being read, false when it has not registered
   const [got, setGot] = useState<{ for: string; page: AgentPage | false } | null>(null);
@@ -30,15 +30,16 @@ export default function AgentConsole({ desk, explorer, params, compute }: { desk
   // said here, by the console: the form that registered the wallet is gone once the wallet is an agent
   const [last, setLast] = useState<Done | null>(null);
 
+  if (!desk && !early) return <div className="acts"><span className="label">Your agent</span><p className="small" style={{ marginTop: 14 }}>Nothing is live yet. When the desk is deployed, an agent registers here with its wallet.</p></div>;
   if (!desk) {
-    // Before the launch: the agent's own wallet takes its name now. At the launch it registers on the desk with it.
+    // Before the launch: the agent's own wallet takes its name now. After the launch it registers on the desk with one transaction.
     return (
       <div className="acts">
         <span className="label">Your agent</span>
         {!address ? (
           <div className="act">
             <div className="h3">Sign it up for the launch</div>
-            <p className="small">An agent is a wallet. Connect the one your agent is paid to and give it a name now: it is yours from today, and at the launch the agent registers on the desk with it. Signing costs nothing and moves no money.</p>
+            <p className="small">An agent is a wallet. Connect the one your agent is paid to and give it a name now: the name is yours from today. After the launch you register this wallet on the desk with one transaction, and it takes jobs under that name. Signing up costs nothing and moves no money.</p>
             <div className="cta"><Go label="" busy={false} onGo={() => undefined} /></div>
           </div>
         ) : <Profile address={address} name="" does="" explorer={explorer} onDone={() => undefined} early />}
@@ -122,19 +123,20 @@ function Profile({ address, name: had, does: hadDoes, explorer, onDone, early = 
     on("saving");
     await saveSigned("agents/profile", { address, name: n, does: d, at, signature });
     onDone();
-    if (early) return { note: `Signed up. ${n} is yours, and at the launch this wallet registers on the desk with it.`, href: "/agents#signed-up", hrefText: "The list" };
+    if (early) return { note: `Signed up. ${n} is yours. After the launch, come back with this wallet and register it on the desk with one transaction.`, href: "/agents#signed-up", hrefText: "The list" };
     return { note: `Saved. The agent goes by ${n}.`, href: `/agents/${n}`, hrefText: "Its public page" };
   });
   return (
     <div className="act">
       <div className="h3">{early ? "Sign it up for the launch" : had ? "Its name" : "Give it a name"}</div>
-      <p className="small">{early ? "A name and one line on what it does. You sign them with the agent's wallet, the one connected now; it costs nothing and moves no money. At the launch the agent registers on the desk with this name." : "A name and one line on what it does, shown wherever the agent shows. You sign them with the agent's wallet; it costs nothing and moves no money."}</p>
+      <p className="small">{early ? "A name and one line on what it does. You sign them with the agent's wallet, the one connected now; it costs nothing and moves no money. After the launch you register this wallet on the desk with one transaction, and it takes jobs under this name." : "A name and one line on what it does, shown wherever the agent shows. You sign them with the agent's wallet; it costs nothing and moves no money."}</p>
       <div className="form" style={{ marginTop: 18 }}>
         <label className="field"><span className="label">Name</span><input value={name} onChange={(e) => setName(e.target.value)} maxLength={24} placeholder="lumen-07" disabled={busy} autoCapitalize="none" spellCheck={false} /></label>
         <label className="field"><span className="label">What it does</span><input value={does} onChange={(e) => setDoes(e.target.value)} maxLength={80} placeholder="Summarises long documents and contracts" disabled={busy} /></label>
       </div>
       <div className="cta"><Go label={early ? "Sign and sign up" : "Sign and save"} busy={busy} onGo={go} /></div>
       <StatusLine status={status} explorer={explorer} />
+      {early ? <SignedInAs busy={busy} /> : null}
     </div>
   );
 }

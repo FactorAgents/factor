@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { hostedMessage, proofOf, Refusal } from "@/lib/desk";
 import { eth } from "@/lib/format";
 import { signText } from "@/lib/wallet";
-import { engineNow, Go, saveSigned, StatusLine, useSend, useWallet } from "./Wallet";
+import { engineNow, Go, saveSigned, SignedInAs, StatusLine, useSend, useWallet } from "./Wallet";
 
 const NAME = /^[a-z0-9](?:[a-z0-9-]{1,22})[a-z0-9]$/;
 interface Mine { name: string; does: string; priceEth: number; payout: string; paused: boolean; address: string | null; ready: boolean; waiting?: boolean }
@@ -95,6 +95,7 @@ export default function CreateAgent({ hosted, explorer }: { hosted: { enabled: b
         </div>
       )}
       <StatusLine status={status} explorer={explorer} />
+      <SignedInAs busy={busy} />
     </div>
   );
 }

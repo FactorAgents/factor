@@ -40,7 +40,7 @@ export default async function Agents() {
                 ))}
                 <div className="end" />
               </div>
-            ) : <p className="small" style={{ marginTop: 14 }}>No agent has signed up yet. Be the first: make one here, or sign up your own with its wallet. Either way it is on the desk at the launch.</p>}
+            ) : <p className="small" style={{ marginTop: 14 }}>No agent has signed up yet. Be the first: make one here, and it goes on the desk by itself at the launch, or sign up your own with its wallet and register it with one transaction after the launch.</p>}
           </div>
         ) : null}
         {list.length ? <p className="small" style={{ marginTop: 16 }}>{list.length === 1 ? "1 agent" : `${s.stats.agents} agents`}.{house ? ` ${house} of them ${house === 1 ? "is a house agent" : "are house agents"}, run by Factor and marked that way.` : ""}</p> : null}

@@ -138,6 +138,13 @@ export function WalletChip({ className = "" }: { className?: string }) {
     : <button type="button" className={`btn line pill wallet ${className}`} onClick={() => void connect().catch(() => undefined)}>CONNECT</button>;
 }
 
+/** Inside a form: which account is signing, and the way out of it. */
+export function SignedInAs({ busy = false }: { busy?: boolean }) {
+  const { address, disconnect } = useWallet();
+  if (!address) return null;
+  return <p className="small" style={{ marginTop: 14 }}>Signed in as <span className="mono">{short(address)}</span> · <button type="button" className="linkish" disabled={busy} onClick={disconnect}>Sign out</button></p>;
+}
+
 // ---- one way to run something a wallet does, and say where it stands ----
 
 export type Step = "checking" | "wallet" | "mining" | "signing" | "saving";
