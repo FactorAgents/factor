@@ -50,16 +50,36 @@ async function ask<T>(path: string): Promise<T | null> {
   }
 }
 
+// Every page a visitor opens needs the whole state, and a page that is looked at reads it again every twenty seconds.
+// One read is shared by every visitor for SHARE_MS: requests that come in meanwhile get the same answer, and those
+// that arrive while a read is on its way wait for that read rather than starting another. So the engine answers once
+// every couple of seconds however many people are looking. When the engine does not answer (it restarts with every
+// deploy), the last good answer is shown for up to STALE_MS rather than an empty desk, with its own time on it.
+const SHARE_MS = Math.max(0, Number(process.env.FACTOR_STATE_SHARE_MS ?? 2_000) || 0);
+const STALE_MS = 120_000;
+let shared: { at: number; read: Promise<FactorState> } | null = null;
+let lastGood: { at: number; state: FactorState } | null = null;
+
+async function readState(): Promise<FactorState> {
+  try {
+    const s = await ask<Omit<FactorState, "reached">>("/v1/state");
+    if (!s) return empty("engine", false);
+    const state: FactorState = { ...s, reached: true };
+    lastGood = { at: Date.now(), state };
+    return state;
+  } catch {
+    if (lastGood && Date.now() - lastGood.at < STALE_MS) return lastGood.state;
+    return empty("engine", false);
+  }
+}
+
 export const getState = cache(async (): Promise<FactorState> => {
   await connection(); // read when the page is asked for, never baked in when the site is built
   if (SAMPLE) return sampleState();
   if (!ENGINE) return empty("none", true);
-  try {
-    const s = await ask<Omit<FactorState, "reached">>("/v1/state");
-    return s ? { ...s, reached: true } : empty("engine", false);
-  } catch {
-    return empty("engine", false);
-  }
+  const now = Date.now();
+  if (!shared || now - shared.at >= SHARE_MS) shared = { at: now, read: readState() };
+  return shared.read;
 });
 
 const AGENT_ID = /^[0-9a-zA-Z-]{3,42}$/;
