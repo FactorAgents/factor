@@ -61,15 +61,15 @@ export function plainText(kind: NoteKind, f: Facts): string {
       return `${f.agent}: ${f.does}. No record yet, so until its first job is settled it can draw only what its bond covers, and never more than half of a job.`;
     case "file": {
       if (f.barred) return `${f.agent} is barred: an advance was not repaid or an early advance was kept without delivering. It can draw nothing from the pool.`;
-      const record = Number(f.settled) === 0
+      const record = Number(f.jobsSettled) === 0
         ? "No job settled yet."
-        : `${plural(Number(f.settled), "job")} settled${Number(f.customers) > 0 ? ` for ${plural(Number(f.customers), "customer")}` : ""}, ${f.onTime} on time and ${f.late} late; ${plural(Number(f.repaid), "advance")} repaid.`;
-      return `${f.agent}: ${record} Bond ${f.bondEth} ETH, fees paid in ${f.feesEth} ETH, so it may draw up to ${f.limitEth} ETH from the pool; ${f.canDrawEth} ETH is free now. Score ${f.score} of 1000.`;
+        : `${plural(Number(f.jobsSettled), "job")} settled${Number(f.differentCustomers) > 0 ? ` for ${plural(Number(f.differentCustomers), "customer")}` : ""}, ${f.deliveredOnTime} delivered on time and ${f.deliveredLate} late; ${plural(Number(f.advancesRepaid), "advance")} repaid.`;
+      return `${f.agent}: ${record} Bond ${f.bondEth} ETH, fees paid in ${f.feesPaidInEth} ETH, so it may draw up to ${f.limitWithPoolEth} ETH from the pool; ${f.freeToDrawNowEth} ETH is free now. Score ${f.scoreOutOf1000} of 1000.`;
     }
     case "reason":
-      return f.kind === "customer"
-        ? `${f.agent} drew ${f.amountEth} ETH on job ${f.job}, early money its customer allowed out of the ${f.jobEth} ETH locked for it.`
-        : `${f.agent} drew ${f.amountEth} ETH from the pool on job ${f.job}: within half of the ${f.jobEth} ETH locked, and within its limit of ${f.limitEth} ETH. The job pays it back.`;
+      return String(f.advanceFrom).startsWith("the customer")
+        ? `${f.agent} drew ${f.drawnEth} ETH on job ${f.job}, early money its customer allowed out of the ${f.lockedByTheCustomerEth} ETH they locked for it.`
+        : `${f.agent} drew ${f.drawnEth} ETH from ${f.advanceFrom} on job ${f.job}: within half of the ${f.lockedByTheCustomerEth} ETH its customer locked, and within its limit of ${f.agentLimitWithPoolEth} ETH. The job pays it back.`;
     case "letter":
       return f.launched
         ? `${f.day}: ${plural(Number(f.locked), "job")} locked, ${plural(Number(f.settled), "job")} settled, ${plural(Number(f.advances), "advance")} drawn for ${f.advancedEth} ETH, ${f.burns} burns. The pool holds ${f.poolEth} ETH, ${f.outEth} ETH of it out with agents.`
@@ -122,12 +122,14 @@ export function anthropicWriter(key: string, model: string, upstream = "https://
 const VOICE = `You are the Desk, Factor's credit officer. Factor advances AI agents up to half of a payment their customer has
 already locked; the job pays it back. You write short public notes in the voice of a careful banker: plain, exact, calm,
 a little dry, never selling anything. Rules you never break:
-- Use only the numbers in FACTS, written exactly as they are there. No other number, no estimate, no percentage you worked out.
+- Use only the numbers in FACTS, written exactly as they are there. Never do arithmetic: no halves, sums, differences,
+  percentages or estimates of your own. If a sentence would need a number that is not in FACTS, say it in words.
+- An advance is drawn against a job a customer has already locked and paid into the contract, never against future work.
 - Do not give advice, do not predict, do not praise. Say what the record shows and what follows from the rules.
 - Never use the words invest, returns, profit, yield or guarantee. No em dashes, no emojis, no headings, no lists.`;
 
 const ASK: Record<NoteKind, string> = {
-  opening: "Write this agent's opening credit file in two sentences: what it does, and what it may draw before it has any record.",
+  opening: "Write this agent's opening credit file in two sentences: what it does, and that with no record yet it can draw only what its bond covers and never more than half of a job. Use no numbers at all.",
   file: "Write this agent's credit file in two to four sentences: what its record shows, and so what it may draw and why.",
   reason: "Write one or two sentences saying why this advance was allowed.",
   letter: "Write the Desk's daily letter in three to five sentences: what the desk saw that day, and anything it is watching.",
@@ -158,6 +160,11 @@ export class DeskMind {
     this.model = o.model ?? "claude-haiku-4-5-20251001";
     this.dailyUsd = o.dailyUsd ?? 2;
     this.now = o.now ?? Date.now;
+  }
+
+  /** Whether a note written now may be worded by the model: there is a key, and the day's ceiling is not reached. */
+  canWord(): boolean {
+    return !!this.writer && this.spentToday() < this.dailyUsd;
   }
 
   /** What today's worded notes cost so far. */

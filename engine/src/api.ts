@@ -77,9 +77,9 @@ const lowerFirst = (s: string) => (/^[A-Z][a-z ]/.test(s) ? s[0]!.toLowerCase() 
 /** An agent's credit file in figures: its record, its bond and fees, and so its limit, what is free and its score. */
 export function fileFacts(name: string, rec: AgentRecord, nowS: number): Facts {
   return {
-    agent: name, barred: rec.barred, settled: rec.settled, customers: rec.customers, onTime: rec.onTime, late: rec.late, half: rec.settledAtHalf,
-    notDelivered: rec.notDelivered, repaid: rec.advancesRepaid, notRepaid: rec.advancesNotRepaid, bondEth: ethOf(rec.bond), feesEth: ethOf(rec.feesPaid),
-    limitEth: ethOf(limitOf(rec)), canDrawEth: ethOf(canDrawOf(rec)), score: scoreOf(rec, nowS),
+    agent: name, barred: rec.barred, jobsSettled: rec.settled, differentCustomers: rec.customers, deliveredOnTime: rec.onTime, deliveredLate: rec.late,
+    settledAtHalf: rec.settledAtHalf, notDelivered: rec.notDelivered, advancesRepaid: rec.advancesRepaid, advancesNotRepaid: rec.advancesNotRepaid,
+    bondEth: ethOf(rec.bond), feesPaidInEth: ethOf(rec.feesPaid), limitWithPoolEth: ethOf(limitOf(rec)), freeToDrawNowEth: ethOf(canDrawOf(rec)), scoreOutOf1000: scoreOf(rec, nowS),
   };
 }
 
@@ -576,7 +576,9 @@ export class EngineApi {
     const d = v.deskMind;
     if (!d) return 0;
     let written = 0;
-    for (const a of ROSTER.filter((x) => !d.latest("opening", x.name)).slice(0, most.openings)) {
+    // an opening file the model could not word (or written before there was a key) gets a new try once an hour
+    const due = (x: RosterJson) => { const n = d.latest("opening", x.name); return !n || (n.model === null && d.canWord() && v.now() - n.at > 3_600_000); };
+    for (const a of ROSTER.filter(due).slice(0, most.openings)) {
       await d.write("opening", a.name, { agent: a.name, does: lowerFirst(a.does), fromEth: String(a.fromEth) });
       written++;
     }
@@ -600,7 +602,7 @@ export class EngineApi {
         const subject = `${a.tx_hash}:${a.log_index}`;
         if (d.latest("reason", subject)) continue;
         const job = r.store.job(a.job_id), rec = r.store.agent(a.agent)?.record;
-        await d.write("reason", subject, { agent: nameOf(names, a.agent), job: a.job_id, kind: KIND_NAME[a.kind] ?? "pool", amountEth: ethOf(a.amount), jobEth: job ? ethOf(job.price) : "0", limitEth: rec ? ethOf(limitOf(rec)) : "0" });
+        await d.write("reason", subject, { agent: nameOf(names, a.agent), job: a.job_id, advanceFrom: KIND_NAME[a.kind] === "customer" ? "the customer's own locked payment, which the customer allowed" : KIND_NAME[a.kind] === "compute" ? "the pool, paid straight to compute" : "the pool", drawnEth: ethOf(a.amount), lockedByTheCustomerEth: job ? ethOf(job.price) : "0", agentLimitWithPoolEth: rec ? ethOf(limitOf(rec)) : "0" });
         reasons++; written++;
       }
     }

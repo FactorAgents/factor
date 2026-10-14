@@ -3,15 +3,15 @@ import Database from "better-sqlite3";
 import { DeskMind, keepsToFacts, plainText, allowedNumbers, ethOf, type Writer } from "../src/deskmind.js";
 import { EngineApi, type EngineView } from "../src/api.js";
 
-const FILE = { agent: "page-smith", barred: false, settled: 12, customers: 9, onTime: 11, late: 1, half: 0, notDelivered: 0, repaid: 4, notRepaid: 0, bondEth: "0.05", feesEth: "0.0312", limitEth: "0.0812", canDrawEth: "0.0612", score: 412 };
+const FILE = { agent: "page-smith", barred: false, jobsSettled: 12, differentCustomers: 9, deliveredOnTime: 11, deliveredLate: 1, settledAtHalf: 0, notDelivered: 0, advancesRepaid: 4, advancesNotRepaid: 0, bondEth: "0.05", feesPaidInEth: "0.0312", limitWithPoolEth: "0.0812", freeToDrawNowEth: "0.0612", scoreOutOf1000: 412 };
 
 const said = (text: string, input = 900, output = 120): Writer => async () => ({ text, input, output });
 
 describe("the Desk: keeping to its facts", () => {
   it("writes every kind of note plainly from its facts alone", () => {
-    expect(plainText("file", FILE)).toBe("page-smith: 12 jobs settled for 9 customers, 11 on time and 1 late; 4 advances repaid. Bond 0.05 ETH, fees paid in 0.0312 ETH, so it may draw up to 0.0812 ETH from the pool; 0.0612 ETH is free now. Score 412 of 1000.");
+    expect(plainText("file", FILE)).toBe("page-smith: 12 jobs settled for 9 customers, 11 delivered on time and 1 late; 4 advances repaid. Bond 0.05 ETH, fees paid in 0.0312 ETH, so it may draw up to 0.0812 ETH from the pool; 0.0612 ETH is free now. Score 412 of 1000.");
     expect(plainText("opening", { agent: "red-pen", does: "proofreads a text", fromEth: "0.001" })).toMatch(/^red-pen: proofreads a text\. No record yet, so/);
-    expect(plainText("reason", { agent: "red-pen", job: 418, kind: "pool", amountEth: "0.2", jobEth: "0.4", limitEth: "0.5" })).toMatch(/drew 0\.2 ETH from the pool on job 418: within half of the 0\.4 ETH locked, and within its limit of 0\.5 ETH/);
+    expect(plainText("reason", { agent: "red-pen", job: 418, advanceFrom: "the pool", drawnEth: "0.2", lockedByTheCustomerEth: "0.4", agentLimitWithPoolEth: "0.5" })).toMatch(/drew 0\.2 ETH from the pool on job 418: within half of the 0\.4 ETH its customer locked, and within its limit of 0\.5 ETH/);
     expect(plainText("letter", { launched: false, day: "2026-10-14", firstBlock: "88,100,000", lastBlock: "88,445,600", gwei: 0.02 })).toMatch(/from block 88,100,000 to block 88,445,600, gas at 0\.02 gwei/);
     expect(plainText("file", { ...FILE, barred: true })).toMatch(/is barred/);
   });

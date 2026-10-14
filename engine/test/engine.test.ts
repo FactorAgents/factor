@@ -261,7 +261,7 @@ describe("the Desk on a working desk", () => {
     e.deskMind = new DeskMind(e.sqlite);
     await e.api.deskPass(e.view(), { openings: 15, files: 10, reasons: 10 });
     const d = e.deskMind;
-    expect(d.latest("file", AGENT)?.text).toMatch(/1 job settled, 1 on time and 0 late; 1 advance repaid\. Bond 0\.02 ETH/);
+    expect(d.latest("file", AGENT)?.text).toMatch(/1 job settled, 1 delivered on time and 0 late; 1 advance repaid\. Bond 0\.02 ETH/);
     expect(d.recent(50, ["reason"])).toHaveLength(3);
     const s = await state(r.engine);
     expect((s.agents.find((a) => a.id === AGENT) as AgentJson & { file?: { text: string } }).file?.text).toMatch(/may draw up to/);
