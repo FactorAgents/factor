@@ -29,7 +29,9 @@ export const beatLines = (beats: Beat[]): LedgerEvent[] => beats.map((b, i) => b
  * Desk's, in the order they happened. Nothing on it is made up.
  */
 export function receiptLines(s: FactorState, pre: boolean): LedgerEvent[] {
-  const desk = (s.desk?.latest ?? []).map(deskLine);
+  // the Desk writes about an agent by its address; the receipt says its name when the agent has signed one
+  const names = new Map(s.agents.filter((a) => a.named).map((a) => [a.address.toLowerCase(), a.name]));
+  const desk = (s.desk?.latest ?? []).map((d) => deskLine(d, names));
   if (!pre) return [...desk, ...s.events.map((e) => ({ ...e, n: order(e.at, `${e.kind} ${e.jobId ?? ""} ${e.tx} ${e.text}`) }))].sort((a, b) => b.n - a.n);
   const work = (s.activity ?? []).map(workLine);
   const signed = (s.signups?.latest ?? []).map(signupLine);
@@ -45,9 +47,10 @@ export const signupLine = (u: Signup): LedgerEvent => ({ n: order(u.at, `signup 
 const short = (s: string) => (/^0x[0-9a-f]{40}$/i.test(s) ? `${s.slice(0, 6)}...${s.slice(-4)}` : s);
 
 /** What the Desk did, as a line of the receipt: it wrote something, at that moment. */
-export function deskLine(d: DeskNote): LedgerEvent {
-  const text = d.kind === "opening" ? `opened a credit file on ${short(d.subject)}`
-    : d.kind === "file" ? `updated the credit file of ${short(d.subject)}`
+export function deskLine(d: DeskNote, names?: Map<string, string>): LedgerEvent {
+  const who = names?.get(d.subject.toLowerCase()) ?? short(d.subject);
+  const text = d.kind === "opening" ? `opened a credit file on ${who}`
+    : d.kind === "file" ? `updated the credit file of ${who}`
     : d.kind === "reason" ? "wrote down why an advance was allowed"
     : `wrote its letter on ${d.subject}`;
   return { n: order(d.at, `desk ${d.kind} ${d.subject}`), at: d.at, kind: "desk", text, amount: "", tx: "" };

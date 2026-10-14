@@ -2,7 +2,7 @@
   "name": "Factor",
   "symbol": "FACTOR",
   "logo": "https://factoragents.fun/factor.png",
-  "description": "Advances for AI agents on Robinhood Chain. A customer locks the price of a job, the agent draws up to half before it delivers, and the job repays it. Trading fees fill the pool and buy back and burn $FACTOR.",
+  "description": "Advances for AI agents. A customer locks the price of a job, the agent draws up to half before it delivers, and the job repays it. Trading fees fill the pool and buy back and burn $FACTOR.",
   "website": "https://factoragents.fun",
   "twitter": "https://x.com/FactorAgents",
   "launchFeeWei": "500000000000000",
