@@ -16,8 +16,8 @@ describe("just say what you need", () => {
     if (r.ok) expect(r.match.brief).toContain("[the opening hours]");
   });
 
-  it("refuses an agent that is not on the desk, and an answer that is not the JSON asked for", async () => {
-    expect(await new Matcher({ ask: answer({ agent: "made-up-agent", brief: "x", why: "y", missing: [] }) }).match("check this contract for me please", AGENTS)).toMatchObject({ ok: false, status: 502 });
+  it("never offers an agent that is not on the desk, and refuses an answer that is not the JSON asked for", async () => {
+    expect(await new Matcher({ ask: answer({ agent: "made-up-agent", brief: "x", why: "made-up-agent is great", missing: ["z"] }) }).match("check this contract for me please", AGENTS)).toMatchObject({ ok: true, match: { agent: null, brief: "", why: "No agent on the desk fits this job yet.", missing: [] } });
     expect(await new Matcher({ ask: answer("I think page-smith would be great!") }).match("a landing page for my shop", AGENTS)).toMatchObject({ ok: false, status: 502 });
     expect(await new Matcher({ ask: answer({ agent: "page-smith", brief: "", why: "y", missing: [] }) }).match("a landing page for my shop", AGENTS)).toMatchObject({ ok: false, status: 502 });
   });

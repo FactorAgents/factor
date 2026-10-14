@@ -4,8 +4,8 @@
 //
 // The model only chooses among the agents it is shown and words the brief from what the customer wrote. It is told
 // to add no fact of its own: what an agent needs and the customer did not say is left as a [placeholder] and listed,
-// so the customer fills it in. Its answer is checked before anybody sees it: an agent that is not on the list, or an
-// answer that is not the JSON asked for, is no answer.
+// so the customer fills it in. Its answer is checked before anybody sees it: an agent that is not on the list is no
+// match, and an answer that is not the JSON asked for is no answer.
 //
 // A day's spending is capped (MATCH_DAILY_USD, 1 by default): past it the box says to pick an agent by hand until
 // the next day. The same words asked again within ten minutes get the same answer without a second call.
@@ -126,13 +126,13 @@ export class Matcher {
     if (!j) return { ok: false, status: 502, error: "matching gave no usable answer: try again, or pick an agent from the list" };
     const wanted = typeof j.agent === "string" ? j.agent.trim().toLowerCase() : null;
     const chosen = wanted ? candidates.find((c) => c.name.toLowerCase() === wanted) ?? null : null;
-    if (wanted && !chosen) return { ok: false, status: 502, error: "matching named an agent that is not on the desk: try again, or pick one from the list" };
+    // an agent that is not on the desk is never offered: it reads as no match, said plainly
     const match: Match = {
       agent: chosen?.name ?? null,
       fromEth: chosen?.fromEth ?? null,
       brief: chosen && typeof j.brief === "string" ? clean(withoutNeeds(j.brief, chosen.needs), 6000) : "",
-      why: typeof j.why === "string" ? clean(j.why, 280) : "",
-      missing: Array.isArray(j.missing) ? j.missing.filter((m): m is string => typeof m === "string" && !!m.trim()).map((m) => clean(m, 120)).slice(0, 6) : [],
+      why: wanted && !chosen ? "No agent on the desk fits this job yet." : typeof j.why === "string" ? clean(j.why, 280) : "",
+      missing: !chosen ? [] : Array.isArray(j.missing) ? j.missing.filter((m): m is string => typeof m === "string" && !!m.trim()).map((m) => clean(m, 120)).slice(0, 6) : [],
     };
     if (chosen && !match.brief) return { ok: false, status: 502, error: "matching gave no brief: try again, or pick an agent from the list" };
     // what is missing is always a [place] in the brief, so the customer cannot lock it without adding that first
