@@ -202,6 +202,12 @@ once, with `POST /v1/admin/switch` and `ENGINE_ADMIN_KEY`, or from the start wit
 A copy of the database is written beside it once a day and the last seven are kept (`src/backup.ts`,
 `<FACTOR_DATA_DIR>/backups`). `ENGINE_BACKUPS=off` turns that off.
 
+**The pulse.** Whatever the mode, before the launch too, the engine reads the newest block of Robinhood Chain every
+6 seconds (and the gas price now and then) on the nodes in `FACTOR_RPC_URLS`, and keeps the last few readings
+(`src/pulse.ts`). They are in `/v1/state` as `pulse` and at `/v1/pulse`, and the site prints them on the home page's
+receipt between the ledger's own lines, so the receipt keeps moving while the desk is watching. A read and nothing
+else: no key, no write. `ENGINE_PULSE=off` stops it; `ENGINE_PULSE_MS` changes how often (never under 2000).
+
 ## Settings
 
 `engine/.env.example` lists every one. The three secrets, `BOT_PRIVATE_KEY`, `ENGINE_ADMIN_KEY` and

@@ -2,7 +2,8 @@
 // Everything on the site that moves. Each piece draws its finished state on the server, so a browser with no
 // script, or one that asks for less motion, still shows the whole page.
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import type { LedgerEvent } from "@/lib/types";
+import type { Beat, LedgerEvent, RosterAgent } from "@/lib/types";
+import { AGENT_EVERY, agentLine, agentsUsed, beatLines } from "@/lib/prelaunch";
 import { STATE_TONE, STATE_WORD, clock } from "@/lib/format";
 
 const calm = () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -66,12 +67,18 @@ const chars = (b: Block) => b.time.length + (STATE_WORD[b.e.kind] ?? b.e.kind).l
 // how many of the newest lines are printed again, one after another, when the page is first looked at
 const PRINT = 3;
 
-export function Receipt({ events }: { events: LedgerEvent[] }) {
+// how often the receipt asks for new blocks between two reads of the page, while the page is looked at
+const PULSE_MS = 6_000;
+
+export function Receipt({ events, pulse = false, roster = [], beats = 0 }: { events: LedgerEvent[]; pulse?: boolean; roster?: RosterAgent[]; beats?: number }) {
   const [blocks, setBlocks] = useState<Block[]>(() => events.slice(0, KEEP).map((e) => block(e, e.n, clock(e.at))));
   const [typed, setTyped] = useState(Infinity);   // how many characters of the newest line have been printed
   const [live, setLive] = useState(false);
   const seen = useRef<number | null>(null);        // the newest line that has been printed
   const queue = useRef<LedgerEvent[]>([]);
+  const kick = useRef<() => void>(() => undefined);   // starts the printer when it rests and the queue has lines
+  const printedBeats = useRef(beats);                  // blocks printed, to know when an agent's turn comes
+  const agentTurn = useRef(agentsUsed(beats));         // which of Factor's own agents is printed next
   // Only what it is handed is ever printed, with the time it has there: the ledger's own lines, or before the launch
   // Factor's own agents, one line each (lib/prelaunch.ts). Nothing is made up for it. When the page is first looked at, the
   // newest few lines come out of the printer one after another; after that a line is printed when the ledger has a
@@ -91,6 +98,7 @@ export function Receipt({ events }: { events: LedgerEvent[] }) {
       raf = requestAnimationFrame(step);
       timer = window.setTimeout(print, 2600);
     };
+    kick.current = () => { if (!timer && queue.current.length) timer = window.setTimeout(print, 300); };
     if (seen.current === null) {
       // the first look: the newest few are taken back and printed again, oldest of them first
       const again = events.slice(0, Math.min(PRINT, Math.max(0, events.length - 1)));
@@ -100,16 +108,47 @@ export function Receipt({ events }: { events: LedgerEvent[] }) {
         timer = window.setTimeout(() => { setBlocks(events.slice(again.length, again.length + KEEP).map((e) => block(e, e.n, clock(e.at)))); timer = window.setTimeout(print, 500); }, 0);
       }
     } else {
-      const fresh = events.filter((e) => e.n > seen.current!).reverse();
+      // with the blocks coming in on their own, the agents between them are printed in turn by that (below), not again from the page
+      const fresh = events.filter((e) => e.n > seen.current! && !(pulse && e.kind === "ready")).reverse();
       if (fresh.length) {
-        seen.current = events[0].n;
+        // never back: the blocks read in between may already be newer than the page's own newest line
+        seen.current = Math.max(seen.current!, events[0].n);
         queue.current.push(...fresh);
       }
       // also when the page was read again in the middle of a printout: what was waiting goes on being printed
       if (queue.current.length) timer = window.setTimeout(print, 400);
     }
     return () => { window.clearTimeout(timer); cancelAnimationFrame(raf); };
-  }, [events]);
+  }, [events, pulse]);
+
+  // Between two reads of the page, the blocks the desk reads come in on their own, so the paper keeps moving while it
+  // works. Only blocks newer than the last line printed; nothing when motion is turned down or the tab is not looked at.
+  useEffect(() => {
+    if (!pulse || calm()) return;
+    let on = true;
+    const read = () => {
+      if (document.visibilityState !== "visible") return;
+      fetch("/api/v1/pulse", { cache: "no-store" })
+        .then((r) => (r.ok ? (r.json() as Promise<{ items?: Beat[] }>) : null))
+        .then((got) => {
+          if (!on || !got?.items?.length || seen.current === null) return;
+          const fresh = beatLines(got.items).filter((e) => e.n > seen.current! && !queue.current.some((q) => q.n === e.n)).reverse();
+          if (!fresh.length) return;
+          seen.current = Math.max(seen.current, ...fresh.map((e) => e.n));
+          // before the launch, after every couple of blocks one of Factor's own agents, in turn
+          for (const b of fresh) {
+            queue.current.push(b);
+            if (roster.length && ++printedBeats.current % AGENT_EVERY === 0) {
+              queue.current.push(agentLine(roster[agentTurn.current++ % roster.length]!, b.at, b.n + 1));
+            }
+          }
+          kick.current();
+        })
+        .catch(() => undefined);
+    };
+    const t = window.setInterval(read, PULSE_MS);
+    return () => { on = false; window.clearInterval(t); };
+  }, [pulse, roster]);
 
   // where each block sits on the paper, and, for the newest one, how many characters come before each of its texts
   const laid: { b: Block; top: number; offs: number[] }[] = [];

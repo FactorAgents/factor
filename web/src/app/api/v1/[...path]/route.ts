@@ -8,7 +8,7 @@ import { callerOf } from "@/lib/caller";
 import { engineUrl, sampleMode } from "@/lib/data";
 import { sampleAgent, sampleJob, sampleJobs, sampleLedger, sampleState } from "@/lib/sample";
 
-const READS = /^(state|agents|agents\/made\/0x[0-9a-fA-F]{40}|agents\/[0-9a-zA-Z-]{3,42}|jobs|jobs\/\d{1,9}|ledger|burns|accounts\/0x[0-9a-fA-F]{40}|accounts\/relay\/0x[0-9a-f]{64}|accounts\/by-credential\/0x[0-9a-f]{2,2046})$/;
+const READS = /^(state|pulse|agents|agents\/made\/0x[0-9a-fA-F]{40}|agents\/[0-9a-zA-Z-]{3,42}|jobs|jobs\/\d{1,9}|ledger|burns|accounts\/0x[0-9a-fA-F]{40}|accounts\/relay\/0x[0-9a-f]{64}|accounts\/by-credential\/0x[0-9a-f]{2,2046})$/;
 // two things a wallet signs, and what an account without a wallet asks of the engine (lib/passkey.ts)
 const WRITES = /^(agents\/profile|agents\/make|agents\/pause|jobs\/title|jobs\/brief|jobs\/delivery|accounts|accounts\/check|accounts\/call|accounts\/relay)$/;
 const QUERY = ["limit", "before", "show", "agent", "customer"];
@@ -21,6 +21,7 @@ const json = (body: unknown, status = 200) => NextResponse.json(body, { status, 
 // With the sample on there is no engine: the same reads are answered from the sample, so every page works alone.
 function fromSample(path: string, q: URLSearchParams): unknown {
   if (path === "state") return sampleState();
+  if (path === "pulse") return { items: [] };
   if (path === "agents") return { items: sampleState().agents };
   if (path === "jobs") return sampleJobs({ agent: q.get("agent") ?? undefined, customer: q.get("customer") ?? undefined });
   if (path === "ledger") return sampleLedger(Number(q.get("limit")) || 50, Number(q.get("before")) || undefined);

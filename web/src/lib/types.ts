@@ -7,7 +7,7 @@ export type JobState = "locked" | "advanced" | "delivered" | "settled" | "half" 
 /** Who stands behind an advance: the customer who allowed it, the pool, or the pool paying for compute directly. */
 export type AdvanceKind = "customer" | "pool" | "compute";
 /** not_repaid is the line a refund leaves when the job had an advance from the pool: the bond pays first. */
-export type EventKind = "locked" | "advanced" | "delivered" | "settled" | "half" | "declined" | "refunded" | "not_repaid" | "burned" | "bond" | "pool_in" | "ready";
+export type EventKind = "locked" | "advanced" | "delivered" | "settled" | "half" | "declined" | "refunded" | "not_repaid" | "burned" | "bond" | "pool_in" | "ready" | "block";
 
 export interface Advance { kind: AdvanceKind; eth: number; feeEth: number; at: string }
 
@@ -77,6 +77,9 @@ export interface Agent {
   scoreParts: ScorePart[];
 }
 
+/** One reading of the chain by the engine: the newest block, when it was read, and the gas price then. */
+export interface Beat { block: number; gwei: number | null; at: string }
+
 export interface LedgerEvent {
   n: number;
   at: string;
@@ -133,6 +136,8 @@ export interface FactorState {
   roster?: RosterAgent[];
   /** whether an agent can be made on the site right now, how many one address may have, and the least a job of one costs */
   hosted?: { enabled: boolean; perOwner: number; fromEth: number };
+  /** the newest blocks of Robinhood Chain as the engine read them, newest first: printed on the receipt */
+  pulse?: Beat[];
 }
 
 /** One of Factor's own agents: what it does and what it takes a job for. */

@@ -28,6 +28,7 @@ import type { Ctx } from "./chain/context.js";
 import { EngineDb } from "./chain/db.js";
 import { watchPass, type WatchResult } from "./chain/watch.js";
 import { EngineApi, link, type Answer, type EngineView } from "./api.js";
+import { Pulse, pulseOn } from "./pulse.js";
 
 export interface EngineOptions {
   env?: Env; // instead of process.env (tests)
@@ -72,6 +73,8 @@ export class Engine {
   accounts: Accounts | null = null;
   house: House | null = null;
   demo: Demo | null = null;
+  /** the newest blocks of the chain as the engine reads them, for the site's receipt (./pulse.ts) */
+  pulse: Pulse | null = null;
   private chain: (Chain & { stop?: () => void }) | null = null;
   private loops = new Map<string, Loop>();
   private stopped = false;
@@ -101,7 +104,7 @@ export class Engine {
     for (const [name, l] of this.loops) loops[name] = { lastRunAt: l.lastRunAt, lastOkAt: l.lastOkAt, runs: l.runs, failures: l.failures, waitMs: l.waitMs, backingOff: l.backingOff };
     return {
       config: this.config, state: this.state, problems: this.problems, warnings: this.warnings, lastError: this.lastError, loops, ctx: this.ctx, rpc: this.chain?.health() ?? null, now: this.now,
-      links: { pons: link(this.env.FACTOR_PONS_URL), github: link(this.env.FACTOR_GITHUB_URL), x: link(this.env.FACTOR_X_URL) }, dataDirSet: !!this.env.FACTOR_DATA_DIR?.trim(), profiles: this.profiles, gateway: this.gateway, accounts: this.accounts, house: this.house, demo: this.demo,
+      links: { pons: link(this.env.FACTOR_PONS_URL), github: link(this.env.FACTOR_GITHUB_URL), x: link(this.env.FACTOR_X_URL) }, dataDirSet: !!this.env.FACTOR_DATA_DIR?.trim(), profiles: this.profiles, gateway: this.gateway, accounts: this.accounts, house: this.house, demo: this.demo, pulse: this.pulse,
     };
   }
 
@@ -126,6 +129,12 @@ export class Engine {
   // Start whatever the mode asks for. Never throws: the check against the node runs on its own.
   start(): void {
     const c = this.config;
+    // the pulse reads the chain whatever the mode is, and before the launch above all: a read and nothing else.
+    // Never in tests, which hand the engine a chain of their own, run it by hand, or run under vitest.
+    if (!this.pulse && pulseOn(this.env) && !this.opts.chain && !this.opts.manual && !process.env.VITEST && c.rpcUrls.length) {
+      this.pulse = new Pulse(c.rpcUrls, { everyMs: Number(this.env.ENGINE_PULSE_MS) || undefined, now: this.now });
+      this.pulse.start();
+    }
     if (c.problems.length) {
       this.problems = [...c.problems];
       this.state = "stopped";
@@ -396,6 +405,7 @@ export class Engine {
   // Stop the loops and wait for whatever pass is under way: a transaction being followed to its receipt is
   // followed to the end, so nothing is left half written.
   async stop(): Promise<void> {
+    this.pulse?.stop();
     this.stopped = true;
     if (this.bootTimer) clearTimeout(this.bootTimer);
     for (const l of this.loops.values()) if (l.timer) clearTimeout(l.timer);

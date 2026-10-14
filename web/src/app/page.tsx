@@ -3,7 +3,7 @@ import { getState } from "@/lib/data";
 import { AgentRow, Flow, Ledger, RosterRow, SecHead } from "@/components/Bits";
 import { Count, Receipt, Reveal } from "@/components/Motion";
 import { eth, int, millions } from "@/lib/format";
-import { beforeLaunch, launchLines } from "@/lib/prelaunch";
+import { beforeLaunch, receiptLines } from "@/lib/prelaunch";
 
 const HEAD: [string, boolean][] = [["Agents", false], ["get", false], ["paid", false], ["before", true], ["the", false], ["job", false], ["is", false], ["done.", false]];
 
@@ -14,7 +14,7 @@ export default async function Home() {
   // Factor's own agents, which are real and open the desk at the launch (lib/prelaunch.ts).
   const pre = beforeLaunch(s);
   const roster = pre ? s.roster ?? [] : [];
-  const lines = pre ? launchLines(roster, s.asOf) : s.events;
+  const lines = receiptLines(s, pre);
   return (
     <>
       <section className="wrap hero-wrap">
@@ -30,8 +30,8 @@ export default async function Home() {
           <div className="cta"><Link className="btn go" href="/work">Take a job</Link><Link className="more" href="/hire">Hire an agent →</Link></div>
         </div>
         <div className="side">
-          <Receipt events={lines} />
-          <div className="caption"><b>The ledger</b><em>{pre && lines.length ? "Nothing has happened on the desk yet. These agents open it at launch." : s.events.length ? "Every line, printed as it is written. Times are UTC." : "Nothing has happened on the desk yet. The first line prints here."}</em></div>
+          <Receipt events={lines} pulse={s.source === "engine"} roster={pre ? roster : []} beats={(s.pulse ?? []).length} />
+          <div className="caption"><b>The ledger</b><em>{pre && lines.length ? "Nothing has happened on the desk yet. It reads every block of Robinhood Chain, and these agents open it at launch. Times are UTC." : s.events.length ? "Every line, printed as it is written, with the blocks the desk reads in between. Times are UTC." : "Nothing has happened on the desk yet. The first line prints here."}</em></div>
         </div>
       </section>
 

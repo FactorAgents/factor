@@ -33,6 +33,7 @@ import { allStopped, isSwitch, SWITCHES, stopped, turn } from "./switches.js";
 import { DeskStore, KIND_NAME, RULES, STATE, STATE_NAME, type AdvanceRow, type AgentRow, type JobRow, type LedgerRow } from "./desk.js";
 import { briefText, oneLine, Profiles, type Profile, type Written } from "./profiles.js";
 import { canDrawOf, limitOf, scoreOf, scoreParts } from "./score.js";
+import type { Pulse } from "./pulse.js";
 
 export interface Answer {
   status: number;
@@ -59,9 +60,16 @@ export interface EngineView {
   accounts: Accounts | null;
   house: House | null;
   demo: Demo | null;
+  pulse?: Pulse | null;
 }
 
 // ---- the site's shape: web/src/lib/types.ts. Keep the two in step by hand. ----
+
+/** One reading of the chain: the newest block when it was read, and the gas price then (./pulse.ts). */
+export interface PulseJson { block: number; gwei: number | null; at: string }
+
+/** The newest readings, newest first. Empty when the engine reads no chain. */
+export const pulseJson = (v: EngineView, limit: number): PulseJson[] => (v.pulse?.latest(limit) ?? []).map((b) => ({ block: b.block, gwei: b.gwei, at: new Date(b.at).toISOString() }));
 
 export interface AdvanceJson { kind: "customer" | "pool" | "compute"; eth: number; feeEth: number; at: string }
 export interface JobJson {
@@ -144,6 +152,8 @@ export interface FactorState {
   roster: RosterJson[];
   /** whether somebody can make an agent on the site right now, how many one address may have, and the least a job of one costs */
   hosted: { enabled: boolean; perOwner: number; fromEth: number };
+  /** the newest blocks the engine read, newest first: what the receipt prints between the ledger's lines */
+  pulse: PulseJson[];
 }
 export interface RosterJson { name: string; does: string; needs: string; delivers: string; fromEth: number; asksAModel: boolean }
 // what Factor's own agents are, said the same before the launch and after it
@@ -302,6 +312,7 @@ export class EngineApi {
     const whole_ = (name: string, most: number): number | undefined => { const raw = query.get(name); return raw && /^\d{1,9}$/.test(raw) ? Math.min(Number(raw), most) : undefined; };
     const limit = Math.max(1, whole_("limit", PAGE_MOST) ?? PAGE), before = whole_("before", 1e9);
     if (path === "/v1/state") return (v) => ok(this.state(v) as unknown as Record<string, unknown>);
+    if (path === "/v1/pulse") return (v) => ok({ items: pulseJson(v, 12) });
     if (path === "/v1/health") return (v) => this.health(v);
     if (path === "/v1/burns") return (v) => ok(this.burns(v, limit, before));
     if (path === "/v1/agents") return (v) => ok({ items: this.agents(v) });
@@ -541,7 +552,7 @@ export class EngineApi {
     const paused = hiring ? hiring.note || "New jobs are paused for now. Jobs already locked run as they were: the contract settles or refunds each one by itself." : null;
     const h = v.house?.cfg.hosted;
     const hosted = { enabled: !!h?.enabled && v.state === "running" && !!v.house && v.house.canMake(), perOwner: h?.perOwner ?? 0, fromEth: h ? Number(h.floorWei / 10n ** 12n) / 1e6 : 0 };
-    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused, roster: ROSTER, hosted };
+    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused, roster: ROSTER, hosted, pulse: pulseJson(v, 8) };
     if (!r) {
       return { ...base, launched: false, stats: { advancedEth: 0, settledJobs: 0, jobs: 0, poolEth: 0, reserveEth: 0, outEth: 0, heldEth: 0, burnedTokens: 0, supplyLeft: SUPPLY, agents: 0, demoJobs: 0, lostEth: 0 }, agents: [], jobs: [], events: [], burns: [] };
     }
