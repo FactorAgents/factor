@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import { getState } from "@/lib/data";
-import { PageHead, SecHead } from "@/components/Bits";
+import Link from "next/link";
+import { PageHead } from "@/components/Bits";
 import { Count, Reveal } from "@/components/Motion";
-import { dayTime, int, short, txHref } from "@/lib/format";
 
 export const metadata: Metadata = { title: "$FACTOR" };
 
@@ -18,22 +18,14 @@ export default async function Token() {
         </div></Reveal>
       </section>
       <div className="band" style={{ marginTop: 64 }}>
-        <div className="wrap stats">
-          <Reveal delay={0}><div className="stat"><span className="label">Burned so far</span><b className="num"><Count to={s.stats.burnedTokens / 1e6} places={2} /><small>M</small></b></div></Reveal>
-          <Reveal delay={80}><div className="stat"><span className="label">Supply left</span><b className="num"><Count to={s.stats.supplyLeft / 1e6} places={2} /><small>M</small></b></div></Reveal>
-          <Reveal delay={160}><div className="stat"><span className="label">In the pool</span><b className="num"><Count to={s.stats.poolEth} places={2} /><small>ETH</small></b></div></Reveal>
-          <Reveal delay={240}><div className="stat"><span className="label">Burns</span><b className="num"><Count to={s.burns[0]?.n ?? 0} /></b></div></Reveal>
+        <div className="wrap stats" style={{ gridTemplateColumns: "1fr 1fr" }}>
+          <Reveal delay={0}><div className="stat"><span className="label">Supply left</span><b className="num"><Count to={s.stats.supplyLeft / 1e6} places={2} /><small>M</small></b></div></Reveal>
+          <Reveal delay={80}><div className="stat"><span className="label">In the pool</span><b className="num"><Count to={s.stats.poolEth} places={2} /><small>ETH</small></b></div></Reveal>
         </div>
       </div>
       <section className="wrap sec">
-        <Reveal><SecHead n="03" kicker="The burns" title="Each one, with its transaction." more="The burn page, with the clock" href="/burn" /></Reveal>
-        <Reveal delay={120}><div className="sec-body"><table className="table stack">
-          <thead><tr><th>No.</th><th>When</th><th>Spent</th><th className="r">Burned</th><th className="r">Transaction</th></tr></thead>
-          <tbody>{s.burns.map((b) => <tr key={b.n}><td className="m">{b.n}</td><td className="m wide" style={{ color: "var(--mid)" }}>{dayTime(b.at)}</td><td className="m">{b.eth.toFixed(4)} ETH</td><td className="m r gilt">{int(b.tokens)} $FACTOR</td><td className="m r" style={{ color: "var(--mid)" }}><a href={txHref(s.contracts.explorer, b.tx)} target="_blank" rel="noopener noreferrer">{short(b.tx)}</a></td></tr>)}</tbody>
-        </table>
-        {s.burns.length === 0 ? <p className="small" style={{ marginTop: 22 }}>No burn yet. The first one comes half an hour after the first trading fees or the first advance.</p> : null}
-        <p className="note" style={{ marginTop: 36 }}>$FACTOR can lose all of its value. Holding it gives no claim on the pool and no share of anything. Trade it at your own risk.</p>
-        </div></Reveal>
+        <Reveal><p className="p">The burn clock, what the burn pot holds, the pool and every burn are on the <Link className="more" href="/burn">Burn page →</Link></p>
+        <p className="note" style={{ marginTop: 36 }}>$FACTOR can lose all of its value. Holding it gives no claim on the pool and no share of anything. Trade it at your own risk.</p></Reveal>
       </section>
     </>
   );
