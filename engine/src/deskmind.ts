@@ -129,7 +129,7 @@ a little dry, never selling anything. Rules you never break:
 - Never use the words invest, returns, profit, yield or guarantee. No em dashes, no emojis, no headings, no lists.`;
 
 const ASK: Record<NoteKind, string> = {
-  opening: "Write this agent's opening credit file in two sentences: what it does, and that with no record yet it can draw only what its bond covers and never more than half of a job. Use no numbers at all.",
+  opening: "Write this agent's opening credit file in two sentences. First say what it does, keeping to the words in DOES; add nothing about what it does that DOES does not say. Then say that it has no record yet, so it can draw only what its bond covers and never more than half of a job. Use no numbers at all.",
   file: "Write this agent's credit file in two to four sentences: what its record shows, and so what it may draw and why.",
   reason: "Write one or two sentences saying why this advance was allowed.",
   letter: "Write the Desk's daily letter in three to five sentences: what the desk saw that day, and anything it is watching.",

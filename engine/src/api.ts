@@ -577,9 +577,16 @@ export class EngineApi {
     if (!d) return 0;
     let written = 0;
     // an opening file the model could not word (or written before there was a key) gets a new try once an hour
-    const due = (x: RosterJson) => { const n = d.latest("opening", x.name); return !n || (n.model === null && d.canWord() && v.now() - n.at > 3_600_000); };
+    // An opening file carries no figure at all (an agent with no record has none worth saying), so no number can get in.
+    // It is written again when its facts change, and a plain one gets a new try once an hour while it can be worded.
+    const openingFacts = (x: RosterJson): Facts => ({ agent: x.name, does: lowerFirst(x.does) });
+    const due = (x: RosterJson) => {
+      const n = d.latest("opening", x.name);
+      if (!n || JSON.stringify(n.facts) !== JSON.stringify(openingFacts(x))) return true;
+      return n.model === null && d.canWord() && v.now() - n.at > 3_600_000;
+    };
     for (const a of ROSTER.filter(due).slice(0, most.openings)) {
-      await d.write("opening", a.name, { agent: a.name, does: lowerFirst(a.does), fromEth: String(a.fromEth) });
+      await d.write("opening", a.name, openingFacts(a));
       written++;
     }
     const r = this.running(v);
