@@ -72,6 +72,7 @@ export class HouseActivity {
   private last: ("prices" | "gas")[] = [];
   private busy = false;
   private turnN = 0;
+  private stockN = 0;   // price-desk goes through the stocks one after another, never the same one twice running
   private ethUsd: number | null = null;
   private readonly everyMs: number;
   private readonly practiceEvery: number;
@@ -87,6 +88,7 @@ export class HouseActivity {
     this.fetchFn = o.fetchFn ?? fetch;
     this.random = o.random ?? Math.random;
     this.turnN = (sqlite.prepare("SELECT COUNT(*) AS n FROM house_activity").get() as { n: number }).n;
+    this.stockN = (sqlite.prepare("SELECT COUNT(*) AS n FROM house_activity WHERE agent = 'price-desk'").get() as { n: number }).n;
   }
 
   start(): void {
@@ -141,7 +143,7 @@ export class HouseActivity {
 
   /** price-desk at work: ETH and one stock, in turn, from Chainlink's feeds. */
   async prices(): Promise<Activity | null> {
-    const stock = STOCKS[Math.floor(this.turnN / 2) % STOCKS.length]!;
+    const stock = STOCKS[this.stockN++ % STOCKS.length]!;
     const [eth, st] = await Promise.all([this.feedUsd(ETH_FEED.address), this.feedUsd(stock.address)]);
     if (eth === null) return null;
     this.ethUsd = eth;
