@@ -64,9 +64,6 @@ const block = (e: LedgerEvent, id: number, time: string): Block => {
 };
 const chars = (b: Block) => b.time.length + (STATE_WORD[b.e.kind] ?? b.e.kind).length + b.e.amount.length + b.lines.reduce((n, l) => n + l.length, 0);
 
-// how many of the newest lines are printed again, one after another, when the page is first looked at
-const PRINT = 3;
-
 // how often the receipt asks for new blocks between two reads of the page, while the page is looked at
 const PULSE_MS = 6_000;
 
@@ -79,8 +76,8 @@ export function Receipt({ events, pulse = false }: { events: LedgerEvent[]; puls
   const kick = useRef<() => void>(() => undefined);   // starts the printer when it rests and the queue has lines
   // Only what it is handed is ever printed, with the time it has there: the ledger's own lines, or before the launch
   // Factor's own agents, one line each (lib/prelaunch.ts). Nothing is made up for it. When the page is first looked at, the
-  // newest few lines come out of the printer one after another; after that a line is printed when the ledger has a
-  // new one, and the paper rests in between.
+  // paper shows the lines as they stand, newest on top; after that a line is printed only when the ledger has a new
+  // one, and the paper rests in between.
   useEffect(() => {
     if (calm()) return;
     let raf = 0, timer = 0;
@@ -98,13 +95,8 @@ export function Receipt({ events, pulse = false }: { events: LedgerEvent[]; puls
     };
     kick.current = () => { if (!timer && queue.current.length) timer = window.setTimeout(print, 300); };
     if (seen.current === null) {
-      // the first look: the newest few are taken back and printed again, oldest of them first
-      const again = events.slice(0, Math.min(PRINT, Math.max(0, events.length - 1)));
+      // the first look: the paper already shows everything up to the newest line, and nothing is printed again
       seen.current = events[0]?.n ?? 0;
-      if (again.length) {
-        queue.current = [...again].reverse();
-        timer = window.setTimeout(() => { setBlocks(events.slice(again.length, again.length + KEEP).map((e) => block(e, e.n, clock(e.at)))); timer = window.setTimeout(print, 500); }, 0);
-      }
     } else {
       const fresh = events.filter((e) => e.n > seen.current!).reverse();
       if (fresh.length) {
