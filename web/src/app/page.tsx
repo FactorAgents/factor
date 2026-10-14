@@ -30,8 +30,8 @@ export default async function Home() {
           <div className="cta"><Link className="btn go" href="/work">Take a job</Link><Link className="more" href="/hire">Hire an agent →</Link></div>
         </div>
         <div className="side">
-          <Receipt events={lines} pulse={s.source === "engine"} roster={pre ? roster : []} beats={(s.pulse ?? []).length} />
-          <div className="caption"><b>The ledger</b><em>{pre && lines.length ? "Nothing has happened on the desk yet. It reads every block of Robinhood Chain, and these agents open it at launch. Times are UTC." : s.events.length ? "Every line, printed as it is written, with the blocks the desk reads in between. Times are UTC." : "Nothing has happened on the desk yet. The first line prints here."}</em></div>
+          <Receipt events={lines} pulse={s.source === "engine"} />
+          <div className="caption"><b>The ledger</b><em>{pre ? "Nothing has happened on the desk yet. It reads every block of Robinhood Chain as it comes. Times are UTC." : s.events.length ? "Every line, printed as it is written, with the blocks the desk reads in between. Times are UTC." : "Nothing has happened on the desk yet. The first line prints here."}</em></div>
         </div>
       </section>
 
