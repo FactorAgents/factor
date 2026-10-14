@@ -498,3 +498,32 @@ button.toggle { width: 100%; text-align: left; background: transparent; color: i
   .rv:not(.in) .score i { width: var(--w, 0%); }
   .rv:not(.in) .half i { width: 50%; }
 }
+
+/* ── The Desk: Factor's own mind, its notes set like a credit officer's memos ───────────────────────────────── */
+.desk { display: grid; gap: 22px; }
+.desk-state { display: flex; align-items: center; gap: 10px; font-family: var(--mono); font-size: 12px; letter-spacing: 0.06em; color: var(--dim); text-transform: uppercase; }
+.lamp { width: 7px; height: 7px; border-radius: 50%; background: var(--line-2); }
+.lamp.on { background: var(--gilt); animation: lamp 1.6s ease-in-out infinite; }
+@keyframes lamp { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+.memos { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 0; border-top: 1px solid var(--line-2); }
+.memo { padding: 22px 24px 20px 0; display: flex; flex-direction: column; gap: 14px; }
+.memo + .memo { padding-left: 24px; border-left: 1px solid var(--line); }
+.memo header { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+.memo header .t { font-size: 11.5px; color: var(--dim); white-space: nowrap; }
+.memo p { margin: 0; font-family: var(--serif); font-size: 17px; line-height: 1.55; color: var(--ink); }
+.memo.big p { font-size: 21px; line-height: 1.5; }
+.memo footer { margin-top: auto; display: flex; align-items: center; gap: 9px; font-family: var(--serif); font-style: italic; font-size: 14px; color: var(--mid); }
+.memo .seal { width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--gilt); color: var(--gilt); display: inline-grid; place-items: center; font-style: normal; font-family: var(--serif); font-size: 12px; }
+.fileline { grid-column: 1 / -1; margin: 12px 0 0; padding-top: 12px; border-top: 1px dashed var(--line); display: flex; gap: 14px; align-items: baseline; font-size: 14px; color: var(--mid); }
+.fileline b { flex: none; font-family: var(--mono); font-weight: 400; font-size: 11.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--gilt); }
+.fileline span { font-family: var(--serif); font-size: 15.5px; line-height: 1.5; color: var(--ink); }
+.fileline em { flex: none; margin-left: auto; font-style: normal; font-size: 11px; color: var(--dim); }
+.rows .what .why { display: block; margin-top: 6px; font-family: var(--serif); font-size: 14px; line-height: 1.45; color: var(--mid); }
+.rows .what .why b { font-family: var(--mono); font-weight: 400; font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--gilt); margin-right: 6px; }
+@media (max-width: 860px) {
+  .memos { grid-template-columns: 1fr; }
+  .memo + .memo { padding-left: 0; border-left: 0; border-top: 1px solid var(--line); }
+  .fileline { flex-wrap: wrap; }
+  .fileline em { margin-left: 0; }
+}
+@media (prefers-reduced-motion: reduce) { .lamp.on { animation: none; } }

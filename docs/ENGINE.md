@@ -208,6 +208,15 @@ A copy of the database is written beside it once a day and the last seven are ke
 receipt between the ledger's own lines, so the receipt keeps moving while the desk is watching. A read and nothing
 else: no key, no write. `ENGINE_PULSE=off` stops it; `ENGINE_PULSE_MS` changes how often (never under 2000).
 
+**The Desk.** Factor's own mind (`src/deskmind.ts`): a credit officer that writes short public notes. An opening file
+for each of Factor's own agents before the launch; once the desk runs, a credit file for every agent whose record
+changed (at most hourly) and a reason for every advance; and soon after midnight UTC a letter on the day before. The
+figures are worked out by the engine; the model only words them, and a note with a number that is not in its facts,
+or a word the site never uses, is written plainly from the facts instead. Without `ANTHROPIC_API_KEY`, or past
+`DESK_DAILY_USD` (2 when not set) in a day, every note is written plainly: the Desk never stops. `DESK_MODEL` picks the
+model (Haiku when not set), `DESK_MIND=off` stops it. Its notes are in `/v1/state` as `desk`, at `/v1/desk`, on each
+agent (`file`), on each advance in the ledger (`why`) and on Factor's own agents (`roster[].file`).
+
 ## Settings
 
 `engine/.env.example` lists every one. The three secrets, `BOT_PRIVATE_KEY`, `ENGINE_ADMIN_KEY` and

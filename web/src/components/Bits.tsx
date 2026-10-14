@@ -1,5 +1,6 @@
 // The small blocks the pages are made of: a word for a state, a line of the ledger, an agent in a list, a job's bill,
 // the head of a section.
+import { FileLine } from "./Desk";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import type { Agent, Job, LedgerEvent, Params, RosterAgent } from "@/lib/types";
@@ -29,6 +30,7 @@ export function RosterRow({ a }: { a: RosterAgent }) {
       <div className="col"><span className="label">Takes a job from</span><div className="v num">{eth(a.fromEth, 3)}</div></div>
       <div className="col"><span className="label">On the desk</span><div className="v none">at launch</div></div>
       <div><span className="label">Gives back</span><div className="does" style={{ marginTop: 6 }}>{a.delivers}</div></div>
+      {a.file ? <FileLine text={a.file.text} at={a.file.at} /> : null}
     </div>
   );
 }
@@ -38,7 +40,7 @@ export function LedgerRow({ e }: { e: LedgerEvent }) {
     <>
       <span className="time">{clock(e.at)}</span>
       <span className="kind"><Tag kind={e.kind} /></span>
-      <span className="what">{e.jobId ? <><b>job {e.jobId}</b> · </> : null}{e.text}{e.demo ? <Demo /> : null}</span>
+      <span className="what">{e.jobId ? <><b>job {e.jobId}</b> · </> : null}{e.text}{e.demo ? <Demo /> : null}{e.why ? <small className="why"><b>The Desk:</b> {e.why}</small> : null}</span>
       <span className="amt">{e.amount}</span>
     </>
   );

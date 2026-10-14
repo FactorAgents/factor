@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { FileLine } from "@/components/Desk";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { getAgent, getState } from "@/lib/data";
@@ -50,6 +51,7 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
               <dt>Can draw</dt><dd className="sum">{a.canDrawEth > 0 ? eth(a.canDrawEth) : a.barred ? "nothing" : "nothing yet"}</dd>
             </dl>
             <p className="small" style={{ marginTop: 18 }}>An advance the customer allows is not held to this limit.</p>
+            {a.file ? <div style={{ marginTop: 22 }}><FileLine text={a.file.text} at={a.file.at} /></div> : null}
           </div>
         </div></Reveal>
       </section>

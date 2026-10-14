@@ -12,6 +12,9 @@
 
 export interface Beat { block: number; gwei: number | null; at: number }
 
+/** One UTC day of readings: the first and last block read, how many readings, the gas price last read. */
+export interface PulseDay { day: string; firstBlock: number; lastBlock: number; reads: number; gwei: number | null }
+
 export interface PulseOptions {
   everyMs?: number;
   /** readings kept */
@@ -29,6 +32,8 @@ export class Pulse {
   private n = 0;
   private busy = false;
   private gwei: number | null = null;
+  private today: PulseDay | null = null;
+  private done: PulseDay | null = null;
   readonly everyMs: number;
   private readonly keep: number;
   private readonly gasEvery: number;
@@ -62,6 +67,11 @@ export class Pulse {
     return this.beats.slice(0, limit);
   }
 
+  /** The last whole UTC day of readings, once one has ended. */
+  yesterday(): PulseDay | null {
+    return this.done;
+  }
+
   /** One JSON-RPC call, on the first node that answers. */
   private async ask(method: string): Promise<string | null> {
     for (const url of this.urls) {
@@ -91,6 +101,9 @@ export class Pulse {
       }
       if (this.beats[0] && block <= this.beats[0].block) return null;
       const beat = { block, gwei: this.gwei, at: this.now() };
+      const day = new Date(beat.at).toISOString().slice(0, 10);
+      if (this.today && this.today.day !== day) this.done = this.today;
+      this.today = this.today && this.today.day === day ? { ...this.today, lastBlock: block, reads: this.today.reads + 1, gwei: this.gwei } : { day, firstBlock: block, lastBlock: block, reads: 1, gwei: this.gwei };
       this.beats = [beat, ...this.beats].slice(0, this.keep);
       return beat;
     } finally {

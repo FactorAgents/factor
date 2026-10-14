@@ -29,6 +29,7 @@ import { EngineDb } from "./chain/db.js";
 import { watchPass, type WatchResult } from "./chain/watch.js";
 import { EngineApi, link, type Answer, type EngineView } from "./api.js";
 import { Pulse, pulseOn } from "./pulse.js";
+import { DeskMind, anthropicWriter, deskOn } from "./deskmind.js";
 
 export interface EngineOptions {
   env?: Env; // instead of process.env (tests)
@@ -75,6 +76,10 @@ export class Engine {
   demo: Demo | null = null;
   /** the newest blocks of the chain as the engine reads them, for the site's receipt (./pulse.ts) */
   pulse: Pulse | null = null;
+  /** the Desk, Factor's own mind (./deskmind.ts) */
+  deskMind: DeskMind | null = null;
+  private deskTimer: ReturnType<typeof setInterval> | null = null;
+  private deskBusy = false;
   private chain: (Chain & { stop?: () => void }) | null = null;
   private loops = new Map<string, Loop>();
   private stopped = false;
@@ -104,7 +109,7 @@ export class Engine {
     for (const [name, l] of this.loops) loops[name] = { lastRunAt: l.lastRunAt, lastOkAt: l.lastOkAt, runs: l.runs, failures: l.failures, waitMs: l.waitMs, backingOff: l.backingOff };
     return {
       config: this.config, state: this.state, problems: this.problems, warnings: this.warnings, lastError: this.lastError, loops, ctx: this.ctx, rpc: this.chain?.health() ?? null, now: this.now,
-      links: { pons: link(this.env.FACTOR_PONS_URL), github: link(this.env.FACTOR_GITHUB_URL), x: link(this.env.FACTOR_X_URL) }, dataDirSet: !!this.env.FACTOR_DATA_DIR?.trim(), profiles: this.profiles, gateway: this.gateway, accounts: this.accounts, house: this.house, demo: this.demo, pulse: this.pulse,
+      links: { pons: link(this.env.FACTOR_PONS_URL), github: link(this.env.FACTOR_GITHUB_URL), x: link(this.env.FACTOR_X_URL) }, dataDirSet: !!this.env.FACTOR_DATA_DIR?.trim(), profiles: this.profiles, gateway: this.gateway, accounts: this.accounts, house: this.house, demo: this.demo, pulse: this.pulse, deskMind: this.deskMind,
     };
   }
 
@@ -134,6 +139,22 @@ export class Engine {
     if (!this.pulse && pulseOn(this.env) && !this.opts.chain && !this.opts.manual && !process.env.VITEST && c.rpcUrls.length) {
       this.pulse = new Pulse(c.rpcUrls, { everyMs: Number(this.env.ENGINE_PULSE_MS) || undefined, now: this.now });
       this.pulse.start();
+    }
+    // the Desk writes whatever the mode is too: its opening files before the launch, then the rest as the desk works.
+    // Its notes are worded by the model when there is a key, and written plainly from the facts when there is not.
+    if (!this.deskMind && deskOn(this.env) && !this.opts.chain && !this.opts.manual && !process.env.VITEST) {
+      const key = this.env.ANTHROPIC_API_KEY?.trim();
+      const model = this.env.DESK_MODEL?.trim() || "claude-haiku-4-5-20251001";
+      const daily = Number(this.env.DESK_DAILY_USD);
+      this.deskMind = new DeskMind(this.sqlite, { writer: key ? anthropicWriter(key, model, this.env.HOUSE_UPSTREAM_URL?.trim() || undefined) : null, model, dailyUsd: Number.isFinite(daily) && daily >= 0 ? daily : undefined, now: this.now });
+      const pass = () => {
+        if (this.deskBusy) return;
+        this.deskBusy = true;
+        this.api.deskPass(this.view()).catch((e: unknown) => this.log(`[desk] a pass failed: ${e instanceof Error ? e.message : String(e)}`)).finally(() => { this.deskBusy = false; });
+      };
+      setTimeout(pass, 5_000).unref?.();
+      this.deskTimer = setInterval(pass, 60_000);
+      this.deskTimer.unref?.();
     }
     if (c.problems.length) {
       this.problems = [...c.problems];
@@ -406,6 +427,7 @@ export class Engine {
   // followed to the end, so nothing is left half written.
   async stop(): Promise<void> {
     this.pulse?.stop();
+    if (this.deskTimer) clearInterval(this.deskTimer);
     this.stopped = true;
     if (this.bootTimer) clearTimeout(this.bootTimer);
     for (const l of this.loops.values()) if (l.timer) clearTimeout(l.timer);

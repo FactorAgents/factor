@@ -30,10 +30,11 @@ import type { House } from "./house/house.js";
 import { SERVICES } from "./house/services.js";
 import { timingSafeEqual } from "node:crypto";
 import { allStopped, isSwitch, SWITCHES, stopped, turn } from "./switches.js";
-import { DeskStore, KIND_NAME, RULES, STATE, STATE_NAME, type AdvanceRow, type AgentRow, type JobRow, type LedgerRow } from "./desk.js";
+import { DeskStore, KIND_NAME, RULES, STATE, STATE_NAME, type AdvanceRow, type AgentRecord, type AgentRow, type JobRow, type LedgerRow } from "./desk.js";
 import { briefText, oneLine, Profiles, type Profile, type Written } from "./profiles.js";
 import { canDrawOf, limitOf, scoreOf, scoreParts } from "./score.js";
 import type { Pulse } from "./pulse.js";
+import { ethOf, type DeskMind, type Facts, type Note } from "./deskmind.js";
 
 export interface Answer {
   status: number;
@@ -61,9 +62,26 @@ export interface EngineView {
   house: House | null;
   demo: Demo | null;
   pulse?: Pulse | null;
+  deskMind?: DeskMind | null;
 }
 
 // ---- the site's shape: web/src/lib/types.ts. Keep the two in step by hand. ----
+
+/** A note of the Desk's (./deskmind.ts), as the site shows it. `worded`: written by the model, checked against its facts. */
+export interface NoteJson { kind: string; subject: string; text: string; at: string; worded: boolean }
+export interface DeskJson { on: boolean; writing: boolean; letter: NoteJson | null; latest: NoteJson[] }
+export const noteJson = (n: Note): NoteJson => ({ kind: n.kind, subject: n.subject, text: n.text, at: new Date(n.at).toISOString(), worded: !!n.model });
+
+const lowerFirst = (s: string) => (/^[A-Z][a-z ]/.test(s) ? s[0]!.toLowerCase() + s.slice(1) : s);
+
+/** An agent's credit file in figures: its record, its bond and fees, and so its limit, what is free and its score. */
+export function fileFacts(name: string, rec: AgentRecord, nowS: number): Facts {
+  return {
+    agent: name, barred: rec.barred, settled: rec.settled, customers: rec.customers, onTime: rec.onTime, late: rec.late, half: rec.settledAtHalf,
+    notDelivered: rec.notDelivered, repaid: rec.advancesRepaid, notRepaid: rec.advancesNotRepaid, bondEth: ethOf(rec.bond), feesEth: ethOf(rec.feesPaid),
+    limitEth: ethOf(limitOf(rec)), canDrawEth: ethOf(canDrawOf(rec)), score: scoreOf(rec, nowS),
+  };
+}
 
 /** One reading of the chain: the newest block when it was read, and the gas price then (./pulse.ts). */
 export interface PulseJson { block: number; gwei: number | null; at: string }
@@ -98,6 +116,8 @@ export interface JobJson {
   tx: string;
 }
 export interface AgentJson {
+  /** the Desk's credit file on it, newest */
+  file?: { text: string; at: string };
   id: string; // its address: what the site's links carry
   name: string;
   named: boolean; // false: the name is only its address, shortened
@@ -128,7 +148,7 @@ export interface AgentJson {
   score: number;
   scoreParts: { name: string; value: string; points: number; max: number }[];
 }
-export interface EventJson { n: number; at: string; kind: string; jobId?: string; agentId?: string; text: string; amount: string; tx: string; demo?: boolean }
+export interface EventJson { n: number; at: string; kind: string; jobId?: string; agentId?: string; text: string; amount: string; tx: string; demo?: boolean; /** the Desk's reason for an advance */ why?: string }
 export interface BurnJson { n: number; at: string; eth: number; tokens: number; tx: string }
 export interface FactorState {
   source: "engine";
@@ -154,8 +174,10 @@ export interface FactorState {
   hosted: { enabled: boolean; perOwner: number; fromEth: number };
   /** the newest blocks the engine read, newest first: what the receipt prints between the ledger's lines */
   pulse: PulseJson[];
+  /** the Desk: its last letter and newest notes */
+  desk: DeskJson;
 }
-export interface RosterJson { name: string; does: string; needs: string; delivers: string; fromEth: number; asksAModel: boolean }
+export interface RosterJson { name: string; does: string; needs: string; delivers: string; fromEth: number; asksAModel: boolean; /** the Desk's opening file on it */ file?: { text: string; at: string } }
 // what Factor's own agents are, said the same before the launch and after it
 const ROSTER: RosterJson[] = SERVICES.map((s) => ({ name: s.name, does: s.does, needs: s.needs, delivers: s.delivers, fromEth: Number(s.floorWei / 10n ** 12n) / 1e6, asksAModel: !!s.ask }));
 
@@ -188,6 +210,8 @@ const whole = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 export const link = (raw: string | undefined): string | null => (raw && /^https:\/\/[^\s]+$/.test(raw.trim()) ? raw.trim() : null);
 
 interface Names {
+  /** the Desk's newest note of a kind about a subject, when there is a Desk (./deskmind.ts) */
+  desk?: (kind: "file" | "reason", subject: string) => { text: string; at: string } | null;
   profiles: Map<string, Profile>;
   house: Set<string>;
   /** agents made on the site, by address: who made each */
@@ -210,6 +234,7 @@ export function agentJson(row: AgentRow, names: Names, nowS: number): AgentJson 
     volumeEth: eth(r.volume), feesPaidEth: eth(r.feesPaid), bondEth: eth(r.bond), drawnEth: eth(r.advancedNow), limitEth: eth(limitOf(r)), canDrawEth: eth(canDrawOf(r)),
     advancesRepaid: r.advancesRepaid, advancesMissed: r.advancesNotRepaid + r.earlyKept, barred: r.barred, score: scoreOf(r, nowS),
     scoreParts: scoreParts(r, nowS).map((s) => (s.name.startsWith("Fees") ? { ...s, value: ethText(s.value) } : s)),
+    ...(names.desk?.("file", row.address) ? { file: names.desk("file", row.address)! } : {}),
   };
 }
 
@@ -273,7 +298,8 @@ export function eventJson(l: LedgerRow, names: Names): EventJson {
     case "pool_in": (text = l.note === "fees" ? "trading fees arrived in the pool" : l.note === "compute" ? "compute credit nobody spent went back to the pool" : "ETH was added to the pool"), (amount = ethText(l.amount, "+")); break;
     default: text = l.kind;
   }
-  return { n: l.n, at: iso(l.at), kind: l.kind, ...(l.job_id !== null ? { jobId: pad(l.job_id) } : {}), ...(l.agent ? { agentId: l.agent } : {}), text, amount, tx: l.tx_hash, ...(l.job_id !== null && names.demoJobs?.has(l.job_id) ? { demo: true } : {}) };
+  const why = l.kind === "advanced" ? names.desk?.("reason", `${l.tx_hash}:${l.log_index}`)?.text : undefined;
+  return { n: l.n, at: iso(l.at), kind: l.kind, ...(l.job_id !== null ? { jobId: pad(l.job_id) } : {}), ...(l.agent ? { agentId: l.agent } : {}), text, amount, tx: l.tx_hash, ...(l.job_id !== null && names.demoJobs?.has(l.job_id) ? { demo: true } : {}), ...(why ? { why } : {}) };
 }
 
 export class EngineApi {
@@ -313,6 +339,7 @@ export class EngineApi {
     const limit = Math.max(1, whole_("limit", PAGE_MOST) ?? PAGE), before = whole_("before", 1e9);
     if (path === "/v1/state") return (v) => ok(this.state(v) as unknown as Record<string, unknown>);
     if (path === "/v1/pulse") return (v) => ok({ items: pulseJson(v, 12) });
+    if (path === "/v1/desk") return (v) => ok({ ...this.deskJson(v), items: v.deskMind?.recent(Math.min(limit, 100)).map(noteJson) ?? [] });
     if (path === "/v1/health") return (v) => this.health(v);
     if (path === "/v1/burns") return (v) => ok(this.burns(v, limit, before));
     if (path === "/v1/agents") return (v) => ok({ items: this.agents(v) });
@@ -446,7 +473,8 @@ export class EngineApi {
   // ---- what the answers are made of ----
 
   private names(v: EngineView): Names {
-    return { profiles: v.profiles?.all() ?? new Map(), house: new Set([...v.config.houseAgents, ...(v.house?.addresses() ?? [])]), hosted: v.house?.hostedAddresses() ?? new Map(), demoJobs: this.demoJobs(v), service: (a) => v.house?.serviceOf(a) ?? null };
+    const d = v.deskMind;
+    return { desk: d ? (kind, subject) => { const n = d.latest(kind, subject); return n ? { text: n.text, at: new Date(n.at).toISOString() } : null; } : undefined, profiles: v.profiles?.all() ?? new Map(), house: new Set([...v.config.houseAgents, ...(v.house?.addresses() ?? [])]), hosted: v.house?.hostedAddresses() ?? new Map(), demoJobs: this.demoJobs(v), service: (a) => v.house?.serviceOf(a) ?? null };
   }
 
   /** The jobs whose customer is Factor's own demonstration customer (./house/demo.ts). */
@@ -539,6 +567,83 @@ export class EngineApi {
     return { total: r.snap.burnPot.burnCount, more: rows.length > limit, items: rows.slice(0, limit).map((b): BurnJson => ({ n: b.n, at: iso(b.at), eth: eth(b.eth_in), tokens: tokens(BigInt(b.tokens_burned)), tx: b.tx_hash })) };
   }
 
+  /**
+   * One pass of the Desk (./deskmind.ts): the notes that are due, a few at a time. Opening files for Factor's own
+   * agents that have none; once the desk runs, a new credit file for an agent whose record changed (at most hourly),
+   * a reason for every advance without one; and soon after midnight UTC, the letter on the day before.
+   */
+  async deskPass(v: EngineView, most = { openings: 3, files: 5, reasons: 10 }): Promise<number> {
+    const d = v.deskMind;
+    if (!d) return 0;
+    let written = 0;
+    for (const a of ROSTER.filter((x) => !d.latest("opening", x.name)).slice(0, most.openings)) {
+      await d.write("opening", a.name, { agent: a.name, does: lowerFirst(a.does), fromEth: String(a.fromEth) });
+      written++;
+    }
+    const r = this.running(v);
+    if (r) {
+      const names = this.names(v);
+      const t = this.chainNow(v, r.snap);
+      let files = 0;
+      for (const row of r.store.agents()) {
+        if (files >= most.files) break;
+        const facts = fileFacts(nameOf(names, row.address), row.record, t);
+        const last = d.latest("file", row.address);
+        if (last && (JSON.stringify(last.facts) === JSON.stringify(facts) || v.now() - last.at < 3_600_000)) continue;
+        await d.write("file", row.address, facts);
+        files++; written++;
+      }
+      const advances = r.ctx.db.q("SELECT * FROM desk_advances ORDER BY block DESC, log_index DESC LIMIT 50").all() as AdvanceRow[];
+      let reasons = 0;
+      for (const a of advances) {
+        if (reasons >= most.reasons) break;
+        const subject = `${a.tx_hash}:${a.log_index}`;
+        if (d.latest("reason", subject)) continue;
+        const job = r.store.job(a.job_id), rec = r.store.agent(a.agent)?.record;
+        await d.write("reason", subject, { agent: nameOf(names, a.agent), job: a.job_id, kind: KIND_NAME[a.kind] ?? "pool", amountEth: ethOf(a.amount), jobEth: job ? ethOf(job.price) : "0", limitEth: rec ? ethOf(limitOf(rec)) : "0" });
+        reasons++; written++;
+      }
+    }
+    const today = Math.floor(v.now() / 86_400_000) * 86_400_000;
+    const yesterday = new Date(today - 86_400_000).toISOString().slice(0, 10);
+    if (v.now() - today >= 5 * 60_000 && !d.latest("letter", yesterday)) {
+      const facts = r ? this.dayFacts(r, yesterday, today) : this.chainDayFacts(v, yesterday);
+      if (facts) { await d.write("letter", yesterday, facts); written++; }
+    }
+    return written;
+  }
+
+  /** Yesterday on the desk, from the ledger: what a letter after the launch may say. */
+  private dayFacts(r: { ctx: Ctx; snap: Snapshot; store: DeskStore }, day: string, todayMs: number): Facts {
+    const from = Math.floor((todayMs - 86_400_000) / 1000), to = Math.floor(todayMs / 1000);
+    const rows = r.ctx.db.q("SELECT kind, amount FROM ledger WHERE at >= ? AND at < ?").all(from, to) as { kind: string; amount: string }[];
+    const count = (k: string) => rows.filter((x) => x.kind === k).length;
+    const advanced = rows.filter((x) => x.kind === "advanced").reduce((s, x) => s + BigInt(x.amount || "0"), 0n);
+    const d = r.snap.desk;
+    return { launched: true, day, locked: count("locked"), settled: count("settled") + count("half"), advances: count("advanced"), advancedEth: ethOf(advanced), burns: count("burned"), poolEth: ethOf(BigInt(d.pool) + BigInt(d.out)), outEth: ethOf(d.out) };
+  }
+
+  /** Yesterday on the chain, from the pulse: what a letter before the launch may say. Null until a whole day was read. */
+  private chainDayFacts(v: EngineView, day: string): Facts | null {
+    const y = v.pulse?.yesterday();
+    if (!y || y.day !== day) return null;
+    return { launched: false, day, firstBlock: y.firstBlock.toLocaleString("en-US"), lastBlock: y.lastBlock.toLocaleString("en-US"), gwei: y.gwei ?? 0 };
+  }
+
+  /** Factor's own agents, each with the Desk's opening file when it has written one. */
+  private rosterJson(v: EngineView): RosterJson[] {
+    const d = v.deskMind;
+    return ROSTER.map((a) => { const n = d?.latest("opening", a.name); return n ? { ...a, file: { text: n.text, at: new Date(n.at).toISOString() } } : a; });
+  }
+
+  /** What the Desk says, for the site: its last letter, its newest notes, and whether it is writing right now. */
+  deskJson(v: EngineView): DeskJson {
+    const d = v.deskMind;
+    if (!d) return { on: false, writing: false, letter: null, latest: [] };
+    const letter = d.recent(1, ["letter"])[0] ?? null;
+    return { on: true, writing: d.writing, letter: letter ? noteJson(letter) : null, latest: d.recent(8).map(noteJson) };
+  }
+
   state(v: EngineView): FactorState {
     const c = v.config;
     const r = this.running(v);
@@ -552,7 +657,7 @@ export class EngineApi {
     const paused = hiring ? hiring.note || "New jobs are paused for now. Jobs already locked run as they were: the contract settles or refunds each one by itself." : null;
     const h = v.house?.cfg.hosted;
     const hosted = { enabled: !!h?.enabled && v.state === "running" && !!v.house && v.house.canMake(), perOwner: h?.perOwner ?? 0, fromEth: h ? Number(h.floorWei / 10n ** 12n) / 1e6 : 0 };
-    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused, roster: ROSTER, hosted, pulse: pulseJson(v, 8) };
+    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused, roster: this.rosterJson(v), hosted, pulse: pulseJson(v, 8), desk: this.deskJson(v) };
     if (!r) {
       return { ...base, launched: false, stats: { advancedEth: 0, settledJobs: 0, jobs: 0, poolEth: 0, reserveEth: 0, outEth: 0, heldEth: 0, burnedTokens: 0, supplyLeft: SUPPLY, agents: 0, demoJobs: 0, lostEth: 0 }, agents: [], jobs: [], events: [], burns: [] };
     }

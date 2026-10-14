@@ -3,7 +3,9 @@
 
 import { privateKeyToAccount } from "viem/accounts";
 import { afterEach, describe, expect, it } from "vitest";
-import type { AgentJson, EventJson, FactorState, JobJson } from "../src/api.js";
+import type Database from "better-sqlite3";
+import type { AgentJson, EngineApi, EngineView, EventJson, FactorState, JobJson } from "../src/api.js";
+import { DeskMind } from "../src/deskmind.js";
 import { open } from "../src/chain/db.js";
 import { Engine } from "../src/engine.js";
 import { oneLine, profileMessage, titleMessage } from "../src/profiles.js";
@@ -29,7 +31,7 @@ const P = ETH / 25n;
 
 // every key the site's type has (web/src/lib/types.ts), so a change on one side is noticed on the other
 function expectShape(s: FactorState): void {
-  expect(Object.keys(s).sort()).toEqual(["accounts", "agents", "asOf", "burns", "compute", "contracts", "events", "hosted", "jobs", "launched", "links", "params", "paused", "pulse", "roster", "source", "stats"]);
+  expect(Object.keys(s).sort()).toEqual(["accounts", "agents", "asOf", "burns", "compute", "contracts", "desk", "events", "hosted", "jobs", "launched", "links", "params", "paused", "pulse", "roster", "source", "stats"]);
   // Factor's own agents are said in every answer, before the launch and after: fifteen, each with what it takes a job for
   const roster = (s as unknown as { roster: { name: string; does: string; fromEth: number }[] }).roster;
   expect(roster).toHaveLength(15);
@@ -249,6 +251,26 @@ describe("what the site is told", () => {
     expect(job).toMatchObject({ state: "refunded", backEth: 0.1, notRepaidEth: 0.05 });
     const agent = (await get(r.engine, `/v1/agents/${AGENT}`)).body.agent as AgentJson;
     expect(agent).toMatchObject({ barred: true, score: 0, limitEth: 0, canDrawEth: 0, advancesMissed: 1, unanswered: 1, notDelivered: 1 });
+  });
+});
+
+describe("the Desk on a working desk", () => {
+  it("writes a credit file for each agent with a record and a reason for every advance, and the site is told them", async () => {
+    const r = await busy();
+    const e = r.engine as unknown as { sqlite: Database.Database; deskMind: DeskMind | null; api: EngineApi; view: () => EngineView };
+    e.deskMind = new DeskMind(e.sqlite);
+    await e.api.deskPass(e.view(), { openings: 15, files: 10, reasons: 10 });
+    const d = e.deskMind;
+    expect(d.latest("file", AGENT)?.text).toMatch(/1 job settled, 1 on time and 0 late; 1 advance repaid\. Bond 0\.02 ETH/);
+    expect(d.recent(50, ["reason"])).toHaveLength(3);
+    const s = await state(r.engine);
+    expect((s.agents.find((a) => a.id === AGENT) as AgentJson & { file?: { text: string } }).file?.text).toMatch(/may draw up to/);
+    const advanced = s.events.filter((x) => x.kind === "advanced") as (EventJson & { why?: string })[];
+    expect(advanced.length).toBeGreaterThan(0);
+    expect(advanced.every((x) => typeof x.why === "string" && x.why.length > 20)).toBe(true);
+    expect((s as unknown as { desk: { on: boolean; latest: unknown[] } }).desk).toMatchObject({ on: true });
+    // nothing is written again while nothing changed
+    expect(await e.api.deskPass(e.view(), { openings: 15, files: 10, reasons: 10 })).toBe(0);
   });
 });
 

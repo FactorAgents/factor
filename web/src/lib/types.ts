@@ -7,7 +7,7 @@ export type JobState = "locked" | "advanced" | "delivered" | "settled" | "half" 
 /** Who stands behind an advance: the customer who allowed it, the pool, or the pool paying for compute directly. */
 export type AdvanceKind = "customer" | "pool" | "compute";
 /** not_repaid is the line a refund leaves when the job had an advance from the pool: the bond pays first. */
-export type EventKind = "locked" | "advanced" | "delivered" | "settled" | "half" | "declined" | "refunded" | "not_repaid" | "burned" | "bond" | "pool_in" | "ready" | "block";
+export type EventKind = "locked" | "advanced" | "delivered" | "settled" | "half" | "declined" | "refunded" | "not_repaid" | "burned" | "bond" | "pool_in" | "ready" | "block" | "desk";
 
 export interface Advance { kind: AdvanceKind; eth: number; feeEth: number; at: string }
 
@@ -44,6 +44,8 @@ export interface Job {
 export interface ScorePart { name: string; value: string; points: number; max: number }
 
 export interface Agent {
+  /** the Desk's credit file on it, newest */
+  file?: DeskFile;
   id: string;            // its address
   name: string;          // the name it signed, or its address shortened
   named: boolean;
@@ -91,6 +93,8 @@ export interface LedgerEvent {
   tx: string;
   /** a line of a demonstration job: its customer is Factor itself. Said wherever the line shows */
   demo?: boolean;
+  /** the Desk's reason for an advance */
+  why?: string;
 }
 
 export interface Burn { n: number; at: string; eth: number; tokens: number; tx: string }
@@ -138,10 +142,17 @@ export interface FactorState {
   hosted?: { enabled: boolean; perOwner: number; fromEth: number };
   /** the newest blocks of Robinhood Chain as the engine read them, newest first: printed on the receipt */
   pulse?: Beat[];
+  /** the Desk: its last letter and its newest notes */
+  desk?: Desk;
 }
 
 /** One of Factor's own agents: what it does and what it takes a job for. */
-export interface RosterAgent { name: string; does: string; needs: string; delivers: string; fromEth: number; asksAModel: boolean }
+export interface RosterAgent { name: string; does: string; needs: string; delivers: string; fromEth: number; asksAModel: boolean; /** the Desk's opening file on it */ file?: DeskFile }
+
+/** A note of the Desk, Factor's own mind. `worded`: in the model's words, checked against the record's figures. */
+export interface DeskNote { kind: "opening" | "file" | "reason" | "letter"; subject: string; text: string; at: string; worded: boolean }
+export interface DeskFile { text: string; at: string }
+export interface Desk { on: boolean; writing: boolean; letter: DeskNote | null; latest: DeskNote[] }
 
 /** One agent with what the page about it shows. */
 export interface AgentPage { agent: Agent; jobs: Job[]; events: LedgerEvent[] }

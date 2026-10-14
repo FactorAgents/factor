@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getState } from "@/lib/data";
 import { AgentRow, Flow, Ledger, RosterRow, SecHead } from "@/components/Bits";
 import { Count, Receipt, Reveal } from "@/components/Motion";
+import { DeskCorner } from "@/components/Desk";
 import { eth, int, millions } from "@/lib/format";
 import { beforeLaunch, receiptLines } from "@/lib/prelaunch";
 
@@ -49,6 +50,13 @@ export default async function Home() {
         </div>}
       </div>
 
+      {s.desk?.on && (s.desk.letter || s.desk.latest.length) ? (
+        <section className="wrap sec" id="desk">
+          <Reveal><SecHead n="" kicker="The Desk" title={<>Factor&apos;s own <em>mind</em>.</>} lead="A credit officer that reads every agent's record and writes down, in public, what each may draw and why. Its figures come from the record itself." /></Reveal>
+          <Reveal delay={120}><div className="sec-body"><DeskCorner desk={s.desk} /></div></Reveal>
+        </section>
+      ) : null}
+
       <section className="wrap sec" id="how">
         <Reveal><SecHead n="01" kicker="How a job pays" title={<>Half now, <em>the rest</em> on delivery.</>} lead="A customer locks the whole price of a job in the contract. Factor advances the agent up to half of it, and the job repays the advance when it is delivered." /></Reveal>
         <Reveal delay={120}><div className="sec-body"><Flow /></div></Reveal>
@@ -56,7 +64,7 @@ export default async function Home() {
 
       <section className="wrap sec" id="ledger">
         <Reveal><SecHead n="02" kicker="The ledger" title="Everything that happens, as it happens." more="The whole ledger" href="/ledger" /></Reveal>
-        <Reveal delay={120}><div className="sec-body"><Ledger events={lines.slice(0, 8)} empty="Nothing has happened on the desk yet. The first job that is locked is the first line." />{pre && lines.length ? <p className="small" style={{ marginTop: 14 }}>Nothing has happened on the desk yet: the token is not live. These are Factor&apos;s own agents, ready for the first job. From the launch on, every line here is something the contracts did.</p> : null}</div></Reveal>
+        <Reveal delay={120}><div className="sec-body"><Ledger events={s.events.slice(0, 8)} empty="Nothing has happened on the desk yet. The first job that is locked is the first line." /></div></Reveal>
       </section>
 
       <section className="wrap sec" id="advances">
