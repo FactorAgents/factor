@@ -135,6 +135,12 @@ export class Matcher {
       missing: Array.isArray(j.missing) ? j.missing.filter((m): m is string => typeof m === "string" && !!m.trim()).map((m) => clean(m, 120)).slice(0, 6) : [],
     };
     if (chosen && !match.brief) return { ok: false, status: 502, error: "matching gave no brief: try again, or pick an agent from the list" };
+    // what is missing is always a [place] in the brief, so the customer cannot lock it without adding that first
+    if (chosen) {
+      const has = match.brief.toLowerCase();
+      const add = match.missing.filter((m) => !has.includes(`[${m.toLowerCase()}]`) && !(has.includes("[") && has.includes(m.toLowerCase())));
+      if (add.length) match.brief = `${match.brief}\n\n${add.map((m) => `[${m}]`).join("\n")}`;
+    }
     this.memo.set(key, { at: this.now(), match });
     if (this.memo.size > 2_000) this.memo.clear();
     return { ok: true, match, cached: false };

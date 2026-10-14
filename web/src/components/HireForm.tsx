@@ -8,6 +8,7 @@ import { signText } from "@/lib/wallet";
 import { STATE_TONE, STATE_WORD, eth } from "@/lib/format";
 import type { Agent, Job, Page, Params } from "@/lib/types";
 import { engineNow, Go, saveSigned, StatusLine, useSend, useWallet } from "./Wallet";
+import MatchBox, { type Suggestion } from "./MatchBox";
 
 type Pick_ = Pick<Agent, "address" | "name" | "named" | "does" | "score" | "settled" | "house" | "service">;
 const BRIEF_MOST = 12_000;
@@ -41,6 +42,9 @@ export default function HireForm({ agents, picked, desk, explorer, params, pause
     const details = brief.replace(/\r\n?/g, "\n").trim();
     if (details.length > BRIEF_MOST) throw new Refusal(`A brief is ${BRIEF_MOST.toLocaleString("en-US")} characters at most. This one is ${details.length.toLocaleString("en-US")}.`);
     if (who.service && !details) throw new Refusal(`${who.name} works from a brief. ${who.service.needs}`);
+    // a brief Factor wrote leaves [what the customer has to add] in brackets: it is not locked until that is in
+    const left = details.match(/\[[^\]\n]{2,80}\]/g);
+    if (left) throw new Refusal(`Fill in ${left.slice(0, 3).join(", ")} in the brief first.`);
     const dueAt = (await engineNow()) + due;
     const { hash, receipt } = await send(p, desk, address, "lock", [who.address, BigInt(dueAt), early], { value: wei, on });
     const id = lockedJob(receipt, desk);
@@ -74,8 +78,20 @@ export default function HireForm({ agents, picked, desk, explorer, params, pause
     return { note: `Job ${String(id).padStart(4, "0")} is locked for ${who.name}.`, hash, href, hrefText: "Open the job" };
   });
 
+  // "Use this" in the box above: the agent, the brief, a title and the agent's price, put into this form
+  const use = (sg: Suggestion) => {
+    const a = agents.find((x) => x.named && x.name === sg.agent);
+    if (!a) return;
+    setAgent(a.address);
+    setBrief(sg.brief);
+    if (TITLE.test(sg.title)) setTitle(sg.title);
+    if (sg.fromEth) setPrice(sg.fromEth.toFixed(4));
+    window.setTimeout(() => document.getElementById("hire-brief")?.scrollIntoView({ behavior: "smooth", block: "center" }), 60);
+  };
+
   return (
     <div className="form">
+      <MatchBox known={agents.filter((a) => a.named).map((a) => a.name)} onUse={use} disabled={busy} />
       <label className="field">
         <span className="label">The agent</span>
         <select value={agent} onChange={(e) => setAgent(e.target.value)} disabled={busy || agents.length === 0}>
@@ -91,7 +107,7 @@ export default function HireForm({ agents, picked, desk, explorer, params, pause
       </label>
       <label className="field">
         <span className="label">The brief{who?.service ? "" : " (if it needs one)"}</span>
-        <textarea value={brief} onChange={(e) => setBrief(e.target.value)} rows={who?.service ? 6 : 3} maxLength={BRIEF_MOST} placeholder={who?.service ? who.service.needs : "The details, at whatever length they need"} disabled={busy} />
+        <textarea id="hire-brief" value={brief} onChange={(e) => setBrief(e.target.value)} rows={who?.service ? 6 : 3} maxLength={BRIEF_MOST} placeholder={who?.service ? who.service.needs : "The details, at whatever length they need"} disabled={busy} />
         <div className="hint">{who?.service ? `${who.service.needs} You get back ${who.service.delivers}. ` : ""}Anyone can read a brief on the job&apos;s page, so put nothing private in it.</div>
       </label>
       <div className="pair">

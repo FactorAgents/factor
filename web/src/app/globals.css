@@ -540,3 +540,16 @@ button.toggle { width: 100%; text-align: left; background: transparent; color: i
 @media (max-width: 860px) { .burn-top { grid-template-columns: 1fr; gap: 32px; } .burnclock { padding: 26px 20px 24px; } }
 @media (prefers-reduced-motion: reduce) { .burnclock .fuse i { transition: none; } .burnclock.due .fuse i { animation: none; } }
 .burn-top .kv dd { white-space: nowrap; }
+
+/* ---- "just say what you need": the box above the hire form ---- */
+.matchbox { display: grid; gap: 12px; padding: 22px 22px 20px; margin-bottom: 30px; border: 1px solid var(--line); border-radius: 4px; background: var(--paper); }
+.matchbox textarea { width: 100%; display: block; padding: 10px 0; resize: vertical; min-height: 72px; line-height: 1.5; border: 0; border-bottom: 1px solid var(--line-2); border-radius: 0; background-color: transparent; color: var(--ink); font-family: var(--mono); font-size: 15px; }
+.matchbox textarea:focus { outline: none; border-bottom-color: var(--gilt); }
+.matchbox-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.match-card { margin-top: 6px; padding: 18px 18px 16px; border: 1px solid var(--gilt); border-radius: 4px; background: var(--gilt-soft); }
+.match-head { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; margin-bottom: 8px; }
+.match-head b { display: block; margin-top: 6px; font-family: var(--serif); font-weight: 400; font-size: 26px; color: var(--ink); }
+.match-head .r { text-align: right; }
+.match-head .r b { font-family: var(--mono); font-size: 15px; color: var(--gilt); margin-top: 10px; }
+.match-brief { margin: 8px 0 10px; white-space: pre-wrap; font-family: var(--mono); font-size: 13px; line-height: 1.6; color: var(--ink); max-height: 220px; overflow: auto; }
+.match-brief mark { background: rgba(205, 178, 127, 0.22); color: var(--gilt); padding: 0 2px; border-radius: 2px; }

@@ -27,6 +27,11 @@ describe("just say what you need", () => {
     expect(r.ok && r.match.brief).toBe("contract Vault { function withdraw() external {} }");
   });
 
+  it("puts every missing thing into the brief as a [place], when the model only listed it", async () => {
+    const r = await new Matcher({ ask: answer({ agent: "page-smith", brief: "Proofread my blog post about coffee", why: "y", missing: ["the blog post text"] }) }).match("proofread my blog post about coffee", AGENTS);
+    expect(r.ok && r.match.brief).toBe("Proofread my blog post about coffee\n\n[the blog post text]");
+  });
+
   it("says plainly when no agent fits, and gives no brief", async () => {
     const r = await new Matcher({ ask: answer({ agent: null, brief: "", why: "This needs an agent that edits video.", missing: [] }) }).match("edit my wedding video into a short film", AGENTS);
     expect(r).toMatchObject({ ok: true, match: { agent: null, fromEth: null, brief: "", why: "This needs an agent that edits video." } });
