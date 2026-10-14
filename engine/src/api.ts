@@ -155,12 +155,26 @@ export interface AgentJson {
 }
 export interface EventJson { n: number; at: string; kind: string; jobId?: string; agentId?: string; text: string; amount: string; tx: string; demo?: boolean; /** the Desk's reason for an advance */ why?: string }
 export interface BurnJson { n: number; at: string; eth: number; tokens: number; tx: string }
+export interface BurnPotJson {
+  potEth: number;          // what the pot holds now
+  nextEth: number;         // what the next burn would spend
+  nextAt: string | null;   // the earliest it may go; null while the pot is empty
+  ready: boolean;          // a burn would go through right now
+  open: boolean;           // the market takes a buy right now
+  count: number;
+  ethSpent: number;        // all the ETH burns have spent
+  lastAt: string | null;
+  everyMin: number;        // the least time between two burns
+  smallestEth: number;     // a smaller burn waits, at most a day
+}
 export interface FactorState {
   source: "engine";
   asOf: string;
   launched: boolean;
   links: { pons: string | null; github: string | null; x: string | null };
-  stats: { advancedEth: number; settledJobs: number; jobs: number; poolEth: number; reserveEth: number; outEth: number; heldEth: number; burnedTokens: number; supplyLeft: number; agents: number; demoJobs: number; lostEth: number };
+  stats: { advancedEth: number; settledJobs: number; jobs: number; poolEth: number; reserveEth: number; outEth: number; heldEth: number; burnedTokens: number; supplyLeft: number; agents: number; demoJobs: number; lostEth: number; poolFromTradingEth: number };
+  /** the burn pot as the chain has it: what it holds, when the next burn may go, what it would spend. Null before the launch. */
+  burn: BurnPotJson | null;
   params: { advanceMaxPct: number; advanceFeePct: number; jobFeePct: number; graceHours: number; reviewHours: number; rejectedPct: number; reserveMinPct: number; minJobEth: number };
   agents: AgentJson[];
   jobs: JobJson[];
@@ -189,6 +203,14 @@ export interface FactorState {
 export interface RosterJson { name: string; does: string; needs: string; delivers: string; fromEth: number; asksAModel: boolean; /** the Desk's opening file on it */ file?: { text: string; at: string } }
 // what Factor's own agents are, said the same before the launch and after it
 const ROSTER: RosterJson[] = SERVICES.map((s) => ({ name: s.name, does: s.does, needs: s.needs, delivers: s.delivers, fromEth: Number(s.floorWei / 10n ** 12n) / 1e6, asksAModel: !!s.ask }));
+
+// The burn pot's own figures, read from the chain (FactorBurnPot's preview, market and totals); nothing worked out here.
+function burnPotJson(b: Snapshot["burnPot"]): BurnPotJson {
+  return {
+    potEth: eth(b.balance), nextEth: eth(b.nextAmount), nextAt: b.nextAt ? new Date(b.nextAt * 1000).toISOString() : null, ready: b.ready, open: b.open,
+    count: b.burnCount, ethSpent: eth(b.totalEthBurned), lastAt: b.lastBurnAt ? new Date(b.lastBurnAt * 1000).toISOString() : null, everyMin: 30, smallestEth: 0.001,
+  };
+}
 
 const ok = (body: Record<string, unknown>): Answer => ({ status: 200, body });
 const notFound = (what: string): Answer => ({ status: 404, body: { error: what } });
@@ -700,7 +722,7 @@ export class EngineApi {
     const activity = (v.activity?.latest(8) ?? []).map((x) => ({ n: x.n, at: new Date(x.at).toISOString(), agent: x.agent, kind: x.kind, text: x.text }));
     const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused, roster: this.rosterJson(v), hosted, pulse: pulseJson(v, 8), desk: this.deskJson(v), signups, activity };
     if (!r) {
-      return { ...base, launched: false, stats: { advancedEth: 0, settledJobs: 0, jobs: 0, poolEth: 0, reserveEth: 0, outEth: 0, heldEth: 0, burnedTokens: 0, supplyLeft: SUPPLY, agents: 0, demoJobs: 0, lostEth: 0 }, agents: [], jobs: [], events: [], burns: [] };
+      return { ...base, launched: false, stats: { advancedEth: 0, settledJobs: 0, jobs: 0, poolEth: 0, reserveEth: 0, outEth: 0, heldEth: 0, burnedTokens: 0, supplyLeft: SUPPLY, agents: 0, demoJobs: 0, lostEth: 0, poolFromTradingEth: 0 }, burn: null, agents: [], jobs: [], events: [], burns: [] };
     }
     const { ctx, snap, store } = r;
     const names = this.names(v);
@@ -721,7 +743,9 @@ export class EngineApi {
       stats: {
         advancedEth: eth(d.totalAdvanced), settledJobs: store.countByState(STATE.settled), jobs: d.jobCount, poolEth: eth(poolAll), reserveEth: eth((poolAll * BigInt(RULES.reserveMinPct)) / 100n),
         outEth: eth(d.out), heldEth: eth(d.held), burnedTokens: tokens(burned), supplyLeft: tokens(supply), agents: store.agentCount(), demoJobs: this.demoJobs(v).size, lostEth: eth(d.totalLost),
+        poolFromTradingEth: eth(snap.splitter.totalToPool),
       },
+      burn: snap.token ? burnPotJson(snap.burnPot) : null,
       agents: this.agents(v).slice(0, STATE_AGENTS),
       jobs: this.jobsJson(v, store, store.jobs(STATE_JOBS)),
       events: store.ledger(STATE_EVENTS).map((l) => eventJson(l, names)),

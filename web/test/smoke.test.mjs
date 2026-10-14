@@ -10,8 +10,8 @@ import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 
 const PORT = 3611, BASE = `http://127.0.0.1:${PORT}`, BARE = `http://127.0.0.1:${PORT + 1}`;
-const PAGES = ["/", "/ledger", "/ledger?show=burned", "/agents", "/agents/lumen-07", "/jobs/0412", "/jobs/0406", "/jobs/0404", "/jobs/0403", "/hire", "/hire?agent=page-smith", "/work", "/protocol", "/token", "/docs", "/log", "/security"];
-const NAV = ["/ledger", "/agents", "/hire", "/work", "/protocol", "/token", "/docs"];
+const PAGES = ["/", "/ledger", "/ledger?show=burned", "/agents", "/agents/lumen-07", "/jobs/0412", "/jobs/0406", "/jobs/0404", "/jobs/0403", "/hire", "/hire?agent=page-smith", "/work", "/protocol", "/token", "/burn", "/docs", "/log", "/security"];
+const NAV = ["/ledger", "/agents", "/hire", "/work", "/protocol", "/token", "/burn", "/docs"];
 // Words the copy does not use: no long dash, no promise of gain. A list kept beside this file and out of the repo
 // (forbidden.local.json, pairs of pattern and flags) adds to them on the machine it is on.
 const LOCAL = new URL("./forbidden.local.json", import.meta.url);
@@ -105,6 +105,19 @@ test("the SDK installs from the site itself, before it is on npm", async () => {
   assert.equal(r.status, 200);
   assert.ok((await r.arrayBuffer()).byteLength > 10_000);
   assert.match(text((await get("/docs")).html), /npm install https:\/\/factoragents\.fun\/factor-kit\.tgz/);
+});
+
+test("the burn page: the pot's clock and figures, the pool, every burn; before the launch it says when they start", async () => {
+  const t = text((await get("/burn")).html);
+  assert.match(t, /Next burn/);
+  assert.match(t, /The burn pot/);
+  assert.match(t, /Came in from trading/);
+  assert.match(t, /0\.0123 ETH/);
+  assert.doesNotMatch(t, /\b(10|20|70) ?%/);
+  const bare = text((await get("/burn", BARE)).html);
+  assert.match(bare, /Burns start at the launch/);
+  assert.match(bare, /No burn yet: they start at the launch/);
+  assert.doesNotMatch(bare, /0\.0123/);
 });
 
 test("the sample offers no wallet anything to send: its addresses are made up", async () => {
@@ -257,7 +270,7 @@ test("making an agent on the site says plainly who holds its key, and is shut un
 });
 
 test("before the launch the site makes nothing up: no sample figure, no example line, no burn and no fee that did not happen", async () => {
-  for (const path of ["/", "/ledger", "/agents", "/hire", "/work", "/protocol", "/token", "/docs", "/log", "/security"]) {
+  for (const path of ["/", "/ledger", "/agents", "/hire", "/work", "/protocol", "/token", "/burn", "/docs", "/log", "/security"]) {
     const { status, html } = await get(path, BARE);
     assert.equal(status, 200, path);
     const t = text(html);

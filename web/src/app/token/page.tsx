@@ -26,7 +26,7 @@ export default async function Token() {
         </div>
       </div>
       <section className="wrap sec">
-        <Reveal><SecHead n="03" kicker="The burns" title="Each one, with its transaction." /></Reveal>
+        <Reveal><SecHead n="03" kicker="The burns" title="Each one, with its transaction." more="The burn page, with the clock" href="/burn" /></Reveal>
         <Reveal delay={120}><div className="sec-body"><table className="table stack">
           <thead><tr><th>No.</th><th>When</th><th>Spent</th><th className="r">Burned</th><th className="r">Transaction</th></tr></thead>
           <tbody>{s.burns.map((b) => <tr key={b.n}><td className="m">{b.n}</td><td className="m wide" style={{ color: "var(--mid)" }}>{dayTime(b.at)}</td><td className="m">{b.eth.toFixed(4)} ETH</td><td className="m r gilt">{int(b.tokens)} $FACTOR</td><td className="m r" style={{ color: "var(--mid)" }}><a href={txHref(s.contracts.explorer, b.tx)} target="_blank" rel="noopener noreferrer">{short(b.tx)}</a></td></tr>)}</tbody>

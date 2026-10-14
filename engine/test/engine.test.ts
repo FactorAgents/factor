@@ -33,7 +33,7 @@ const P = ETH / 25n;
 
 // every key the site's type has (web/src/lib/types.ts), so a change on one side is noticed on the other
 function expectShape(s: FactorState): void {
-  expect(Object.keys(s).sort()).toEqual(["accounts", "activity", "agents", "asOf", "burns", "compute", "contracts", "desk", "events", "hosted", "jobs", "launched", "links", "params", "paused", "pulse", "roster", "signups", "source", "stats"]);
+  expect(Object.keys(s).sort()).toEqual(["accounts", "activity", "agents", "asOf", "burn", "burns", "compute", "contracts", "desk", "events", "hosted", "jobs", "launched", "links", "params", "paused", "pulse", "roster", "signups", "source", "stats"]);
   // Factor's own agents are said in every answer, before the launch and after: fifteen, each with what it takes a job for
   const roster = (s as unknown as { roster: { name: string; does: string; fromEth: number }[] }).roster;
   expect(roster).toHaveLength(15);
@@ -41,7 +41,7 @@ function expectShape(s: FactorState): void {
   expect(s.paused).toBeNull();
   expect(Object.keys(s.accounts).sort()).toEqual(["enabled", "factory", "ordersPerDay"]);
   expect(Object.keys(s.compute).sort()).toEqual(["enabled", "markupPct", "maxTokens", "models"]);
-  expect(Object.keys(s.stats).sort()).toEqual(["advancedEth", "agents", "burnedTokens", "demoJobs", "heldEth", "jobs", "lostEth", "outEth", "poolEth", "reserveEth", "settledJobs", "supplyLeft"]);
+  expect(Object.keys(s.stats).sort()).toEqual(["advancedEth", "agents", "burnedTokens", "demoJobs", "heldEth", "jobs", "lostEth", "outEth", "poolEth", "poolFromTradingEth", "reserveEth", "settledJobs", "supplyLeft"]);
   expect(s.params).toEqual({ advanceMaxPct: 50, advanceFeePct: 1, jobFeePct: 2, graceHours: 12, reviewHours: 24, rejectedPct: 50, reserveMinPct: 20, minJobEth: 0.001 });
   expect(Object.keys(s.contracts).sort()).toEqual(["burnPot", "desk", "explorer", "splitter", "token"]);
   expect(Object.keys(s.links).sort()).toEqual(["github", "pons", "x"]);
@@ -246,7 +246,10 @@ describe("what the site is told", () => {
       ["pool_in", "trading fees arrived in the pool", "+0.1000 ETH"],
     ]);
     expect(s.burns).toEqual([expect.objectContaining({ n: 1, eth: 0.2, tokens: 100_000 })]);
-    expect(s.stats).toMatchObject({ poolEth: 0.1, burnedTokens: 100_000, supplyLeft: 1_000_000_000 - 100_000 });
+    expect(s.stats).toMatchObject({ poolEth: 0.1, burnedTokens: 100_000, supplyLeft: 1_000_000_000 - 100_000, poolFromTradingEth: 0.1 });
+    // the burn page's figures are the pot's own, as the chain has them
+    expect(s.burn).toMatchObject({ count: 1, ethSpent: 0.2, everyMin: 30, smallestEth: 0.001 });
+    expect(s.burn?.lastAt).toEqual(expect.any(String));
     const burns = (await get(r.engine, "/v1/burns")).body as { total: number; items: unknown[] };
     expect(burns.total).toBe(1);
   });

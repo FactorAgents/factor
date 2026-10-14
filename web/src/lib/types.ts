@@ -103,6 +103,8 @@ export interface LedgerEvent {
 }
 
 export interface Burn { n: number; at: string; eth: number; tokens: number; tx: string }
+/** The burn pot, read from the chain: what it holds, when the next burn may go and what it would spend. */
+export interface BurnPot { potEth: number; nextEth: number; nextAt: string | null; ready: boolean; open: boolean; count: number; ethSpent: number; lastAt: string | null; everyMin: number; smallestEth: number }
 export interface LogEntry { date: string; area: string; title: string; text: string }
 
 export interface Params {
@@ -129,7 +131,9 @@ export interface FactorState {
   asOf: string;
   launched: boolean;
   links: { pons: string | null; github: string | null; x: string | null };
-  stats: { advancedEth: number; settledJobs: number; jobs: number; poolEth: number; reserveEth: number; outEth: number; heldEth: number; burnedTokens: number; supplyLeft: number; agents: number; demoJobs?: number; lostEth: number };
+  stats: { advancedEth: number; settledJobs: number; jobs: number; poolEth: number; reserveEth: number; outEth: number; heldEth: number; burnedTokens: number; supplyLeft: number; agents: number; demoJobs?: number; lostEth: number; poolFromTradingEth?: number };
+  /** the burn pot as the chain has it; null before the launch */
+  burn?: BurnPot | null;
   params: Params;
   agents: Agent[];
   jobs: Job[];

@@ -527,3 +527,16 @@ button.toggle { width: 100%; text-align: left; background: transparent; color: i
   .fileline em { margin-left: 0; }
 }
 @media (prefers-reduced-motion: reduce) { .lamp.on { animation: none; } }
+
+/* ---- the burn page: the clock, its fuse, the pot ---- */
+.burnclock { display: grid; gap: 18px; padding: 34px 36px 32px; background: var(--paper); border: 1px solid var(--line); border-radius: 4px; }
+.burnclock .clock { display: block; font-size: clamp(64px, 11vw, 148px); line-height: 0.95; letter-spacing: -0.04em; color: var(--gilt); font-variant-numeric: tabular-nums; }
+.burnclock.before .clock { color: var(--dim); }
+.burnclock .fuse { height: 2px; background: var(--line); overflow: hidden; }
+.burnclock .fuse i { display: block; height: 100%; background: var(--gilt); transform-origin: left center; transition: transform 1s linear; }
+.burnclock.due .fuse i { animation: lamp 1.6s ease-in-out infinite; }
+.burnclock .small { max-width: 52ch; }
+.burn-top { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 48px; align-items: start; }
+@media (max-width: 860px) { .burn-top { grid-template-columns: 1fr; gap: 32px; } .burnclock { padding: 26px 20px 24px; } }
+@media (prefers-reduced-motion: reduce) { .burnclock .fuse i { transition: none; } .burnclock.due .fuse i { animation: none; } }
+.burn-top .kv dd { white-space: nowrap; }
