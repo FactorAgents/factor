@@ -169,6 +169,10 @@ export interface BurnPotJson {
   lastAt: string | null;
   everyMin: number;        // the least time between two burns
   smallestEth: number;     // a smaller burn waits, at most a day
+  /** whether $FACTOR has left Pons' curve for its pool: from then on Pons releases the fees in batches */
+  bonded: boolean;
+  /** when trading fees last arrived and were split, so a quiet pot reads as waiting and not as stopped */
+  lastFeesAt: string | null;
 }
 export interface FactorState {
   source: "engine";
@@ -208,8 +212,9 @@ export interface RosterJson { name: string; does: string; needs: string; deliver
 const ROSTER: RosterJson[] = SERVICES.map((s) => ({ name: s.name, does: s.does, needs: s.needs, delivers: s.delivers, fromEth: Number(s.floorWei / 10n ** 12n) / 1e6, asksAModel: !!s.ask }));
 
 // The burn pot's own figures, read from the chain (FactorBurnPot's preview, market and totals); nothing worked out here.
-function burnPotJson(b: Snapshot["burnPot"]): BurnPotJson {
+function burnPotJson(b: Snapshot["burnPot"], lastFeesAt: number | null): BurnPotJson {
   return {
+    bonded: b.open && !b.viaCurve, lastFeesAt: lastFeesAt ? new Date(lastFeesAt * 1000).toISOString() : null,
     potEth: eth(b.balance), nextEth: eth(b.nextAmount), nextAt: b.nextAt ? new Date(b.nextAt * 1000).toISOString() : null, ready: b.ready, open: b.open,
     count: b.burnCount, ethSpent: eth(b.totalEthBurned), lastAt: b.lastBurnAt ? new Date(b.lastBurnAt * 1000).toISOString() : null, everyMin: 30, smallestEth: 0.001,
   };
@@ -762,7 +767,7 @@ export class EngineApi {
         outEth: eth(d.out), heldEth: eth(d.held), burnedTokens: tokens(burned), supplyLeft: tokens(supply), agents: store.agentCount(), demoJobs: this.demoJobs(v).size, lostEth: eth(d.totalLost),
         poolFromTradingEth: eth(snap.splitter.totalToPool),
       },
-      burn: snap.token ? burnPotJson(snap.burnPot) : null,
+      burn: snap.token ? burnPotJson(snap.burnPot, ctx.db.splits(1)[0]?.at ?? null) : null,
       agents: this.agents(v).slice(0, STATE_AGENTS),
       jobs: this.jobsJson(v, store, store.jobs(STATE_JOBS)),
       events: store.ledger(STATE_EVENTS).map((l) => eventJson(l, names)),

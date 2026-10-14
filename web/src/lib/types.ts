@@ -104,7 +104,7 @@ export interface LedgerEvent {
 
 export interface Burn { n: number; at: string; eth: number; tokens: number; tx: string }
 /** The burn pot, read from the chain: what it holds, when the next burn may go and what it would spend. */
-export interface BurnPot { potEth: number; nextEth: number; nextAt: string | null; ready: boolean; open: boolean; count: number; ethSpent: number; lastAt: string | null; everyMin: number; smallestEth: number }
+export interface BurnPot { potEth: number; nextEth: number; nextAt: string | null; ready: boolean; open: boolean; count: number; ethSpent: number; lastAt: string | null; everyMin: number; smallestEth: number; bonded?: boolean; lastFeesAt?: string | null }
 export interface LogEntry { date: string; area: string; title: string; text: string }
 
 export interface Params {

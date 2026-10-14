@@ -10,6 +10,12 @@ const left = (ms: number) => {
   return h ? `${h}:${two(m)}:${two(s % 60)}` : `${two(m)}:${two(s % 60)}`;
 };
 const ethText = (n: number) => `${n.toFixed(n >= 1 ? 3 : 4)} ETH`;
+/** "4 min ago", "1 h 12 min ago": how long since a moment, by the page's own clock */
+export const ago = (iso: string | null | undefined, now: number): string | null => {
+  if (!iso) return null;
+  const m = Math.max(0, Math.floor((now - Date.parse(iso)) / 60_000));
+  return m < 1 ? "just now" : m < 60 ? `${m} min ago` : `${Math.floor(m / 60)} h ${m % 60} min ago`;
+};
 
 export function BurnClock({ burn, asOf }: { burn: BurnPot | null; asOf: string }) {
   // the server's clock, not the visitor's: the page says when it was read, and the clock runs on from there. The
@@ -28,7 +34,7 @@ export function BurnClock({ burn, asOf }: { burn: BurnPot | null; asOf: string }
   const at = burn?.nextAt ? Date.parse(burn.nextAt) : null;
   const due = !!burn && (burn.ready || (at !== null && at <= now && burn.open));
   // how far the fuse has burned: the time since the last burn (or the launch) out of the half hour
-  const fuse = !burn ? 0 : due ? 1 : at === null ? 1 : Math.min(1, Math.max(0, 1 - (at - now) / every));
+  const fuse = !burn ? 0 : due ? 1 : at === null ? 0 : Math.min(1, Math.max(0, 1 - (at - now) / every));
 
   let big: string, line: string;
   if (!burn) {
@@ -38,8 +44,13 @@ export function BurnClock({ burn, asOf }: { burn: BurnPot | null; asOf: string }
     big = "00:00";
     line = `A burn is due now, of ${ethText(burn.nextEth)}. Anybody can send it, and Factor's engine does within a minute or two.`;
   } else if (at === null) {
-    big = "--:--";
-    line = `The pot is empty. The next burn goes ${burn.everyMin} minutes after the last one, as soon as fees have come in.`;
+    // nothing in the pot: between two fee releases, which is the normal state once bonded, not a pause
+    big = "Waiting";
+    const fees = ago(burn.lastFeesAt, now), last = ago(burn.lastAt, now);
+    const since = [fees ? `Fees last arrived ${fees}` : null, last ? `the last burn was ${last}` : null].filter(Boolean).join(", and ");
+    line = burn.bonded
+      ? `Waiting for the next fee release. Since $FACTOR bonded, trading fees collect at Pons and are released in batches, usually about once an hour. When they arrive they are split and burned within minutes.${since ? ` ${since}.` : ""}`
+      : `Waiting for the next fees. The next burn goes ${burn.everyMin} minutes after the last one, as soon as fees have come in.${since ? ` ${since}.` : ""}`;
   } else if (burn.potEth < burn.smallestEth) {
     big = left(at - now);
     line = `The pot holds ${ethText(burn.potEth)}, under the ${burn.smallestEth} ETH a burn needs, so it waits for more fees, or a day at most.`;
@@ -50,8 +61,8 @@ export function BurnClock({ burn, asOf }: { burn: BurnPot | null; asOf: string }
 
   return (
     <div className={`burnclock${due ? " due" : ""}${burn ? "" : " before"}`}>
-      <div className="desk-state"><span className={`lamp${burn && burn.open ? " on" : ""}`} aria-hidden="true" /><span>{!burn ? "Not launched yet" : due ? "Burn due" : "Next burn"}</span></div>
-      <b className="clock mono" aria-live="off">{big}</b>
+      <div className="desk-state"><span className={`lamp${burn && burn.open ? " on" : ""}`} aria-hidden="true" /><span>{!burn ? "Not launched yet" : due ? "Burn due" : at === null ? "Between fee releases" : "Next burn"}</span></div>
+      <b className={`clock mono${big === "Waiting" ? " word" : ""}`} aria-live="off">{big}</b>
       <div className="fuse" aria-hidden="true"><i style={{ transform: `scaleX(${fuse})` }} /></div>
       <p className="small">{line}</p>
     </div>

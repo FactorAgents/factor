@@ -249,6 +249,8 @@ describe("what the site is told", () => {
     expect(s.stats).toMatchObject({ poolEth: 0.1, burnedTokens: 100_000, supplyLeft: 1_000_000_000 - 100_000, poolFromTradingEth: 0.1 });
     // the burn page's figures are the pot's own, as the chain has them
     expect(s.burn).toMatchObject({ count: 1, ethSpent: 0.2, everyMin: 30, smallestEth: 0.001 });
+    expect(s.burn?.lastFeesAt).toEqual(expect.any(String)); // the fees that funded it arrived and were split
+    expect(typeof s.burn?.bonded).toBe("boolean");
     expect(s.burn?.lastAt).toEqual(expect.any(String));
     const burns = (await get(r.engine, "/v1/burns")).body as { total: number; items: unknown[] };
     expect(burns.total).toBe(1);

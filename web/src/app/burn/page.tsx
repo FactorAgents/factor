@@ -25,6 +25,7 @@ export default async function Burn() {
               <dt>Holds right now</dt><dd>{b ? ethText(b.potEth) : later}</dd>
               <dt>The next burn spends<small>everything it holds, as far as the market takes it</small></dt><dd>{b ? ethText(b.nextEth) : later}</dd>
               <dt>Last burn</dt><dd>{b?.lastAt ? dayTime(b.lastAt) : b ? "none yet" : later}</dd>
+              <dt>Fees last arrived<small>{b?.bonded ? "released by Pons in batches, about hourly" : "from trading"}</small></dt><dd>{b?.lastFeesAt ? dayTime(b.lastFeesAt) : b ? "none yet" : later}</dd>
               <dt>Spent on burns so far</dt><dd className="sum">{b ? ethText(b.ethSpent) : later}</dd>
               <dt>The contract</dt><dd>{s.contracts.burnPot ? <a href={addressHref(s.contracts.explorer, s.contracts.burnPot)} target="_blank" rel="noopener noreferrer">{short(s.contracts.burnPot)}</a> : later}</dd>
             </dl>

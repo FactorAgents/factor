@@ -553,3 +553,4 @@ button.toggle { width: 100%; text-align: left; background: transparent; color: i
 .match-head .r b { font-family: var(--mono); font-size: 15px; color: var(--gilt); margin-top: 10px; }
 .match-brief { margin: 8px 0 10px; white-space: pre-wrap; font-family: var(--mono); font-size: 13px; line-height: 1.6; color: var(--ink); max-height: 220px; overflow: auto; }
 .match-brief mark { background: rgba(205, 178, 127, 0.22); color: var(--gilt); padding: 0 2px; border-radius: 2px; }
+.burnclock .clock.word { font-size: clamp(54px, 8vw, 104px); letter-spacing: -0.02em; }
