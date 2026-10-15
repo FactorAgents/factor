@@ -7,7 +7,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { callerOf } from "@/lib/caller";
 import { engineUrl, sampleMode } from "@/lib/data";
 import { sampleAgent, sampleJob, sampleJobs, sampleLedger, sampleState } from "@/lib/sample";
-import { answerHeaders, sharedRead } from "@/lib/shared";
+import { answerBody, answerHeaders, sharedRead } from "@/lib/shared";
 
 const READS = /^(state|pulse|desk|agents|agents\/made\/0x[0-9a-fA-F]{40}|agents\/[0-9a-zA-Z-]{3,42}|jobs|jobs\/\d{1,9}|ledger|burns|accounts\/0x[0-9a-fA-F]{40}|accounts\/relay\/0x[0-9a-f]{64}|accounts\/by-credential\/0x[0-9a-f]{2,2046})$/;
 // two things a wallet signs, and what an account without a wallet asks of the engine (lib/passkey.ts)
@@ -64,7 +64,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ path: strin
       return { status: r.status, body: await r.text() };
     });
     const { headers, notModified } = answerHeaders(a, req.headers.get("if-none-match"));
-    return new NextResponse(notModified ? null : a.body, { status: notModified ? 304 : a.status, headers });
+    return new NextResponse(notModified ? null : new Uint8Array(Buffer.from(answerBody(a, req.headers.get("accept-encoding"), headers))), { status: notModified ? 304 : a.status, headers });
   } catch {
     return json({ error: "the engine is not answering" }, 502);
   }

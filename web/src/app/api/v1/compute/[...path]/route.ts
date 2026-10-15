@@ -7,7 +7,7 @@ import type { NextRequest } from "next/server";
 import { callerOf } from "@/lib/caller";
 import { engineUrl, sampleMode } from "@/lib/data";
 import { sampleState } from "@/lib/sample";
-import { answerHeaders, sharedRead } from "@/lib/shared";
+import { answerBody, answerHeaders, sharedRead } from "@/lib/shared";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 600;
@@ -57,7 +57,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ path: strin
         return { status: r.status, body: await r.text() };
       });
       const { headers, notModified } = answerHeaders(a, req.headers.get("if-none-match"));
-      return new Response(notModified ? null : a.body, { status: notModified ? 304 : a.status, headers });
+      return new Response(notModified ? null : new Uint8Array(Buffer.from(answerBody(a, req.headers.get("accept-encoding"), headers))), { status: notModified ? 304 : a.status, headers });
     }
     const r = await fetch(`${engine}/v1/compute/${path}`, { cache: "no-store", signal: AbortSignal.timeout(12_000), headers: passed(req) });
     return new Response(await r.text(), { status: r.status, headers: { ...HEADERS, "content-type": "application/json; charset=utf-8" } });

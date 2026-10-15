@@ -52,6 +52,9 @@ const nextConfig: NextConfig = {
       { source: "/:path*", headers: [...security, ...policy] },
       // the later of two that match a path wins, key by key: a delivered page gets its own, in dev as well
       { source: "/jobs/:id/work", headers: [{ key: "Content-Security-Policy", value: delivered }, { key: "X-Frame-Options", value: "SAMEORIGIN" }] },
+      // the mark, the token picture and the fonts change only with a deploy: a day in the browser, then checked again
+      { source: "/:file(mark.png|mark-light.png|factor.png)", headers: [{ key: "Cache-Control", value: "public, max-age=86400, stale-while-revalidate=604800" }] },
+      { source: "/fonts/:path*", headers: [{ key: "Cache-Control", value: "public, max-age=2592000, immutable" }] },
     ];
   },
 };
