@@ -6,6 +6,9 @@ import { Fragment, useEffect, useState } from "react";
 interface Model { id: string; name?: string; owned_by?: string; pricing?: { inUsd: number; outUsd: number } }
 
 const MOST = 24;
+// the makers people know come first; the rest after them, in order
+const FIRST = ["openai", "anthropic", "google", "x-ai", "deepseek", "meta-llama", "mistralai", "qwen", "moonshotai"];
+const rank = (id: string): number => { const i = FIRST.indexOf(id.split("/")[0]!); return i < 0 ? FIRST.length : i; };
 const usd = (n: number): string => `$${n < 0.1 ? n.toFixed(3) : n.toFixed(2)}`;
 
 export default function ModelList() {
@@ -21,7 +24,7 @@ export default function ModelList() {
   }, []);
   if (!models?.length) return null;
   const words = q.trim().toLowerCase();
-  const found = models.filter((m) => !words || `${m.id} ${m.name ?? ""}`.toLowerCase().includes(words)).sort((a, b) => a.id.localeCompare(b.id));
+  const found = models.filter((m) => !words || `${m.id} ${m.name ?? ""}`.toLowerCase().includes(words)).sort((a, b) => rank(a.id) - rank(b.id) || a.id.localeCompare(b.id));
   const makers = new Set(models.map((m) => m.owned_by ?? m.id.split("/")[0])).size;
   return (
     <div style={{ marginTop: 36 }}>
