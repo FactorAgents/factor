@@ -238,8 +238,35 @@ export const TOOLS: Tool[] = [
       const [c, s] = await Promise.all([f.computeCredit(a.agent as string | undefined), f.state()]);
       const usd = (n: number) => `$${n.toFixed(n > 0 && n < 1 ? 4 : 2)}`;
       const lots = c.lots.map((l) => `job ${l.job}: ${l.usd === null ? "being priced" : `${usd(l.spentUsd)} of ${usd(l.usd)} spent`}${l.state === "closed" ? " (refunded, closed)" : ""}`).join("; ");
-      const models = s.compute?.enabled ? ` Models, per million tokens: ${s.compute.models.map((m) => `${m.id} ${usd(m.inUsd)} in / ${usd(m.outUsd)} out`).join(", ")}.` : " Compute credit is not switched on yet.";
+      const direct = s.compute?.models.length ? ` Claude directly, per million tokens: ${s.compute.models.map((m) => `${m.id} ${usd(m.inUsd)} in / ${usd(m.outUsd)} out`).join(", ")}.` : "";
+      const router = s.compute?.router?.enabled ? ` And ${s.compute.router.models} models from every maker (GPT, Claude, Gemini, Grok, DeepSeek, Llama, Mistral and more): factor_compute_models lists them.` : "";
+      const models = s.compute?.enabled ? `${direct}${router}` : " Compute credit is not switched on yet.";
       return `${usd(c.balanceUsd)} of compute credit left.${lots ? ` From ${lots}.` : " No advance has been drawn as compute."}${models}`;
+    },
+  },
+  {
+    name: "factor_compute_models", readOnly: true, input: { search: z.string().optional().describe('Part of a model\'s name or maker, like "gpt", "claude" or "deepseek". Left out: the 25 cheapest') },
+    description: "The models compute credit can be spent on, from every maker, with what each costs through Factor in dollars a million tokens. Use a model's id with factor_ask_model.",
+    async run(f, a) {
+      const all = await f.computeModels(a.search as string | undefined);
+      if (!all.length) return a.search ? `No model has "${String(a.search)}" in its name.` : "No model is served yet: compute credit through every maker is not switched on.";
+      const shown = [...all].sort((x, y) => x.inUsd + x.outUsd - (y.inUsd + y.outUsd)).slice(0, 25);
+      const usd = (n: number) => `$${n < 1 ? n.toFixed(3) : n.toFixed(2)}`;
+      return `${all.length} model${all.length === 1 ? "" : "s"}${all.length > shown.length ? `, the ${shown.length} cheapest shown` : ""}, per million tokens: ${shown.map((m) => `${m.id} ${usd(m.inUsd)} in / ${usd(m.outUsd)} out`).join("; ")}.`;
+    },
+  },
+  {
+    name: "factor_ask_model", readOnly: false,
+    input: {
+      model: z.string().describe('The model\'s id, like "openai/gpt-5" or "anthropic/claude-sonnet-4.5" (factor_compute_models lists them)'),
+      prompt: z.string().describe("What to ask it"),
+      system: z.string().optional().describe("How it should answer, when that matters"),
+      max_tokens: z.number().int().min(1).max(200_000).optional().describe("The longest answer, in tokens. 1024 when not given"),
+    },
+    description: "Ask any model, paid from this agent's compute credit (advances drawn as compute on its jobs). The credit is spent only on what the call really cost; it is not ETH from the wallet. Factor refuses a call the credit cannot cover before it is sent.",
+    async run(f, a) {
+      const r = await f.askModel(a.prompt as string, { model: a.model as string, ...(a.system ? { system: a.system as string } : {}), ...(a.max_tokens ? { maxTokens: a.max_tokens as number } : {}) });
+      return `${r.text}\n\n(${r.model}: ${r.inputTokens} tokens in, ${r.outputTokens} out, paid from compute credit.)`;
     },
   },
   {

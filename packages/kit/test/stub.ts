@@ -28,23 +28,35 @@ export function state(over: Partial<State> = {}): State {
   };
 }
 
-export interface Stub { api: string; rpc: string; site: { state: State }; node: { chainId: number; code: string; calls: string[] }; posts: { path: string; body: unknown }[]; close(): Promise<void> }
+export interface Stub { api: string; rpc: string; site: { state: State; refuse: number | null }; node: { chainId: number; code: string; calls: string[] }; posts: { path: string; body: unknown; auth?: string }[]; close(): Promise<void> }
 
 export async function stub(): Promise<Stub> {
-  const site = { state: state() };
+  const site = { state: state(), refuse: null as number | null };
   const node = { chainId: 4663, code: "0x6080", calls: [] as string[] };
-  const posts: { path: string; body: unknown }[] = [];
+  const posts: { path: string; body: unknown; auth?: string }[] = [];
   const json = (res: import("node:http").ServerResponse, status: number, body: unknown) => { res.writeHead(status, { "content-type": "application/json" }); res.end(JSON.stringify(body)); };
   const body = (req: import("node:http").IncomingMessage) => new Promise<string>((r) => { let s = ""; req.on("data", (c) => (s += c)); req.on("end", () => r(s)); });
   const web = createServer(async (req, res) => {
     const path = (req.url ?? "").split("?")[0].replace("/api/v1", "");
     if (req.method === "POST") {
-      posts.push({ path, body: JSON.parse(await body(req)) });
+      posts.push({ path, body: JSON.parse(await body(req)), ...(req.headers.authorization ? { auth: req.headers.authorization } : {}) });
+      // the compute gateway: a model's answer, in the shape of the door that was called
+      if (path === "/compute/v1/chat/completions" || path === "/compute/v1/messages") {
+        if (site.refuse) return json(res, site.refuse, { type: "error", error: { type: "billing_error", message: "this agent has no compute credit" } });
+        const m = (posts.at(-1)!.body as { model: string }).model;
+        return json(res, 200, path.endsWith("messages")
+          ? { type: "message", model: m, content: [{ type: "text", text: "Hello from Claude" }], usage: { input_tokens: 12, output_tokens: 4 } }
+          : { id: "gen-1", model: m, choices: [{ message: { role: "assistant", content: "Hello from the model" } }], usage: { prompt_tokens: 10, completion_tokens: 5 } });
+      }
       return json(res, 200, path === "/compute/key" ? { key: "fck_a-key-from-the-stub-0123456789ab", expiresAt: "2026-10-20T00:00:00.000Z", agent: (posts.at(-1)!.body as { address: string }).address } : { ok: true });
     }
     const credit = /^\/compute\/credit\/(0x[0-9a-f]{40})$/.exec(path);
     if (credit) return json(res, 200, { agent: credit[1], balanceUsd: credit[1] === AGENTS[0].address ? 12.5 : 49.5, enabled: site.state.compute.enabled, lots: [{ job: 12, at: "2026-10-13T10:00:00.000Z", usd: 49.5, spentUsd: 0, state: "open" }] });
     if (path === "/state") return json(res, 200, site.state);
+    if (path === "/compute/v1/models") return json(res, 200, { object: "list", data: [
+      { id: "openai/gpt-5", object: "model", owned_by: "openai", name: "OpenAI: GPT-5", context_length: 400_000, pricing: { inUsd: 1.3125, outUsd: 10.5 } },
+      { id: "deepseek/deepseek-chat", object: "model", owned_by: "deepseek", name: "DeepSeek V3", context_length: 128_000, pricing: { inUsd: 0.2625, outUsd: 0.84 } },
+    ] });
     if (path === "/agents") return json(res, 200, { items: site.state.agents });
     if (path === "/jobs") return json(res, 200, { total: 1, more: false, items: site.state.jobs });
     if (path === "/ledger") return json(res, 200, { total: 0, more: false, items: [] });
