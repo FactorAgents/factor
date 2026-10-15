@@ -189,7 +189,7 @@ export interface FactorState {
   burns: BurnJson[];
   contracts: { desk: string | null; splitter: string | null; burnPot: string | null; token: string | null; explorer: string };
   /** compute credit: whether an advance drawn "as compute" can be spent on models yet, and what they cost here */
-  compute: { enabled: boolean; markupPct: number; maxTokens: number; models: { id: string; inUsd: number; outUsd: number }[]; router: { enabled: boolean; models: number } };
+  compute: { enabled: boolean; markupPct: number; maxTokens: number; models: { id: string; inUsd: number; outUsd: number }[]; router: { enabled: boolean; models: number }; limits: { callUsd: number; agentDayUsd: number } };
   /** accounts for people without a wallet: whether one can be made and used right now, and what makes them */
   accounts: { enabled: boolean; factory: string | null; ordersPerDay: number };
   /** set while the owner has paused new jobs: why, in a line. The site and the kit then lock nothing. */
@@ -731,7 +731,7 @@ export class EngineApi {
     // Where the token is bought: the address the owner set, or, once there is a token and nothing was set, the
     // token's own page on Pons. So the site's buy button works from the launch on whether or not anybody remembered.
     const links = { ...v.links, pons: v.links.pons ?? (contracts.token ? `https://ponsfamily.com/launchpad/${getAddress(contracts.token)}` : null) };
-    const compute = v.gateway?.about() ?? { enabled: false, markupPct: 0, maxTokens: 0, models: [], router: { enabled: false, models: 0 } };
+    const compute = v.gateway?.about() ?? { enabled: false, markupPct: 0, maxTokens: 0, models: [], router: { enabled: false, models: 0 }, limits: { callUsd: 0, agentDayUsd: 0 } };
     const accounts = v.accounts?.about() ?? { enabled: false, factory: null, ordersPerDay: 0 };
     const hiring = v.ctx ? stopped(v.ctx.db, "hiring") : null;
     const paused = hiring ? hiring.note || "New jobs are paused for now. Jobs already locked run as they were: the contract settles or refunds each one by itself." : null;
@@ -837,7 +837,7 @@ export class EngineApi {
       house: v.house ? v.house.totals() : null,
       demo: v.demo ? v.demo.totals() : null,
       accounts: v.accounts ? { ...v.accounts.about(), note: c.accounts.note, ...v.accounts.store.totals(), gasDayWei: c.accounts.gasDayWei.toString() } : null,
-      compute: v.gateway ? { ...v.gateway.about(), note: c.compute.note, ...v.gateway.store.totals(), todayMicro: v.gateway.store.spentToday(), dailyMicro: c.compute.dailyMicro } : null,
+      compute: v.gateway ? { ...v.gateway.about(), note: c.compute.note, ...v.gateway.store.totals(), todayMicro: v.gateway.store.spentToday(), dailyMicro: c.compute.dailyMicro, routerFloatUsd: v.gateway.float?.usd() ?? null } : null,
       rpc: v.rpc ? { ...v.rpc, lastError: v.rpc.lastError ? hostsOnly(v.rpc.lastError) : null } : null,
       events: ctx.db.count("chain_events"),
       ledger: ctx.db.count("ledger"),

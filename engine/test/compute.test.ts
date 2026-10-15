@@ -652,15 +652,22 @@ const LIST = {
   ],
 };
 
-interface Router { url: string; seen: Seen[]; lists: number; next: { status?: number; usage?: Record<string, unknown>; stream?: boolean } }
+interface Router { url: string; seen: Seen[]; lists: number; balance: number | null; credits: { total_credits: number; total_usage: number } | null; balanceReads: number; next: { status?: number; usage?: Record<string, unknown>; stream?: boolean } }
 
 async function router(): Promise<Router> {
-  const r: Router = { url: "", seen: [], lists: 0, next: {} };
+  const r: Router = { url: "", seen: [], lists: 0, balance: 50, credits: null, balanceReads: 0, next: {} };
   r.url = await listen(createServer((req, res) => {
     if (req.method === "GET" && req.url === "/models") {
       r.lists++;
       res.writeHead(200, { "content-type": "application/json" });
       return void res.end(JSON.stringify(LIST));
+    }
+    // Factor's own balance: on the key when it has a limit, on the account when it does not
+    if (req.method === "GET" && (req.url === "/key" || req.url === "/credits")) {
+      if (req.headers.authorization !== `Bearer ${ROUTER_KEY}`) return void res.writeHead(401).end("{}");
+      r.balanceReads++;
+      res.writeHead(200, { "content-type": "application/json" });
+      return void res.end(JSON.stringify(req.url === "/key" ? { data: { label: "factor", limit_remaining: r.balance, usage: 1 } } : { data: r.credits }));
     }
     const parts: Buffer[] = [];
     req.on("data", (c: Buffer) => parts.push(c));
@@ -840,7 +847,7 @@ describe("a call through the second door", () => {
 
   it("holds back the worst a call could cost, and refuses one the credit cannot cover", async () => {
     // 0.0002 ETH drawn: $0.495 of credit
-    const w = await routerWorld({ draw: ETH / 5000n, more: { COMPUTE_MAX_TOKENS: "200000" } });
+    const w = await routerWorld({ draw: ETH / 5000n, more: { COMPUTE_MAX_TOKENS: "200000", COMPUTE_CALL_USD: "100" } });
     const key = await newKey(w);
     // 200,000 out at $15 a million could cost $3 and more
     const r = await refusal(await chat(w, key, { model: "anthropic/claude-sonnet-4.5", max_tokens: 200_000 }));
@@ -865,5 +872,87 @@ describe("a call through the second door", () => {
     const all = [...answers, ...w.lines, ...tables].join("\n");
     expect(all).not.toContain(ROUTER_KEY);
     expect(all).not.toContain("sk-or-");
+  });
+});
+
+describe("the limits on the second door", () => {
+  it("leaves out models dearer than the owner allows", async () => {
+    const m = readRouterModels(LIST, { maxInPerM: 2, maxOutPerM: 80 });
+    expect([...m.keys()]).toEqual([GPT]);
+    expect(readCompute({ ...ON, OPENROUTER_API_KEY: ROUTER_KEY }).router).toMatchObject({ maxInPerM: 20, maxOutPerM: 80, floorMicro: 2_000_000, floatCheckMs: 300_000 });
+    const w = await routerWorld({ more: { COMPUTE_MAX_OUT_USD: "12" } });
+    const list = (await (await fetch(`${w.url}/v1/compute/v1/models`)).json()) as { data: { id: string }[] };
+    expect(list.data.map((x) => x.id)).toEqual([GPT]);
+    expect((await refusal(await chat(w, await newKey(w), { model: "anthropic/claude-sonnet-4.5" }))).status).toBe(400);
+  });
+
+  it("refuses one call that could cost more than a call may, whatever the credit", async () => {
+    expect(readCompute(ON)).toMatchObject({ callMicro: 2_000_000, agentDayMicro: 10_000_000 });
+    const w = await routerWorld({ more: { COMPUTE_MAX_TOKENS: "200000", COMPUTE_CALL_USD: "1" } });
+    const key = await newKey(w);
+    // 200,000 out at $10 a million could cost $2 and more
+    const r = await refusal(await chat(w, key, { max_tokens: 200_000 }));
+    expect(r).toMatchObject({ status: 400 });
+    expect(r.message).toContain("$1.0000 at most");
+    // and Claude's own door the same
+    expect((await refusal(await call(w, key, { max_tokens: 150_000 }))).message).toContain("at most");
+    expect(w.router.seen).toHaveLength(0);
+    const s = (await w.engine.handle("/v1/state"))!.body as { compute: { limits: { callUsd: number; agentDayUsd: number } } };
+    expect(s.compute.limits).toEqual({ callUsd: 1, agentDayUsd: 10 });
+  });
+
+  it("stops one agent at its own daily ceiling, keeps its credit, and starts again at midnight UTC", async () => {
+    const w = await routerWorld({ more: { COMPUTE_AGENT_DAILY_USD: "1" } });
+    const key = await newKey(w);
+    w.router.next = { usage: { prompt_tokens: 10, completion_tokens: 10, cost: 0.95 } };
+    expect((await chat(w, key)).status).toBe(200);
+    // $0.9975 spent: the next call's worst would take it over $1
+    const r = await refusal(await chat(w, key));
+    expect(r).toMatchObject({ status: 429, type: "rate_limit_error" });
+    expect(r.message).toContain("$1.0000 a day");
+    expect((await balance(w, key)).balanceUsd).toBeCloseTo(49.5 - 0.9975, 6);
+    w.chain.mine(1, 86_400);
+    expect((await chat(w, key)).status).toBe(200);
+  });
+
+  it("sends nothing while Factor's balance at OpenRouter is under the floor, and goes on once it is topped up", async () => {
+    const w = await routerWorld({ more: { COMPUTE_FLOAT_FLOOR_USD: "5", COMPUTE_FLOAT_CHECK_S: "0" } });
+    const key = await newKey(w);
+    w.router.balance = 3;
+    expect(await refusal(await chat(w, key))).toMatchObject({ status: 503, type: "api_error" });
+    expect(w.router.seen).toHaveLength(0);
+    expect(w.lines.join("\n")).toContain("under the floor of $5.00");
+    expect((await balance(w, key)).balanceUsd).toBe(49.5);
+    expect(((await w.engine.handle("/v1/health"))!.body as { compute: { routerFloatUsd: number } }).compute.routerFloatUsd).toBe(3);
+    w.router.balance = 40;
+    expect((await chat(w, key)).status).toBe(200);
+    expect(w.lines.join("\n")).toContain("above the floor again");
+  });
+
+  it("reads the account's credits when the key has no limit, and an unknown balance stops nothing", async () => {
+    const w = await routerWorld({ more: { COMPUTE_FLOAT_FLOOR_USD: "5", COMPUTE_FLOAT_CHECK_S: "0" } });
+    const key = await newKey(w);
+    w.router.balance = null;
+    w.router.credits = { total_credits: 20, total_usage: 18 };
+    expect((await refusal(await chat(w, key))).status).toBe(503);
+    w.router.credits = { total_credits: 50, total_usage: 18 };
+    expect((await chat(w, key)).status).toBe(200);
+    w.router.credits = null;
+    expect((await chat(w, key)).status).toBe(200);
+  });
+
+  it("after OpenRouter says the account is empty, the balance is read again before the next call", async () => {
+    const w = await routerWorld({ more: { COMPUTE_FLOAT_CHECK_S: "3600" } });
+    const key = await newKey(w);
+    expect((await chat(w, key)).status).toBe(200);
+    const reads = w.router.balanceReads;
+    w.router.next = { status: 402 };
+    w.router.balance = 1;
+    expect((await refusal(await chat(w, key))).status).toBe(503);
+    // read again at once, though the hour is not up: still under the floor of $2
+    w.router.next = {};
+    expect((await chat(w, key)).status).toBe(503);
+    expect(w.router.balanceReads).toBe(reads + 1);
+    expect(w.router.seen).toHaveLength(2);
   });
 });
