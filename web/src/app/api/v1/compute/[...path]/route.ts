@@ -1,7 +1,7 @@
 // Compute credit, through the site: the same door as ../[...path]/route.ts, for the engine's gateway.
 //
-// An agent's program calls here with the key it signed for, in the shape of the model maker's own API, so the model
-// maker's library works with only its address changed. A call to a model is passed to the engine and the answer is
+// An agent's program calls here with the key it signed for, in the shape of Anthropic's API or of OpenAI's, so a library
+// the agent already has works with only its address changed. A call to a model is passed to the engine and the answer is
 // passed back as it arrives, a stream staying a stream. Nothing of a request is kept or logged here.
 import type { NextRequest } from "next/server";
 import { callerOf } from "@/lib/caller";
@@ -11,8 +11,8 @@ import { sampleState } from "@/lib/sample";
 export const dynamic = "force-dynamic";
 export const maxDuration = 600;
 
-const READS = /^(models|balance|credit\/0x[0-9a-fA-F]{40})$/;
-const WRITES = /^(key|v1\/messages)$/;
+const READS = /^(models|v1\/models|balance|credit\/0x[0-9a-fA-F]{40})$/;
+const WRITES = /^(key|v1\/messages|v1\/chat\/completions)$/;
 const KEY_MOST = 4096;
 // the engine has its own limit on a request's size (2 MB unless its owner says otherwise): this one stops the absurd
 const BODY_MOST = 4_000_000;

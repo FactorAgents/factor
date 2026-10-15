@@ -107,8 +107,8 @@ export interface EngineConfig {
   // ENGINE_ADMIN_KEY: what the owner sends to hide a name or a title somebody signed. A secret, set on the host;
   // null when it is not set, and then nothing can be hidden. It is compared and never printed or returned.
   adminKey: string | null;
-  // Compute credit: whether it is served, the models and their prices. The model maker's key itself is taken with
-  // `takeModelKey` and kept nowhere else.
+  // Compute credit: whether it is served, the models and their prices. The model makers' keys themselves are taken
+  // with `takeModelKey` and `takeRouterKey` and kept nowhere else.
   compute: ComputeConfig;
   // Accounts for people without a wallet: whether orders are taken, the maker of accounts, and the limits on what
   // the gas wallet pays for.
@@ -324,6 +324,11 @@ export function takeBotKey(env: Env = process.env): `0x${string}` | null {
 // to the model maker, and never logged, stored or returned.
 export function takeModelKey(env: Env = process.env): string | null {
   return env.ANTHROPIC_API_KEY?.trim() || null;
+}
+
+// The owner's key with OpenRouter, for the gateway's second door. The same care as the key above.
+export function takeRouterKey(env: Env = process.env): string | null {
+  return env.OPENROUTER_API_KEY?.trim() || null;
 }
 
 // The addresses are all there and nothing is wrong: the engine may start.

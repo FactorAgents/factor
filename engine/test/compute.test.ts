@@ -7,7 +7,7 @@ import type { AddressInfo } from "node:net";
 import { privateKeyToAccount } from "viem/accounts";
 import { afterEach, describe, expect, it } from "vitest";
 import { actState } from "../src/chain/act.js";
-import { ComputeStore, costMicro, DEFAULT_MODELS, keyMessage, readCompute, usdMicro } from "../src/compute.js";
+import { ComputeStore, costMicro, DEFAULT_MODELS, keyMessage, readCompute, readRouterModels, routerCostMicro, usdMicro } from "../src/compute.js";
 import { A, ETH, FakeChain, K } from "./chain/fake.js";
 import { rig, wallet, type Rig } from "./chain/harness.js";
 
@@ -123,7 +123,7 @@ describe("the settings", () => {
     expect(readCompute({ ANTHROPIC_API_KEY: MODEL_KEY })).toMatchObject({ enabled: false, note: null });
     const half = readCompute({ COMPUTE_MODE: "on" });
     expect(half.enabled).toBe(false);
-    expect(half.note).toContain("ANTHROPIC_API_KEY is not set");
+    expect(half.note).toContain("neither OPENROUTER_API_KEY nor ANTHROPIC_API_KEY is set");
     expect(readCompute(ON)).toMatchObject({ enabled: true, note: null, models: DEFAULT_MODELS });
   });
 
@@ -608,7 +608,7 @@ describe("switched off", () => {
     const key = await newKey(w);
     expect((await call(w, key)).status).toBe(503);
     expect(w.lines.join("\n")).toContain("[compute] NOT ON");
-    expect(((await w.engine.handle("/v1/health"))!.body as { compute: { note: string } }).compute.note).toContain("ANTHROPIC_API_KEY is not set");
+    expect(((await w.engine.handle("/v1/health"))!.body as { compute: { note: string } }).compute.note).toContain("neither OPENROUTER_API_KEY nor ANTHROPIC_API_KEY is set");
   });
 });
 
@@ -632,5 +632,238 @@ describe("the owner's key", () => {
     // nor the agent's key, anywhere but the one answer that handed it over
     expect(all).not.toContain(key);
     expect(w.up.seen.length).toBeGreaterThan(0);
+  });
+});
+
+// ---- the second door: OpenRouter, with a stand-in for it ----
+
+const ROUTER_KEY = "sk-or-v1-test-the-owners-key-with-openrouter";
+const GPT = "openai/gpt-5";
+
+// what OpenRouter's /models lists, cut down: two models the gateway can price, and four it leaves out
+const LIST = {
+  data: [
+    { id: GPT, name: "OpenAI: GPT-5", context_length: 400_000, architecture: { output_modalities: ["text"] }, pricing: { prompt: "0.00000125", completion: "0.00001", input_cache_read: "0.000000125" } },
+    { id: "anthropic/claude-sonnet-4.5", name: "Anthropic: Claude Sonnet 4.5", context_length: 1_000_000, pricing: { prompt: "0.000003", completion: "0.000015", input_cache_read: "0.0000003", input_cache_write: "0.00000375", image: "0.0048" } },
+    { id: "meta-llama/llama-4:free", name: "free", pricing: { prompt: "0", completion: "0" } },
+    { id: "openrouter/auto", name: "Auto", pricing: { prompt: "-1", completion: "-1" } },
+    { id: "google/gemini-image", name: "pictures", architecture: { output_modalities: ["image", "text"] }, pricing: { prompt: "0.0000003", completion: "0.0000025" } },
+    { id: "x/odd", name: "odd", pricing: { prompt: "0.000001", completion: "-1" } },
+  ],
+};
+
+interface Router { url: string; seen: Seen[]; lists: number; next: { status?: number; usage?: Record<string, unknown>; stream?: boolean } }
+
+async function router(): Promise<Router> {
+  const r: Router = { url: "", seen: [], lists: 0, next: {} };
+  r.url = await listen(createServer((req, res) => {
+    if (req.method === "GET" && req.url === "/models") {
+      r.lists++;
+      res.writeHead(200, { "content-type": "application/json" });
+      return void res.end(JSON.stringify(LIST));
+    }
+    const parts: Buffer[] = [];
+    req.on("data", (c: Buffer) => parts.push(c));
+    req.on("end", async () => {
+      const body = JSON.parse(Buffer.concat(parts).toString("utf8")) as Record<string, unknown>;
+      r.seen.push({ headers: req.headers, body });
+      const n = r.next;
+      const usage = n.usage ?? { prompt_tokens: 1000, completion_tokens: 200, total_tokens: 1200, cost: 0.003 };
+      if (n.status && n.status !== 200) {
+        res.writeHead(n.status, { "content-type": "application/json" });
+        return void res.end(JSON.stringify({ error: { code: n.status, message: n.status === 402 ? "Insufficient credits" : "the provider said no" } }));
+      }
+      if (n.stream) {
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        const chunks = [
+          ": OPENROUTER PROCESSING",
+          `data: ${JSON.stringify({ id: "gen-stream", object: "chat.completion.chunk", choices: [{ index: 0, delta: { role: "assistant", content: "Hel" } }] })}`,
+          `data: ${JSON.stringify({ id: "gen-stream", object: "chat.completion.chunk", choices: [{ index: 0, delta: { content: "lo" }, finish_reason: "stop" }] })}`,
+          `data: ${JSON.stringify({ id: "gen-stream", object: "chat.completion.chunk", choices: [], usage })}`,
+          "data: [DONE]",
+        ];
+        for (const c of chunks) {
+          const text = `${c}\n\n`;
+          res.write(text.slice(0, 11));
+          await new Promise((done) => setTimeout(done, 2));
+          res.write(text.slice(11));
+        }
+        return void res.end();
+      }
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ id: "gen-1", object: "chat.completion", model: body.model, choices: [{ index: 0, message: { role: "assistant", content: "Hello" }, finish_reason: "stop" }], usage }));
+    });
+  }));
+  return r;
+}
+
+interface RouterWorld extends World { router: Router }
+
+/** The same agent and credit as `world`, with OpenRouter's door open; `claude: false` leaves only that door. */
+async function routerWorld(o: { claude?: boolean; draw?: bigint; more?: Record<string, string> } = {}): Promise<RouterWorld> {
+  const rt = await router();
+  const w = await world({ ...(o.draw ? { draw: o.draw } : {}), more: { OPENROUTER_API_KEY: ROUTER_KEY, COMPUTE_ROUTER_URL: rt.url, ...(o.claude === false ? { ANTHROPIC_API_KEY: "" } : {}), ...o.more } });
+  return { ...w, router: rt };
+}
+
+const chat = (w: World, key: string, body: Record<string, unknown> = {}) =>
+  fetch(`${w.url}/v1/compute/v1/chat/completions`, { method: "POST", headers: { authorization: `Bearer ${key}`, "content-type": "application/json" }, body: JSON.stringify({ model: GPT, max_tokens: 500, messages: [{ role: "user", content: "Say hello" }], ...body }) });
+
+describe("the second door: OpenRouter's models", () => {
+  it("reads only the models it can price and that answer in words, at their list price per million tokens", () => {
+    const m = readRouterModels(LIST);
+    expect([...m.keys()]).toEqual([GPT, "anthropic/claude-sonnet-4.5"]);
+    expect(m.get(GPT)).toEqual({ id: GPT, name: "OpenAI: GPT-5", context: 400_000, price: { prompt: 1.25, completion: 10, reasoning: 0, cacheRead: 0.125, cacheWrite: 0, request: 0, image: 0 } });
+    expect(m.get("anthropic/claude-sonnet-4.5")!.price).toMatchObject({ prompt: 3, completion: 15, cacheWrite: 3.75, image: 0.0048 });
+    for (const bad of [null, {}, { data: "x" }, { data: [{ id: 5 }] }]) expect(readRouterModels(bad).size).toBe(0);
+  });
+
+  it("prices a call at what OpenRouter says it charged, or at the list price when it does not say, and adds the margin", () => {
+    const p = readRouterModels(LIST).get(GPT)!.price;
+    const base = { input: 1000, output: 200, cacheWrite5m: 0, cacheWrite1h: 0, cacheRead: 0 };
+    // $0.003 charged and 5%
+    expect(routerCostMicro({ ...base, reportedUsd: 0.003 }, p, 500)).toBe(3150);
+    // 1,000 x 1.25 + 200 x 10 = 3,250 and 5%
+    expect(routerCostMicro({ ...base, reportedUsd: null }, p, 500)).toBe(3413);
+    // cached input at its own price: 600 x 1.25 + 400 x 0.125 + 200 x 10 = 2,800
+    expect(routerCostMicro({ ...base, cacheRead: 400, reportedUsd: null }, p, 0)).toBe(2800);
+    expect(routerCostMicro({ ...base, reportedUsd: 0 }, p, 500)).toBe(0);
+  });
+
+  it("is on with OpenRouter's key alone, lists its models with the margin, and says how many", async () => {
+    expect(readCompute({ COMPUTE_MODE: "on", OPENROUTER_API_KEY: ROUTER_KEY })).toMatchObject({ enabled: true, note: null, router: { enabled: true, url: "https://openrouter.ai/api/v1" } });
+    expect(readCompute({ OPENROUTER_API_KEY: ROUTER_KEY }).enabled).toBe(false);
+    const w = await routerWorld({ claude: false });
+    const list = (await (await fetch(`${w.url}/v1/compute/v1/models`)).json()) as { object: string; data: { id: string; owned_by: string; pricing: { inUsd: number; outUsd: number } }[] };
+    expect(list.object).toBe("list");
+    expect(list.data.map((m) => m.id)).toEqual([GPT, "anthropic/claude-sonnet-4.5"]);
+    expect(list.data[0]).toMatchObject({ owned_by: "openai", pricing: { inUsd: 1.3125, outUsd: 10.5 } });
+    const s = (await w.engine.handle("/v1/state"))!.body as { compute: { enabled: boolean; models: unknown[]; router: { enabled: boolean; models: number } } };
+    // Claude's own door is shut without its key: its price list is empty, and the second door has two models
+    expect(s.compute).toMatchObject({ enabled: true, models: [], router: { enabled: true, models: 2 } });
+    // the list is read once, and kept
+    await fetch(`${w.url}/v1/compute/v1/models`);
+    expect(w.router.lists).toBe(1);
+    const key = await newKey(w);
+    expect(await refusal(await call(w, key))).toMatchObject({ status: 503 });
+    expect((await refusal(await call(w, key))).message).toContain("/v1/chat/completions");
+  });
+});
+
+describe("a call through the second door", () => {
+  it("goes to OpenRouter with the owner's key, comes back as it was answered, and costs what OpenRouter charged", async () => {
+    const w = await routerWorld();
+    const key = await newKey(w);
+    const r = await chat(w, key, { temperature: 0.2, user: "who-i-am", metadata: { a: 1 } });
+    expect(r.status).toBe(200);
+    expect(await r.json()).toMatchObject({ id: "gen-1", choices: [{ message: { content: "Hello" } }], usage: { prompt_tokens: 1000, completion_tokens: 200 } });
+    const sent = w.router.seen[0]!;
+    expect(sent.headers.authorization).toBe(`Bearer ${ROUTER_KEY}`);
+    expect(sent.headers["x-api-key"]).toBeUndefined();
+    expect(sent.headers["x-title"]).toBe("Factor");
+    expect(JSON.stringify(sent)).not.toContain(key);
+    expect(JSON.stringify(sent)).not.toContain(MODEL_KEY);
+    // nothing about who asked, and the cost asked for
+    expect(sent.body).toEqual({ model: GPT, max_tokens: 500, messages: [{ role: "user", content: "Say hello" }], temperature: 0.2, usage: { include: true } });
+    // $0.003 and 5%
+    expect((await balance(w, key)).balanceUsd).toBe(49.5 - 0.00315);
+    expect(usageRows(w)).toMatchObject([{ agent: AGENT, model: GPT, input: 1000, output: 200, cost_micro: 3150, unpaid_micro: 0, status: 200, request_id: "gen-1" }]);
+    expect(JSON.stringify([usageRows(w), w.lines])).not.toContain("Say hello");
+    // Claude's door still works beside it
+    expect((await call(w, key)).status).toBe(200);
+  });
+
+  it("is passed on as it arrives when it is a stream, and the cost is read from its last event", async () => {
+    const w = await routerWorld();
+    const key = await newKey(w);
+    w.router.next = { stream: true, usage: { prompt_tokens: 800, completion_tokens: 300, cost: 0.004, prompt_tokens_details: { cached_tokens: 100 } } };
+    const r = await chat(w, key, { stream: true, max_completion_tokens: 400 });
+    expect(r.headers.get("content-type")).toBe("text/event-stream");
+    const text = await r.text();
+    expect(text).toContain('"content":"Hel"');
+    expect(text.trimEnd().endsWith("data: [DONE]")).toBe(true);
+    expect(w.router.seen[0]!.body).toMatchObject({ stream: true, stream_options: { include_usage: true }, usage: { include: true }, max_completion_tokens: 400 });
+    expect(usageRows(w)[0]).toMatchObject({ input: 800, output: 300, cache_read: 100, cost_micro: 4200, request_id: "gen-stream" });
+  });
+
+  it("prices from the list when OpenRouter does not say what it charged", async () => {
+    const w = await routerWorld();
+    const key = await newKey(w);
+    w.router.next = { usage: { prompt_tokens: 1000, completion_tokens: 200 } };
+    await (await chat(w, key)).text();
+    expect(usageRows(w)[0]).toMatchObject({ cost_micro: 3413 });
+  });
+
+  it("an empty account at OpenRouter is the owner's to top up: nothing is taken, and the owner is told", async () => {
+    const w = await routerWorld();
+    const key = await newKey(w);
+    w.router.next = { status: 402 };
+    expect(await refusal(await chat(w, key))).toMatchObject({ status: 503, type: "api_error" });
+    expect(w.lines.join("\n")).toContain("run out of credit");
+    expect((await balance(w, key)).balanceUsd).toBe(49.5);
+    expect(usageRows(w)).toHaveLength(0);
+    // and nothing stays held back
+    w.router.next = {};
+    expect((await chat(w, key)).status).toBe(200);
+  });
+
+  it("a refusal from OpenRouter costs nothing, and its words are passed back", async () => {
+    const w = await routerWorld();
+    const key = await newKey(w);
+    w.router.next = { status: 400 };
+    const r = await chat(w, key);
+    expect(r.status).toBe(400);
+    expect(await r.text()).toContain("the provider said no");
+    expect(usageRows(w)[0]).toMatchObject({ cost_micro: 0, status: 400 });
+    expect((await balance(w, key)).balanceUsd).toBe(49.5);
+  });
+
+  it("refuses what it cannot price or will not pass on, before OpenRouter hears of it", async () => {
+    const w = await routerWorld();
+    const key = await newKey(w);
+    const no = async (body: Record<string, unknown>) => refusal(await chat(w, key, body));
+    expect((await no({ model: "meta-llama/llama-4:free" })).message).toContain("/v1/compute/v1/models");
+    expect((await no({ model: `${GPT}:online` })).status).toBe(400);
+    expect((await no({ model: "openrouter/auto" })).status).toBe(400);
+    for (const k of ["n", "models", "provider", "plugins", "transforms", "web_search_options", "modalities"]) expect((await no({ [k]: 2 })).message).toContain(`"${k}"`);
+    expect((await no({ max_tokens: undefined })).message).toContain("max_tokens");
+    expect((await no({ max_tokens: 16_001 })).message).toContain("16000");
+    expect((await no({ max_tokens: 100, max_completion_tokens: 16_001 })).status).toBe(400);
+    expect((await no({ tools: [{ type: "web_search" }] })).message).toContain("web_search");
+    expect((await no({ messages: [] })).status).toBe(400);
+    expect((await no({ messages: [{ role: "user", content: [{ type: "input_audio", input_audio: {} }] }] })).message).toContain("input_audio");
+    expect(w.router.seen).toHaveLength(0);
+    // a tool the agent runs itself, and a picture, are fine
+    expect((await chat(w, key, { tools: [{ type: "function", function: { name: "look_up", parameters: { type: "object", properties: {} } } }] })).status).toBe(200);
+    expect((await chat(w, key, { model: "anthropic/claude-sonnet-4.5", messages: [{ role: "user", content: [{ type: "text", text: "What is this?" }, { type: "image_url", image_url: { url: "data:image/png;base64,AAAA" } }] }] })).status).toBe(200);
+  });
+
+  it("holds back the worst a call could cost, and refuses one the credit cannot cover", async () => {
+    // 0.0002 ETH drawn: $0.495 of credit
+    const w = await routerWorld({ draw: ETH / 5000n, more: { COMPUTE_MAX_TOKENS: "200000" } });
+    const key = await newKey(w);
+    // 200,000 out at $15 a million could cost $3 and more
+    const r = await refusal(await chat(w, key, { model: "anthropic/claude-sonnet-4.5", max_tokens: 200_000 }));
+    expect(r).toMatchObject({ status: 402, type: "billing_error" });
+    expect(r.message).toContain("$0.4950");
+    expect(w.router.seen).toHaveLength(0);
+    // a small one fits
+    expect((await chat(w, key)).status).toBe(200);
+  });
+
+  it("keeps OpenRouter's key out of everything the engine says", async () => {
+    const w = await routerWorld();
+    const key = await newKey(w);
+    const answers: string[] = [await (await chat(w, key)).text()];
+    w.router.next = { status: 401 };
+    answers.push(await (await chat(w, key)).text());
+    w.router.next = { status: 402 };
+    answers.push(await (await chat(w, key)).text());
+    answers.push(await (await fetch(`${w.url}/v1/compute/v1/models`)).text());
+    for (const path of ["/v1/state", "/v1/health"]) answers.push(JSON.stringify((await w.engine.handle(path))!.body));
+    const tables = (w.sqlite.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[]).map((t) => JSON.stringify(w.sqlite.prepare(`SELECT * FROM ${t.name}`).all()));
+    const all = [...answers, ...w.lines, ...tables].join("\n");
+    expect(all).not.toContain(ROUTER_KEY);
+    expect(all).not.toContain("sk-or-");
   });
 });

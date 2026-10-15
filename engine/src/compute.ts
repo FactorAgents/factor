@@ -15,12 +15,16 @@
 //   GET  /v1/compute/credit/<address>   what an agent has left
 //   POST /v1/compute/key                a key, for the agent's signature
 //   GET  /v1/compute/balance            the same as credit, for the key's agent
-//   POST /v1/compute/v1/messages        a call to a model, paid from the credit
+//   POST /v1/compute/v1/messages        a call to Claude, in Anthropic's own shape, paid from the credit
+//   GET  /v1/compute/v1/models          every model of the second door, in OpenAI's shape
+//   POST /v1/compute/v1/chat/completions a call to any of them (Claude, GPT, Gemini, Grok, DeepSeek, Llama,
+//                                        Mistral and the rest), in OpenAI's shape, through OpenRouter
 //
-// The agent proves who it is with a signature from its wallet and is handed a key. With the key it calls
-// /v1/compute/v1/messages, which takes the same request as Anthropic's Messages API and gives the same answer, so an
-// agent uses the model maker's own library and only changes the address. Each call is priced from the tokens the
-// model maker reports, at the list price plus a small margin for turning ETH into dollars, and taken off the credit.
+// The agent proves who it is with a signature from its wallet and is handed a key. With the key it calls one of the
+// two doors. /v1/messages takes the same request as Anthropic's Messages API; /v1/chat/completions the same as
+// OpenAI's, the shape OpenRouter speaks for hundreds of models. Either way the agent uses a library it already has
+// and only changes the address. Each call is priced at what the model cost (the tokens the model maker reports, or
+// what OpenRouter says it charged for the call) plus a small margin, and taken off the credit.
 //
 // What it will not do: forward anything it cannot price (server-side tools, betas, other speed tiers), go over the
 // credit (the worst a request could cost is held back before it is sent), or keep what was asked or answered. It
@@ -56,6 +60,8 @@ export interface ComputeConfig {
   inFlight: number; // requests one agent may have under way at once
   inFlightAll: number; // COMPUTE_IN_FLIGHT_ALL: and all agents together
   dailyMicro: number; // COMPUTE_DAILY_USD: the most the gateway spends with the model maker in a day (UTC), as millionths
+  /** The second door: OpenRouter, on with OPENROUTER_API_KEY. Its models and prices are read from its own list. */
+  router: { enabled: boolean; url: string; refreshMs: number };
   /** why it is off, when the owner meant it to be on */
   note: string | null;
 }
@@ -64,7 +70,9 @@ type Env = Record<string, string | undefined>;
 
 export function readCompute(env: Env, problems: string[] = []): ComputeConfig {
   const on = (env.COMPUTE_MODE ?? "").trim().toLowerCase() === "on";
-  const hasKey = !!env.ANTHROPIC_API_KEY?.trim();
+  const hasClaudeKey = !!env.ANTHROPIC_API_KEY?.trim();
+  const hasRouterKey = !!env.OPENROUTER_API_KEY?.trim();
+  const hasKey = hasClaudeKey || hasRouterKey;
   let models = DEFAULT_MODELS;
   const raw = env.COMPUTE_MODELS?.trim();
   if (raw) {
@@ -92,6 +100,8 @@ export function readCompute(env: Env, problems: string[] = []): ComputeConfig {
   };
   const upstream = (env.COMPUTE_UPSTREAM_URL?.trim() || "https://api.anthropic.com").replace(/\/+$/, "");
   if (!/^https?:\/\/[^\s/]+/.test(upstream)) problems.push("COMPUTE_UPSTREAM_URL is not an http(s) address");
+  const routerUrl = (env.COMPUTE_ROUTER_URL?.trim() || "https://openrouter.ai/api/v1").replace(/\/+$/, "");
+  if (!/^https?:\/\/[^\s/]+/.test(routerUrl)) problems.push("COMPUTE_ROUTER_URL is not an http(s) address");
   return {
     enabled: on && hasKey,
     upstream,
@@ -103,7 +113,8 @@ export function readCompute(env: Env, problems: string[] = []): ComputeConfig {
     inFlight: int("COMPUTE_IN_FLIGHT", 4, 1, 64),
     inFlightAll: int("COMPUTE_IN_FLIGHT_ALL", 32, 1, 1024),
     dailyMicro: int("COMPUTE_DAILY_USD", 100, 1, 1_000_000) * 1_000_000,
-    note: on && !hasKey ? "COMPUTE_MODE is on and ANTHROPIC_API_KEY is not set: compute credit is written down as it is drawn, and no model is served until the key is there." : null,
+    router: { enabled: on && hasRouterKey, url: routerUrl, refreshMs: 6 * 3600_000 },
+    note: on && !hasKey ? "COMPUTE_MODE is on and neither OPENROUTER_API_KEY nor ANTHROPIC_API_KEY is set: compute credit is written down as it is drawn, and no model is served until a key is there." : null,
   };
 }
 
@@ -121,6 +132,87 @@ export function costMicro(u: Usage, p: Price, markupBps: number): number {
   // a dollar per million tokens is a millionth of a dollar per token, so tokens times the price IS millionths
   const list = u.input * p.in + u.output * p.out + u.cacheWrite5m * p.cacheWrite5m + u.cacheWrite1h * p.cacheWrite1h + u.cacheRead * p.cacheRead;
   return Math.max(0, Math.ceil((list * (10_000 + markupBps)) / 10_000 - 1e-9));
+}
+
+// ---------- the second door's models ----------
+
+/** What OpenRouter lists for a model, in dollars per million tokens; `request` and `image` in dollars each. */
+export interface RouterPrice { prompt: number; completion: number; reasoning: number; cacheRead: number; cacheWrite: number; request: number; image: number }
+export interface RouterModel { id: string; name: string; context: number; price: RouterPrice }
+
+/**
+ * OpenRouter's model list as this gateway uses it: only models it can price and that answer in text. Left out: the
+ * free ones (they come with their own limits and terms), the router that picks a model for you (no price of its own),
+ * and anything that makes pictures or sound.
+ */
+export function readRouterModels(body: unknown): Map<string, RouterModel> {
+  const out = new Map<string, RouterModel>();
+  const data = (body as { data?: unknown } | null)?.data;
+  if (!Array.isArray(data)) return out;
+  for (const m of data as Record<string, unknown>[]) {
+    const id = m?.id;
+    if (typeof id !== "string" || !/^[a-z0-9][a-z0-9._\-/:]{2,120}$/i.test(id) || /:(free|online)$/i.test(id) || id.startsWith("openrouter/")) continue;
+    const outs = (m.architecture as { output_modalities?: unknown } | undefined)?.output_modalities;
+    if (Array.isArray(outs) && outs.some((o) => o !== "text")) continue;
+    const p = (m.pricing ?? {}) as Record<string, unknown>;
+    // per token as text, or missing for nothing; anything else (a negative "-1" for "it depends") cannot be priced
+    const per = (v: unknown, scale: number): number | null => {
+      if (v === undefined || v === null || v === "") return 0;
+      const n = Number(v);
+      return Number.isFinite(n) && n >= 0 ? Math.round(n * scale * 1e6) / 1e6 : null;
+    };
+    const price = { prompt: per(p.prompt, 1e6), completion: per(p.completion, 1e6), reasoning: per(p.internal_reasoning, 1e6), cacheRead: per(p.input_cache_read, 1e6), cacheWrite: per(p.input_cache_write, 1e6), request: per(p.request, 1), image: per(p.image, 1) };
+    if (Object.values(price).some((v) => v === null) || price.prompt! + price.completion! <= 0) continue;
+    out.set(id, { id, name: typeof m.name === "string" ? m.name.slice(0, 120) : id, context: Number(m.context_length) > 0 ? Math.floor(Number(m.context_length)) : 0, price: price as RouterPrice });
+  }
+  return out;
+}
+
+/**
+ * What a call through the second door cost, in millionths of a dollar: what OpenRouter says it charged for it, or,
+ * when it does not say, its list price for the tokens. Plus the margin, rounded up.
+ */
+export function routerCostMicro(u: Usage & { reportedUsd: number | null }, p: RouterPrice, markupBps: number): number {
+  const fresh = Math.max(0, u.input - u.cacheRead);
+  const list = u.reportedUsd !== null ? u.reportedUsd * 1e6 : fresh * p.prompt + u.cacheRead * (p.cacheRead || p.prompt) + u.output * Math.max(p.completion, p.reasoning) + p.request * 1e6;
+  return Math.max(0, Math.ceil((list * (10_000 + markupBps)) / 10_000 - 1e-9));
+}
+
+/** OpenRouter's list, read when it is first needed and again every few hours. A list that cannot be read leaves the last one in place. */
+export class RouterCatalog {
+  private models = new Map<string, RouterModel>();
+  private readAt = 0;
+  private loading: Promise<void> | null = null;
+
+  constructor(private url: string, private refreshMs: number, private log: (line: string) => void, private now: () => number = Date.now) {}
+
+  /** The models, waiting for the list only while there is none yet. */
+  async get(): Promise<Map<string, RouterModel>> {
+    if (this.now() - this.readAt > this.refreshMs && !this.loading) this.loading = this.load();
+    if (this.models.size === 0 && this.loading) await this.loading;
+    return this.models;
+  }
+
+  size(): number { return this.models.size; }
+  list(): RouterModel[] { return [...this.models.values()]; }
+
+  private async load(): Promise<void> {
+    try {
+      const r = await fetch(`${this.url}/models`, { signal: AbortSignal.timeout(20_000) });
+      if (!r.ok) throw new Error(`it answered ${r.status}`);
+      const models = readRouterModels(await r.json());
+      if (models.size === 0) throw new Error("it listed no model this gateway can price");
+      this.models = models;
+      this.readAt = this.now();
+      this.log(`[compute] OpenRouter's list read: ${models.size} models`);
+    } catch (e) {
+      // tried again in a minute; the last list stays meanwhile
+      this.readAt = this.now() - this.refreshMs + 60_000;
+      this.log(`[compute] OpenRouter's list could not be read: ${(e as Error).message?.split("\n")[0]}`);
+    } finally {
+      this.loading = null;
+    }
+  }
 }
 
 export class ComputeStore {
@@ -266,30 +358,60 @@ export const keyMessage = (address: string, at: number): string => `Factor compu
 
 // What a request may carry. Anything else is something this gateway cannot price or does not pass on.
 const ALLOWED = new Set(["model", "messages", "system", "max_tokens", "temperature", "top_p", "top_k", "stop_sequences", "stream", "tools", "tool_choice", "thinking", "output_config", "metadata"]);
+// The same for the second door. Left out on purpose: more than one answer (n), other models to fall back on, a choice
+// of provider, plugins and web search (billed apart from tokens), pictures or sound out.
+const ALLOWED_CHAT = new Set(["model", "messages", "max_tokens", "max_completion_tokens", "temperature", "top_p", "top_k", "min_p", "top_a", "stop", "stream", "stream_options", "tools", "tool_choice", "parallel_tool_calls", "response_format", "seed", "frequency_penalty", "presence_penalty", "repetition_penalty", "logit_bias", "logprobs", "top_logprobs", "reasoning", "user", "metadata"]);
+// what may be in a message: words and pictures (pictures are priced each); a file or sound is priced in ways the
+// list does not say
+const PARTS = new Set(["text", "image_url"]);
 const usd = (micro: number): string => `$${(micro / 1e6).toFixed(micro < 10_000 ? 6 : 4)}`;
 
 interface Fail { status: number; type: string; message: string }
 const fail = (status: number, type: string, message: string): Fail => ({ status, type, message });
+const NO_KEY = "That key is not one of Factor's compute keys, or it has run out. Sign for a new one.";
+
+/** The owner's keys with the model makers: sent upstream, never anywhere else. */
+export interface ModelKeys { anthropic: string | null; router: string | null }
 
 export class Gateway {
   private reserved = new Map<string, { micro: number; calls: number }>();
   private underWay = 0; // calls of all agents together, and the worst they could cost
   private underWayMicro = 0;
+  readonly catalog: RouterCatalog | null;
 
   constructor(
     readonly cfg: ComputeConfig,
     readonly store: ComputeStore,
     private db: EngineDb,
-    private modelKey: string | null, // the owner's key with the model maker: sent upstream, never anywhere else
+    private keys: ModelKeys,
     private log: (line: string) => void,
     // asks an account whether one of its keys signed a text (see ./accounts.ts); without it only wallets sign
     private accountSigned: ((address: string, message: string, signature: unknown) => Promise<boolean>) | null = null,
-  ) {}
+  ) {
+    this.catalog = cfg.enabled && cfg.router.enabled && keys.router ? new RouterCatalog(cfg.router.url, cfg.router.refreshMs, log) : null;
+    // read the list now, so the first call does not wait for it
+    if (this.catalog) void this.catalog.get();
+  }
+
+  private up = (n: number) => Math.round(n * (10_000 + this.cfg.markupBps)) / 10_000;
 
   /** What anybody may know: whether it is on, the models and what they cost here. */
-  about(): { enabled: boolean; markupPct: number; maxTokens: number; models: { id: string; inUsd: number; outUsd: number }[] } {
-    const up = (n: number) => Math.round(n * (10_000 + this.cfg.markupBps)) / 10_000;
-    return { enabled: this.cfg.enabled && !stopped(this.db, "compute"), markupPct: this.cfg.markupBps / 100, maxTokens: this.cfg.maxTokens, models: Object.entries(this.cfg.models).map(([id, p]) => ({ id, inUsd: up(p.in), outUsd: up(p.out) })) };
+  about(): { enabled: boolean; markupPct: number; maxTokens: number; models: { id: string; inUsd: number; outUsd: number }[]; router: { enabled: boolean; models: number } } {
+    const on = this.cfg.enabled && !stopped(this.db, "compute");
+    return {
+      enabled: on, markupPct: this.cfg.markupBps / 100, maxTokens: this.cfg.maxTokens,
+      models: this.keys.anthropic ? Object.entries(this.cfg.models).map(([id, p]) => ({ id, inUsd: this.up(p.in), outUsd: this.up(p.out) })) : [],
+      router: { enabled: on && !!this.catalog, models: this.catalog?.size() ?? 0 },
+    };
+  }
+
+  /** Every model of the second door with its price here, in the shape OpenAI's library reads. */
+  private async routerModels(): Promise<Record<string, unknown>> {
+    const models = this.catalog ? [...(await this.catalog.get()).values()] : [];
+    return {
+      object: "list",
+      data: models.map((m) => ({ id: m.id, object: "model", created: 0, owned_by: m.id.split("/")[0], name: m.name, context_length: m.context, pricing: { inUsd: this.up(m.price.prompt), outUsd: this.up(m.price.completion) } })),
+    };
   }
 
   /** Everything under /v1/compute/. Always answers. */
@@ -298,6 +420,7 @@ export class Gateway {
     const refuse = (f: Fail) => json(f.status, { type: "error", error: { type: f.type, message: f.message } });
     try {
       if (path === "/v1/compute/models" && req.method === "GET") return json(200, this.about());
+      if (path === "/v1/compute/v1/models" && req.method === "GET") return json(200, await this.routerModels());
       // what an agent has left is as public as the advance that paid for it
       const credit = /^\/v1\/compute\/credit\/(0x[0-9a-fA-F]{40})$/.exec(path);
       if (credit && req.method === "GET") return json(200, this.balanceOf(credit[1]!.toLowerCase()));
@@ -308,10 +431,10 @@ export class Gateway {
         return "status" in r ? refuse(r) : json(200, r);
       }
       const agent = this.who(req);
-      if (path === "/v1/compute/balance" && req.method === "GET") return agent ? json(200, this.balanceOf(agent)) : refuse(fail(401, "authentication_error", "That key is not one of Factor's compute keys, or it has run out. Sign for a new one."));
-      if (path === "/v1/compute/v1/messages" && req.method === "POST") {
-        if (!agent) return refuse(fail(401, "authentication_error", "That key is not one of Factor's compute keys, or it has run out. Sign for a new one."));
-        const f = await this.messages(agent, req, res);
+      if (path === "/v1/compute/balance" && req.method === "GET") return agent ? json(200, this.balanceOf(agent)) : refuse(fail(401, "authentication_error", NO_KEY));
+      if ((path === "/v1/compute/v1/messages" || path === "/v1/compute/v1/chat/completions") && req.method === "POST") {
+        if (!agent) return refuse(fail(401, "authentication_error", NO_KEY));
+        const f = path.endsWith("/messages") ? await this.messages(agent, req, res) : await this.chat(agent, req, res);
         if (f) refuse(f);
         return;
       }
@@ -369,10 +492,38 @@ export class Gateway {
     };
   }
 
-  /** One call to a model, paid from the agent's credit. Returns why not, or null when it has answered. */
+  /**
+   * The worst a request could cost is held back before it is sent, so calls made at the same moment cannot spend
+   * the same credit twice. Returns why not, or null when it is held.
+   */
+  private hold(agent: string, worst: number): Fail | null {
+    const cfg = this.cfg;
+    const held = this.reserved.get(agent) ?? { micro: 0, calls: 0 };
+    if (held.calls >= cfg.inFlight) return fail(429, "rate_limit_error", `An agent may have ${cfg.inFlight} requests under way at once.`);
+    if (this.underWay >= cfg.inFlightAll) return fail(429, "rate_limit_error", "The gateway is busy. Try again in a moment.");
+    // the owner's own ceiling on a day, whatever the credit outstanding: the calls under way count at their worst
+    if (this.store.spentToday() + this.underWayMicro + worst > cfg.dailyMicro) return fail(429, "rate_limit_error", "The gateway has reached what it spends in a day. The credit is kept: try again after midnight UTC.");
+    const free = this.store.balance(agent) - held.micro;
+    if (free <= 0) return fail(402, "billing_error", "This agent has no compute credit. Draw an advance as compute on a job it was hired for.");
+    if (worst > free) return fail(402, "billing_error", `This request could cost up to ${usd(worst)} and the agent's compute credit is ${usd(free)}. Lower max_tokens, send less, or draw more as compute.`);
+    this.reserved.set(agent, { micro: held.micro + worst, calls: held.calls + 1 });
+    this.underWay++;
+    this.underWayMicro += worst;
+    return null;
+  }
+
+  /** What was really used is taken off the credit, what was held back is let go, and the call is written down. */
+  private settle(agent: string, worst: number, call: { model: string; usage: Usage; cost: number; status: number; requestId: string; t0: number }): void {
+    const unpaid = call.cost > 0 ? this.store.charge(agent, call.cost) : 0;
+    this.release(agent, worst);
+    this.store.record({ agent, model: call.model, usage: call.usage, cost: call.cost, unpaid, status: call.status, requestId: call.requestId, ms: Date.now() - call.t0 });
+  }
+
+  /** One call to Claude in Anthropic's shape, paid from the agent's credit. Returns why not, or null when it has answered. */
   private async messages(agent: string, req: IncomingMessage, res: ServerResponse): Promise<Fail | null> {
     const cfg = this.cfg;
-    if (!cfg.enabled || !this.modelKey) return fail(503, "api_error", "Compute credit is not switched on yet. Credit that was drawn is kept and can be used when it is.");
+    if (!cfg.enabled) return fail(503, "api_error", "Compute credit is not switched on yet. Credit that was drawn is kept and can be used when it is.");
+    if (!this.keys.anthropic) return fail(503, "api_error", "This door is not open here. Use /v1/chat/completions, where Claude is there too as anthropic/<model>.");
     // the owner's switch (./switches.ts)
     if (stopped(this.db, "compute")) return fail(503, "api_error", "Compute credit is paused for now. Credit that was drawn is kept and can be used when it is back.");
     const raw = await readBody(req, cfg.maxBodyBytes);
@@ -393,23 +544,13 @@ export class Gateway {
     }
     delete body.metadata; // nothing about the caller is passed on
 
-    // The worst this request could cost is held back before it is sent, so calls made at the same moment cannot
-    // spend the same credit twice. A token is a byte at least, so the request's size bounds its input from above;
-    // input costs most when it is written to the cache, which only a request that asks for caching can do.
+    // A token is a byte at least, so the request's size bounds its input from above; input costs most when it is
+    // written to the cache, which only a request that asks for caching can do.
     const most = raw.length + 1000;
     const caches = raw.includes("cache_control");
     const worst = costMicro({ input: caches ? 0 : most, output: maxTokens, cacheWrite5m: 0, cacheWrite1h: caches ? most : 0, cacheRead: 0 }, price, cfg.markupBps);
-    const held = this.reserved.get(agent) ?? { micro: 0, calls: 0 };
-    if (held.calls >= cfg.inFlight) return fail(429, "rate_limit_error", `An agent may have ${cfg.inFlight} requests under way at once.`);
-    if (this.underWay >= cfg.inFlightAll) return fail(429, "rate_limit_error", "The gateway is busy. Try again in a moment.");
-    // the owner's own ceiling on a day, whatever the credit outstanding: the calls under way count at their worst
-    if (this.store.spentToday() + this.underWayMicro + worst > cfg.dailyMicro) return fail(429, "rate_limit_error", "The gateway has reached what it spends in a day. The credit is kept: try again after midnight UTC.");
-    const free = this.store.balance(agent) - held.micro;
-    if (free <= 0) return fail(402, "billing_error", "This agent has no compute credit. Draw an advance as compute on a job it was hired for.");
-    if (worst > free) return fail(402, "billing_error", `This request could cost up to ${usd(worst)} and the agent's compute credit is ${usd(free)}. Lower max_tokens, send less, or draw more as compute.`);
-    this.reserved.set(agent, { micro: held.micro + worst, calls: held.calls + 1 });
-    this.underWay++;
-    this.underWayMicro += worst;
+    const no = this.hold(agent, worst);
+    if (no) return no;
 
     const t0 = Date.now();
     const usage: Usage = { input: 0, output: 0, cacheWrite5m: 0, cacheWrite1h: 0, cacheRead: 0 };
@@ -418,7 +559,7 @@ export class Gateway {
     try {
       const upstream = await fetch(`${cfg.upstream}/v1/messages`, {
         method: "POST",
-        headers: { "content-type": "application/json", "x-api-key": this.modelKey, "anthropic-version": typeof req.headers["anthropic-version"] === "string" ? req.headers["anthropic-version"] : "2023-06-01" },
+        headers: { "content-type": "application/json", "x-api-key": this.keys.anthropic, "anthropic-version": typeof req.headers["anthropic-version"] === "string" ? req.headers["anthropic-version"] : "2023-06-01" },
         body: JSON.stringify(body),
         signal: AbortSignal.timeout(600_000),
       });
@@ -426,20 +567,8 @@ export class Gateway {
       requestId = upstream.headers.get("request-id") ?? "";
       const type = upstream.headers.get("content-type") ?? "application/json";
       res.writeHead(status, { "content-type": type, "cache-control": "no-store", "x-content-type-options": "nosniff", ...(requestId ? { "request-id": requestId } : {}) });
-      if (body.stream === true && status === 200 && upstream.body) {
-        // passed on as it arrives; the token counts are read from the stream's own events on the way through
-        const decoder = new TextDecoder();
-        let tail = "";
-        for await (const chunk of upstream.body as unknown as AsyncIterable<Uint8Array>) {
-          res.write(chunk);
-          tail += decoder.decode(chunk, { stream: true });
-          const lines = tail.split("\n");
-          tail = lines.pop() ?? "";
-          for (const line of lines) if (line.startsWith("data:")) readUsage(line.slice(5), usage);
-        }
-        if (tail.startsWith("data:")) readUsage(tail.slice(5), usage);
-        res.end();
-      } else {
+      if (body.stream === true && status === 200 && upstream.body) await passStream(upstream.body, res, (data) => readUsage(data, usage));
+      else {
         const text = await upstream.text();
         res.end(text);
         if (status === 200) readUsage(text, usage);
@@ -452,11 +581,90 @@ export class Gateway {
       res.end();
       this.log(`[compute] a call broke off part way: ${(e as Error).message?.split("\n")[0]}`);
     }
-    // what was really used is taken off the credit, and what was held back is let go
-    const cost = costMicro(usage, price, cfg.markupBps);
-    const unpaid = cost > 0 ? this.store.charge(agent, cost) : 0;
-    this.release(agent, worst);
-    this.store.record({ agent, model, usage, cost, unpaid, status, requestId, ms: Date.now() - t0 });
+    this.settle(agent, worst, { model, usage, cost: costMicro(usage, price, cfg.markupBps), status, requestId, t0 });
+    return null;
+  }
+
+  /** One call to any model of the second door, in OpenAI's shape, through OpenRouter. Returns why not, or null when it has answered. */
+  private async chat(agent: string, req: IncomingMessage, res: ServerResponse): Promise<Fail | null> {
+    const cfg = this.cfg;
+    if (!cfg.enabled) return fail(503, "api_error", "Compute credit is not switched on yet. Credit that was drawn is kept and can be used when it is.");
+    if (!this.catalog || !this.keys.router) return fail(503, "api_error", "This door is not open here. Use /v1/messages for Claude.");
+    if (stopped(this.db, "compute")) return fail(503, "api_error", "Compute credit is paused for now. Credit that was drawn is kept and can be used when it is back.");
+    const raw = await readBody(req, cfg.maxBodyBytes);
+    const body = JSON.parse(raw.toString("utf8")) as Record<string, unknown>;
+    if (!body || typeof body !== "object" || Array.isArray(body)) return fail(400, "invalid_request_error", "The body is not a JSON object.");
+    for (const k of Object.keys(body)) if (!ALLOWED_CHAT.has(k)) return fail(400, "invalid_request_error", `"${k}" is not something Factor's compute gateway passes on. It takes: ${[...ALLOWED_CHAT].join(", ")}.`);
+    const models = await this.catalog.get();
+    if (models.size === 0) return fail(503, "api_error", "The list of models could not be read just now. Nothing was taken: try again in a minute.");
+    const model = String(body.model ?? "");
+    const m = models.get(model);
+    if (!m) return fail(400, "invalid_request_error", `"${model}" is not a model compute credit can be spent on. The models and their prices are at /v1/compute/v1/models; they are named like anthropic/claude-sonnet-4.5 or openai/gpt-5.`);
+    // max_completion_tokens is OpenAI's newer name for max_tokens: one of the two, and no more than the gateway allows
+    const asked = body.max_completion_tokens ?? body.max_tokens;
+    if (typeof asked !== "number" || !Number.isInteger(asked) || asked < 1) return fail(400, "invalid_request_error", "max_tokens is needed, as a whole number.");
+    if (asked > cfg.maxTokens || (typeof body.max_tokens === "number" && body.max_tokens > cfg.maxTokens)) return fail(400, "invalid_request_error", `max_tokens may be ${cfg.maxTokens} at most here.`);
+    if (body.tools !== undefined) {
+      if (!Array.isArray(body.tools)) return fail(400, "invalid_request_error", "tools must be a list.");
+      for (const t of body.tools as { type?: unknown }[]) if (t?.type !== "function") return fail(400, "invalid_request_error", `Only tools your agent runs itself (type "function") can be paid with compute credit, not "${String(t?.type)}".`);
+    }
+    if (!Array.isArray(body.messages) || body.messages.length === 0) return fail(400, "invalid_request_error", "messages is needed, as a list.");
+    let pictures = 0;
+    for (const msg of body.messages as { content?: unknown }[]) {
+      if (!Array.isArray(msg?.content)) continue;
+      for (const part of msg.content as { type?: unknown }[]) {
+        if (!PARTS.has(String(part?.type))) return fail(400, "invalid_request_error", `A message may hold text and pictures here, not "${String(part?.type)}".`);
+        if (part.type === "image_url") pictures++;
+      }
+    }
+    delete body.metadata; // nothing about the caller is passed on
+    delete body.user;
+    // OpenRouter says what each call cost when asked; in a stream, in its last event
+    body.usage = { include: true };
+    if (body.stream === true) body.stream_options = { ...(typeof body.stream_options === "object" && body.stream_options ? body.stream_options : {}), include_usage: true };
+
+    // the worst: every byte a token at the dearer of the input prices, every token asked for at the dearer of the
+    // output prices, every picture at its price, and the fee per call
+    const p = m.price;
+    const worst = Math.ceil(((raw.length + 1000) * Math.max(p.prompt, p.cacheWrite) + asked * Math.max(p.completion, p.reasoning) + (p.request + pictures * p.image) * 1e6) * (10_000 + cfg.markupBps) / 10_000);
+    const no = this.hold(agent, worst);
+    if (no) return no;
+
+    const t0 = Date.now();
+    const usage: Usage & { reportedUsd: number | null } = { input: 0, output: 0, cacheWrite5m: 0, cacheWrite1h: 0, cacheRead: 0, reportedUsd: null };
+    const seen = { id: "" };
+    let status = 0;
+    try {
+      const upstream = await fetch(`${cfg.router.url}/chat/completions`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${this.keys.router}`, "http-referer": "https://factoragents.fun", "x-title": "Factor" },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(600_000),
+      });
+      status = upstream.status;
+      // Factor's own account with OpenRouter is empty: the owner's to top up, and nothing for the agent to pay for
+      if (status === 402) {
+        await upstream.body?.cancel();
+        this.release(agent, worst);
+        this.log("[compute] OpenRouter says Factor's account has run out of credit: top it up");
+        return fail(503, "api_error", "The gateway cannot reach the models just now. Nothing was taken from the credit: try again later.");
+      }
+      res.writeHead(status, { "content-type": upstream.headers.get("content-type") ?? "application/json", "cache-control": "no-store", "x-content-type-options": "nosniff" });
+      if (body.stream === true && status === 200 && upstream.body) await passStream(upstream.body, res, (data) => readRouterUsage(data, usage, seen));
+      else {
+        const text = await upstream.text();
+        res.end(text);
+        if (status === 200) readRouterUsage(text, usage, seen);
+      }
+    } catch (e) {
+      if (!res.headersSent) {
+        this.release(agent, worst);
+        return fail(502, "api_error", "The model did not answer. Nothing was taken from the credit.");
+      }
+      res.end();
+      this.log(`[compute] a call broke off part way: ${(e as Error).message?.split("\n")[0]}`);
+    }
+    this.settle(agent, worst, { model, usage, cost: status === 200 ? routerCostMicro(usage, p, cfg.markupBps) : 0, status, requestId: seen.id, t0 });
     return null;
   }
 
@@ -468,6 +676,39 @@ export class Gateway {
     if (held.calls <= 1) this.reserved.delete(agent);
     else this.reserved.set(agent, { micro: Math.max(0, held.micro - micro), calls: held.calls - 1 });
   }
+}
+
+/** A stream passed on as it arrives; each event's data is handed to `read` on the way through. */
+async function passStream(body: ReadableStream<Uint8Array>, res: ServerResponse, read: (data: string) => void): Promise<void> {
+  const decoder = new TextDecoder();
+  let tail = "";
+  for await (const chunk of body as unknown as AsyncIterable<Uint8Array>) {
+    res.write(chunk);
+    tail += decoder.decode(chunk, { stream: true });
+    const lines = tail.split("\n");
+    tail = lines.pop() ?? "";
+    for (const line of lines) if (line.startsWith("data:")) read(line.slice(5));
+  }
+  if (tail.startsWith("data:")) read(tail.slice(5));
+  res.end();
+}
+
+/** The counts and the cost out of an OpenRouter answer, or out of one event of its stream. */
+function readRouterUsage(text: string, into: Usage & { reportedUsd: number | null }, seen: { id: string }): void {
+  let d: { id?: unknown; usage?: Record<string, unknown> };
+  try {
+    d = JSON.parse(text);
+  } catch {
+    return; // "[DONE]", or a line that is no event
+  }
+  if (!seen.id && typeof d?.id === "string") seen.id = d.id.slice(0, 120);
+  const u = d?.usage;
+  if (!u || typeof u !== "object") return;
+  const n = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) && v > 0 ? Math.floor(v) : 0);
+  into.input = Math.max(into.input, n(u.prompt_tokens));
+  into.output = Math.max(into.output, n(u.completion_tokens));
+  into.cacheRead = Math.max(into.cacheRead, n((u.prompt_tokens_details as Record<string, unknown> | undefined)?.cached_tokens));
+  if (typeof u.cost === "number" && Number.isFinite(u.cost) && u.cost >= 0) into.reportedUsd = Math.max(into.reportedUsd ?? 0, u.cost);
 }
 
 /** The token counts out of an answer, or out of one event of a stream. The largest count seen is kept. */
