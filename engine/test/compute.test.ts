@@ -119,7 +119,7 @@ const usageRows = (w: Rig) => w.sqlite.prepare("SELECT * FROM compute_usage ORDE
 
 describe("the settings", () => {
   it("is off until it is switched on and there is a key, and says why when only one of the two is there", () => {
-    expect(readCompute({})).toMatchObject({ enabled: false, note: null, markupBps: 500, maxTokens: 16_000, upstream: "https://api.anthropic.com", inFlight: 4, inFlightAll: 32, dailyMicro: 100_000_000 });
+    expect(readCompute({})).toMatchObject({ enabled: false, note: null, markupBps: 500, maxTokens: 16_000, upstream: "https://api.anthropic.com", inFlight: 4, inFlightAll: 32, dailyMicro: 5_000_000 });
     expect(readCompute({ ANTHROPIC_API_KEY: MODEL_KEY })).toMatchObject({ enabled: false, note: null });
     const half = readCompute({ COMPUTE_MODE: "on" });
     expect(half.enabled).toBe(false);
@@ -847,7 +847,7 @@ describe("a call through the second door", () => {
 
   it("holds back the worst a call could cost, and refuses one the credit cannot cover", async () => {
     // 0.0002 ETH drawn: $0.495 of credit
-    const w = await routerWorld({ draw: ETH / 5000n, more: { COMPUTE_MAX_TOKENS: "200000", COMPUTE_CALL_USD: "100" } });
+    const w = await routerWorld({ draw: ETH / 5000n, more: { COMPUTE_MAX_TOKENS: "200000", COMPUTE_CALL_USD: "100", COMPUTE_AGENT_DAILY_USD: "100", COMPUTE_DAILY_USD: "100" } });
     const key = await newKey(w);
     // 200,000 out at $15 a million could cost $3 and more
     const r = await refusal(await chat(w, key, { model: "anthropic/claude-sonnet-4.5", max_tokens: 200_000 }));
@@ -887,7 +887,7 @@ describe("the limits on the second door", () => {
   });
 
   it("refuses one call that could cost more than a call may, whatever the credit", async () => {
-    expect(readCompute(ON)).toMatchObject({ callMicro: 2_000_000, agentDayMicro: 10_000_000 });
+    expect(readCompute(ON)).toMatchObject({ callMicro: 1_000_000, agentDayMicro: 2_000_000 });
     const w = await routerWorld({ more: { COMPUTE_MAX_TOKENS: "200000", COMPUTE_CALL_USD: "1" } });
     const key = await newKey(w);
     // 200,000 out at $10 a million could cost $2 and more
@@ -898,7 +898,7 @@ describe("the limits on the second door", () => {
     expect((await refusal(await call(w, key, { max_tokens: 150_000 }))).message).toContain("at most");
     expect(w.router.seen).toHaveLength(0);
     const s = (await w.engine.handle("/v1/state"))!.body as { compute: { limits: { callUsd: number; agentDayUsd: number } } };
-    expect(s.compute.limits).toEqual({ callUsd: 1, agentDayUsd: 10 });
+    expect(s.compute.limits).toEqual({ callUsd: 1, agentDayUsd: 2 });
   });
 
   it("stops one agent at its own daily ceiling, keeps its credit, and starts again at midnight UTC", async () => {
