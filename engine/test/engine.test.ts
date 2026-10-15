@@ -40,7 +40,7 @@ function expectShape(s: FactorState): void {
   expect(roster[0]).toMatchObject({ name: "page-smith", fromEth: 0.003 });
   expect(s.paused).toBeNull();
   expect(Object.keys(s.accounts).sort()).toEqual(["enabled", "factory", "ordersPerDay"]);
-  expect(Object.keys(s.compute).sort()).toEqual(["enabled", "markupPct", "maxTokens", "models"]);
+  expect(Object.keys(s.compute).sort()).toEqual(["enabled", "markupPct", "maxTokens", "models", "router"]);
   expect(Object.keys(s.stats).sort()).toEqual(["advancedEth", "agents", "burnedTokens", "demoJobs", "heldEth", "jobs", "lostEth", "outEth", "poolEth", "poolFromTradingEth", "reserveEth", "settledJobs", "supplyLeft"]);
   expect(s.params).toEqual({ advanceMaxPct: 50, advanceFeePct: 1, jobFeePct: 2, graceHours: 12, reviewHours: 24, rejectedPct: 50, reserveMinPct: 20, minJobEth: 0.001 });
   expect(Object.keys(s.contracts).sort()).toEqual(["burnPot", "desk", "explorer", "splitter", "token"]);

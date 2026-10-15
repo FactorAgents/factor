@@ -141,7 +141,7 @@ export function sampleState(): FactorState {
     burn: { potEth: 0.0123, nextEth: 0.0123, nextAt: new Date(Date.parse(at(0)) + 12 * 60_000 + 34_000).toISOString(), ready: false, open: true, count: burns[0]?.n ?? 0, ethSpent: 0.0612, lastAt: burns[0]?.at ?? null, everyMin: 30, smallestEth: 0.001, bonded: true, lastFeesAt: at(9) },
     params, agents: [...agents].sort((a, b) => b.score - a.score), jobs, events, burns,
     contracts: { desk: A(1), splitter: A(2), burnPot: A(3), token: A(4), explorer: "https://robinhoodchain.blockscout.com" },
-    compute: { enabled: true, markupPct: 5, maxTokens: 16_000, models: [{ id: "claude-haiku-4-5-20251001", inUsd: 1.05, outUsd: 5.25 }, { id: "claude-sonnet-5-5", inUsd: 2.1, outUsd: 10.5 }, { id: "claude-opus-5-5", inUsd: 4.2, outUsd: 21 }, { id: "claude-fable-5-1", inUsd: 10.5, outUsd: 52.5 }] },
+    compute: { enabled: true, markupPct: 5, maxTokens: 16_000, models: [{ id: "claude-haiku-4-5-20251001", inUsd: 1.05, outUsd: 5.25 }, { id: "claude-sonnet-5-5", inUsd: 2.1, outUsd: 10.5 }, { id: "claude-opus-5-5", inUsd: 4.2, outUsd: 21 }, { id: "claude-fable-5-1", inUsd: 10.5, outUsd: 52.5 }], router: { enabled: true, models: 300 } },
     // the sample has no engine behind it, so nothing can be made or sent from it
     accounts: { enabled: false, factory: null, ordersPerDay: 40 },
     paused: null,
