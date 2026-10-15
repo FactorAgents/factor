@@ -72,7 +72,7 @@ export interface State {
   events: LedgerLine[];
   contracts: { desk: string | null; splitter: string | null; burnPot: string | null; token: string | null; explorer: string };
   /** compute credit: whether an advance drawn as compute can be spent on models, and what they cost, in dollars a million tokens */
-  compute: { enabled: boolean; markupPct: number; maxTokens: number; models: ComputeModel[] };
+  compute: { enabled: boolean; markupPct: number; maxTokens: number; models: ComputeModel[]; router?: { enabled: boolean; models: number }; limits?: { callUsd: number; agentDayUsd: number } };
   /** accounts whose gas Factor pays: whether one can be made and used right now, and the contract that makes them */
   accounts: { enabled: boolean; factory: string | null; ordersPerDay: number };
   /** set while Factor has paused new jobs: why, in a line. The kit then locks nothing. */
@@ -95,8 +95,16 @@ export interface AccountInfo {
 export interface ComputeModel { id: string; inUsd: number; outUsd: number }
 /** What an agent has left to spend on models, and the compute advances it came from. */
 export interface ComputeCredit { agent: string; balanceUsd: number; enabled: boolean; lots: { job: number; at: string; usd: number | null; spentUsd: number; state: "open" | "kept" | "closed" }[] }
-/** What a program needs to spend an agent's compute credit: give `baseURL` and `apiKey` to the model maker's own library. */
-export interface ComputeKey { baseURL: string; apiKey: string; expiresAt: string; balanceUsd: number; models: ComputeModel[]; maxTokens: number }
+/**
+ * What a program needs to spend an agent's compute credit. `baseURL` with `apiKey` for Anthropic's library (Claude);
+ * `openaiBaseURL` with `apiKey` for OpenAI's library or any that speaks its shape, for every model of the second door
+ * (GPT, Claude, Gemini, Grok, DeepSeek, Llama, Mistral and the rest, named like "openai/gpt-5").
+ */
+export interface ComputeKey { baseURL: string; openaiBaseURL: string; apiKey: string; expiresAt: string; balanceUsd: number; models: ComputeModel[]; maxTokens: number }
+/** A model of the second door, with what it costs through Factor, in dollars a million tokens. */
+export interface RouterModel { id: string; name: string; maker: string; contextLength: number; inUsd: number; outUsd: number }
+/** A model's answer, paid from the agent's compute credit. */
+export interface ModelAnswer { text: string; model: string; inputTokens: number; outputTokens: number }
 
 export interface AgentPage { agent: Agent; jobs: Job[]; events: LedgerLine[] }
 /**

@@ -110,7 +110,7 @@ describe("compute credit", () => {
     const f = await connect({ privateKey: KEY });
     const before = s.posts.length;
     const c = await f.compute();
-    expect(c).toEqual({ baseURL: `${s.api}/api/v1/compute`, apiKey: "fck_a-key-from-the-stub-0123456789ab", expiresAt: "2026-10-20T00:00:00.000Z", balanceUsd: 49.5, models: [{ id: "claude-sonnet-5-5", inUsd: 2.1, outUsd: 10.5 }], maxTokens: 16_000 });
+    expect(c).toEqual({ baseURL: `${s.api}/api/v1/compute`, openaiBaseURL: `${s.api}/api/v1/compute/v1`, apiKey: "fck_a-key-from-the-stub-0123456789ab", expiresAt: "2026-10-20T00:00:00.000Z", balanceUsd: 49.5, models: [{ id: "claude-sonnet-5-5", inUsd: 2.1, outUsd: 10.5 }], maxTokens: 16_000 });
     const sent = s.posts[before]!;
     expect(sent.path).toBe("/compute/key");
     const body = sent.body as { address: string; at: number; signature: string };
@@ -129,7 +129,10 @@ describe("compute credit", () => {
     expect((await refusal(f.computeCredit())).code).toBe("read_only");
     expect((await refusal(f.compute())).code).toBe("read_only");
     const said = await runTool(f, "factor_compute_credit", { agent: "lumen-07" }, null);
-    expect(said).toEqual({ isError: false, text: "$12.50 of compute credit left. From job 12: $0.00 of $49.50 spent. Models, per million tokens: claude-sonnet-5-5 $2.10 in / $10.50 out." });
+    expect(said).toEqual({ isError: false, text: "$12.50 of compute credit left. From job 12: $0.00 of $49.50 spent. Claude directly, per million tokens: claude-sonnet-5-5 $2.10 in / $10.50 out." });
+    s.site.state.compute.router = { enabled: true, models: 2 };
+    expect((await runTool(f, "factor_compute_credit", { agent: "lumen-07" }, null)).text).toContain("And 2 models from every maker");
+    delete s.site.state.compute.router;
   });
 
   it("while it is switched off, hands out no key and draws nothing as compute, before anything is sent", async () => {
@@ -141,7 +144,54 @@ describe("compute credit", () => {
     expect(s.node.calls.length).toBe(calls);
     expect(s.posts.length).toBe(posts);
     expect((await runTool(f, "factor_compute_credit", {}, null)).text).toContain("Compute credit is not switched on yet.");
+    expect((await refusal(f.askModel("Hi", { model: "openai/gpt-5" }))).code).toBe("compute_off");
+    expect(s.posts.length).toBe(posts);
     s.site.state.compute.enabled = true;
+  });
+
+  it("lists every model of the second door with its price, and finds them by name or maker", async () => {
+    const f = await connect();
+    expect(await f.computeModels()).toEqual([
+      { id: "openai/gpt-5", name: "OpenAI: GPT-5", maker: "openai", contextLength: 400_000, inUsd: 1.3125, outUsd: 10.5 },
+      { id: "deepseek/deepseek-chat", name: "DeepSeek V3", maker: "deepseek", contextLength: 128_000, inUsd: 0.2625, outUsd: 0.84 },
+    ]);
+    expect((await f.computeModels("DEEPSEEK")).map((m) => m.id)).toEqual(["deepseek/deepseek-chat"]);
+    expect(await f.computeModels("nothing-like-it")).toEqual([]);
+    expect((await runTool(f, "factor_compute_models", {}, null)).text).toBe("2 models, per million tokens: deepseek/deepseek-chat $0.263 in / $0.840 out; openai/gpt-5 $1.31 in / $10.50 out.");
+    expect((await runTool(f, "factor_compute_models", { search: "llama" }, null)).text).toBe('No model has "llama" in its name.');
+  });
+
+  it("asks any model in one line, signing for a key once and using it until it runs out", async () => {
+    const f = await connect({ privateKey: KEY });
+    const before = s.posts.length;
+    const a = await f.askModel("Say hello", { model: "openai/gpt-5", system: "Be brief.", maxTokens: 200 });
+    expect(a).toEqual({ text: "Hello from the model", model: "openai/gpt-5", inputTokens: 10, outputTokens: 5 });
+    const sent = s.posts.slice(before);
+    expect(sent.map((p) => p.path)).toEqual(["/compute/key", "/compute/v1/chat/completions"]);
+    expect(sent[1]!.auth).toBe("Bearer fck_a-key-from-the-stub-0123456789ab");
+    expect(sent[1]!.body).toEqual({ model: "openai/gpt-5", max_tokens: 200, messages: [{ role: "system", content: "Be brief." }, { role: "user", content: "Say hello" }] });
+    // Claude by its own name goes through Anthropic's shape, with the same key: no second signature
+    expect(await f.askModel("Say hello", { model: "claude-sonnet-5-5" })).toEqual({ text: "Hello from Claude", model: "claude-sonnet-5-5", inputTokens: 12, outputTokens: 4 });
+    expect(s.posts.slice(before).map((p) => p.path)).toEqual(["/compute/key", "/compute/v1/chat/completions", "/compute/v1/messages"]);
+    expect(s.posts.at(-1)!.body).toEqual({ model: "claude-sonnet-5-5", max_tokens: 1024, messages: [{ role: "user", content: "Say hello" }] });
+    expect(JSON.stringify(s.posts.slice(before))).not.toContain(KEY.slice(2));
+    expect((await runTool(f, "factor_ask_model", { model: "openai/gpt-5", prompt: "Say hello" }, null)).text).toBe("Hello from the model\n\n(openai/gpt-5: 10 tokens in, 5 out, paid from compute credit.)");
+    s.posts.splice(before);
+  });
+
+  it("says why the gateway refused, and refuses an empty question before anything is sent", async () => {
+    const f = await connect({ privateKey: KEY });
+    const posts = s.posts.length;
+    expect((await refusal(f.askModel("  ", { model: "openai/gpt-5" }))).code).toBe("no_prompt");
+    expect((await refusal(f.askModel("Hi", { model: "" }))).code).toBe("no_model");
+    expect((await refusal(f.askModel("Hi", { model: "openai/gpt-5", maxTokens: 1.5 }))).code).toBe("bad_request");
+    expect(s.posts.length).toBe(posts);
+    s.site.refuse = 402;
+    const r = await refusal(f.askModel("Hi", { model: "openai/gpt-5" }));
+    expect(r).toMatchObject({ code: "no_credit", message: "This agent has no compute credit." });
+    expect((await runTool(f, "factor_ask_model", { model: "openai/gpt-5", prompt: "Hi" }, null)).isError).toBe(true);
+    s.site.refuse = null;
+    s.posts.splice(posts);
   });
 });
 
@@ -286,9 +336,9 @@ describe("the assistant's caps", () => {
 
 describe("the tools", () => {
   it("have a name, a description and an input each, and say which of them send something", () => {
-    expect(TOOLS.map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_hire", "factor_accept", "factor_reject", "factor_set_title", "factor_register", "factor_set_profile", "factor_bond", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_draw", "factor_deliver", "factor_decline"]);
+    expect(TOOLS.map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_hire", "factor_accept", "factor_reject", "factor_set_title", "factor_register", "factor_set_profile", "factor_bond", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_ask_model", "factor_draw", "factor_deliver", "factor_decline"]);
     for (const t of TOOLS) expect(t.description.length, t.name).toBeGreaterThan(40);
-    expect(TOOLS.filter((t) => t.readOnly).map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_can_draw", "factor_account", "factor_compute_credit"]);
+    expect(TOOLS.filter((t) => t.readOnly).map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models"]);
     // the ones that spend or cannot be undone say so in capitals, where an assistant will not miss it
     for (const name of ["factor_hire", "factor_reject", "factor_bond"]) expect(TOOLS.find((t) => t.name === name)!.description).toMatch(/SPENDS ETH|SETTLES AT HALF/);
   });

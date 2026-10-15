@@ -21,7 +21,7 @@ import { factorAccountAbi } from "./abi/FactorAccount.js";
 import { factorAccountsAbi } from "./abi/FactorAccounts.js";
 import { factorDeskAbi } from "./abi/FactorDesk.js";
 import { CHAIN_ID, DEFAULT_API, DEFAULT_RPC } from "./defaults.js";
-import type { AccountInfo, Agent, AgentPage, ComputeCredit, ComputeKey, Job, JobPage, JobState, LedgerLine, Page, Sent, State } from "./types.js";
+import type { AccountInfo, Agent, AgentPage, ComputeCredit, ComputeKey, Job, JobPage, JobState, LedgerLine, ModelAnswer, Page, RouterModel, Sent, State } from "./types.js";
 import { explain, Refusal, WORDS } from "./words.js";
 
 export { Refusal, explain } from "./words.js";
@@ -339,9 +339,10 @@ export class Factor {
   }
 
   /**
-   * The key to this agent's compute credit, signed for by its wallet. Give `baseURL` and `apiKey` to the model
-   * maker's own library and it spends the credit: `new Anthropic({ baseURL, apiKey })`. A key lasts seven days and
-   * buys nothing but model calls. Costs nothing.
+   * The key to this agent's compute credit, signed for by its wallet. Give it to a library the agent already has and
+   * that library spends the credit: `new Anthropic({ baseURL, apiKey })` for Claude, or
+   * `new OpenAI({ baseURL: openaiBaseURL, apiKey })` for any model of the second door. A key lasts seven days and buys
+   * nothing but model calls. Costs nothing.
    */
   async compute(): Promise<ComputeKey> {
     const address = this.mine();
@@ -358,7 +359,59 @@ export class Factor {
     const b = (await r.json().catch(() => ({}))) as { key?: string; expiresAt?: string; error?: { message?: string } };
     if (!r.ok || !b.key || !b.expiresAt) throw new Refusal(b.error?.message ?? `Factor's site answered ${r.status}.`, r.status === 404 ? "not_registered" : "no_key");
     const credit = await this.computeCredit(address);
-    return { baseURL: `${this.api}/compute`, apiKey: b.key, expiresAt: b.expiresAt, balanceUsd: credit.balanceUsd, models: info.models, maxTokens: info.maxTokens };
+    this.computeKey = { key: b.key, until: Date.parse(b.expiresAt) };
+    return { baseURL: `${this.api}/compute`, openaiBaseURL: `${this.api}/compute/v1`, apiKey: b.key, expiresAt: b.expiresAt, balanceUsd: credit.balanceUsd, models: info.models, maxTokens: info.maxTokens };
+  }
+
+  private computeKey: { key: string; until: number } | null = null;
+
+  /**
+   * Every model compute credit can be spent on through the second door, with what it costs through Factor. `search`
+   * keeps the ones whose name or maker has it ("gpt", "claude", "deepseek"). Needs no key.
+   */
+  async computeModels(search?: string): Promise<RouterModel[]> {
+    const list = await read<{ data?: { id: string; name?: string; owned_by?: string; context_length?: number; pricing?: { inUsd: number; outUsd: number } }[] }>(this.api, "/compute/v1/models");
+    const words = search?.trim().toLowerCase();
+    return (list?.data ?? [])
+      .map((m) => ({ id: m.id, name: m.name ?? m.id, maker: m.owned_by ?? m.id.split("/")[0]!, contextLength: m.context_length ?? 0, inUsd: m.pricing?.inUsd ?? 0, outUsd: m.pricing?.outUsd ?? 0 }))
+      .filter((m) => !words || `${m.id} ${m.name}`.toLowerCase().includes(words));
+  }
+
+  /**
+   * Ask a model, paid from this agent's compute credit: one line for an agent that has no library of its own.
+   * `model` is any model of the second door ("openai/gpt-5", "anthropic/claude-sonnet-4.5", "deepseek/deepseek-chat")
+   * or, while Factor serves Claude directly, one of its own names ("claude-sonnet-5-5"). The key is signed for once
+   * and used until it runs out.
+   */
+  async askModel(prompt: string, o: { model: string; system?: string; maxTokens?: number; temperature?: number }): Promise<ModelAnswer> {
+    if (typeof prompt !== "string" || !prompt.trim()) throw new Refusal("Say what to ask the model.", "no_prompt");
+    if (typeof o?.model !== "string" || !o.model.trim()) throw new Refusal('Name the model, like "openai/gpt-5". computeModels() lists them.', "no_model");
+    const maxTokens = o.maxTokens ?? 1024;
+    if (!Number.isSafeInteger(maxTokens) || maxTokens < 1) throw new Refusal("maxTokens is a whole number, like 1024.", "bad_request");
+    // a key with less than an hour left is signed for again
+    const key = this.computeKey && this.computeKey.until - Date.now() > 3600_000 ? this.computeKey.key : (await this.compute()).apiKey;
+    const direct = !o.model.includes("/");
+    const body = direct
+      ? { model: o.model, max_tokens: maxTokens, messages: [{ role: "user", content: prompt }], ...(o.system ? { system: o.system } : {}), ...(o.temperature !== undefined ? { temperature: o.temperature } : {}) }
+      : { model: o.model, max_tokens: maxTokens, messages: [...(o.system ? [{ role: "system", content: o.system }] : []), { role: "user", content: prompt }], ...(o.temperature !== undefined ? { temperature: o.temperature } : {}) };
+    let r: Response;
+    try {
+      r = await fetch(`${this.api}/compute/v1/${direct ? "messages" : "chat/completions"}`, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${key}` }, body: JSON.stringify(body), signal: AbortSignal.timeout(600_000) });
+    } catch {
+      throw new Refusal("Factor's site could not be reached.", "no_site");
+    }
+    const b = (await r.json().catch(() => ({}))) as Record<string, unknown> & { error?: { message?: string } };
+    if (!r.ok) {
+      if (r.status === 401) this.computeKey = null;
+      const code = r.status === 402 ? "no_credit" : r.status === 429 ? "over_limit" : r.status === 503 ? "compute_off" : r.status === 401 ? "no_key" : "refused";
+      throw new Refusal(sentence(b.error?.message ?? `Factor's site answered ${r.status}`), code);
+    }
+    if (direct) {
+      const d = b as { model?: string; content?: { type: string; text?: string }[]; usage?: { input_tokens?: number; output_tokens?: number } };
+      return { text: (d.content ?? []).filter((c) => c.type === "text").map((c) => c.text ?? "").join(""), model: d.model ?? o.model, inputTokens: d.usage?.input_tokens ?? 0, outputTokens: d.usage?.output_tokens ?? 0 };
+    }
+    const d = b as { model?: string; choices?: { message?: { content?: string | null } }[]; usage?: { prompt_tokens?: number; completion_tokens?: number } };
+    return { text: d.choices?.[0]?.message?.content ?? "", model: d.model ?? o.model, inputTokens: d.usage?.prompt_tokens ?? 0, outputTokens: d.usage?.completion_tokens ?? 0 };
   }
 
   /** What an agent has left to spend on models, in dollars, and the compute advances it came from. This wallet's own when no agent is named. */
