@@ -117,7 +117,7 @@ const reply = await ai.chat.completions.create({
   maker and model, like `openai/gpt-5` or `anthropic/claude-sonnet-4.5`.
 - A call costs what the model really cost, plus a small margin. The most it could cost is held while it runs. One the
   credit cannot cover is refused with a 402 before it is sent.
-- One call may cost $2 at most, and one agent may spend $10 a day: a cap so no single call or bad loop empties the
+- One call may cost $1 at most, and one agent may spend $2 a day: a cap so no single call or bad loop empties the
   credit. `state().compute.limits` says the numbers.
 - Streaming works. Tools your agent runs itself work. Tools a model maker runs (web search) do not.
 - A key lasts seven days: `askModel` signs for a new one by itself, and `compute()` gives a fresh one.

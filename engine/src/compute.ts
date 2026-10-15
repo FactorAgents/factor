@@ -119,9 +119,9 @@ export function readCompute(env: Env, problems: string[] = []): ComputeConfig {
     keyTtlS: 7 * 86400,
     inFlight: int("COMPUTE_IN_FLIGHT", 4, 1, 64),
     inFlightAll: int("COMPUTE_IN_FLIGHT_ALL", 32, 1, 1024),
-    dailyMicro: int("COMPUTE_DAILY_USD", 100, 1, 1_000_000) * 1_000_000,
-    callMicro: int("COMPUTE_CALL_USD", 2, 1, 1000) * 1_000_000,
-    agentDayMicro: int("COMPUTE_AGENT_DAILY_USD", 10, 1, 100_000) * 1_000_000,
+    dailyMicro: int("COMPUTE_DAILY_USD", 5, 1, 1_000_000) * 1_000_000,
+    callMicro: int("COMPUTE_CALL_USD", 1, 1, 1000) * 1_000_000,
+    agentDayMicro: int("COMPUTE_AGENT_DAILY_USD", 2, 1, 100_000) * 1_000_000,
     router: {
       enabled: on && hasRouterKey, url: routerUrl, refreshMs: 6 * 3600_000,
       maxInPerM: int("COMPUTE_MAX_IN_USD", 20, 1, 10_000), maxOutPerM: int("COMPUTE_MAX_OUT_USD", 80, 1, 10_000),
