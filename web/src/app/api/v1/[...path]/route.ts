@@ -7,6 +7,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { callerOf } from "@/lib/caller";
 import { engineUrl, sampleMode } from "@/lib/data";
 import { sampleAgent, sampleJob, sampleJobs, sampleLedger, sampleState } from "@/lib/sample";
+import { answerHeaders, sharedRead } from "@/lib/shared";
 
 const READS = /^(state|pulse|desk|agents|agents\/made\/0x[0-9a-fA-F]{40}|agents\/[0-9a-zA-Z-]{3,42}|jobs|jobs\/\d{1,9}|ledger|burns|accounts\/0x[0-9a-fA-F]{40}|accounts\/relay\/0x[0-9a-f]{64}|accounts\/by-credential\/0x[0-9a-f]{2,2046})$/;
 // two things a wallet signs, and what an account without a wallet asks of the engine (lib/passkey.ts)
@@ -46,11 +47,24 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ path: strin
   }
   const engine = engineUrl();
   if (!engine) return json({ error: "nothing is live yet" }, 503);
+  const url = `${engine}/v1/${path}${q.size ? `?${q}` : ""}`;
+  // an account's reads are its own, and cost the engine a question to the chain: asked for each caller, with who it is
+  if (path.startsWith("accounts/")) {
+    try {
+      const r = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(12_000), headers: { "x-forwarded-for": callerOf(req) } });
+      return json(await r.json(), r.status);
+    } catch {
+      return json({ error: "the engine is not answering" }, 502);
+    }
+  }
+  // every other read is the same for everybody: one answer from the engine, shared (lib/shared.ts)
   try {
-    // who is asking is passed on for the reads that cost the engine a question to the chain (an account's balance)
-    const from = path.startsWith("accounts/") ? callerOf(req) : "";
-    const r = await fetch(`${engine}/v1/${path}${q.size ? `?${q}` : ""}`, { cache: "no-store", signal: AbortSignal.timeout(12_000), headers: from ? { "x-forwarded-for": from } : {} });
-    return json(await r.json(), r.status);
+    const a = await sharedRead(`${path}?${q}`, async () => {
+      const r = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(12_000) });
+      return { status: r.status, body: await r.text() };
+    });
+    const { headers, notModified } = answerHeaders(a, req.headers.get("if-none-match"));
+    return new NextResponse(notModified ? null : a.body, { status: notModified ? 304 : a.status, headers });
   } catch {
     return json({ error: "the engine is not answering" }, 502);
   }
