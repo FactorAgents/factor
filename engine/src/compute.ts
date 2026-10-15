@@ -51,6 +51,8 @@ export const DEFAULT_MODELS: Record<string, Price> = {
 export interface ComputeConfig {
   /** COMPUTE_MODE=on and a model key is set. Off: credit is still written down as it is drawn, and nothing is served. */
   enabled: boolean;
+  /** COMPUTE_DIRECT=on: the first door, Claude on the owner's own Anthropic key, is open. */
+  direct: boolean;
   upstream: string; // COMPUTE_UPSTREAM_URL
   models: Record<string, Price>;
   markupBps: number; // COMPUTE_MARKUP_BPS: on top of the list price, for turning ETH into dollars
@@ -77,7 +79,10 @@ type Env = Record<string, string | undefined>;
 
 export function readCompute(env: Env, problems: string[] = []): ComputeConfig {
   const on = (env.COMPUTE_MODE ?? "").trim().toLowerCase() === "on";
-  const hasClaudeKey = !!env.ANTHROPIC_API_KEY?.trim();
+  // Claude straight from Anthropic only when the owner says so (COMPUTE_DIRECT=on): the key may be there for other
+  // things, and selling its calls on is the owner's decision. Claude is served through OpenRouter all the same.
+  const direct = (env.COMPUTE_DIRECT ?? "").trim().toLowerCase() === "on";
+  const hasClaudeKey = direct && !!env.ANTHROPIC_API_KEY?.trim();
   const hasRouterKey = !!env.OPENROUTER_API_KEY?.trim();
   const hasKey = hasClaudeKey || hasRouterKey;
   let models = DEFAULT_MODELS;
@@ -111,6 +116,7 @@ export function readCompute(env: Env, problems: string[] = []): ComputeConfig {
   if (!/^https?:\/\/[^\s/]+/.test(routerUrl)) problems.push("COMPUTE_ROUTER_URL is not an http(s) address");
   return {
     enabled: on && hasKey,
+    direct: on && hasClaudeKey,
     upstream,
     models,
     markupBps: int("COMPUTE_MARKUP_BPS", 500, 0, 5000),
@@ -127,7 +133,7 @@ export function readCompute(env: Env, problems: string[] = []): ComputeConfig {
       maxInPerM: int("COMPUTE_MAX_IN_USD", 20, 1, 10_000), maxOutPerM: int("COMPUTE_MAX_OUT_USD", 80, 1, 10_000),
       floorMicro: int("COMPUTE_FLOAT_FLOOR_USD", 2, 0, 100_000) * 1_000_000, floatCheckMs: int("COMPUTE_FLOAT_CHECK_S", 300, 0, 86_400) * 1000,
     },
-    note: on && !hasKey ? "COMPUTE_MODE is on and neither OPENROUTER_API_KEY nor ANTHROPIC_API_KEY is set: compute credit is written down as it is drawn, and no model is served until a key is there." : null,
+    note: on && !hasKey ? "COMPUTE_MODE is on and OPENROUTER_API_KEY is not set (nor ANTHROPIC_API_KEY with COMPUTE_DIRECT=on): compute credit is written down as it is drawn, and no model is served until a key is there." : null,
   };
 }
 

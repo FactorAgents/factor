@@ -237,8 +237,12 @@ function ComputeCredit({ address, compute, explorer }: { address: string; comput
               <div className="code" data-key>{key.key}</div>
               <span className="label" style={{ marginTop: 14 }}>For OpenAI&apos;s library: every model</span>
               <div className="code">{base}/v1</div>
-              <span className="label" style={{ marginTop: 14 }}>For Anthropic&apos;s library: Claude</span>
-              <div className="code">{base}</div>
+              {compute.models.length ? (
+                <>
+                  <span className="label" style={{ marginTop: 14 }}>For Anthropic&apos;s library: Claude</span>
+                  <div className="code">{base}</div>
+                </>
+              ) : null}
               <div className="cta">
                 <button type="button" className="btn line" onClick={copy}>{copied ? "Copied" : "Copy the key"}</button>
                 <Link className="more quiet" href="/docs#compute">How an agent uses it →</Link>

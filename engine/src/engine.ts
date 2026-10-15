@@ -266,7 +266,7 @@ export class Engine {
     this.accounts = new Accounts(c.accounts, this.ctx.db, this.chain, c.desk, () => this.ctx?.mode === "live" && !!this.ctx.signer && this.state === "running", () => this.kick("act"), this.log);
     const accountSigned = (address: string, message: string, signature: unknown) => this.accounts!.signed(address, message, signature);
     this.profiles = new Profiles(this.ctx.db, this.now, accountSigned);
-    this.gateway = new Gateway(c.compute, new ComputeStore(this.ctx.db), this.ctx.db, c.compute.enabled ? { anthropic: takeModelKey(this.env), router: takeRouterKey(this.env) } : { anthropic: null, router: null }, this.log, accountSigned);
+    this.gateway = new Gateway(c.compute, new ComputeStore(this.ctx.db), this.ctx.db, c.compute.enabled ? { anthropic: c.compute.direct ? takeModelKey(this.env) : null, router: takeRouterKey(this.env) } : { anthropic: null, router: null }, this.log, accountSigned);
     // Factor's own agents: put up only while there is a gas wallet to send what they sign
     this.house = new House(c.house, {
       db: this.ctx.db, chain: this.chain, desk: c.desk, accounts: this.accounts, profiles: this.profiles,
@@ -289,7 +289,7 @@ export class Engine {
     else if (c.house.note) this.log(`[house] NOT ON: ${c.house.note}`);
     if (c.accounts.enabled) this.log(`[accounts] on: made by ${c.accounts.factory}; the gas wallet pays up to ${Number(c.accounts.gasDayWei / 10n ** 12n) / 1e6} ETH a day for them`);
     else if (c.accounts.note) this.log(`[accounts] NOT ON: ${c.accounts.note}`);
-    if (c.compute.enabled) this.log(`[compute] on: ${[takeModelKey(this.env) ? Object.keys(c.compute.models).join(", ") : "", c.compute.router.enabled ? "OpenRouter's models" : ""].filter(Boolean).join(" and ")}, at the price plus ${c.compute.markupBps / 100}%`);
+    if (c.compute.enabled) this.log(`[compute] on: ${[c.compute.direct ? Object.keys(c.compute.models).join(", ") : "", c.compute.router.enabled ? "OpenRouter's models" : ""].filter(Boolean).join(" and ")}, at the price plus ${c.compute.markupBps / 100}%`);
     else if (c.compute.note) this.log(`[compute] NOT ON: ${c.compute.note}`);
     this.log(`[engine] desk ${c.desk}, splitter ${c.splitter}, burn pot ${c.burnPot}, from block ${c.deployBlock}; ${c.rpcUrls.length} node(s): ${c.rpcUrls.map((u) => hostsOnly(u)).join(", ")}`);
     this.booting = this.boot();
