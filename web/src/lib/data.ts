@@ -26,7 +26,7 @@ const empty = (source: FactorState["source"], reached: boolean): FactorState => 
   source, reached, asOf: new Date().toISOString(), launched: false, links: { pons: null, github: null, x: null },
   stats: { advancedEth: 0, settledJobs: 0, jobs: 0, poolEth: 0, reserveEth: 0, outEth: 0, heldEth: 0, burnedTokens: 0, supplyLeft: 1_000_000_000, agents: 0, lostEth: 0 },
   params: RULES, agents: [], jobs: [], events: [], burns: [], contracts: { desk: null, splitter: null, burnPot: null, token: null, explorer: "https://robinhoodchain.blockscout.com" },
-  compute: { enabled: false, markupPct: 0, maxTokens: 0, models: [], router: { enabled: false, models: 0 } },
+  compute: { enabled: false, markupPct: 0, maxTokens: 0, models: [], router: { enabled: false, models: 0 }, limits: { callUsd: 0, agentDayUsd: 0 } },
   accounts: { enabled: false, factory: null, ordersPerDay: 0 },
   paused: null,
 });

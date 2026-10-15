@@ -60,8 +60,15 @@ export interface ComputeConfig {
   inFlight: number; // requests one agent may have under way at once
   inFlightAll: number; // COMPUTE_IN_FLIGHT_ALL: and all agents together
   dailyMicro: number; // COMPUTE_DAILY_USD: the most the gateway spends with the model maker in a day (UTC), as millionths
-  /** The second door: OpenRouter, on with OPENROUTER_API_KEY. Its models and prices are read from its own list. */
-  router: { enabled: boolean; url: string; refreshMs: number };
+  callMicro: number; // COMPUTE_CALL_USD: the most one call may cost at its worst, so no single call empties a lot
+  agentDayMicro: number; // COMPUTE_AGENT_DAILY_USD: the most one agent may spend in a day (UTC), whatever its credit
+  /**
+   * The second door: OpenRouter, on with OPENROUTER_API_KEY. Its models and prices are read from its own list; a
+   * model dearer than the caps is left out (COMPUTE_MAX_IN_USD, COMPUTE_MAX_OUT_USD, per million tokens). Factor's
+   * own balance there is looked at every few minutes (COMPUTE_FLOAT_CHECK_S), and below COMPUTE_FLOAT_FLOOR_USD no
+   * call is sent: the owner tops it up.
+   */
+  router: { enabled: boolean; url: string; refreshMs: number; maxInPerM: number; maxOutPerM: number; floorMicro: number; floatCheckMs: number };
   /** why it is off, when the owner meant it to be on */
   note: string | null;
 }
@@ -113,7 +120,13 @@ export function readCompute(env: Env, problems: string[] = []): ComputeConfig {
     inFlight: int("COMPUTE_IN_FLIGHT", 4, 1, 64),
     inFlightAll: int("COMPUTE_IN_FLIGHT_ALL", 32, 1, 1024),
     dailyMicro: int("COMPUTE_DAILY_USD", 100, 1, 1_000_000) * 1_000_000,
-    router: { enabled: on && hasRouterKey, url: routerUrl, refreshMs: 6 * 3600_000 },
+    callMicro: int("COMPUTE_CALL_USD", 2, 1, 1000) * 1_000_000,
+    agentDayMicro: int("COMPUTE_AGENT_DAILY_USD", 10, 1, 100_000) * 1_000_000,
+    router: {
+      enabled: on && hasRouterKey, url: routerUrl, refreshMs: 6 * 3600_000,
+      maxInPerM: int("COMPUTE_MAX_IN_USD", 20, 1, 10_000), maxOutPerM: int("COMPUTE_MAX_OUT_USD", 80, 1, 10_000),
+      floorMicro: int("COMPUTE_FLOAT_FLOOR_USD", 2, 0, 100_000) * 1_000_000, floatCheckMs: int("COMPUTE_FLOAT_CHECK_S", 300, 0, 86_400) * 1000,
+    },
     note: on && !hasKey ? "COMPUTE_MODE is on and neither OPENROUTER_API_KEY nor ANTHROPIC_API_KEY is set: compute credit is written down as it is drawn, and no model is served until a key is there." : null,
   };
 }
@@ -145,7 +158,7 @@ export interface RouterModel { id: string; name: string; context: number; price:
  * free ones (they come with their own limits and terms), the router that picks a model for you (no price of its own),
  * and anything that makes pictures or sound.
  */
-export function readRouterModels(body: unknown): Map<string, RouterModel> {
+export function readRouterModels(body: unknown, caps: { maxInPerM: number; maxOutPerM: number } = { maxInPerM: Infinity, maxOutPerM: Infinity }): Map<string, RouterModel> {
   const out = new Map<string, RouterModel>();
   const data = (body as { data?: unknown } | null)?.data;
   if (!Array.isArray(data)) return out;
@@ -163,6 +176,8 @@ export function readRouterModels(body: unknown): Map<string, RouterModel> {
     };
     const price = { prompt: per(p.prompt, 1e6), completion: per(p.completion, 1e6), reasoning: per(p.internal_reasoning, 1e6), cacheRead: per(p.input_cache_read, 1e6), cacheWrite: per(p.input_cache_write, 1e6), request: per(p.request, 1), image: per(p.image, 1) };
     if (Object.values(price).some((v) => v === null) || price.prompt! + price.completion! <= 0) continue;
+    // dearer than the owner allows: one call could cost more than credit is meant for
+    if (Math.max(price.prompt!, price.cacheWrite!) > caps.maxInPerM || Math.max(price.completion!, price.reasoning!) > caps.maxOutPerM) continue;
     out.set(id, { id, name: typeof m.name === "string" ? m.name.slice(0, 120) : id, context: Number(m.context_length) > 0 ? Math.floor(Number(m.context_length)) : 0, price: price as RouterPrice });
   }
   return out;
@@ -184,7 +199,7 @@ export class RouterCatalog {
   private readAt = 0;
   private loading: Promise<void> | null = null;
 
-  constructor(private url: string, private refreshMs: number, private log: (line: string) => void, private now: () => number = Date.now) {}
+  constructor(private url: string, private refreshMs: number, private log: (line: string) => void, private caps?: { maxInPerM: number; maxOutPerM: number }, private now: () => number = Date.now) {}
 
   /** The models, waiting for the list only while there is none yet. */
   async get(): Promise<Map<string, RouterModel>> {
@@ -200,7 +215,7 @@ export class RouterCatalog {
     try {
       const r = await fetch(`${this.url}/models`, { signal: AbortSignal.timeout(20_000) });
       if (!r.ok) throw new Error(`it answered ${r.status}`);
-      const models = readRouterModels(await r.json());
+      const models = readRouterModels(await r.json(), this.caps);
       if (models.size === 0) throw new Error("it listed no model this gateway can price");
       this.models = models;
       this.readAt = this.now();
@@ -211,6 +226,64 @@ export class RouterCatalog {
       this.log(`[compute] OpenRouter's list could not be read: ${(e as Error).message?.split("\n")[0]}`);
     } finally {
       this.loading = null;
+    }
+  }
+}
+
+/**
+ * Factor's own balance at OpenRouter: what pays for the calls until the owner turns the ETH of the credit into more of
+ * it. Looked at every few minutes. Unknown (OpenRouter did not say) never stops a call: a known low balance does.
+ */
+export class RouterFloat {
+  private micro: number | null = null;
+  private readAt = 0;
+  private loading: Promise<void> | null = null;
+  private warned = false;
+  private stale = false;
+
+  constructor(private url: string, private key: string, private floorMicro: number, private checkMs: number, private log: (line: string) => void, private now: () => number = Date.now) {}
+
+  /** Whether calls may go out: the balance is not known to be under the floor. */
+  async ok(): Promise<boolean> {
+    // while it is low, looked at every minute, so a top-up is seen soon
+    const every = this.warned ? Math.min(this.checkMs, 60_000) : this.checkMs;
+    if (this.now() - this.readAt >= every && !this.loading) this.loading = this.load();
+    if (this.loading && (this.micro === null || this.stale || this.checkMs === 0)) await this.loading;
+    return this.micro === null || this.micro >= this.floorMicro;
+  }
+
+  /** What is left there, in dollars, as last seen; null when not known. */
+  usd(): number | null { return this.micro === null ? null : this.micro / 1e6; }
+
+  /** OpenRouter said the account is empty: it counts as nothing left until it is read again. */
+  forget(): void {
+    this.micro = 0;
+    this.readAt = 0;
+    this.stale = true;
+  }
+
+  private async load(): Promise<void> {
+    try {
+      const r = await fetch(`${this.url}/key`, { headers: { authorization: `Bearer ${this.key}` }, signal: AbortSignal.timeout(10_000) });
+      const d = ((await r.json()) as { data?: { limit_remaining?: unknown; limit?: unknown; usage?: unknown } }).data;
+      let left = typeof d?.limit_remaining === "number" ? d.limit_remaining : null;
+      if (left === null) {
+        // no limit set on the key: the account's own credits say it
+        const c = await fetch(`${this.url}/credits`, { headers: { authorization: `Bearer ${this.key}` }, signal: AbortSignal.timeout(10_000) });
+        const cd = ((await c.json()) as { data?: { total_credits?: unknown; total_usage?: unknown } }).data;
+        if (typeof cd?.total_credits === "number" && typeof cd?.total_usage === "number") left = cd.total_credits - cd.total_usage;
+      }
+      this.micro = left === null ? null : Math.floor(left * 1e6);
+      const low = this.micro !== null && this.micro < this.floorMicro;
+      if (low && !this.warned) this.log(`[compute] Factor's balance at OpenRouter is $${(this.micro! / 1e6).toFixed(2)}, under the floor of $${(this.floorMicro / 1e6).toFixed(2)}: no call is sent until it is topped up`);
+      if (!low && this.warned) this.log("[compute] Factor's balance at OpenRouter is above the floor again");
+      this.warned = low;
+    } catch (e) {
+      this.log(`[compute] Factor's balance at OpenRouter could not be read: ${(e as Error).message?.split("\n")[0]}`);
+    } finally {
+      this.readAt = this.now();
+      this.loading = null;
+      this.stale = false;
     }
   }
 }
@@ -308,6 +381,12 @@ export class ComputeStore {
     this.db.tx(() => { for (const l of lots) this.db.q("UPDATE compute_lots SET back_tx = ? WHERE tx_hash = ? AND log_index = ?").run(tx, l.tx_hash, l.log_index); });
   }
 
+  /** What one agent's calls since midnight UTC cost together, in millionths of a dollar. */
+  agentSpentToday(agent: string): number {
+    const now = this.db.now();
+    return (this.db.q("SELECT COALESCE(SUM(cost_micro), 0) AS n FROM compute_usage WHERE agent = ? AND at >= ?").get(agent, now - (now % 86_400_000)) as { n: number }).n;
+  }
+
   /** What every call since midnight UTC cost together, in millionths of a dollar. */
   spentToday(): number {
     const now = this.db.now();
@@ -378,6 +457,7 @@ export class Gateway {
   private underWay = 0; // calls of all agents together, and the worst they could cost
   private underWayMicro = 0;
   readonly catalog: RouterCatalog | null;
+  readonly float: RouterFloat | null;
 
   constructor(
     readonly cfg: ComputeConfig,
@@ -388,7 +468,8 @@ export class Gateway {
     // asks an account whether one of its keys signed a text (see ./accounts.ts); without it only wallets sign
     private accountSigned: ((address: string, message: string, signature: unknown) => Promise<boolean>) | null = null,
   ) {
-    this.catalog = cfg.enabled && cfg.router.enabled && keys.router ? new RouterCatalog(cfg.router.url, cfg.router.refreshMs, log) : null;
+    this.catalog = cfg.enabled && cfg.router.enabled && keys.router ? new RouterCatalog(cfg.router.url, cfg.router.refreshMs, log, cfg.router) : null;
+    this.float = this.catalog && keys.router ? new RouterFloat(cfg.router.url, keys.router, cfg.router.floorMicro, cfg.router.floatCheckMs, log) : null;
     // read the list now, so the first call does not wait for it
     if (this.catalog) void this.catalog.get();
   }
@@ -396,12 +477,13 @@ export class Gateway {
   private up = (n: number) => Math.round(n * (10_000 + this.cfg.markupBps)) / 10_000;
 
   /** What anybody may know: whether it is on, the models and what they cost here. */
-  about(): { enabled: boolean; markupPct: number; maxTokens: number; models: { id: string; inUsd: number; outUsd: number }[]; router: { enabled: boolean; models: number } } {
+  about(): { enabled: boolean; markupPct: number; maxTokens: number; models: { id: string; inUsd: number; outUsd: number }[]; router: { enabled: boolean; models: number }; limits: { callUsd: number; agentDayUsd: number } } {
     const on = this.cfg.enabled && !stopped(this.db, "compute");
     return {
       enabled: on, markupPct: this.cfg.markupBps / 100, maxTokens: this.cfg.maxTokens,
       models: this.keys.anthropic ? Object.entries(this.cfg.models).map(([id, p]) => ({ id, inUsd: this.up(p.in), outUsd: this.up(p.out) })) : [],
       router: { enabled: on && !!this.catalog, models: this.catalog?.size() ?? 0 },
+      limits: { callUsd: this.cfg.callMicro / 1e6, agentDayUsd: this.cfg.agentDayMicro / 1e6 },
     };
   }
 
@@ -499,10 +581,13 @@ export class Gateway {
   private hold(agent: string, worst: number): Fail | null {
     const cfg = this.cfg;
     const held = this.reserved.get(agent) ?? { micro: 0, calls: 0 };
+    if (worst > cfg.callMicro) return fail(400, "invalid_request_error", `This request could cost up to ${usd(worst)}, and one call may cost ${usd(cfg.callMicro)} at most here. Lower max_tokens or send less.`);
     if (held.calls >= cfg.inFlight) return fail(429, "rate_limit_error", `An agent may have ${cfg.inFlight} requests under way at once.`);
     if (this.underWay >= cfg.inFlightAll) return fail(429, "rate_limit_error", "The gateway is busy. Try again in a moment.");
     // the owner's own ceiling on a day, whatever the credit outstanding: the calls under way count at their worst
     if (this.store.spentToday() + this.underWayMicro + worst > cfg.dailyMicro) return fail(429, "rate_limit_error", "The gateway has reached what it spends in a day. The credit is kept: try again after midnight UTC.");
+    // one agent's own ceiling on a day: its calls under way count at their worst
+    if (this.store.agentSpentToday(agent) + held.micro + worst > cfg.agentDayMicro) return fail(429, "rate_limit_error", `An agent may spend ${usd(cfg.agentDayMicro)} a day here. The credit is kept: try again after midnight UTC.`);
     const free = this.store.balance(agent) - held.micro;
     if (free <= 0) return fail(402, "billing_error", "This agent has no compute credit. Draw an advance as compute on a job it was hired for.");
     if (worst > free) return fail(402, "billing_error", `This request could cost up to ${usd(worst)} and the agent's compute credit is ${usd(free)}. Lower max_tokens, send less, or draw more as compute.`);
@@ -597,6 +682,7 @@ export class Gateway {
     for (const k of Object.keys(body)) if (!ALLOWED_CHAT.has(k)) return fail(400, "invalid_request_error", `"${k}" is not something Factor's compute gateway passes on. It takes: ${[...ALLOWED_CHAT].join(", ")}.`);
     const models = await this.catalog.get();
     if (models.size === 0) return fail(503, "api_error", "The list of models could not be read just now. Nothing was taken: try again in a minute.");
+    if (this.float && !(await this.float.ok())) return fail(503, "api_error", "The gateway cannot reach the models just now. Nothing was taken from the credit: try again later.");
     const model = String(body.model ?? "");
     const m = models.get(model);
     if (!m) return fail(400, "invalid_request_error", `"${model}" is not a model compute credit can be spent on. The models and their prices are at /v1/compute/v1/models; they are named like anthropic/claude-sonnet-4.5 or openai/gpt-5.`);
@@ -647,6 +733,7 @@ export class Gateway {
         await upstream.body?.cancel();
         this.release(agent, worst);
         this.log("[compute] OpenRouter says Factor's account has run out of credit: top it up");
+      this.float?.forget();
         return fail(503, "api_error", "The gateway cannot reach the models just now. Nothing was taken from the credit: try again later.");
       }
       res.writeHead(status, { "content-type": upstream.headers.get("content-type") ?? "application/json", "cache-control": "no-store", "x-content-type-options": "nosniff" });
