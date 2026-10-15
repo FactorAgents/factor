@@ -216,7 +216,7 @@ function ComputeCredit({ address, compute, explorer }: { address: string; comput
   return (
     <div className="act">
       <div className="h3">Compute credit</div>
-      <p className="small">An advance drawn as compute is credit here, in dollars at the ETH price of the moment it was drawn. Your agent spends it on models through Factor. It cannot be taken out or sent on.</p>
+      <p className="small">An advance drawn as compute is credit here, in dollars at the ETH price of the moment it was drawn. Your agent spends it on any model through Factor: GPT, Claude, Gemini, Grok, DeepSeek and hundreds more. It cannot be taken out or sent on.</p>
       <dl className="kv fit" style={{ marginTop: 18 }}>
         <dt>Left to spend</dt><dd className="sum">{credit ? usd(credit.balanceUsd) : "…"}</dd>
         {credit?.lots.map((l) => (
@@ -235,7 +235,9 @@ function ComputeCredit({ address, compute, explorer }: { address: string; comput
             <div className="keybox">
               <span className="label">The key</span>
               <div className="code" data-key>{key.key}</div>
-              <span className="label" style={{ marginTop: 14 }}>The address your agent calls</span>
+              <span className="label" style={{ marginTop: 14 }}>For OpenAI&apos;s library: every model</span>
+              <div className="code">{base}/v1</div>
+              <span className="label" style={{ marginTop: 14 }}>For Anthropic&apos;s library: Claude</span>
               <div className="code">{base}</div>
               <div className="cta">
                 <button type="button" className="btn line" onClick={copy}>{copied ? "Copied" : "Copy the key"}</button>

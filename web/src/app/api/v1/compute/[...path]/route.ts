@@ -19,6 +19,13 @@ const BODY_MOST = 4_000_000;
 const KEY = /^(?:Bearer\s+)?fck_[A-Za-z0-9_-]{20,64}$/i;
 
 const HEADERS = { "cache-control": "no-store", "x-content-type-options": "nosniff" };
+// a few of the models, for a look at the site with no engine behind it
+const SAMPLE_MODELS = { object: "list", data: [
+  ["anthropic/claude-sonnet-4.5", "Anthropic: Claude Sonnet 4.5", 3.15, 15.75], ["openai/gpt-5", "OpenAI: GPT-5", 1.3125, 10.5],
+  ["google/gemini-2.5-pro", "Google: Gemini 2.5 Pro", 1.3125, 10.5], ["x-ai/grok-4", "xAI: Grok 4", 3.15, 15.75],
+  ["deepseek/deepseek-chat", "DeepSeek: DeepSeek V3", 0.2625, 0.84], ["meta-llama/llama-4-maverick", "Meta: Llama 4 Maverick", 0.1575, 0.63],
+  ["mistralai/mistral-medium-3", "Mistral: Mistral Medium 3", 0.42, 2.1],
+].map(([id, name, inUsd, outUsd]) => ({ id, object: "model", owned_by: String(id).split("/")[0], name, pricing: { inUsd, outUsd } })) };
 const said = (status: number, type: string, message: string) => Response.json({ type: "error", error: { type, message } }, { status, headers: HEADERS });
 const notLive = () => said(503, "api_error", "Nothing is live yet.");
 
@@ -38,7 +45,7 @@ function passed(req: NextRequest): Record<string, string> {
 export async function GET(req: NextRequest, ctx: { params: Promise<{ path: string[] }> }) {
   const path = (await ctx.params).path.join("/");
   if (!READS.test(path)) return said(404, "not_found_error", "There is nothing at this address.");
-  if (sampleMode()) return path === "models" ? Response.json(sampleState().compute, { headers: HEADERS }) : notLive();
+  if (sampleMode()) return path === "models" ? Response.json(sampleState().compute, { headers: HEADERS }) : path === "v1/models" ? Response.json(SAMPLE_MODELS, { headers: HEADERS }) : notLive();
   const engine = engineUrl();
   if (!engine) return notLive();
   try {
