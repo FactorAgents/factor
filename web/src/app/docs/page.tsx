@@ -130,7 +130,7 @@ export default async function Docs() {
         <Reveal delay={120}><div className="sec-body cols two">
           <div className="prose" style={{ paddingTop: 0 }}>
             <Code lines={COMPUTE} />
-            <p>The same requests and answers as OpenAI&apos;s API, which every maker&apos;s model speaks here, and as Anthropic&apos;s for Claude. Streaming included. Tools your agent runs itself work. Tools a model maker runs, like web search, do not, because they are not billed by the token.</p>
+            <p>The same requests and answers as OpenAI&apos;s API, which every maker&apos;s model speaks here{s.compute.models.length ? <>, and as Anthropic&apos;s for Claude</> : null}. Streaming included. Tools your agent runs itself work. Tools a model maker runs, like web search, do not, because they are not billed by the token.</p>
             <ModelList />
           </div>
           <div className="prose" style={{ paddingTop: 0 }}>

@@ -19,7 +19,7 @@ const OTHER = otherKey.address.toLowerCase();
 const CUSTOMER = wallet(0xc1);
 const MODEL_KEY = "sk-ant-test-0000-the-owners-key-with-the-model-maker";
 const SONNET = "claude-sonnet-5-5";
-const ON = { COMPUTE_MODE: "on", ANTHROPIC_API_KEY: MODEL_KEY };
+const ON = { COMPUTE_MODE: "on", COMPUTE_DIRECT: "on", ANTHROPIC_API_KEY: MODEL_KEY };
 
 // ---- the stand-in for the model maker ----
 
@@ -123,7 +123,7 @@ describe("the settings", () => {
     expect(readCompute({ ANTHROPIC_API_KEY: MODEL_KEY })).toMatchObject({ enabled: false, note: null });
     const half = readCompute({ COMPUTE_MODE: "on" });
     expect(half.enabled).toBe(false);
-    expect(half.note).toContain("neither OPENROUTER_API_KEY nor ANTHROPIC_API_KEY is set");
+    expect(half.note).toContain("OPENROUTER_API_KEY is not set");
     expect(readCompute(ON)).toMatchObject({ enabled: true, note: null, models: DEFAULT_MODELS });
   });
 
@@ -608,7 +608,7 @@ describe("switched off", () => {
     const key = await newKey(w);
     expect((await call(w, key)).status).toBe(503);
     expect(w.lines.join("\n")).toContain("[compute] NOT ON");
-    expect(((await w.engine.handle("/v1/health"))!.body as { compute: { note: string } }).compute.note).toContain("neither OPENROUTER_API_KEY nor ANTHROPIC_API_KEY is set");
+    expect(((await w.engine.handle("/v1/health"))!.body as { compute: { note: string } }).compute.note).toContain("OPENROUTER_API_KEY is not set");
   });
 });
 
@@ -954,5 +954,18 @@ describe("the limits on the second door", () => {
     expect((await chat(w, key)).status).toBe(503);
     expect(w.router.balanceReads).toBe(reads + 1);
     expect(w.router.seen).toHaveLength(2);
+  });
+});
+
+describe("Claude straight from Anthropic", () => {
+  it("stays shut unless the owner opens it, though the key is there: the second door serves Claude all the same", async () => {
+    expect(readCompute({ COMPUTE_MODE: "on", ANTHROPIC_API_KEY: MODEL_KEY })).toMatchObject({ enabled: false, direct: false });
+    expect(readCompute({ COMPUTE_MODE: "on", ANTHROPIC_API_KEY: MODEL_KEY, OPENROUTER_API_KEY: ROUTER_KEY })).toMatchObject({ enabled: true, direct: false });
+    const w = await routerWorld({ more: { COMPUTE_DIRECT: "" } });
+    const key = await newKey(w);
+    expect((await refusal(await call(w, key))).status).toBe(503);
+    expect(w.up.seen).toHaveLength(0);
+    expect(((await w.engine.handle("/v1/state"))!.body as { compute: { models: unknown[] } }).compute.models).toEqual([]);
+    expect((await chat(w, key, { model: "anthropic/claude-sonnet-4.5" })).status).toBe(200);
   });
 });
