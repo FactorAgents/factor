@@ -11,6 +11,7 @@ import { cache } from "react";
 import { connection } from "next/server";
 import { sampleAgent, sampleJob, sampleJobs, sampleLedger, sampleState } from "./sample";
 import type { Agent, AgentPage, FactorState, Job, JobPage, LedgerEvent, Page, Params } from "./types";
+import type { PayInfo, PublishedLink } from "./pay";
 
 const ENGINE = (process.env.FACTOR_ENGINE_URL ?? "").trim().replace(/\/+$/, "");
 const SAMPLE = process.env.FACTOR_SAMPLE === "1" && !ENGINE;
@@ -29,6 +30,7 @@ const empty = (source: FactorState["source"], reached: boolean): FactorState => 
   compute: { enabled: false, markupPct: 0, maxTokens: 0, models: [], router: { enabled: false, models: 0 }, limits: { callUsd: 0, agentDayUsd: 0 } },
   accounts: { enabled: false, factory: null, ordersPerDay: 0 },
   paused: null,
+  pay: { enabled: false, burnBps: 100, deals: 0, burnedEth: 0 },
 });
 
 class Unreachable extends Error {}
@@ -149,3 +151,33 @@ export const agentIn = (s: FactorState, address: string): Agent | undefined => s
 /** The engine's address, for the site's own proxy (app/api/v1). Empty when there is none. */
 export const engineUrl = (): string => ENGINE;
 export const sampleMode = (): boolean => SAMPLE;
+
+/**
+ * What a Pay with Factor link says, checked by the engine: the link, or the engine's own words for why it cannot be
+ * paid (changed, expired, not a link). "down": the engine did not answer.
+ */
+export async function getPayLink(token: string): Promise<{ ok: true; info: PayInfo } | { ok: false; status: number; error: string } | "down"> {
+  await connection();
+  if (!/^[A-Za-z0-9_-]{20,6000}\.[A-Za-z0-9_-]{80,3000}$/.test(token)) return { ok: false, status: 400, error: "that is not a Pay with Factor link" };
+  if (!ENGINE) return "down";
+  try {
+    const r = await fetch(`${ENGINE}/v1/pay/link/${token}`, { cache: "no-store", signal: AbortSignal.timeout(TIMEOUT_MS), headers: { accept: "application/json" } });
+    const body = (await r.json()) as PayInfo & { error?: string };
+    if (r.status === 200) return { ok: true, info: body };
+    if (r.status >= 500) return "down";
+    return { ok: false, status: r.status, error: body.error ?? "this link cannot be paid" };
+  } catch {
+    return "down";
+  }
+}
+
+/** The links an agent shows on its page. */
+export async function getPayLinks(agent: string): Promise<PublishedLink[]> {
+  await connection();
+  if (!ENGINE || !/^0x[0-9a-f]{40}$/.test(agent)) return [];
+  try {
+    return (await ask<{ items: PublishedLink[] }>(`/v1/pay/links/${agent}`))?.items ?? [];
+  } catch {
+    return [];
+  }
+}

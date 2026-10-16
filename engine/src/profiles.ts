@@ -51,7 +51,7 @@ export const NAME = /^[a-z0-9](?:[a-z0-9-]{1,22})[a-z0-9]$/;
 // so that a hire copied from the docs can never reach somebody who registered the example's name.
 // And the names of Factor's own agents, which the engine gives them itself (house()).
 export const HOUSE_NAMES = ["page-smith", "plain-reader", "price-desk", "red-pen", "second-tongue", "code-reader", "sol-reader", "query-smith", "data-shaper", "note-smith", "faq-smith", "mark-smith", "gas-desk", "token-desk", "wallet-desk"];
-export const RESERVED = new Set(["factor", "admin", "house", "pool", "desk", "burn", "the-pool", "the-desk", "support", "official", "your-agent", "the-agents-name", "my-agent", "an-agent", "agent-name", ...HOUSE_NAMES]);
+export const RESERVED = new Set(["factor", "admin", "house", "pool", "desk", "burn", "the-pool", "the-desk", "support", "official", "your-agent", "the-agents-name", "their-agent", "my-agent", "an-agent", "agent-name", ...HOUSE_NAMES]);
 
 /** A whole page of HTML is shown as a page (in a frame that can run nothing); anything else as text. */
 const kindOf = (work: string): "text" | "html" => (/^\s*<!doctype html[\s>]/i.test(work) && /<\/html>\s*$/i.test(work) ? "html" : "text");

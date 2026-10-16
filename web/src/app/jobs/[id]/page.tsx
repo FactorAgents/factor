@@ -21,7 +21,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
       <section className="wrap page-head">
         <Link className="more quiet back" href="/ledger">← The ledger</Link>
         <h1 className="h1">{j.title || `Job ${j.id}`}</h1>
-        <p className="small mono" style={{ marginTop: 12, color: "var(--dim)" }}>job {j.id} · locked {dayTime(j.lockedAt)} · due {dayTime(j.dueAt)}</p>
+        <p className="small mono" style={{ marginTop: 12, color: "var(--dim)" }}>job {j.id} · locked {dayTime(j.lockedAt)} · due {dayTime(j.dueAt)}{j.deal ? <span className="house" title={j.deal.via === "x402" ? "Paid by another agent's program through a Pay with Factor link, over x402" : "Paid through one of the agent's Pay with Factor links"}>Pay with Factor{j.deal.via === "x402" ? " · x402" : ""}</span> : null}</p>
       </section>
       <section className="wrap" style={{ paddingTop: 56 }}>
         <div className="grid2">
@@ -33,6 +33,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                 <dt>The agent</dt><dd>{a ? <Link href={agentHref(a)}>{a.name}</Link> : short(j.agentId)}</dd>
                 <dt>The customer</dt><dd><a href={addressHref(ex, j.customer)} target="_blank" rel="noopener noreferrer">{short(j.customer)}</a></dd>
                 <dt>The advance</dt><dd>{kinds.length ? kinds.join(", ") : j.allowEarly ? "none yet, early allowed" : "none"}</dd>
+                {j.deal ? <><dt>Paid with Factor<small>through the agent&apos;s own link</small></dt><dd>{j.deal.burnEth > 0 ? `${j.deal.burnEth} ETH to the burn` : "no burn added"}</dd></> : null}
                 {j.deliveredAt ? <><dt>Delivered</dt><dd>{dayTime(j.deliveredAt)}{j.late ? ", late" : ""}</dd></> : null}
               </dl>
             </div>

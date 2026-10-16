@@ -206,6 +206,14 @@ export function orderHash(account: string, calls: { to: string; value: bigint; d
 export function passkeyProvider(session: Session): Provider {
   const me = session.address;
   const refusedCall = async (to: string, data: string, from?: string, value?: string): Promise<string> => (await ask<{ result: string }>("accounts/call", { to, data, ...(from ? { from } : {}), ...(value ? { value } : {}) })).result;
+  // one order of the account: checked, signed by the passkey, handed to the site. Its number stands for it until it is mined
+  const order = async (calls: { to: string; value: bigint; data: Hex }[]): Promise<string> => {
+    const wire = calls.map((c) => ({ to: c.to, value: c.value.toString(), data: c.data }));
+    // would it go through? Asked before the device asks for a fingerprint
+    const checked = await ask<{ nonce: number; deadline: number }>("accounts/check", { account: me, calls: wire });
+    const signature = await sign(session, orderHash(me, calls, checked.nonce, checked.deadline));
+    return (await ask<{ id: string }>("accounts/relay", { account: me, calls: wire, deadline: checked.deadline, signature })).id;
+  };
   return {
     async request({ method, params = [] }) {
       const first = (params[0] ?? {}) as { from?: string; to?: string; data?: string; value?: string };
@@ -219,12 +227,14 @@ export function passkeyProvider(session: Session): Provider {
         case "eth_call": return refusedCall(String(first.to), first.data ?? "0x", first.from, first.value ? BigInt(first.value).toString() : undefined);
         case "eth_sendTransaction": {
           if ((first.from ?? "").toLowerCase() !== me) throw new Refusal("That is not this account.");
-          const call = { to: String(first.to).toLowerCase(), value: first.value ? BigInt(first.value) : 0n, data: (first.data ?? "0x") as Hex };
-          const wire = [{ to: call.to, value: call.value.toString(), data: call.data }];
-          // would it go through? Asked before the device asks for a fingerprint
-          const checked = await ask<{ nonce: number; deadline: number }>("accounts/check", { account: me, calls: wire });
-          const signature = await sign(session, orderHash(me, [call], checked.nonce, checked.deadline));
-          return (await ask<{ id: string }>("accounts/relay", { account: me, calls: wire, deadline: checked.deadline, signature })).id;
+          return order([{ to: String(first.to).toLowerCase(), value: first.value ? BigInt(first.value) : 0n, data: (first.data ?? "0x") as Hex }]);
+        }
+        // Several calls in one order, all of them or none (Pay with Factor: the lock and the deal's burn together).
+        // Not a wallet's own request: only this account answers it, and the site asks it of nothing else.
+        case "factor_sendCalls": {
+          const list = params as { to: string; value?: string; data?: string }[];
+          if (!Array.isArray(list) || list.length < 1 || list.length > 4) throw new Refusal("An order holds one to four calls.");
+          return order(list.map((c) => ({ to: String(c.to).toLowerCase(), value: c.value ? BigInt(c.value) : 0n, data: (c.data ?? "0x") as Hex })));
         }
         case "eth_getTransactionReceipt": {
           const o = await orderOf(String(params[0]));

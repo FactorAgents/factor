@@ -9,8 +9,8 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 
-const PORT = 3611, BASE = `http://127.0.0.1:${PORT}`, BARE = `http://127.0.0.1:${PORT + 1}`;
-const PAGES = ["/", "/ledger", "/ledger?show=burned", "/agents", "/agents/lumen-07", "/jobs/0412", "/jobs/0406", "/jobs/0404", "/jobs/0403", "/hire", "/hire?agent=page-smith", "/work", "/protocol", "/token", "/burn", "/docs", "/log", "/security"];
+const PORT = Number(process.env.SMOKE_PORT) || 3611, BASE = `http://127.0.0.1:${PORT}`, BARE = `http://127.0.0.1:${PORT + 1}`;
+const PAGES = ["/", "/ledger", "/ledger?show=burned", "/agents", "/agents/lumen-07", "/jobs/0412", "/jobs/0406", "/jobs/0404", "/jobs/0403", "/hire", "/hire?agent=page-smith", "/work", "/protocol", "/token", "/burn", "/docs", "/log", "/security", "/pay"];
 const NAV = ["/ledger", "/agents", "/hire", "/work", "/protocol", "/token", "/burn", "/docs"];
 // Words the copy does not use: no long dash, no promise of gain. A list kept beside this file and out of the repo
 // (forbidden.local.json, pairs of pattern and flags) adds to them on the machine it is on.
@@ -314,6 +314,38 @@ test("the docs show compute credit: the model maker's library with the address c
   const bare = text((await get("/docs", BARE)).html);
   assert.match(bare, /Compute credit is not switched on yet/);
   assert.doesNotMatch(bare, /\$2\.10 in/);
+});
+
+test("Pay with Factor: the page signs agents up and gives a marketplace three steps, a link that is not one is refused politely, and the record, the badge and x402 are open to other sites", async () => {
+  const page = text((await get("/pay")).html);
+  assert.match(page, /Get paid for your agent's work, anywhere ?\./);
+  assert.match(page, /Add Pay with Factor to your marketplace in three steps ?\./);
+  assert.match(page, /signs it, so nobody can change it on the way/);
+  const bad = await get("/pay/not-a-link.at-all");
+  assert.equal(bad.status, 200);
+  assert.match(text(bad.html), /This link cannot be paid\./);
+  assert.match(text(bad.html), /Nothing was taken from anybody/);
+  for (const re of FORBIDDEN) assert.doesNotMatch(text(bad.html), re);
+  const pre = await fetch(`${BASE}/api/v1/record/lumen-07`, { method: "OPTIONS" });
+  assert.equal(pre.status, 204);
+  assert.equal(pre.headers.get("access-control-allow-origin"), "*");
+  const rec = await fetch(`${BARE}/api/v1/record/lumen-07`);
+  assert.equal(rec.status, 503);
+  assert.equal(rec.headers.get("access-control-allow-origin"), "*");
+  const badge = await fetch(`${BARE}/api/v1/badge/0x0000000000000000000000000000000000000001`);
+  assert.match(badge.headers.get("content-type") ?? "", /^image\/svg\+xml/);
+  assert.match(await badge.text(), /Paid with Factor/);
+  const x = await fetch(`${BARE}/api/v1/x402/nope`);
+  assert.equal(x.status, 404);
+  assert.equal(x.headers.get("access-control-allow-origin"), "*");
+  const button = await fetch(`${BASE}/pay/button.js`);
+  assert.equal(button.status, 200);
+  const js = await button.text();
+  assert.doesNotMatch(js, /fetch\(|XMLHttpRequest|sendBeacon|document\.cookie|localStorage/, "the button script calls nothing and keeps nothing");
+  const docs = text((await get("/docs")).html);
+  assert.match(docs, /createPayLink/);
+  assert.match(docs, /payX402/);
+  assert.match(docs, /factor-lock/);
 });
 
 test("an address that does not exist says so", async () => {

@@ -9,9 +9,10 @@ import { engineUrl, sampleMode } from "@/lib/data";
 import { sampleAgent, sampleJob, sampleJobs, sampleLedger, sampleState } from "@/lib/sample";
 import { answerBody, answerHeaders, sharedRead } from "@/lib/shared";
 
-const READS = /^(state|pulse|desk|agents|agents\/made\/0x[0-9a-fA-F]{40}|agents\/[0-9a-zA-Z-]{3,42}|jobs|jobs\/\d{1,9}|ledger|burns|accounts\/0x[0-9a-fA-F]{40}|accounts\/relay\/0x[0-9a-f]{64}|accounts\/by-credential\/0x[0-9a-f]{2,2046})$/;
-// two things a wallet signs, and what an account without a wallet asks of the engine (lib/passkey.ts)
-const WRITES = /^(match|agents\/profile|agents\/make|agents\/pause|jobs\/title|jobs\/brief|jobs\/delivery|accounts|accounts\/check|accounts\/call|accounts\/relay)$/;
+const READS = /^(state|pulse|desk|agents|agents\/made\/0x[0-9a-fA-F]{40}|agents\/[0-9a-zA-Z-]{3,42}|jobs|jobs\/\d{1,9}|ledger|burns|accounts\/0x[0-9a-fA-F]{40}|accounts\/relay\/0x[0-9a-f]{64}|accounts\/by-credential\/0x[0-9a-f]{2,2046}|pay\/link\/[A-Za-z0-9_-]{20,6000}\.[A-Za-z0-9_-]{80,3000}|pay\/links\/0x[0-9a-fA-F]{40})$/;
+// two things a wallet signs, what an account without a wallet asks of the engine (lib/passkey.ts), and a job paid
+// through a Pay with Factor link (lib/pay.ts)
+const WRITES = /^(match|agents\/profile|agents\/make|agents\/pause|jobs\/title|jobs\/brief|jobs\/delivery|accounts|accounts\/check|accounts\/call|accounts\/relay|pay\/deal|pay\/links)$/;
 const QUERY = ["limit", "before", "show", "agent", "customer"];
 const BODY_MOST = 4096;
 // an order of an account carries its calls and a passkey's answer
@@ -77,7 +78,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ path: stri
   if (!engine) return json({ error: "nothing is live yet" }, 503);
   const text = await req.text();
   // a brief is up to 12,000 characters and a piece of work up to 200,000
-  const most = path.startsWith("accounts") ? ORDER_MOST : path === "jobs/brief" || path === "agents/make" || path === "match" ? 64_000 : path === "jobs/delivery" ? 900_000 : BODY_MOST;
+  const most = path.startsWith("accounts") || path.startsWith("pay/") ? ORDER_MOST : path === "jobs/brief" || path === "agents/make" || path === "match" ? 64_000 : path === "jobs/delivery" ? 900_000 : BODY_MOST;
   if (text.length > most) return json({ error: "the body is too large" }, 413);
   // who is asking is passed on, so the engine's limit on signed writes counts visitors and not this site
   const from = callerOf(req);
