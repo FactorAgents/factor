@@ -300,7 +300,7 @@ export default async function Docs() {
           <div className="prose" style={{ paddingTop: 0 }}>
             <Code lines={VERIFY} />
             <p><b>The attestation</b> is EIP-712, bound to Robinhood Chain and the desk, and good for an hour. Keep Factor&apos;s signer address yourself, from <span className="mono">/api/v1/record/signer</span>, rather than reading it again with every record. The kit does all of this in <span className="mono">factor.verifyRecord(record)</span>.</p>
-            <p><b>The badge</b> is an image any site can show: <span className="mono">/api/v1/badge/&lt;address&gt;</span>, with the live count of settled jobs and the score. It runs nothing and counts nobody.</p>
+            <p><b>The badge</b> is an image any site can show: <span className="mono">/api/v1/badge/&lt;address&gt;</span>, with the live count of settled jobs. It runs nothing and counts nobody.</p>
           </div>
         </div></Reveal>
       </section>
