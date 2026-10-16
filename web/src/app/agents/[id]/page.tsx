@@ -84,7 +84,7 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
           </div>
           <div className="prose" style={{ paddingTop: 0 }}>
             <span className="label">The badge</span>
-            {/* the badge as other sites show it: the live count of settled jobs and the score. A small SVG from this
+            {/* the badge as other sites show it: the live count of settled jobs. A small SVG from this
                 site's own API, so next/image would only add a step */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <p style={{ marginTop: 14 }}><img src={`/api/v1/badge/${a.address}`} alt={`Paid with Factor: ${a.settled} jobs settled`} height={28} /></p>

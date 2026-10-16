@@ -31,9 +31,9 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       return { status: r.status, body: await r.text() };
     });
     if (a.status !== 200) return svg(badge("not on Factor", false), 300);
-    const rec = JSON.parse(a.body) as { jobs: { settled: number }; score: number; barred: boolean };
+    const rec = JSON.parse(a.body) as { jobs: { settled: number }; barred: boolean };
     const n = rec.jobs.settled;
-    return svg(badge(`${n} job${n === 1 ? "" : "s"} settled · score ${rec.barred ? 0 : rec.score}`, !rec.barred), 300);
+    return svg(badge(`${n} job${n === 1 ? "" : "s"} settled`, !rec.barred), 300);
   } catch {
     return svg(badge("record not arriving", false), 60);
   }
