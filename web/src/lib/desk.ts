@@ -168,3 +168,48 @@ export const briefMessage = (jobId: number, title: string, brief: string, at: nu
 export const hostedMessage = (owner: string, name: string, does: string, priceEth: string, payout: string, instructionsHash: string, at: number): string =>
   `Factor: make an agent\nowner: ${owner}\nname: ${name}\ndoes: ${does}\nprice: ${priceEth} ETH\npaid to: ${payout}\ninstructions: ${instructionsHash}\nat: ${at}`;
 export const computeKeyMessage = (address: string, at: number): string => `Factor compute key\naddress: ${address}\nat: ${at}`;
+
+/**
+ * A Pay with Factor deal: lock the price for the link's agent, and send the deal's share to the burn pot. An account
+ * without a wallet does both in one order, all of it or none; a wallet sends two transactions, the lock first, so a
+ * burn that is turned down or fails never leaves the buyer without their job. `burnTx` is null when it did not go.
+ */
+export async function lockAndBurn(p: Provider, o: { passkey: boolean; desk: string; from: string; agent: string; dueAt: number; early: boolean; price: bigint; burnPot: string; burn: bigint; on?: (step: "checking" | "wallet" | "mining") => void }): Promise<{ lockTx: string; burnTx: string | null; receipt: Receipt }> {
+  const lockData = encodeFunctionData({ abi: ABI, functionName: "lock", args: [o.agent, BigInt(o.dueAt), o.early] });
+  if (o.passkey && o.burn > 0n) {
+    o.on?.("checking");
+    try {
+      await ethCall(p, o.desk, lockData, o.from, o.price);
+    } catch (e) {
+      throw new Refusal(explain(e));
+    }
+    o.on?.("wallet");
+    const id = (await p.request({ method: "factor_sendCalls", params: [{ to: o.desk, value: o.price.toString(), data: lockData }, { to: o.burnPot, value: o.burn.toString(), data: "0x" }] })) as string;
+    o.on?.("mining");
+    const receipt = await waitFor(p, id);
+    if (receipt.status !== "0x1") throw new Refusal(receipt.reason ?? "The order was mined and refused. Nothing changed.");
+    return { lockTx: receipt.transactionHash, burnTx: receipt.transactionHash, receipt };
+  }
+  const { hash, receipt } = await send(p, o.desk, o.from, "lock", [o.agent, BigInt(o.dueAt), o.early], { value: o.price, on: o.on });
+  if (o.burn === 0n) return { lockTx: hash, burnTx: null, receipt };
+  try {
+    o.on?.("wallet");
+    const burnTx = await sendTx(p, { from: o.from, to: o.burnPot, data: "0x", value: o.burn });
+    o.on?.("mining");
+    const r = await waitFor(p, burnTx);
+    return { lockTx: hash, burnTx: r.status === "0x1" ? burnTx : null, receipt };
+  } catch {
+    return { lockTx: hash, burnTx: null, receipt };
+  }
+}
+
+/** Tell Factor of a deal, so the job shows as paid with Factor. Asked again while the engine has not seen the lock. */
+export async function claimDeal(body: { link: string; job: number; lockTx: string; burnTx: string | null }): Promise<{ burned: boolean; burnNote?: string }> {
+  for (let tries = 0; ; tries++) {
+    const r = await fetch("/api/v1/pay/deal", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    const b = (await r.json().catch(() => ({}))) as { burned?: boolean; burnNote?: string; error?: string };
+    if (r.ok) return { burned: b.burned === true, ...(b.burnNote ? { burnNote: b.burnNote } : {}) };
+    if (r.status === 404 && tries < 20) { await new Promise((res) => setTimeout(res, 1500)); continue; }
+    throw new Refusal(b.error ? b.error.charAt(0).toUpperCase() + b.error.slice(1) + "." : "Factor could not check the deal.");
+  }
+}

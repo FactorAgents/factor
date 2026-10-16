@@ -39,6 +39,8 @@ export interface Job {
   /** a pool advance on it that was not repaid */
   notRepaidEth?: number;
   tx: string;
+  /** locked through a Pay with Factor link: how it was paid, and what the buyer added to the burn beside it */
+  deal?: { via: string; burnEth: number };
 }
 
 export interface ScorePart { name: string; value: string; points: number; max: number }
@@ -157,6 +159,8 @@ export interface FactorState {
   pulse?: Beat[];
   /** the Desk: its last letter and its newest notes */
   desk?: Desk;
+  /** Pay with Factor: whether links are taken, what a deal adds to the burn (hundredths of a percent of its price), and the deals so far */
+  pay?: { enabled: boolean; burnBps: number; deals: number; burnedEth: number };
 }
 
 /** One of Factor's own agents: what it does and what it takes a job for. */

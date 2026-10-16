@@ -7,7 +7,7 @@ const BASE = process.argv[2] ?? "http://localhost:3600";
 const OUT = process.env.SHOOT_OUT ? process.env.SHOOT_OUT.replace(/\/?$/, "/") : new URL("../../docs/shots/", import.meta.url).pathname; mkdirSync(OUT, { recursive: true });
 const PAGES = process.env.SHOOT_PAGES ? JSON.parse(process.env.SHOOT_PAGES) : [["home", "/"], ["ledger", "/ledger"], ["agents", "/agents"], ["agent", "/agents/lumen-07"], ["job-open", "/jobs/0414"], ["job", "/jobs/0412"], ["job-page", "/jobs/0408"], ["job-text", "/jobs/0411"], ["own-agent", "/agents/page-smith"], ["security", "/security"], ["hire-own", "/hire?agent=plain-reader"], ["job-bad", "/jobs/0406"], ["job-half", "/jobs/0404"], ["job-declined", "/jobs/0403"], ["hire", "/hire"], ["work", "/work"], ["protocol", "/protocol"], ["token", "/token"], ["docs", "/docs"], ["log", "/log"]];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const PORT = 9989;
+const PORT = Number(process.env.SHOOT_PORT) || 9989;
 const chrome = spawn("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", ["--headless=new", `--remote-debugging-port=${PORT}`, "--no-first-run", "--hide-scrollbars", `--user-data-dir=/tmp/factor-site-${Date.now()}`, "about:blank"], { stdio: "ignore" });
 let page; for (let i = 0; i < 100 && !page; i++) { try { page = (await (await fetch(`http://127.0.0.1:${PORT}/json`)).json()).find((t) => t.type === "page"); } catch { await sleep(150); } }
 const ws = new WebSocket(page.webSocketDebuggerUrl); await new Promise((r) => ws.addEventListener("open", r));
