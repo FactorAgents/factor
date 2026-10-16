@@ -101,7 +101,16 @@ export interface Chain {
   fees(): Promise<Fees>;
   nonces(address: string): Promise<{ latest: number; pending: number }>;
   receipt(hash: string): Promise<Receipt | null>;
+  // A mined transaction as it was sent: who sent it, to where, with how much ETH and what data. null: not found.
+  transaction(hash: string): Promise<SentTx | null>;
   health(): RpcHealth;
+}
+
+export interface SentTx {
+  from: string; // lowercase
+  to: string | null; // lowercase; null for a contract's creation
+  value: bigint;
+  input: Hex;
 }
 
 // ETH sent to an address with no call: how the gateway gives unspent compute credit back to the pool.
@@ -396,6 +405,15 @@ export function viemChain(urls: string[], chainId: number, now: () => number = D
         plain.getTransactionCount({ address: address as Hex, blockTag: "pending" }),
       ]);
       return { latest, pending };
+    },
+    async transaction(hash) {
+      try {
+        const t = await plain.getTransaction({ hash: hash as Hex });
+        return { from: t.from.toLowerCase(), to: t.to ? t.to.toLowerCase() : null, value: t.value, input: t.input };
+      } catch (e) {
+        if (/could not be found|not found/i.test((e as Error).message ?? "")) return null;
+        throw e;
+      }
     },
     async receipt(hash) {
       try {

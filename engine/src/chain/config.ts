@@ -11,6 +11,7 @@ import { normalizeAddress } from "./address.js";
 import { readAccounts, type AccountsConfig } from "../accounts.js";
 import { readCompute, type ComputeConfig } from "../compute.js";
 import { readHouse, type HouseConfig } from "../house/house.js";
+import { readPay, type PayConfig } from "../pay.js";
 
 // the chain the token lives on, written down once
 export const CHAIN = { id: 4663, name: "Robinhood Chain", rpcUrl: "https://rpc.mainnet.chain.robinhood.com", explorer: "https://robinhoodchain.blockscout.com" } as const;
@@ -115,6 +116,8 @@ export interface EngineConfig {
   accounts: AccountsConfig;
   // Factor's own agents: whether they are put up, the model they ask and what they may spend on it in a day.
   house: HouseConfig;
+  // Pay with Factor (../pay.ts): whether links are taken, and what a deal adds to the burn.
+  pay: PayConfig;
 }
 
 // A factor.env-style file: NAME=value lines. What the environment already says wins.
@@ -279,6 +282,7 @@ export function readConfig(processEnv: Env = process.env): EngineConfig {
   const compute = readCompute(env, problems);
   const accounts = readAccounts(env, problems);
   const house = readHouse(env, problems);
+  const pay = readPay(env, problems);
   if (accounts.factory && (accounts.factory === desk || accounts.factory === splitter || accounts.factory === burnPot)) problems.push("FACTOR_ACCOUNTS is the same address as another of the contracts");
   const rawAdmin = env.ENGINE_ADMIN_KEY?.trim() ?? "";
   if (rawAdmin && rawAdmin.length < 24) problems.push("ENGINE_ADMIN_KEY must be at least 24 characters");
@@ -309,6 +313,7 @@ export function readConfig(processEnv: Env = process.env): EngineConfig {
     compute,
     accounts,
     house,
+    pay,
   };
 }
 

@@ -39,6 +39,8 @@ import type { LaunchList } from "./launchlist.js";
 import type { HouseActivity } from "./activity.js";
 import type { Matcher } from "./match.js";
 import { signerOf } from "./profiles.js";
+import type { Pay } from "./pay.js";
+import { recordOf, type RecordSigner } from "./record.js";
 
 export interface Answer {
   status: number;
@@ -71,6 +73,10 @@ export interface EngineView {
   activity?: HouseActivity | null;
   /** "just say what you need" (./match.ts) */
   matcher?: Matcher | null;
+  /** Pay with Factor (./pay.ts) */
+  pay?: Pay | null;
+  /** the key that signs agents' records (./record.ts) */
+  recordSigner?: RecordSigner | null;
 }
 
 // ---- the site's shape: web/src/lib/types.ts. Keep the two in step by hand. ----
@@ -122,6 +128,8 @@ export interface JobJson {
   feeEth?: number;
   notRepaidEth?: number;
   tx: string;
+  /** locked through a Pay with Factor link: how it was paid, and what the buyer added to the burn beside it */
+  deal?: { via: string; burnEth: number };
 }
 export interface AgentJson {
   /** the Desk's credit file on it, newest */
@@ -206,6 +214,8 @@ export interface FactorState {
   pulse: PulseJson[];
   /** the Desk: its last letter and newest notes */
   desk: DeskJson;
+  /** Pay with Factor: whether links are taken, what a deal adds to the burn (hundredths of a percent of its price), and the deals so far */
+  pay: { enabled: boolean; burnBps: number; deals: number; burnedEth: number };
 }
 export interface RosterJson { name: string; does: string; needs: string; delivers: string; fromEth: number; asksAModel: boolean; /** the Desk's opening file on it */ file?: { text: string; at: string } }
 // what Factor's own agents are, said the same before the launch and after it
@@ -279,7 +289,7 @@ export function agentJson(row: AgentRow, names: Names, nowS: number): AgentJson 
 
 const advanceJson = (a: AdvanceRow): AdvanceJson => ({ kind: KIND_NAME[a.kind] ?? "pool", eth: eth(a.amount), feeEth: eth(a.fee), at: iso(a.at) });
 
-export function jobJson(j: JobRow, advances: AdvanceRow[], title: string | undefined, demo = false): JobJson {
+export function jobJson(j: JobRow, advances: AdvanceRow[], title: string | undefined, demo = false, deal?: { via: string; burn_wei: string }): JobJson {
   const state = (STATE_NAME[j.state] ?? "locked") as JobJson["state"];
   const closed = j.state >= STATE.settled;
   // one line for the bill: everything drawn, under the kind most of it came by
@@ -307,6 +317,7 @@ export function jobJson(j: JobRow, advances: AdvanceRow[], title: string | undef
     ...(j.state === STATE.half || j.state === STATE.declined || j.state === STATE.refunded ? { backEth: eth(j.back) } : {}),
     ...(j.state === STATE.refunded && j.not_repaid !== "0" ? { notRepaidEth: eth(j.not_repaid) } : {}),
     tx: j.locked_tx,
+    ...(deal ? { deal: { via: deal.via, burnEth: eth(deal.burn_wei) } } : {}),
   };
 }
 
@@ -357,6 +368,21 @@ export class EngineApi {
       if (from && this.tooMany(from, "get", 300)) return { status: 429, body: { error: "too many requests: try again in a minute" } };
       return this.accountsGet(path);
     }
+    // Pay with Factor's links and an agent's record: read, and checked against the chain when a link is signed by an
+    // account, so they are kept for a few seconds like the rest and a caller gets a few hundred a minute
+    if (path.startsWith("/v1/pay/") || path.startsWith("/v1/record/")) {
+      if (from && this.tooMany(from, "pay-get", 600)) return { status: 429, body: { error: "too many requests: try again in a minute" } };
+      const v = this.view();
+      const ttl = v.config.params.apiCacheMs;
+      const hit = this.cache.get(path);
+      if (hit && ttl > 0 && Date.now() - hit.at < ttl) return hit.answer;
+      const answer = await this.payGet(v, path);
+      if (answer && ttl > 0) {
+        if (this.cache.size > 2000) this.cache.clear();
+        this.cache.set(path, { at: Date.now(), answer });
+      }
+      return answer;
+    }
     const route = this.route(path, query);
     if (!route) return null;
     const v = this.view();
@@ -405,6 +431,43 @@ export class EngineApi {
     m = /^\/v1\/accounts\/(0x[0-9a-fA-F]{40})$/.exec(path);
     if (m) { const r = await a.account(m[1]!.toLowerCase()); return r ? ok(r) : notFound("that is not an account made here"); }
     return null;
+  }
+
+  // A link, the links an agent shows, an agent's record, and the key that signs records.
+  private async payGet(v: EngineView, path: string): Promise<Answer | null> {
+    if (path === "/v1/record/signer") {
+      return ok({ signer: v.recordSigner?.address ?? null, domain: { name: "Factor Record", version: "1", chainId: v.config.chainId, verifyingContract: v.ctx?.addr.desk ?? v.config.desk } });
+    }
+    const r = this.running(v);
+    if (!r || !v.pay) return { status: 503, body: { error: "the engine is not reading the chain yet" } };
+    let m = /^\/v1\/pay\/link\/([A-Za-z0-9_.-]{100,9000})$/.exec(path);
+    if (m) { const a = await v.pay.info(m[1]!); return { status: a.status, body: a.body }; }
+    m = /^\/v1\/pay\/links\/(0x[0-9a-fA-F]{40})$/.exec(path);
+    if (m) return ok({ items: v.pay.linksOf(m[1]!.toLowerCase()) });
+    m = /^\/v1\/record\/([0-9a-zA-Z-]{3,42})$/.exec(path);
+    if (m) {
+      const address = normalizeAddress(m[1]) ?? v.profiles?.byName(m[1]!) ?? null;
+      const row = address ? r.store.agent(address) : null;
+      if (!row) return notFound("no such agent: it has not registered on the desk");
+      const p = v.profiles?.all().get(row.address);
+      return ok(await recordOf({
+        db: r.ctx.db, row, name: p?.name ?? shortAddress(row.address), named: !!p, does: p?.does ?? "", chainId: v.config.chainId, desk: r.ctx.addr.desk, block: r.snap.block,
+        nowS: this.chainNow(v, r.snap), site: v.config.pay.site, pay: v.pay.store.totals(row.address), signer: v.recordSigner ?? null,
+      }) as unknown as Record<string, unknown>);
+    }
+    return null;
+  }
+
+  // A job locked through a link, and a link an agent shows on its page.
+  private async payPost(path: string, body: unknown, from: string): Promise<Answer> {
+    const v = this.view();
+    if (!v.pay || v.state !== "running") return { status: 503, body: { error: "the engine is not reading the chain yet" } };
+    if (!body || typeof body !== "object" || Array.isArray(body)) return { status: 400, body: { error: "the body is not a JSON object" } };
+    if (this.tooMany(from, "pay", 60)) return { status: 429, body: { error: "too many requests: try again in a minute" } };
+    const b = body as Record<string, unknown>;
+    const a = path === "/v1/pay/deal" ? await v.pay.claim(b, b.via === "kit" ? "kit" : "checkout") : await v.pay.publish(b);
+    if (a.status === 200) this.cache.clear();
+    return a;
   }
 
   // One caller's requests of one kind in a minute: true when it is one too many.
@@ -497,6 +560,7 @@ export class EngineApi {
   // A signed write. `from` is the caller's address on the network, for the limit on how many one may send.
   async post(path: string, body: unknown, from: string, adminKey?: string): Promise<Answer | null> {
     if (path === "/v1/match") return this.matchPost(body, from);
+    if (path === "/v1/pay/deal" || path === "/v1/pay/links") return this.payPost(path, body, from);
     if (path === "/v1/accounts" || path.startsWith("/v1/accounts/")) return this.accountsPost(path, body, from);
     if (path === "/v1/agents/make" || path === "/v1/agents/pause") return this.hostedPost(path, body, from);
     if (path !== "/v1/agents/profile" && path !== "/v1/jobs/title" && path !== "/v1/jobs/brief" && path !== "/v1/jobs/delivery" && path !== "/v1/admin/hide" && path !== "/v1/admin/switch") return null;
@@ -579,7 +643,8 @@ export class EngineApi {
     const advances = store.advancesOf(ids);
     const titles = v.profiles?.titles(ids) ?? new Map<number, string>();
     const demo = this.demoJobs(v);
-    return rows.map((j) => jobJson(j, advances.get(j.id) ?? [], titles.get(j.id), demo.has(j.id)));
+    const deals = v.pay?.store.deals(ids) ?? new Map();
+    return rows.map((j) => jobJson(j, advances.get(j.id) ?? [], titles.get(j.id), demo.has(j.id), deals.get(j.id)));
   }
 
   private jobs(v: EngineView, limit: number, before?: number, agent?: string, customer?: string): Record<string, unknown> {
@@ -742,7 +807,9 @@ export class EngineApi {
       : { enabled: !!v.launchList, perOwner: v.launchList?.perOwner ?? 0, fromEth: v.launchList ? Number(v.launchList.floorWei / 10n ** 12n) / 1e6 : 0, beforeLaunch: true };
     const signups = v.launchList ? { total: v.launchList.total(), latest: v.launchList.list(8) } : { total: 0, latest: [] };
     const activity = (v.activity?.latest(8) ?? []).map((x) => ({ n: x.n, at: new Date(x.at).toISOString(), agent: x.agent, kind: x.kind, text: x.text }));
-    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused, roster: this.rosterJson(v), hosted, pulse: pulseJson(v, 8), desk: this.deskJson(v), signups, activity };
+    const deals = v.pay?.store.all() ?? { deals: 0, burnedWei: 0n };
+    const pay = { enabled: !!v.pay && c.pay.enabled && v.state === "running", burnBps: c.pay.burnBps, deals: deals.deals, burnedEth: eth(deals.burnedWei) };
+    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused, roster: this.rosterJson(v), hosted, pulse: pulseJson(v, 8), desk: this.deskJson(v), signups, activity, pay };
     if (!r) {
       return { ...base, launched: false, stats: { advancedEth: 0, settledJobs: 0, jobs: 0, poolEth: 0, reserveEth: 0, outEth: 0, heldEth: 0, burnedTokens: 0, supplyLeft: SUPPLY, agents: 0, demoJobs: 0, lostEth: 0, poolFromTradingEth: 0 }, burn: null, agents: [], jobs: [], events: [], burns: [] };
     }

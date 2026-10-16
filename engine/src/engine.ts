@@ -21,7 +21,7 @@ import { Accounts } from "./accounts.js";
 import { ComputeStore, Gateway } from "./compute.js";
 import { Demo } from "./house/demo.js";
 import { House, houseSigner, takeHouseSeed, type HouseSigner } from "./house/house.js";
-import { allStopped, stopFromEnv } from "./switches.js";
+import { allStopped, stopFromEnv, stopped } from "./switches.js";
 import { Profiles } from "./profiles.js";
 import { configured, readConfig, takeBotKey, takeModelKey, takeRouterKey, type EngineConfig, type Env } from "./chain/config.js";
 import type { Ctx } from "./chain/context.js";
@@ -34,6 +34,9 @@ import { LaunchList } from "./launchlist.js";
 import { HouseActivity, activityOn, anthropicAsk } from "./activity.js";
 import { Matcher, matchOn } from "./match.js";
 import { DEFAULT_MODELS } from "./compute.js";
+import { Pay } from "./pay.js";
+import { recordSigner, type RecordSigner } from "./record.js";
+import { snapshotOf } from "./chain/context.js";
 
 export interface EngineOptions {
   env?: Env; // instead of process.env (tests)
@@ -88,6 +91,10 @@ export class Engine {
   activity: HouseActivity | null = null;
   /** "just say what you need" (./match.ts): on whenever there is a model key, off with MATCH=off */
   matcher: Matcher | null = null;
+  /** Pay with Factor (./pay.ts): payment links, deals and x402 */
+  pay: Pay | null = null;
+  /** the key that signs agents' records for other apps (./record.ts), or null */
+  readonly recordSigner: RecordSigner | null;
   private carryTimer: ReturnType<typeof setInterval> | null = null;
   private deskTimer: ReturnType<typeof setInterval> | null = null;
   private deskBusy = false;
@@ -114,6 +121,7 @@ export class Engine {
     this.log = (line) => print(hostsOnly(line));
     this.api = new EngineApi(() => this.view());
     // the sign-ups are kept in the same file whatever the mode, so they are there at the launch
+    this.recordSigner = recordSigner(this.env);
     this.launchList = new LaunchList(sqlite, { perOwner: this.config.house.hosted.perOwner, most: this.config.house.hosted.most, floorWei: this.config.house.hosted.floorWei, now: this.now });
   }
 
@@ -145,7 +153,7 @@ export class Engine {
     for (const [name, l] of this.loops) loops[name] = { lastRunAt: l.lastRunAt, lastOkAt: l.lastOkAt, runs: l.runs, failures: l.failures, waitMs: l.waitMs, backingOff: l.backingOff };
     return {
       config: this.config, state: this.state, problems: this.problems, warnings: this.warnings, lastError: this.lastError, loops, ctx: this.ctx, rpc: this.chain?.health() ?? null, now: this.now,
-      links: { pons: link(this.env.FACTOR_PONS_URL), github: link(this.env.FACTOR_GITHUB_URL), x: link(this.env.FACTOR_X_URL) }, dataDirSet: !!this.env.FACTOR_DATA_DIR?.trim(), profiles: this.profiles, gateway: this.gateway, accounts: this.accounts, house: this.house, demo: this.demo, pulse: this.pulse, deskMind: this.deskMind, launchList: this.launchList, activity: this.activity, matcher: this.matcher,
+      links: { pons: link(this.env.FACTOR_PONS_URL), github: link(this.env.FACTOR_GITHUB_URL), x: link(this.env.FACTOR_X_URL) }, dataDirSet: !!this.env.FACTOR_DATA_DIR?.trim(), profiles: this.profiles, gateway: this.gateway, accounts: this.accounts, house: this.house, demo: this.demo, pulse: this.pulse, deskMind: this.deskMind, launchList: this.launchList, activity: this.activity, matcher: this.matcher, pay: this.pay, recordSigner: this.recordSigner,
     };
   }
 
@@ -160,6 +168,15 @@ export class Engine {
     if (!this.gateway || this.state !== "running") return false;
     void this.gateway.http(req, res, path);
     return true;
+  }
+
+  // A Pay with Factor link asked for over x402 (./pay.ts): the 402 that says how to pay, or, with the X-PAYMENT
+  // header, the job the payment locked. `resource` is the address the caller asked, as the answer names it.
+  async x402(path: string, payment: string | undefined, resource: string): Promise<{ status: number; headers: Record<string, string>; body: Record<string, unknown> }> {
+    if (!this.pay || this.state !== "running") return { status: 503, headers: {}, body: { x402Version: 1, error: "the engine is not reading the chain yet" } };
+    const m = /^\/v1\/x402\/([A-Za-z0-9_.-]{100,9000})$/.exec(path);
+    if (!m) return { status: 404, headers: {}, body: { x402Version: 1, error: "not found" } };
+    return this.pay.x402(m[1]!, payment, resource);
   }
 
   // The answer to a signed write (an agent's name, a job's title), or null when the path is not one.
@@ -266,6 +283,15 @@ export class Engine {
     this.accounts = new Accounts(c.accounts, this.ctx.db, this.chain, c.desk, () => this.ctx?.mode === "live" && !!this.ctx.signer && this.state === "running", () => this.kick("act"), this.log);
     const accountSigned = (address: string, message: string, signature: unknown) => this.accounts!.signed(address, message, signature);
     this.profiles = new Profiles(this.ctx.db, this.now, accountSigned);
+    const db = this.ctx.db;
+    // the chain's time now: the last block read, and the seconds since
+    const nowS = () => { const snap = snapshotOf(db); const t = this.now(); return snap ? snap.blockTime + Math.max(0, Math.floor((t - snap.at) / 1000)) : Math.floor(t / 1000); };
+    this.pay = new Pay({
+      cfg: c.pay, db, chain: this.chain, desk: c.desk, burnPot: c.burnPot, accountsFactory: c.accounts.factory,
+      signed: async (address, message, signature) => this.profiles!.signed(address, message, signature), nowS,
+      paused: () => { const h = stopped(db, "hiring"); return h ? h.note || "New jobs are paused for now." : null; },
+    });
+    if (c.pay.enabled) this.log(`[pay] Pay with Factor on: every deal adds ${c.pay.burnBps / 100}% of its price to the burn, paid by the buyer`);
     this.gateway = new Gateway(c.compute, new ComputeStore(this.ctx.db), this.ctx.db, c.compute.enabled ? { anthropic: c.compute.direct ? takeModelKey(this.env) : null, router: takeRouterKey(this.env) } : { anthropic: null, router: null }, this.log, accountSigned);
     // Factor's own agents: put up only while there is a gas wallet to send what they sign
     this.house = new House(c.house, {

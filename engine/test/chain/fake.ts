@@ -4,9 +4,9 @@
 // in the real encoding (the watchers decode them with the real ABIs), and a wallet whose sends can be held back,
 // dropped or made to fail. Nothing here touches a node or a key.
 
-import { decodeFunctionData, encodeAbiParameters, encodeEventTopics, keccak256, type Abi, type AbiEvent, type Hex } from "viem";
+import { decodeFunctionData, encodeAbiParameters, encodeEventTopics, encodeFunctionData, keccak256, type Abi, type AbiEvent, type Hex } from "viem";
 import { factorAccountAbi, factorAccountsAbi, factorBurnPotAbi, factorDeskAbi, factorSplitterAbi, factorTokenAbi } from "../../src/abi/index.js";
-import { Reverted, type CallSpec, type Chain, type ChainLog, type Fees, type Head, type LogFilter, type Pay, type RawCall, type Receipt, type RpcHealth, type Signer, type TxRequest } from "../../src/chain/chain.js";
+import { Reverted, type CallSpec, type Chain, type ChainLog, type Fees, type Head, type LogFilter, type Pay, type RawCall, type Receipt, type RpcHealth, type SentTx, type Signer, type TxRequest } from "../../src/chain/chain.js";
 import { ETH_USD_FEED } from "../../src/chain/watch.js";
 import { FEEDS } from "../../src/house/feeds.js";
 
@@ -773,6 +773,35 @@ export class FakeChain implements Chain {
 
   receipt(hash: string): Promise<Receipt | null> {
     return this.ask("receipt", hash, undefined, () => this.receipts.get(hash) ?? null);
+  }
+
+  // ---------- transactions people send themselves (Pay with Factor reads them back) ----------
+
+  txs = new Map<string, SentTx>();
+
+  transaction(hash: string): Promise<SentTx | null> {
+    return this.ask("transaction", hash, undefined, () => this.txs.get(hash) ?? null);
+  }
+
+  /** A lock sent from a wallet: the job, and the transaction it was in, with its receipt. */
+  lockTx(customer: string, agent: string, price: bigint, dueInS = 86400, allowEarly = false): { id: number; hash: string } {
+    const before = this.allLogs.length;
+    const id = this.lock(customer, agent, price, dueInS, allowEarly);
+    const logs = this.allLogs.slice(before);
+    const hash = logs[logs.length - 1]!.transactionHash;
+    this.receipts.set(hash, { ok: true, blockNumber: this.number, gasUsed: 120_000n, gasPrice: this.gasPrice, logs });
+    this.txs.set(hash, { from: customer.toLowerCase(), to: A.desk, value: price, input: encodeFunctionData({ abi: factorDeskAbi as Abi, functionName: "lock", args: [agent, BigInt(this.time + dueInS), allowEarly] }) });
+    return { id, hash };
+  }
+
+  /** Plain ETH from one address to another, in a transaction of its own. `ok: false`: the chain refused it. */
+  transfer(from: string, to: string, value: bigint, ok = true, input: Hex = "0x"): string {
+    this.mine();
+    const hash = this.newHash();
+    this.receipts.set(hash, { ok, blockNumber: this.number, gasUsed: 21_000n, gasPrice: this.gasPrice, logs: [] });
+    this.txs.set(hash, { from: from.toLowerCase(), to: to.toLowerCase(), value, input });
+    if (ok) this.balances.set(to.toLowerCase(), (this.balances.get(to.toLowerCase()) ?? 0n) + value);
+    return hash;
   }
 
   health(): RpcHealth {
