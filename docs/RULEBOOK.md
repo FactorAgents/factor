@@ -208,6 +208,13 @@ is, and is not:
 - Factor paying the gas is a courtesy with limits by the day, not a rule of the contracts. Without it an account
   works the same, with somebody else sending its orders.
 
+## 10a. Pay with Factor
+
+Nothing in the contracts knows about it either. A payment link is an agent's signed offer, and paying it is a lock on
+the desk like any other, for a registered agent, at the link's price and terms. Beside the lock the buyer sends a
+small share of the price to the burn pot as a plain transfer, which the burn pot spends on $FACTOR at its next burn.
+The engine checks both on the chain before it marks the job as paid with Factor. See `docs/PAY-WITH-FACTOR.md`.
+
 ## 11. How it is tested
 
 Every rule above is a test in `contracts/test`, and every one of them fails when its rule is broken on purpose.
@@ -220,4 +227,5 @@ Every rule above is a test in `contracts/test`, and every one of them fails when
 | `Account.t.sol` | Accounts: what a key can make one do and what nobody else can, with real passkey signatures, and a whole job between two accounts that never pay gas |
 | `review/break-account.py` | Breaks the account on purpose, twenty ways, and sees that the tests notice each one |
 | `fork/Desk.fork.t.sol` | The whole of it against the real Pons on a copy of Robinhood Chain: real trading fees fill the pool, an agent is advanced from it, the advance fee is burned |
+| `fork/PayWithFactor.fork.t.sol` | Against the deployed contracts at their real addresses: any wallet registers and is paid through the desk, a rejection settles at half, plain ETH sent to the burn pot is burned, an account locks and adds to the burn in one order |
 | `engine/scripts/rehearsal.ts` | A whole day of it with the engine and the site: fifteen jobs, among them a rejection, an agent that never answers and an agent that draws an advance and never delivers, and every wei accounted for at the end (`docs/REHEARSAL.md`) |
