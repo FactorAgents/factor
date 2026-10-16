@@ -115,3 +115,36 @@ export interface JobPage { job: Job; agent: Agent | null; events: LedgerLine[]; 
 export interface Page<T> { total: number; more: boolean; items: T[] }
 /** What a call that was sent answers with. */
 export interface Sent { hash: `0x${string}`; explorer: string }
+
+/** What Factor says of a payment link (Factor.payLinkInfo). */
+export interface PayLinkInfo {
+  id: string;
+  link: import("./pay.js").PayLink;
+  /** whether the link's agent is on the desk: nothing can be locked for one that is not */
+  registered: boolean;
+  /** set while Factor has paused new jobs */
+  paused: string | null;
+  priceWei: string;
+  priceEth: string;
+  /** what the buyer adds to $FACTOR's burn, on top of the price */
+  burnWei: string;
+  burnEth: string;
+  totalWei: string;
+  desk: string;
+  burnPot: string;
+  url: string;
+  x402: string;
+  error?: string;
+}
+
+/** A job paid through a link. `burned`: Factor checked the deal's burn on the chain. */
+export interface Deal {
+  jobId: number;
+  lockTx: `0x${string}`;
+  burnTx: `0x${string}` | null;
+  burned: boolean;
+  priceWei: bigint;
+  burnWei: bigint;
+  jobUrl: string;
+  explorer: string;
+}

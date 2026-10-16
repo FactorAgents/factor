@@ -21,11 +21,15 @@ import { factorAccountAbi } from "./abi/FactorAccount.js";
 import { factorAccountsAbi } from "./abi/FactorAccounts.js";
 import { factorDeskAbi } from "./abi/FactorDesk.js";
 import { CHAIN_ID, DEFAULT_API, DEFAULT_RPC } from "./defaults.js";
-import type { AccountInfo, Agent, AgentPage, ComputeCredit, ComputeKey, Job, JobPage, JobState, LedgerLine, ModelAnswer, Page, RouterModel, Sent, State } from "./types.js";
+import type { AccountInfo, Agent, AgentPage, ComputeCredit, ComputeKey, Deal, Job, JobPage, JobState, LedgerLine, ModelAnswer, Page, PayLinkInfo, RouterModel, Sent, State } from "./types.js";
 import { explain, Refusal, WORDS } from "./words.js";
+
+import { encodePayLink, LINK_BRIEF_MOST, readPayLink, tokenOf, verifyRecord, x402PaymentHeader, X402_NETWORK, X402_SCHEME, type AgentRecord, type PayLink, type X402Requirements, payLinkMessage } from "./pay.js";
 
 export { Refusal, explain } from "./words.js";
 export type * from "./types.js";
+export { encodePayLink, payLinkId, payLinkMessage, readPayLink, tokenOf, verifyRecord, x402PaymentHeader, RECORD_TYPES, X402_NETWORK, X402_SCHEME } from "./pay.js";
+export type { AgentRecord, PayLink, RecordMessage, X402Requirements } from "./pay.js";
 
 const ABI = factorDeskAbi as Abi;
 const KIND = { early: 0, pool: 1, compute: 2 } as const;
@@ -478,6 +482,193 @@ export class Factor {
     }
   }
 
+  // ---------- Pay with Factor ----------
+
+  /**
+   * Sign up as an agent in one step: register this wallet on the desk (when it has not yet) and give it its name
+   * and what it does. After it, anybody can lock a job for it and it can make payment links.
+   */
+  async signUp(o: { name: string; does: string }): Promise<{ registered: boolean; hash?: Hex }> {
+    const me = this.mine();
+    const rec = (await this.pub.readContract({ address: this.desk, abi: ABI, functionName: "agent", args: [me] })) as { registered: boolean };
+    let hash: Hex | undefined;
+    if (!rec.registered) hash = (await this.register()).hash;
+    await this.profile(o);
+    return { registered: !rec.registered, ...(hash ? { hash } : {}) };
+  }
+
+  /**
+   * A "Pay with Factor" link for a piece of this agent's work: the price, a title and a brief, how many hours it has
+   * once paid, and whether it may start with up to half of the payment. Signed by this agent, so nobody can change
+   * it. Anybody who opens it can pay with a wallet or a passkey; another agent's program pays it over x402 (`x402`).
+   * With `publish` (the default) it is also shown on this agent's public page. Costs nothing.
+   */
+  async createPayLink(o: { price: Amount; title: string; brief?: string; dueInHours?: number; allowEarly?: boolean; expiresInDays?: number; publish?: boolean }): Promise<{ url: string; x402: string; token: string; link: PayLink; published: boolean }> {
+    const agent = this.mine();
+    const price = toWei(o.price);
+    if (price < 10n ** 15n) throw new Refusal("The smallest job is 0.001 ETH.", "bad_amount");
+    if (price > 1000n * 10n ** 18n) throw new Refusal("A link is for 1000 ETH at most.", "bad_amount");
+    const title = oneLine(o.title);
+    const brief = o.brief === undefined || o.brief.trim() === "" ? "" : briefText(o.brief);
+    if (brief.length > LINK_BRIEF_MOST) throw new Refusal(`A link's brief is ${LINK_BRIEF_MOST} characters at most: it travels inside the link. Put the rest on the job once it is paid.`, "bad_text");
+    const due = o.dueInHours ?? 24;
+    if (!Number.isSafeInteger(due) || due < 1 || due > 720) throw new Refusal("dueInHours is a whole number of hours from 1 to 720.", "bad_due");
+    const days = o.expiresInDays ?? 30;
+    if (!(days > 0 && days <= 365)) throw new Refusal("expiresInDays is from 1 to 365.", "bad_due");
+    const exp = (await this.clock()) + Math.round(days * 86_400);
+    const id = Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => b.toString(16).padStart(2, "0")).join("");
+    const link: PayLink = { v: 1, agent, price: price.toString(), title, brief, due, early: o.allowEarly === true, exp, id };
+    const token = encodePayLink(link, await this.sign(payLinkMessage(link)));
+    const site = this.api.replace(/\/api\/v1$/, "").replace(/\/v1$/, "");
+    let published = false;
+    if (o.publish !== false) {
+      try {
+        await this.save("/pay/links", { link: token }, true);
+        published = true;
+      } catch {
+        published = false;
+      }
+    }
+    return { url: `${site}/pay/${token}`, x402: `${site}/api/v1/x402/${token}`, token, link, published };
+  }
+
+  /** What a link sells, checked by Factor: the agent really signed it, it has not expired, and the agent is on the desk. */
+  async payLinkInfo(linkOrUrl: string): Promise<PayLinkInfo> {
+    const token = tokenOf(linkOrUrl);
+    if (!token) throw new Refusal("That is not a Pay with Factor link.", "bad_link");
+    let r: Response;
+    try {
+      r = await fetch(`${this.api}/pay/link/${token}`, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(20_000) });
+    } catch {
+      throw new Refusal("Factor's site could not be reached.", "no_site");
+    }
+    const b = (await r.json().catch(() => ({}))) as PayLinkInfo & { error?: string };
+    if (!r.ok) throw new Refusal(sentence(b.error ?? `Factor's site answered ${r.status}`), r.status === 410 ? "expired" : "bad_link");
+    return b;
+  }
+
+  /**
+   * Pay a link: lock its price for its agent on the desk, add the deal's share to $FACTOR's burn beside it, and tell
+   * Factor, which checks both on the chain. With `gasless` the two go in one order; from a wallet they are two
+   * transactions, the lock first. `maxEth` refuses a link that costs more, before anything is sent.
+   */
+  async payLink(linkOrUrl: string, o: { maxEth?: Amount } = {}): Promise<Deal> {
+    this.mine();
+    const info = await this.payLinkInfo(linkOrUrl);
+    if (!info.registered) throw new Refusal(sentence(info.error ?? "This agent has not signed up on Factor yet"), "not_registered");
+    if (info.paused) throw new Refusal(info.paused, "paused");
+    return this.lockForLink(tokenOf(linkOrUrl)!, info.link, BigInt(info.burnWei), info.burnPot, o.maxEth, "kit");
+  }
+
+  /**
+   * Buy an agent's work over x402: ask the address, read the 402, pay it on the desk (only to the desk this kit
+   * checked on the chain, and only to the agent the link names), and ask again with the proof. Answers the job's
+   * number; delivery and settling happen on the desk like any job's. `maxEth` caps what it may spend, burn included.
+   */
+  async payX402(url: string, o: { maxEth?: Amount } = {}): Promise<Deal & { response: Record<string, unknown> }> {
+    this.mine();
+    const first = await fetchJson(url, {});
+    if (first.status !== 402) throw new Refusal(first.status === 200 ? "That address did not ask for a payment." : sentence(String(first.body.error ?? `it answered ${first.status}`)), "not_x402");
+    const accepts = (first.body.accepts as X402Requirements[] | undefined)?.find((a) => a.scheme === X402_SCHEME && a.network === X402_NETWORK);
+    if (!accepts) throw new Refusal(`That address takes no payment of the scheme ${X402_SCHEME} on ${X402_NETWORK}.`, "not_x402");
+    // the 402 is somebody else's answer: nothing in it is sent to unless Factor itself says the same
+    if (accepts.payTo.toLowerCase() !== this.desk || accepts.extra.desk.toLowerCase() !== this.desk) throw new Refusal("The 402 asks for a payment to another address than Factor's desk. Nothing was sent.", "wrong_desk");
+    const info = await this.payLinkInfo(accepts.extra.link);
+    if (info.link.agent !== accepts.extra.agent.toLowerCase() || info.priceWei !== accepts.extra.priceWei) throw new Refusal("The 402 does not say what its link says. Nothing was sent.", "bad_link");
+    if (!info.registered) throw new Refusal(sentence(info.error ?? "This agent has not signed up on Factor yet"), "not_registered");
+    const deal = await this.lockForLink(tokenOf(accepts.extra.link)!, info.link, BigInt(info.burnWei), info.burnPot, o.maxEth, null);
+    const header = x402PaymentHeader({ job: deal.jobId, lockTx: deal.lockTx, burnTx: deal.burnTx });
+    for (let tries = 0; ; tries++) {
+      const again = await fetchJson(url, { "x-payment": header });
+      if (again.status === 200) return { ...deal, burned: again.body.burned === true, response: again.body };
+      // the chain has the lock and the node behind the site does not yet: a few seconds
+      if (again.status === 402 && /again in a few seconds/.test(String(again.body.error)) && tries < 20) { await sleep(1500); continue; }
+      throw new Refusal(`Job ${deal.jobId} is locked (${deal.lockTx}), and the seller's address did not take the payment: ${String(again.body.error ?? again.status)}`, "x402_refused");
+    }
+  }
+
+  /** One agent's public record, worked out from the chain, with Factor's attestation of it. */
+  async record(agent: string): Promise<AgentRecord> {
+    if (!/^[0-9a-zA-Z-]{3,42}$/.test(agent)) throw new Refusal("Give the agent's name or address.", "bad_agent");
+    const r = await read<AgentRecord>(this.api, `/record/${agent}`);
+    if (!r) throw new Refusal(`There is no agent "${agent}" on Factor.`, "no_agent");
+    return r;
+  }
+
+  /** The address Factor signs records with, as its site says. An app that checks records should keep its own copy of it. */
+  async recordSigner(): Promise<string | null> {
+    return (await read<{ signer: string | null }>(this.api, "/record/signer"))?.signer ?? null;
+  }
+
+  /** Whether a record's attestation is signed by Factor's record key, for this chain, and current. */
+  async verifyRecord(rec: AgentRecord, signer?: string): Promise<{ ok: boolean; why?: string }> {
+    const by = signer ?? (await this.recordSigner());
+    if (!by) return { ok: false, why: "Factor names no record signer" };
+    return verifyRecord(rec, { signer: by });
+  }
+
+  /** The lock and the burn of one deal, then Factor told of it. */
+  private async lockForLink(token: string, link: PayLink, burnWei: bigint, burnPot: string, maxEth: Amount | undefined, via: "kit" | null): Promise<Deal> {
+    const price = BigInt(link.price);
+    const cap = maxEth === undefined ? null : toWei(maxEth);
+    if (cap !== null && price + burnWei > cap) throw new Refusal(`The link costs ${ethText(price + burnWei)} ETH with its burn, over the ${ethText(cap)} ETH allowed.`, "over_cap");
+    const s = await this.state();
+    if (s.paused) throw new Refusal(s.paused, "paused");
+    // the burn goes only to the burn pot Factor names and the chain has: never to an address a link or a 402 gives
+    const pot = s.contracts.burnPot?.toLowerCase();
+    if (!pot || pot !== burnPot.toLowerCase()) throw new Refusal("The burn pot the link names is not Factor's. Nothing was sent.", "wrong_pot");
+    const now = Number((await this.pub.getBlock()).timestamp);
+    const args = [link.agent, BigInt(now + link.due * 3600), link.early] as const;
+    let lockTx: Hex, burnTx: Hex | null = null, jobId: number | null;
+    if (this.via) {
+      try {
+        await this.pub.simulateContract({ address: this.desk, abi: ABI, functionName: "lock", args, account: this.via, value: price } as never);
+      } catch (e) {
+        throw e instanceof Refusal ? e : new Refusal(explain(e), "desk_refused");
+      }
+      const calls = [{ to: this.desk, value: price, data: encodeFunctionData({ abi: ABI, functionName: "lock", args } as never) }, ...(burnWei > 0n ? [{ to: pot, value: burnWei, data: "0x" as Hex }] : [])];
+      const sent = await this.order(calls);
+      lockTx = sent.hash;
+      burnTx = burnWei > 0n ? sent.hash : null;
+      jobId = lockedJob(sent.receipt.logs as { address: string; topics: Hex[]; data: Hex }[], this.desk);
+    } else {
+      const sent = await this.send("lock", [...args], price);
+      lockTx = sent.hash;
+      jobId = lockedJob(sent.receipt.logs as { address: string; topics: Hex[]; data: Hex }[], this.desk);
+      if (burnWei > 0n) {
+        try {
+          const hash = await this.wallet!.sendTransaction({ account: this.account!, chain: this.wallet!.chain, to: pot as Hex, value: burnWei } as never);
+          const r = await this.pub.waitForTransactionReceipt({ hash, timeout: 180_000 });
+          if (r.status === "success") burnTx = hash;
+        } catch {
+          burnTx = null; // the job is locked whatever happens to the burn
+        }
+      }
+    }
+    if (jobId === null) throw new Refusal(`The payment is locked (${lockTx}), and the job's number could not be read from the transaction.`, "no_job_id");
+    const site = this.api.replace(/\/api\/v1$/, "").replace(/\/v1$/, "");
+    const deal: Deal = { jobId, lockTx, burnTx, burned: false, priceWei: price, burnWei, jobUrl: `${site}/jobs/${String(jobId).padStart(4, "0")}`, explorer: `${this.explorer}/tx/${lockTx}` };
+    if (via === null) return deal; // over x402 the seller's address tells Factor
+    try {
+      const r = await this.askPatient<{ burned: boolean }>("/pay/deal", { link: token, job: jobId, lockTx, burnTx, via });
+      deal.burned = r.burned === true;
+    } catch {
+      // the job is locked and is the agent's to do whatever Factor says; only the "paid with Factor" mark waits
+    }
+    return deal;
+  }
+
+  /** A post that waits for the chain to catch up (a lock the site's node has not seen yet), then says no in words. */
+  private async askPatient<T>(path: string, body: Record<string, unknown>): Promise<T> {
+    for (let tries = 0; ; tries++) {
+      const r = await fetch(`${this.api}${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(30_000) });
+      const b = (await r.json().catch(() => ({}))) as { error?: string } & Record<string, unknown>;
+      if (r.ok) return b as T;
+      if (r.status === 404 && tries < 20) { await sleep(1500); continue; }
+      throw new Refusal(sentence(b.error ?? `Factor's site answered ${r.status}`), "refused");
+    }
+  }
+
   // ---------- anyone ----------
 
   /** Settle a delivered job once its customer's 24 hours are over. Anyone may; Factor's engine does it by itself. */
@@ -663,6 +854,17 @@ function oneLine(raw: string): string {
   const text = typeof raw === "string" ? raw.trim().replace(/\s+/g, " ") : "";
   if (text.length < 3 || text.length > 80 || /[<>]/.test(text) || /https?:|www\.|:\/\//i.test(text)) throw new Refusal("It must be one line of 3 to 80 characters, without links.", "bad_text");
   return text;
+}
+
+/** A GET or a POST to any address, with headers, read as JSON whatever its status. */
+async function fetchJson(url: string, headers: Record<string, string>): Promise<{ status: number; body: Record<string, unknown>; headers: Headers }> {
+  let r: Response;
+  try {
+    r = await fetch(url, { method: "GET", headers: { accept: "application/json", ...headers }, signal: AbortSignal.timeout(30_000) });
+  } catch {
+    throw new Refusal(`${url.slice(0, 80)} could not be reached.`, "no_site");
+  }
+  return { status: r.status, body: (await r.json().catch(() => ({}))) as Record<string, unknown>, headers: r.headers };
 }
 
 async function read<T>(api: string, path: string): Promise<T | null> {

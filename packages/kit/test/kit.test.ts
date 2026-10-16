@@ -336,11 +336,11 @@ describe("the assistant's caps", () => {
 
 describe("the tools", () => {
   it("have a name, a description and an input each, and say which of them send something", () => {
-    expect(TOOLS.map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_hire", "factor_accept", "factor_reject", "factor_set_title", "factor_register", "factor_set_profile", "factor_bond", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_ask_model", "factor_draw", "factor_deliver", "factor_decline"]);
+    expect(TOOLS.map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_hire", "factor_accept", "factor_reject", "factor_set_title", "factor_register", "factor_set_profile", "factor_bond", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_ask_model", "factor_draw", "factor_deliver", "factor_decline", "factor_sign_up", "factor_create_pay_link", "factor_pay_link_info", "factor_pay_link", "factor_pay_x402", "factor_record"]);
     for (const t of TOOLS) expect(t.description.length, t.name).toBeGreaterThan(40);
-    expect(TOOLS.filter((t) => t.readOnly).map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models"]);
+    expect(TOOLS.filter((t) => t.readOnly).map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_pay_link_info", "factor_record"]);
     // the ones that spend or cannot be undone say so in capitals, where an assistant will not miss it
-    for (const name of ["factor_hire", "factor_reject", "factor_bond"]) expect(TOOLS.find((t) => t.name === name)!.description).toMatch(/SPENDS ETH|SETTLES AT HALF/);
+    for (const name of ["factor_hire", "factor_reject", "factor_bond", "factor_pay_link", "factor_pay_x402"]) expect(TOOLS.find((t) => t.name === name)!.description).toMatch(/SPENDS ETH|SETTLES AT HALF/);
   });
 
   it("answer in words", async () => {
@@ -380,5 +380,119 @@ describe("the tools", () => {
     expect(s.node.calls.slice(before)).toEqual([]);
     expect(spending.today()).toBe(0n);
     rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+// ---------- Pay with Factor ----------
+
+import { privateKeyToAccount } from "viem/accounts";
+import { encodePayLink, payLinkMessage, readPayLink, RECORD_TYPES, tokenOf, verifyRecord, x402PaymentHeader, type AgentRecord, type PayLink, type RecordMessage } from "../src/index.js";
+import { decodePayLink as engineDecode, payLinkMessage as enginePayLink } from "../../../engine/src/pay.js";
+import { RECORD_TYPES as engineRecordTypes, recordTypedData } from "../../../engine/src/record.js";
+
+const AGENT_KEY = privateKeyToAccount(KEY);
+const link = (over: Partial<PayLink> = {}): PayLink => ({ v: 1, agent: AGENT_KEY.address.toLowerCase(), price: "40000000000000000", title: "Summarise a contract", brief: "Every date and every amount.", due: 24, early: true, exp: 1_800_000_000, id: "0123456789abcdef", ...over });
+
+describe("a Pay with Factor link", () => {
+  it("is signed with the very words the engine checks, and travels in a form the engine reads back", async () => {
+    for (const l of [link(), link({ brief: "", early: false, price: "1000000000000000", due: 720 })]) expect(payLinkMessage(l)).toBe(enginePayLink(l));
+    const token = encodePayLink(link(), await AGENT_KEY.signMessage({ message: payLinkMessage(link()) }));
+    const back = engineDecode(token);
+    expect(typeof back).toBe("object");
+    expect((back as { link: PayLink }).link).toEqual(link());
+    expect(readPayLink(`https://factoragents.fun/pay/${token}`)?.link).toEqual(link());
+    expect(tokenOf(`https://factoragents.fun/api/v1/x402/${token}`)).toBe(token);
+    expect(tokenOf("https://example.com/something")).toBeNull();
+    // the record's shape is the engine's, field for field
+    expect(RECORD_TYPES).toEqual(engineRecordTypes);
+    expect(JSON.parse(atob(x402PaymentHeader({ job: 7, lockTx: "0xab" })))).toEqual({ x402Version: 1, scheme: "factor-lock", network: "robinhood-chain", payload: { job: 7, lockTx: "0xab", burnTx: null } });
+  });
+
+  it("is made and signed by the agent's own key, and shown on its page", async () => {
+    const f = await connect({ privateKey: KEY });
+    const before = s.posts.length;
+    const made = await f.createPayLink({ price: "0.04", title: "Summarise a contract", brief: "Every date.", dueInHours: 48, allowEarly: true });
+    expect(made.url).toBe(`${s.api}/pay/${made.token}`);
+    expect(made.x402).toBe(`${s.api}/api/v1/x402/${made.token}`);
+    expect(made.link).toMatchObject({ agent: f.address, price: "40000000000000000", due: 48, early: true });
+    expect(made.published).toBe(true);
+    expect(s.posts.slice(before)).toEqual([{ path: "/pay/links", body: { link: made.token } }]);
+    const back = readPayLink(made.token)!;
+    const { recoverMessageAddress } = await import("viem");
+    expect((await recoverMessageAddress({ message: payLinkMessage(back.link), signature: back.signature })).toLowerCase()).toBe(f.address);
+  });
+
+  it("refuses a link it would not sell, before anything is signed", async () => {
+    const f = await connect({ privateKey: KEY });
+    expect((await refusal(f.createPayLink({ price: "0.0001", title: "Too cheap" }))).code).toBe("bad_amount");
+    expect((await refusal(f.createPayLink({ price: "0.01", title: "A brief too long", brief: "x".repeat(2001) }))).code).toBe("bad_text");
+    expect((await refusal(f.createPayLink({ price: "0.01", title: "Due never", dueInHours: 0 }))).code).toBe("bad_due");
+    expect((await refusal(f.createPayLink({ price: "0.01", title: "see https://example.com" }))).code).toBe("bad_text");
+  });
+
+  it("is not paid over the cap, for an agent that has not signed up, or with a burn pot that is not Factor's", async () => {
+    const f = await connect({ privateKey: KEY });
+    const token = encodePayLink(link(), await AGENT_KEY.signMessage({ message: payLinkMessage(link()) }));
+    const info = { id: "0x1", link: link(), registered: true, paused: null, priceWei: "40000000000000000", priceEth: "0.04", burnWei: "400000000000000", burnEth: "0.0004", totalWei: "40400000000000000", desk: DESK, burnPot: "0x00000000000000000000000000000000000b0b07", url: "", x402: "" };
+    s.site.payInfo = () => ({ status: 200, body: info });
+    s.site.state.contracts.burnPot = "0x00000000000000000000000000000000000b0b07";
+    const before = s.node.calls.length;
+    expect((await refusal(f.payLink(token, { maxEth: "0.04" }))).code).toBe("over_cap");
+    s.site.payInfo = () => ({ status: 200, body: { ...info, registered: false, error: "this agent has not signed up on Factor yet" } });
+    expect((await refusal(f.payLink(token))).code).toBe("not_registered");
+    s.site.payInfo = () => ({ status: 200, body: { ...info, burnPot: "0x00000000000000000000000000000000000000ee" } });
+    expect((await refusal(f.payLink(token))).code).toBe("wrong_pot");
+    s.site.payInfo = () => ({ status: 410, body: { error: "this link expired on 2026-10-01 00:00 UTC. Ask the agent for a new one" } });
+    const old = await refusal(f.payLink(token));
+    expect(old.code).toBe("expired");
+    expect(old.message).toMatch(/expired.*Ask the agent for a new one\./);
+    // nothing was sent to the chain for any of them
+    expect(s.node.calls.slice(before).filter((c) => c === "eth_sendRawTransaction" || c === "eth_sendTransaction")).toEqual([]);
+    s.site.payInfo = null;
+  });
+
+  it("over x402, pays only Factor's desk, for the agent the signed link names", async () => {
+    const f = await connect({ privateKey: KEY });
+    const token = encodePayLink(link(), await AGENT_KEY.signMessage({ message: payLinkMessage(link()) }));
+    const extra = { chainId: 4663, link: token, desk: DESK, agent: link().agent, priceWei: link().price, burnWei: "400000000000000", burnPot: "0x00000000000000000000000000000000000b0b07", dueInHours: 24, allowEarly: true, linkId: "0x1", brief: "" };
+    const offer = { scheme: "factor-lock", network: "robinhood-chain", maxAmountRequired: "40400000000000000", resource: "", description: "", mimeType: "application/json", payTo: "0x00000000000000000000000000000000000000ee", maxTimeoutSeconds: 600, asset: "0x0000000000000000000000000000000000000000", extra };
+    s.site.x402 = { status: 402, body: { x402Version: 1, error: "X-PAYMENT header is required", accepts: [offer] } };
+    expect((await refusal(f.payX402(`${s.api}/api/v1/x402/${token}`))).code).toBe("wrong_desk");
+    s.site.x402 = { status: 402, body: { x402Version: 1, accepts: [{ ...offer, scheme: "exact" }] } };
+    expect((await refusal(f.payX402(`${s.api}/api/v1/x402/${token}`))).code).toBe("not_x402");
+    s.site.x402 = { status: 200, body: {} };
+    expect((await refusal(f.payX402(`${s.api}/api/v1/x402/${token}`))).code).toBe("not_x402");
+    s.site.x402 = null;
+  });
+});
+
+describe("an agent's record", () => {
+  const signer = privateKeyToAccount("0x47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a");
+  async function signed(over: Partial<RecordMessage> = {}): Promise<AgentRecord> {
+    const message = { agent: AGENTS[0].address, block: 100, delivered: 5, onTime: 4, late: 1, settled: 4, settledAtHalf: 1, refunded: 0, advancesRepaid: 2, advancesNotRepaid: 0, customers: 3, volume: "200000000000000000", score: 410, barred: false, issuedAt: 1_790_000_000, expiresAt: 4_000_000_000, ...over };
+    const signature = await signer.signTypedData(recordTypedData(4663, DESK, message) as never);
+    return { version: 1, agent: AGENTS[0].address, chainId: 4663, desk: DESK, attestation: { signer: signer.address.toLowerCase(), signature, digest: "0x", message, issuedAt: "", expiresAt: "" } } as unknown as AgentRecord;
+  }
+
+  it("checks Factor's attestation by its signature alone, and catches one figure changed, an expired one and another signer", async () => {
+    const rec = await signed();
+    expect(await verifyRecord(rec, { signer: signer.address })).toEqual({ ok: true });
+    const changed = { ...rec, attestation: { ...rec.attestation!, message: { ...rec.attestation!.message, settled: 40 } } };
+    expect((await verifyRecord(changed, { signer: signer.address })).ok).toBe(false);
+    expect((await verifyRecord(rec, { signer: AGENT_KEY.address })).why).toMatch(/signed by/);
+    expect((await verifyRecord(await signed({ expiresAt: 1_700_000_000 }), { signer: signer.address })).why).toMatch(/expired/);
+    expect((await verifyRecord({ ...rec, attestation: null }, { signer: signer.address })).why).toMatch(/no attestation/);
+  });
+
+  it("is read by name or address, and the tool says whether Factor signed it", async () => {
+    const f = await connect();
+    s.site.record = { ...(await signed()), name: "lumen-07", score: 410, barred: false, jobs: { locked: 6, open: 1, delivered: 5, onTime: 4, late: 1, settled: 4, settledAtHalf: 1, declined: 0, refunded: 0, refundedAfterDrawing: 0, unanswered: 0 }, advances: { repaid: 2, notRepaid: 0, earlyKept: 0 }, volumeEth: "0.2", customers: 3, distinctCustomers: 3, payWithFactor: { deals: 2, burnedWei: "800000000000000", burnedEth: "0.0008" }, block: 100 };
+    const text = (await runTool(f, "factor_record", { agent: "lumen-07" }, null)).text;
+    expect(text).toContain("lumen-07");
+    expect(text).toContain("5 delivered (4 on time, 1 late)");
+    expect(text).toContain("Paid with Factor: 2 deals, 0.0008 ETH to the burn");
+    expect(text).toContain("signed by Factor");
+    s.site.record = null;
+    expect((await refusal(f.record("nobody-here"))).code).toBe("no_agent");
   });
 });

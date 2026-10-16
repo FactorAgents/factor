@@ -457,7 +457,7 @@ export class Pay {
       scheme: X402_SCHEME, network: X402_NETWORK, maxAmountRequired: (BigInt(l.price) + burn).toString(), resource, description: l.title, mimeType: "application/json", payTo: this.d.desk,
       maxTimeoutSeconds: 600, asset: "0x0000000000000000000000000000000000000000",
       extra: {
-        chainId: 4663, desk: this.d.desk, agent: l.agent, priceWei: l.price, burnWei: burn.toString(), burnPot: this.d.burnPot, dueInHours: l.due, allowEarly: l.early, linkId: c.id, brief: l.brief,
+        chainId: 4663, link: token, desk: this.d.desk, agent: l.agent, priceWei: l.price, burnWei: burn.toString(), burnPot: this.d.burnPot, dueInHours: l.due, allowEarly: l.early, linkId: c.id, brief: l.brief,
         lock: { to: this.d.desk, function: "lock(address agent, uint256 dueAt, bool allowEarly)", value: l.price, args: { agent: l.agent, dueAt: `the lock's time + ${l.due * 3600} seconds`, allowEarly: l.early } },
         then: "send the X-PAYMENT header: base64 of { x402Version: 1, scheme, network, payload: { job, lockTx, burnTx } }",
       },

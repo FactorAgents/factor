@@ -294,6 +294,90 @@ export const TOOLS: Tool[] = [
       return `Job ${a.job} is declined; its customer has the payment back. Transaction ${r.explorer}.`;
     },
   },
+  {
+    name: "factor_sign_up", readOnly: false,
+    input: { name: z.string().regex(/^[a-z0-9](?:[a-z0-9-]{1,22})[a-z0-9]$/).describe("3 to 24 characters: small letters, digits and single dashes, like lumen-07"), does: z.string().min(3).max(80).describe("One line on what the agent does, without links") },
+    description: "Sign this wallet up as an agent in one step: register it on the desk (one transaction, once, only if it has not yet) and give it its name and what it does (a signature). After it, anybody can lock a job for it and it can make Pay with Factor links.",
+    async run(f, a) {
+      const r = await f.signUp({ name: String(a.name), does: String(a.does) });
+      return `${a.name} is an agent on Factor${r.registered ? ` (registered now, transaction ${r.hash})` : " (it was registered already)"}: "${a.does}". Make a payment link with factor_create_pay_link.`;
+    },
+  },
+  {
+    name: "factor_create_pay_link", readOnly: false,
+    input: {
+      price: amount, title: z.string().min(3).max(80).describe("What the buyer gets, in one line without links"),
+      brief: z.string().max(2000).optional().describe("The details of what is sold, up to 2,000 characters. Anyone with the link reads it"),
+      due_in_hours: z.number().int().min(1).max(720).optional().describe("Hours the agent has once paid. 24 when not given"),
+      allow_early: z.boolean().optional().describe("true lets the agent draw up to half of the payment before delivering. false when not given"),
+      expires_in_days: z.number().min(1).max(365).optional().describe("When the link stops working. 30 days when not given"),
+    },
+    description: "Make a Pay with Factor link for this agent's work: a page anybody can pay with a wallet or a passkey, and an x402 address another agent's program can pay. The buyer's payment is locked on Robinhood Chain until delivery; a rejected delivery settles at half. Signed by this agent's key, so nobody can change the price or the terms. A signature, not a transaction: it costs nothing.",
+    async run(f, a) {
+      const r = await f.createPayLink({ price: String(a.price), title: String(a.title), ...(typeof a.brief === "string" ? { brief: a.brief } : {}), dueInHours: a.due_in_hours as number | undefined, allowEarly: a.allow_early === true, expiresInDays: a.expires_in_days as number | undefined });
+      return `The link: ${r.url}\nFor another agent's program (x402): ${r.x402}\nIt sells "${r.link.title}" for ${eth(BigInt(r.link.price))} ETH, due ${r.link.due} hours after payment, until ${new Date(r.link.exp * 1000).toISOString()}.${r.published ? " It is shown on this agent's page." : ""}`;
+    },
+  },
+  {
+    name: "factor_pay_link_info", readOnly: true, input: { link: z.string().describe("A Pay with Factor link, or its x402 address") },
+    description: "What a Pay with Factor link sells, checked by Factor: the agent really signed it, it has not expired, the agent is on the desk, and what the buyer pays (the price, and the deal's small share that buys and burns $FACTOR).",
+    async run(f, a) {
+      const i = await f.payLinkInfo(String(a.link));
+      const page = await f.agent(i.link.agent).catch(() => null);
+      return [
+        `"${i.link.title}" from ${page?.agent.name ?? i.link.agent}: ${i.priceEth} ETH, plus ${i.burnEth} ETH that buys and burns $FACTOR. Due ${i.link.due} hours after payment. ${i.link.early ? "The agent may draw up to half before it delivers; that part is not refunded if it does not deliver." : "Nothing is drawn from the payment before delivery."}`,
+        ...(i.link.brief ? [`The brief: ${i.link.brief}`] : []),
+        page ? `The agent: score ${page.agent.score} of 1000, ${page.agent.settled} jobs settled, ${page.agent.settledAtHalf} settled at half.` : "",
+        i.registered ? "" : `It cannot be paid: ${i.error}`,
+        i.paused ? `New jobs are paused: ${i.paused}` : "",
+      ].filter(Boolean).join("\n");
+    },
+  },
+  {
+    name: "factor_pay_link", readOnly: false, input: { link: z.string().describe("A Pay with Factor link") },
+    description: "Pay a Pay with Factor link: lock its price for its agent on Robinhood Chain and add its small share to $FACTOR's burn. THIS SPENDS ETH from the wallet: the price is held by the desk and paid to the agent when it delivers, comes back if it does not deliver in time, and half comes back if the delivery is rejected. It cannot be cancelled. Read it with factor_pay_link_info and confirm with the user first unless they already said to pay it.",
+    async run(f, a, spending) {
+      const i = await f.payLinkInfo(String(a.link));
+      const total = BigInt(i.totalWei);
+      spending?.check(total, true);
+      const d = await f.payLink(String(a.link), { maxEth: total });
+      spending?.add(total);
+      return `Job ${d.jobId} is locked: ${eth(d.priceWei)} ETH for "${i.link.title}"${d.burnTx ? `, and ${eth(d.burnWei)} ETH went to the burn` : ""}. ${d.jobUrl} Transaction ${d.explorer}. Use factor_job to follow it, then factor_accept or factor_reject once it is delivered.`;
+    },
+  },
+  {
+    name: "factor_pay_x402", readOnly: false, input: { url: z.string().url().describe("The x402 address of an agent's work"), max_eth: amount.optional().describe("The most to spend on it, the burn included") },
+    description: "Buy another agent's work over x402: read the 402 the address answers, pay it on Factor's desk (only to Factor's desk, and only for the agent its signed link names), and get the job's number. THIS SPENDS ETH from the wallet, held by the desk until delivery as with factor_pay_link.",
+    async run(f, a, spending) {
+      const url = String(a.url);
+      const r = await fetch(url, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(30_000) }).catch(() => null);
+      const body = r ? ((await r.json().catch(() => ({}))) as { accepts?: { scheme: string; maxAmountRequired: string }[] }) : {};
+      const offer = body.accepts?.find((x) => x.scheme === "factor-lock");
+      if (!r || r.status !== 402 || !offer || !/^\d{1,30}$/.test(offer.maxAmountRequired)) return "That address does not ask for a payment Factor can make.";
+      const total = BigInt(offer.maxAmountRequired);
+      const cap = a.max_eth ? toWei(String(a.max_eth)) : null;
+      if (cap !== null && total > cap) return `It costs ${eth(total)} ETH with its burn, over the ${eth(cap)} ETH allowed. Nothing was sent.`;
+      spending?.check(total, true);
+      const d = await f.payX402(url, { maxEth: total });
+      spending?.add(total);
+      return `Job ${d.jobId} is locked through x402: ${eth(d.priceWei)} ETH${d.burnTx ? `, and ${eth(d.burnWei)} ETH to the burn` : ""}. ${d.jobUrl} Transaction ${d.explorer}.`;
+    },
+  },
+  {
+    name: "factor_record", readOnly: true, input: { agent: z.string().describe("The agent's name or address") },
+    description: "An agent's public record, worked out from the chain: jobs delivered, on time, settled at half, refunded, advances repaid, volume, customers, deals paid with Factor, its score, and whether Factor's signed attestation of it checks out.",
+    async run(f, a) {
+      const r = await f.record(String(a.agent));
+      const v = await f.verifyRecord(r).catch(() => ({ ok: false, why: "it could not be checked" }));
+      const j = r.jobs;
+      return [
+        `${r.name} (${r.agent}): score ${r.score} of 1000${r.barred ? ", barred from the pool" : ""}.`,
+        `Jobs: ${j.delivered} delivered (${j.onTime} on time, ${j.late} late), ${j.settled} settled, ${j.settledAtHalf} settled at half, ${j.refunded} refunded (${j.refundedAfterDrawing} after drawing on them), ${j.declined} declined, ${j.open} open. Volume ${r.volumeEth} ETH, ${r.customers} customers counted by the desk (${r.distinctCustomers} different ones).`,
+        `Advances: ${r.advances.repaid} repaid, ${r.advances.notRepaid} not repaid. Paid with Factor: ${r.payWithFactor.deals} deals, ${r.payWithFactor.burnedEth} ETH to the burn.`,
+        `As of block ${r.block}. Attestation: ${v.ok ? `signed by Factor (${r.attestation?.signer})` : `not confirmed, ${v.why}`}.`,
+      ].join("\n");
+    },
+  },
 ];
 
 function need(f: Factor): string {

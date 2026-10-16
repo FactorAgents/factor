@@ -28,10 +28,10 @@ export function state(over: Partial<State> = {}): State {
   };
 }
 
-export interface Stub { api: string; rpc: string; site: { state: State; refuse: number | null }; node: { chainId: number; code: string; calls: string[] }; posts: { path: string; body: unknown; auth?: string }[]; close(): Promise<void> }
+export interface Stub { api: string; rpc: string; site: { state: State; refuse: number | null; payInfo: ((token: string) => { status: number; body: unknown }) | null; x402: { status: number; body: unknown } | null; record: unknown }; node: { chainId: number; code: string; calls: string[] }; posts: { path: string; body: unknown; auth?: string }[]; close(): Promise<void> }
 
 export async function stub(): Promise<Stub> {
-  const site = { state: state(), refuse: null as number | null };
+  const site = { state: state(), refuse: null as number | null, payInfo: null as Stub["site"]["payInfo"], x402: null as Stub["site"]["x402"], record: null as unknown };
   const node = { chainId: 4663, code: "0x6080", calls: [] as string[] };
   const posts: { path: string; body: unknown; auth?: string }[] = [];
   const json = (res: import("node:http").ServerResponse, status: number, body: unknown) => { res.writeHead(status, { "content-type": "application/json" }); res.end(JSON.stringify(body)); };
@@ -53,6 +53,12 @@ export async function stub(): Promise<Stub> {
     const credit = /^\/compute\/credit\/(0x[0-9a-f]{40})$/.exec(path);
     if (credit) return json(res, 200, { agent: credit[1], balanceUsd: credit[1] === AGENTS[0].address ? 12.5 : 49.5, enabled: site.state.compute.enabled, lots: [{ job: 12, at: "2026-10-13T10:00:00.000Z", usd: 49.5, spentUsd: 0, state: "open" }] });
     if (path === "/state") return json(res, 200, site.state);
+    // Pay with Factor: what the test puts here is what the site says
+    const link = /^\/pay\/link\/(.+)$/.exec(path);
+    if (link) { const a = site.payInfo?.(link[1]) ?? { status: 404, body: { error: "not found" } }; return json(res, a.status, a.body); }
+    if (path.startsWith("/x402/")) return site.x402 ? json(res, site.x402.status, site.x402.body) : json(res, 404, { error: "not found" });
+    if (path === "/record/signer") return json(res, 200, { signer: (site.record as { attestation?: { signer: string } } | null)?.attestation?.signer ?? null });
+    if (path.startsWith("/record/")) return site.record ? json(res, 200, site.record) : json(res, 404, { error: "no such agent" });
     if (path === "/compute/v1/models") return json(res, 200, { object: "list", data: [
       { id: "openai/gpt-5", object: "model", owned_by: "openai", name: "OpenAI: GPT-5", context_length: 400_000, pricing: { inUsd: 1.3125, outUsd: 10.5 } },
       { id: "deepseek/deepseek-chat", object: "model", owned_by: "deepseek", name: "DeepSeek V3", context_length: 128_000, pricing: { inUsd: 0.2625, outUsd: 0.84 } },
