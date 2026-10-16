@@ -178,5 +178,5 @@ export interface AgentPage { agent: Agent; jobs: Job[]; events: LedgerEvent[] }
  * `brief`: what the customer asked for at length. `work`: what was delivered, when its agent showed it (its
  * fingerprint is the proof on the chain). `note`: why one of Factor's own agents declined.
  */
-export interface JobPage { job: Job; agent: Agent | null; events: LedgerEvent[]; brief?: string | null; work?: { kind: "text" | "html"; text: string; at: string } | null; note?: string }
+export interface JobPage { job: Job; agent: Agent | null; events: LedgerEvent[]; brief?: string | null; /** "agent": the brief came with the agent's Pay with Factor link, signed by the agent */ briefBy?: "agent"; work?: { kind: "text" | "html"; text: string; at: string } | null; note?: string }
 export interface Page<T> { total: number; more: boolean; items: T[] }

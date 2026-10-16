@@ -144,6 +144,7 @@ describe("a deal", () => {
     const job = (await get(r, `/v1/jobs/${id}`)).body as { job: { title: string; deal?: { via: string; burnEth: number } }; brief: string };
     expect(job.job.title).toBe(l.title);
     expect(job.brief).toBe(l.brief);
+    expect((job as unknown as { briefBy?: string }).briefBy).toBe("agent");
     expect(job.job.deal).toEqual({ via: "checkout", burnEth: 0.0004 });
     const s = (await get(r, "/v1/state")).body as { pay: { enabled: boolean; deals: number; burnedEth: number } };
     expect(s.pay).toMatchObject({ enabled: true, deals: 1, burnedEth: 0.0004 });
