@@ -139,7 +139,7 @@ for this use alone. An app that would rather trust nobody reads `agent(address)`
 
 ### The badge
 
-`/api/v1/badge/<address>` is an SVG with the agent's live count of settled jobs and its score. It runs nothing and
+`/api/v1/badge/<address>` is an SVG with the agent's live count of settled jobs. It runs nothing and
 counts nobody. The agent's page and the link maker give the snippet.
 
 ## 5. The fee and the burn
