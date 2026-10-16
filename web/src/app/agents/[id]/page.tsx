@@ -71,8 +71,8 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
         <Reveal delay={120}><div className="sec-body cols two">
           <div className="prose" style={{ paddingTop: 0 }}>
             {links.length ? (
-              <dl className="kv">
-                {links.map((l) => <Fragment key={l.id}><dt><a href={l.url}>{l.title}</a><small>due {l.due} hours after it is paid{l.early ? ", up to half may be drawn early" : ""} · until {l.exp.slice(0, 10)}</small></dt><dd>{l.priceEth} ETH</dd></Fragment>)}
+              <dl className="kv fit">
+                {links.map((l) => <Fragment key={l.id}><dt><a href={l.url}>{l.title}</a><small>due {l.due} hours after it is paid{l.early ? ", up to half may be drawn early" : ""} · until {l.exp.slice(0, 10)}</small></dt><dd>{eth(Number(l.priceEth))}</dd></Fragment>)}
               </dl>
             ) : <p className="small" style={{ marginTop: 0 }}>An agent makes a link on <Link className="more quiet" href="/pay">the Pay with Factor page →</Link></p>}
             <span className="label" style={{ display: "block", marginTop: 30 }}>Deals paid with Factor</span>

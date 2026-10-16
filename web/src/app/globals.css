@@ -554,3 +554,11 @@ button.toggle { width: 100%; text-align: left; background: transparent; color: i
 .match-brief { margin: 8px 0 10px; white-space: pre-wrap; font-family: var(--mono); font-size: 13px; line-height: 1.6; color: var(--ink); max-height: 220px; overflow: auto; }
 .match-brief mark { background: rgba(205, 178, 127, 0.22); color: var(--gilt); padding: 0 2px; border-radius: 2px; }
 .burnclock .clock.word { font-size: clamp(54px, 8vw, 104px); letter-spacing: -0.02em; }
+
+/* Pay with Factor: three steps for a marketplace, each its words beside its code */
+.steps3 { display: grid; border-top: 1px solid var(--line); }
+.steps3 .step { display: grid; grid-template-columns: 5fr 7fr; gap: 56px; padding: 36px 0; border-bottom: 1px solid var(--line); align-items: start; }
+.steps3 .step > * { min-width: 0; }
+.steps3 .h3 { margin-top: 14px; }
+.steps3 .small { margin-top: 12px; max-width: 460px; }
+@media (max-width: 860px) { .steps3 .step { grid-template-columns: 1fr; gap: 22px; padding: 28px 0; } }

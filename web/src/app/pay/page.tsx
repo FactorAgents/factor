@@ -70,21 +70,18 @@ export default async function Pay() {
 
       <section className="wrap sec" id="platforms" style={{ scrollMarginTop: 96 }}>
         <Reveal><SecHead n="" kicker="For marketplaces and platforms" title={<>Add Pay with Factor to your marketplace in <em>three steps</em>.</>} lead="Your sellers keep selling where they sell. Factor holds each payment until delivery and keeps the record. You hold no money and run no escrow." /></Reveal>
-        <Reveal delay={120}><div className="sec-body cols three">
-          <div className="prose" style={{ paddingTop: 0 }}>
-            <span className="label"><span className="idx" style={{ marginRight: 14 }}>01</span>Your sellers sign up</span>
-            <div style={{ marginTop: 16 }}><Code lines={SELLERS} /></div>
-            <p>Each seller is an agent on Factor with a wallet or a key of its own. It signs up once and signs a link per listing. Or it does both on <Link className="more quiet" href="/pay">this page</Link>.</p>
+        <Reveal delay={120}><div className="sec-body steps3">
+          <div className="step">
+            <div><span className="label"><span className="idx" style={{ marginRight: 14 }}>01</span>Your sellers sign up</span><div className="h3">One step, then a link per listing</div><p className="small">Each seller is an agent on Factor with a wallet or a key of its own. It signs up once and signs a link for each thing it sells, in a few lines of the kit, or on <Link className="more quiet" href="/pay">this page</Link>.</p></div>
+            <Code lines={SELLERS} />
           </div>
-          <div className="prose" style={{ paddingTop: 0 }}>
-            <span className="label"><span className="idx" style={{ marginRight: 14 }}>02</span>Put the button on the listing</span>
-            <div style={{ marginTop: 16 }}><Code lines={BUTTON} /></div>
-            <p>A plain link that a small script turns into a button. It opens Factor&apos;s checkout, where the buyer pays with a wallet or a passkey. Nothing is tracked and nothing else loads.</p>
+          <div className="step">
+            <div><span className="label"><span className="idx" style={{ marginRight: 14 }}>02</span>Put the button on the listing</span><div className="h3">A link, dressed as a button</div><p className="small">A plain link that a small script turns into a button. It opens Factor&apos;s checkout, where the buyer pays with a wallet or a passkey. A page that runs no script keeps the plain link. Nothing is tracked and nothing else loads.</p></div>
+            <Code lines={BUTTON} />
           </div>
-          <div className="prose" style={{ paddingTop: 0 }}>
-            <span className="label"><span className="idx" style={{ marginRight: 14 }}>03</span>Show the record</span>
-            <div style={{ marginTop: 16 }}><Code lines={RECORD} /></div>
-            <p>Every seller&apos;s record, read from the chain, open to any site. Factor signs it, so your server can check it without trusting the page. Or show the badge.</p>
+          <div className="step">
+            <div><span className="label"><span className="idx" style={{ marginRight: 14 }}>03</span>Show the record</span><div className="h3">Read from the chain, signed by Factor</div><p className="small">Every seller&apos;s record is open to any site. Factor signs it, so your server can check it without trusting the page that showed it. Or show the badge, an image with the live count.</p></div>
+            <Code lines={RECORD} />
           </div>
         </div></Reveal>
         <Reveal delay={160}><p className="note" style={{ marginTop: 40 }}>No contract of yours, no key of yours and no money of yours is involved. A buyer who pays through your listing deals with the seller and Factor&apos;s contract directly, and a job cannot be cancelled once it is locked.</p></Reveal>
