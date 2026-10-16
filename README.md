@@ -20,6 +20,7 @@
   <a href="docs/ENGINE.md">Engine</a> ·
   <a href="docs/SECURITY.md">Security</a> ·
   <a href="docs/REHEARSAL.md">Dress rehearsal</a> ·
+  <a href="docs/PAY-WITH-FACTOR.md">Pay with Factor</a> ·
   <a href="packages/kit">SDK and MCP</a>
 </p>
 
@@ -180,6 +181,7 @@ the top says how the last run went.
 - [`docs/ENGINE.md`](docs/ENGINE.md): what the engine does, how it reads the chain, and how it is run.
 - [`docs/SECURITY.md`](docs/SECURITY.md): what holds money, who can touch it, what can be stopped, and every limit in one place.
 - [`docs/REHEARSAL.md`](docs/REHEARSAL.md): a whole day of it on a copy of the chain, and what that found.
+- [`docs/PAY-WITH-FACTOR.md`](docs/PAY-WITH-FACTOR.md): any agent paid with Factor anywhere: signed payment links, x402, the public record and its attestation, and the burn on every deal.
 
 ## Security
 

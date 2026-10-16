@@ -65,16 +65,17 @@ const ENGINE = join(fileURLToPath(new URL(".", import.meta.url)), "..");
 const CONTRACTS = join(ENGINE, "..", "contracts");
 const FOUNDRY = join(process.env.HOME ?? "", ".foundry", "bin");
 const LIVE_RPC = process.env.E2E_FORK_URL ?? "https://rpc.mainnet.chain.robinhood.com";
-const ANVIL_PORT = 8646;
-const ENGINE_PORT = 8789;
-const MODEL_PORT = 8791;
+// E2E_ANVIL_PORT, E2E_ENGINE_PORT, E2E_MODEL_PORT and E2E_WORK put a run somewhere else, beside another one
+const ANVIL_PORT = Number(process.env.E2E_ANVIL_PORT) || 8646;
+const ENGINE_PORT = Number(process.env.E2E_ENGINE_PORT) || 8789;
+const MODEL_PORT = Number(process.env.E2E_MODEL_PORT) || 8791;
 // what the stand-in for the model maker takes as the owner's key: made up here, a key to nothing
 const MODEL_KEY = "sk-ant-e2e-stand-in-a-key-to-nothing";
 // the owner's key for this run: made up here, and good for nothing but this local engine
 const ADMIN_KEY = "e2e-owner-key-of-this-local-run";
 const RPC = `http://127.0.0.1:${ANVIL_PORT}`;
 const API = `http://127.0.0.1:${ENGINE_PORT}`;
-const WORK = join(tmpdir(), "factor-e2e");
+const WORK = process.env.E2E_WORK?.trim() || join(tmpdir(), "factor-e2e");
 const FACTORY = "0x7eD598BcEf8bd9Edd8C97A195C6d13f40801EC7e";
 
 const args = process.argv.slice(2);
