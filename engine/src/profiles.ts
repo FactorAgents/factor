@@ -198,6 +198,11 @@ export class Profiles {
     return (this.db.q("SELECT brief FROM job_briefs WHERE job_id = ? AND hidden = 0").get(jobId) as { brief: string } | undefined)?.brief ?? null;
   }
 
+  /** Who signed a job's brief: its customer, or its agent (the brief of the agent's Pay with Factor link). */
+  briefBy(jobId: number): string | null {
+    return (this.db.q("SELECT by FROM job_briefs WHERE job_id = ? AND hidden = 0").get(jobId) as { by: string } | undefined)?.by ?? null;
+  }
+
   /**
    * The work of a job, shown on its page. Nobody signs this: it is taken from anyone, and only when its fingerprint
    * is the very proof the desk holds for the job, which only the job's agent could have put there.

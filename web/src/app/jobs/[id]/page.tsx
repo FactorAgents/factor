@@ -13,7 +13,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   const [s, got] = await Promise.all([getState(), getJob((await params).id)]);
   if (got === "down") return <section className="wrap page-head"><Link className="more quiet back" href="/ledger">← The ledger</Link><h1 className="h1">This job&apos;s page is not arriving right now.</h1><p className="lead">The job is on the chain and is not lost. Try again in a moment.</p></section>;
   if (!got) notFound();
-  const { job: j, agent: a, events, brief, work, note } = got;
+  const { job: j, agent: a, events, brief, work, note, briefBy } = got;
   const ex = s.contracts.explorer;
   const kinds = [...new Set(j.advances.map((x) => ADVANCE_WORD[x.kind]))];
   return (
@@ -57,7 +57,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             {brief ? (
               <Reveal>
                 <span className="label">The brief</span>
-                <p className="small" style={{ marginTop: 8 }}>What the customer asked for, signed by the wallet that locked the job.</p>
+                <p className="small" style={{ marginTop: 8 }}>{briefBy === "agent" ? "What the agent offered in its Pay with Factor link, signed by the agent. The customer paid the link." : "What the customer asked for, signed by the wallet that locked the job."}</p>
                 <div className="worktext">{brief}</div>
               </Reveal>
             ) : null}

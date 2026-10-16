@@ -690,6 +690,8 @@ export class EngineApi {
       events: r.store.ledger(50, { jobId: id }).map((l) => eventJson(l, names)),
       // what the customer asked for at length, the work when its agent showed it, and a house agent's reason for declining
       brief: v.profiles?.brief(id) ?? null,
+      // a job paid through a link starts with the link's brief, which its agent signed; the customer may sign their own
+      ...(v.profiles?.briefBy(id) && v.profiles.briefBy(id) === row.agent && row.agent !== row.customer ? { briefBy: "agent" } : {}),
       work: work ? { kind: work.kind, text: work.body, at: new Date(work.at).toISOString() } : null,
       ...(note ? { note } : {}),
     });
