@@ -160,7 +160,9 @@ const VERIFY = [
   '  domain: { name: "Factor Record", version: "1",',
   "    chainId: 4663, verifyingContract: rec.desk },",
   "  types: RECORD_TYPES, primaryType: \"Record\",",
-  "  message: a.message, signature: a.signature,",
+  "  message: { ...a.message,",
+  "    volume: BigInt(a.message.volume) },",
+  "  signature: a.signature,",
   "}) && a.message.expiresAt > Date.now() / 1000;",
 ];
 
