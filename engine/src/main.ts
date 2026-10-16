@@ -70,9 +70,25 @@ const server = createServer((req, res) => {
     if (!engine.compute(req, res, path)) send(503, { type: "error", error: { type: "api_error", message: "The engine is not reading the chain yet." } });
     return;
   }
+  // Pay with Factor over x402 (./pay.ts): a 402 with what to pay, or the job a payment locked. GET and POST alike:
+  // the payment travels in the X-PAYMENT header, and nothing in a body is read
+  if (path.startsWith("/v1/x402/")) {
+    if (req.method !== "GET" && req.method !== "POST" && req.method !== "HEAD") return send(405, { error: "GET or POST" });
+    const payment = req.headers["x-payment"];
+    // the address the caller asked for, as the site passes it on: what the 402 names as the resource
+    const resource = typeof req.headers["x-factor-resource"] === "string" && /^https:\/\/[^\s]{1,9500}$/.test(req.headers["x-factor-resource"]) ? req.headers["x-factor-resource"] : `${process.env.FACTOR_SITE_URL?.trim() || "https://factoragents.fun"}/api${path}`;
+    engine.x402(path, typeof payment === "string" && payment.length <= 8192 ? payment : undefined, resource)
+      .then((a) => {
+        res.writeHead(a.status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff", ...a.headers });
+        res.end(JSON.stringify(a.body));
+      })
+      .catch(failed);
+    req.resume();
+    return;
+  }
   if (req.method === "POST") {
     const key = req.headers["x-admin-key"];
-    readJson(req, path.startsWith("/v1/accounts") ? ORDER_MOST : path === "/v1/jobs/brief" || path === "/v1/agents/make" ? BRIEF_BYTES : path === "/v1/jobs/delivery" ? WORK_BYTES : BODY_MOST)
+    readJson(req, path.startsWith("/v1/accounts") || path.startsWith("/v1/pay/") ? ORDER_MOST : path === "/v1/jobs/brief" || path === "/v1/agents/make" ? BRIEF_BYTES : path === "/v1/jobs/delivery" ? WORK_BYTES : BODY_MOST)
       .then((body) => engine.post(path, body, caller(req), typeof key === "string" ? key : undefined))
       .then((a) => (a ? send(a.status, a.body) : send(404, { error: "not found" })))
       .catch((e: Error) => (e.message === "too large" ? send(413, { error: "the body is too large" }) : e.message === "not JSON" ? send(400, { error: "the body is not JSON" }) : failed()));
