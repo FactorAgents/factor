@@ -131,7 +131,7 @@ describe("a hire", () => {
     expect(proof.message).toContain(`parent job: ${parent}`);
     // the same tree from the parent's page and on its own path
     expect(((await get(r, `/v1/jobs/${parent}`)).body as { tree: TreeJson }).tree.nodes).toHaveLength(2);
-    expect(((await get(r, `/v1/jobs/${parent}/tree`)).body as TreeJson).nodes).toHaveLength(2);
+    expect(((await get(r, `/v1/jobs/${parent}/tree`)).body as unknown as TreeJson).nodes).toHaveLength(2);
     // asked again for the same job, the same answer: a hirer can retry safely
     const again = await post(r, "/v1/subjobs/link", { plan: planId, job, lockTx: r.engine.subjobs!.store.link(job)!.lock_tx });
     expect(again.body).toMatchObject({ ok: true, job });
@@ -235,7 +235,7 @@ describe("the due time, the depth and the count", () => {
     expect(two.linked.body).toMatchObject({ depth: 2, root: parent, parent: one.job });
     const three = await plan(r, two.job, { key: sub2Key, agent: SUB3, price: PRICE / 16n, dueInS: DAY / 2 });
     expect(String(three.a.body.error)).toMatch(/2 levels under a customer's job cannot hire again/);
-    const tree = ((await get(r, `/v1/jobs/${two.job}/tree`)).body as TreeJson);
+    const tree = ((await get(r, `/v1/jobs/${two.job}/tree`)).body as unknown as TreeJson);
     expect(tree.nodes.map((n) => [n.job, n.depth])).toEqual([[parent, 0], [one.job, 1], [two.job, 2]]);
   });
 
@@ -360,7 +360,7 @@ describe("money flows down, and a rejection up the chain", () => {
     expect(tree.nodes.map((n) => [n.state, !!n.canReject])).toEqual([["half", false], ["settled", false], ["half", false]]);
     // the choice ends with the delivery's 24 hours
     const c = await (async () => { const p2 = await parentJob(r); const h = await hire(r, p2, { agent: SUB3, price: PRICE / 4n }); r.chain.deliver(h.job); r.chain.deliver(p2); r.chain.reject(p2); r.chain.mine(1, DAY + 60); await r.engine.watchOnce(); return p2; })();
-    const late = ((await get(r, `/v1/jobs/${c}/tree`)).body as TreeJson).nodes[1]!;
+    const late = ((await get(r, `/v1/jobs/${c}/tree`)).body as unknown as TreeJson).nodes[1]!;
     expect(late.canReject).toBeUndefined();
   });
 });
