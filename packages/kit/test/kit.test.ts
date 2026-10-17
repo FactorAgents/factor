@@ -11,7 +11,10 @@ import { limitsFrom, runTool, Spending, TOOLS } from "../src/tools.js";
 import { WORDS } from "../src/words.js";
 import { keyMessage as engineComputeKey } from "../../../engine/src/compute.js";
 import { briefMessage as engineBrief, profileMessage as engineProfile, proofOf as engineProof, titleMessage as engineTitle } from "../../../engine/src/profiles.js";
-import { AGENTS, DESK, KEY, stub, type Stub } from "./stub.js";
+import { hireMessage as engineHire, planIdOf as enginePlanId } from "../../../engine/src/subjobs.js";
+import { hireMessage, planIdOf } from "../src/index.js";
+import { recoverMessageAddress } from "viem";
+import { AGENTS, DESK, JOB, KEY, stub, type Stub } from "./stub.js";
 
 let s: Stub;
 beforeAll(async () => { s = await stub(); });
@@ -336,11 +339,11 @@ describe("the assistant's caps", () => {
 
 describe("the tools", () => {
   it("have a name, a description and an input each, and say which of them send something", () => {
-    expect(TOOLS.map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_hire", "factor_accept", "factor_reject", "factor_set_title", "factor_register", "factor_set_profile", "factor_bond", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_ask_model", "factor_draw", "factor_deliver", "factor_decline", "factor_sign_up", "factor_create_pay_link", "factor_pay_link_info", "factor_pay_link", "factor_pay_x402", "factor_record"]);
+    expect(TOOLS.map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_hire", "factor_accept", "factor_reject", "factor_set_title", "factor_register", "factor_set_profile", "factor_bond", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_ask_model", "factor_draw", "factor_deliver", "factor_decline", "factor_sign_up", "factor_create_pay_link", "factor_pay_link_info", "factor_pay_link", "factor_pay_x402", "factor_hire_for_job", "factor_job_tree", "factor_reject_sub_jobs", "factor_record"]);
     for (const t of TOOLS) expect(t.description.length, t.name).toBeGreaterThan(40);
-    expect(TOOLS.filter((t) => t.readOnly).map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_pay_link_info", "factor_record"]);
+    expect(TOOLS.filter((t) => t.readOnly).map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_pay_link_info", "factor_job_tree", "factor_record"]);
     // the ones that spend or cannot be undone say so in capitals, where an assistant will not miss it
-    for (const name of ["factor_hire", "factor_reject", "factor_bond", "factor_pay_link", "factor_pay_x402"]) expect(TOOLS.find((t) => t.name === name)!.description).toMatch(/SPENDS ETH|SETTLES AT HALF/);
+    for (const name of ["factor_hire", "factor_reject", "factor_bond", "factor_pay_link", "factor_pay_x402", "factor_hire_for_job", "factor_reject_sub_jobs"]) expect(TOOLS.find((t) => t.name === name)!.description).toMatch(/SPENDS ETH|SETTLES AT HALF/);
   });
 
   it("answer in words", async () => {
@@ -494,5 +497,74 @@ describe("an agent's record", () => {
     expect(text).toContain("signed by Factor");
     s.site.record = null;
     expect((await refusal(f.record("nobody-here"))).code).toBe("no_agent");
+  });
+});
+
+describe("agents that hire agents", () => {
+  const plan = { parent: 12, agent: AGENTS[1].address, price: "10000000000000000", dueAt: 1_800_000_000, early: false, title: "Part of job 0012", brief: "The dates, one per line.", at: 1_799_990_000 };
+  const far = new Date(Date.now() + 3 * 86_400_000).toISOString();
+  afterEach(() => { s.site.state.subjobs = undefined; s.site.state.jobs = [JOB]; s.site.jobExtra = {}; s.site.tree = null; });
+
+  it("signs a hire to the letter the engine checks", () => {
+    expect(hireMessage(plan)).toBe(engineHire(plan));
+    expect(planIdOf(plan)).toBe(enginePlanId(plan));
+    expect(hireMessage({ ...plan, brief: "", early: true })).toBe(engineHire({ ...plan, brief: "", early: true }));
+  });
+
+  it("refuses before anything is signed or sent: switched off, another agent's job, itself, no room, the job already closed, a due time after the job's", async () => {
+    const f = await connect({ privateKey: KEY });
+    const before = s.node.calls.length;
+    expect((await refusal(f.hireForJob(12, "page-smith", "0.01", "Build it"))).code).toBe("subjobs_off");
+    s.site.state.subjobs = { enabled: true, maxDepth: 2, perParent: 5 };
+    expect((await refusal(f.hireForJob(12, "page-smith", "0.01", "Build it"))).code).toBe("not_your_job");
+    s.site.state.jobs = [{ ...JOB, agentId: f.address!, state: "advanced", dueAt: far }];
+    s.site.jobExtra = { hiring: { open: true, freeEth: 0.02, freeWei: "20000000000000000", used: 0, perParent: 5, depth: 0, maxDepth: 2, dueBefore: far } };
+    expect((await refusal(f.hireForJob(12, f.address!, "0.01", "Build it"))).code).toBe("self_hire");
+    expect((await refusal(f.hireForJob(12, "lumen-07", "0.03", "Read it"))).message).toBe("Only 0.02 ETH is left of job 12's price to hire with.");
+    expect((await refusal(f.hireForJob(12, "lumen-07", 0.01 as never, "Read it"))).code).toBe("bad_amount");
+    s.site.jobExtra = { hiring: { open: false, why: "the job is no longer open", freeEth: 0.02, freeWei: "20000000000000000", used: 0, perParent: 5, depth: 0, maxDepth: 2, dueBefore: far } };
+    expect((await refusal(f.hireForJob(12, "lumen-07", "0.01", "Read it"))).message).toBe("Job 12 cannot hire now: the job is no longer open.");
+    // nothing reached the node as a transaction or a simulation, and nothing was signed or posted
+    expect(s.node.calls.slice(before).filter((m) => m === "eth_sendRawTransaction" || m === "eth_call")).toEqual([]);
+    expect(s.posts.filter((p) => p.path.startsWith("/subjobs"))).toEqual([]);
+    s.site.jobExtra = { hiring: { open: true, freeEth: 0.02, freeWei: "20000000000000000", used: 0, perParent: 5, depth: 0, maxDepth: 2, dueBefore: far } };
+    expect((await refusal(f.hireForJob(12, "lumen-07", "0.01", "Read it", { dueInHours: 100 }))).code).toBe("bad_due");
+  });
+
+  it("signs the hire with the wallet's own key and hands it to Factor before it would lock anything", async () => {
+    const f = await connect({ privateKey: KEY });
+    s.site.state.subjobs = { enabled: true, maxDepth: 2, perParent: 5 };
+    s.site.state.jobs = [{ ...JOB, agentId: f.address!, state: "advanced", dueAt: far }];
+    s.site.jobExtra = { hiring: { open: true, freeEth: 0.02, freeWei: "20000000000000000", used: 0, perParent: 5, depth: 0, maxDepth: 2, dueBefore: far } };
+    // a site that names no burn pot: refused there, after the plan and before any lock
+    s.site.state.contracts = { ...s.site.state.contracts, burnPot: null };
+    const r = await refusal(f.hireForJob(12, "lumen-07", "0.01", "Every date in the contract.", { maxEth: "0.0101" }));
+    expect(r.code, r.message).toBe("wrong_pot");
+    const sent = s.posts.filter((p) => p.path === "/subjobs/plan").at(-1)!.body as Record<string, unknown> & { signature: `0x${string}` };
+    expect(sent).toMatchObject({ parent: 12, agent: AGENTS[0].address, price: "10000000000000000", early: false, title: "Part of job 0012", brief: "Every date in the contract." });
+    const words = hireMessage(sent as unknown as Parameters<typeof hireMessage>[0]);
+    expect((await recoverMessageAddress({ message: words, signature: sent.signature })).toLowerCase()).toBe(f.signer);
+    // due before the job, at least an hour away
+    expect(Number(sent.dueAt)).toBeLessThan(Date.parse(far) / 1000);
+    expect(Number(sent.dueAt)).toBeGreaterThan(Date.now() / 1000 + 3600);
+    // a cap under the price and its burn is refused once Factor has said what the burn is
+    expect((await refusal(f.hireForJob(12, "lumen-07", "0.01", "Every date in the contract.", { maxEth: "0.01" }))).code).toBe("over_cap");
+  });
+
+  it("reads the chain of work, and the tools say it in words", async () => {
+    const f = await connect();
+    expect(await f.jobTree(12)).toBeNull();
+    expect((await runTool(f, "factor_job_tree", { job: 12 }, null)).text).toBe("Job 12 hired nobody, and is not part of another job.");
+    s.site.tree = { root: 12, burn: { deals: 2, eth: 0.0005 }, nodes: [
+      { job: 12, id: "0012", parent: null, depth: 0, customer: "0xc1", agent: AGENTS[0].address, state: "half", priceEth: 0.04, title: "Summarise a contract", lockTx: "0x1", burnEth: 0.0004, via: "checkout", verified: true },
+      { job: 13, id: "0013", parent: 12, depth: 1, customer: AGENTS[0].address, agent: AGENTS[1].address, state: "delivered", priceEth: 0.01, title: "The dates", lockTx: "0x2", burnEth: 0.0001, via: "kit", verified: true, canReject: true },
+    ] };
+    const text = (await runTool(f, "factor_job_tree", { job: 13 }, null)).text;
+    expect(text).toContain("Customer's job 12 \"Summarise a contract\"");
+    expect(text).toContain("  Hired 13 \"The dates\"");
+    expect(text).toContain("Its customer may still reject the delivery");
+    expect(text).toContain("2 deals in it added 0.0005 ETH to the burn.");
+    // the tool that spends asks for a key, and is capped like a hire
+    expect((await runTool(f, "factor_hire_for_job", { parent_job: 12, agent: "lumen-07", price: "0.01", brief: "x" }, null)).text).toMatch(/No wallet key is set/);
   });
 });

@@ -28,6 +28,10 @@ export interface Job {
   feeEth?: number;
   notRepaidEth?: number;
   tx: string;
+  /** locked through a Pay with Factor link: how it was paid, and what the buyer added to the burn beside it */
+  deal?: { via: string; burnEth: number };
+  /** a sub-job: the job its customer (that job's agent) hired for, and how far under the customer's job it is */
+  parent?: { n: number; id: string; depth: number };
 }
 
 export interface Agent {
@@ -77,6 +81,8 @@ export interface State {
   accounts: { enabled: boolean; factory: string | null; ordersPerDay: number };
   /** set while Factor has paused new jobs: why, in a line. The kit then locks nothing. */
   paused: string | null;
+  /** agents that hire agents: whether a job's agent can hire for it, how deep a chain goes and how many under one job */
+  subjobs?: { enabled: boolean; maxDepth: number; perParent: number };
 }
 
 /** A Factor account: what an agent's key acts through when Factor pays its gas (connect with `gasless: true`). */
@@ -106,12 +112,41 @@ export interface RouterModel { id: string; name: string; maker: string; contextL
 /** A model's answer, paid from the agent's compute credit. */
 export interface ModelAnswer { text: string; model: string; inputTokens: number; outputTokens: number }
 
-export interface AgentPage { agent: Agent; jobs: Job[]; events: LedgerLine[] }
+/** The other agents one agent hired for parts of its jobs, and those that hired it, with how many jobs. */
+export interface Hiring { hiredBy: { address: string; name: string; named?: boolean; jobs: number }[]; hires: { address: string; name: string; named?: boolean; jobs: number }[] }
+/** `hiring` is there only when the agent hired somebody or was hired by one. */
+export interface AgentPage { agent: Agent; jobs: Job[]; events: LedgerLine[]; hiring?: Hiring }
+
+/** One job in a chain of work: the customer's job at depth 0, the jobs its agent hired for at 1, and so on. */
+export interface TreeNode {
+  job: number;
+  id: string;
+  parent: number | null;
+  depth: number;
+  customer: string;
+  agent: string;
+  state: JobState;
+  priceEth: number;
+  title: string;
+  lockTx: string;
+  /** what the buyer added to the burn beside this job */
+  burnEth: number;
+  via: string | null;
+  /** its customer (the hiring agent) may still reject the delivery, now that the job above was rejected */
+  canReject?: boolean;
+  /** the desk says the sub-job's customer is its parent's agent; null until both are read from the chain */
+  verified: boolean | null;
+  /** the words the hiring agent signed, naming the parent, and its signature: anybody can check them */
+  hire?: { message: string; signature: string; by: string };
+}
+export interface JobTree { root: number; nodes: TreeNode[]; burn: { deals: number; eth: number } }
+/** What a job's agent can still hire for it. */
+export interface HireRoom { open: boolean; why?: string; freeEth: number; freeWei: string; used: number; perParent: number; depth: number; maxDepth: number; dueBefore: string }
 /**
  * `brief`: what the customer asked for at length. `work`: what was delivered, when its agent showed it. `note`: why
  * one of Factor's own agents declined the job.
  */
-export interface JobPage { job: Job; agent: Agent | null; events: LedgerLine[]; brief?: string | null; work?: { kind: "text" | "html"; text: string; at: string } | null; note?: string }
+export interface JobPage { job: Job; agent: Agent | null; events: LedgerLine[]; brief?: string | null; work?: { kind: "text" | "html"; text: string; at: string } | null; note?: string; /** the chain of work the job is part of */ tree?: JobTree; /** what its agent can still hire for it, while hiring is on */ hiring?: HireRoom }
 export interface Page<T> { total: number; more: boolean; items: T[] }
 /** What a call that was sent answers with. */
 export interface Sent { hash: `0x${string}`; explorer: string }
@@ -137,6 +172,28 @@ export interface PayLinkInfo {
   error?: string;
 }
 
+/** A sub-job: a job this agent locked for another agent, for part of a job it is doing itself. */
+export interface SubJob {
+  jobId: number;
+  parentJobId: number;
+  /** 1 under the customer's job, 2 under that */
+  depth: number;
+  agent: string;
+  lockTx: `0x${string}`;
+  burnTx: `0x${string}` | null;
+  /** Factor checked the hire's burn on the chain */
+  burned: boolean;
+  priceWei: bigint;
+  burnWei: bigint;
+  /** the signed plan's number */
+  plan: `0x${string}`;
+  /** Factor linked it under the parent job. false: the money is locked as an ordinary job of this agent's, and `note` says why */
+  linked: boolean;
+  note?: string;
+  jobUrl: string;
+  explorer: string;
+}
+
 /** A job paid through a link. `burned`: Factor checked the deal's burn on the chain. */
 export interface Deal {
   jobId: number;
@@ -147,4 +204,8 @@ export interface Deal {
   burnWei: bigint;
   jobUrl: string;
   explorer: string;
+  /** bought for a job this agent is doing: the job it is part of, and how far under the customer's job */
+  subjob?: { parent: number; depth: number } | null;
+  /** why it could not be linked under that job; the deal stands as an ordinary one */
+  subjobNote?: string;
 }
