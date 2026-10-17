@@ -265,8 +265,13 @@ const eth = (wei: string | bigint): number => Number(BigInt(wei) / 10n ** 12n) /
 const tokens = (wei: bigint): number => Number(wei / 10n ** 12n) / 1e6;
 const iso = (s: number): string => new Date(s * 1000).toISOString();
 const pad = (id: number): string => String(id).padStart(4, "0");
-/** 0.0200 ETH, the way the ledger writes an amount. */
-const ethText = (wei: string, sign = ""): string => `${sign}${(Number(BigInt(wei) / 10n ** 12n) / 1e6).toFixed(4)} ETH`;
+/** 0.0200 ETH, the way the ledger writes an amount; a small one keeps its digits (0.00075, not 0.0008). */
+const ethText = (wei: string, sign = ""): string => {
+  const n = Number(BigInt(wei) / 10n ** 12n) / 1e6;
+  let p = 4;
+  while (p < 6 && n < 0.01 && Number(n.toFixed(p)) !== n) p++;
+  return `${sign}${n.toFixed(p)} ETH`;
+};
 const whole = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 /** An address the site may link to: https and nothing else. */
 export const link = (raw: string | undefined): string | null => (raw && /^https:\/\/[^\s]+$/.test(raw.trim()) ? raw.trim() : null);
