@@ -28,10 +28,10 @@ export function state(over: Partial<State> = {}): State {
   };
 }
 
-export interface Stub { api: string; rpc: string; site: { state: State; refuse: number | null; payInfo: ((token: string) => { status: number; body: unknown }) | null; x402: { status: number; body: unknown } | null; record: unknown }; node: { chainId: number; code: string; calls: string[] }; posts: { path: string; body: unknown; auth?: string }[]; close(): Promise<void> }
+export interface Stub { api: string; rpc: string; site: { state: State; refuse: number | null; payInfo: ((token: string) => { status: number; body: unknown }) | null; x402: { status: number; body: unknown } | null; record: unknown; jobExtra: Record<string, unknown>; tree: unknown }; node: { chainId: number; code: string; calls: string[] }; posts: { path: string; body: unknown; auth?: string }[]; close(): Promise<void> }
 
 export async function stub(): Promise<Stub> {
-  const site = { state: state(), refuse: null as number | null, payInfo: null as Stub["site"]["payInfo"], x402: null as Stub["site"]["x402"], record: null as unknown };
+  const site = { state: state(), refuse: null as number | null, payInfo: null as Stub["site"]["payInfo"], x402: null as Stub["site"]["x402"], record: null as unknown, jobExtra: {} as Record<string, unknown>, tree: null as unknown };
   const node = { chainId: 4663, code: "0x6080", calls: [] as string[] };
   const posts: { path: string; body: unknown; auth?: string }[] = [];
   const json = (res: import("node:http").ServerResponse, status: number, body: unknown) => { res.writeHead(status, { "content-type": "application/json" }); res.end(JSON.stringify(body)); };
@@ -48,6 +48,8 @@ export async function stub(): Promise<Stub> {
           ? { type: "message", model: m, content: [{ type: "text", text: "Hello from Claude" }], usage: { input_tokens: 12, output_tokens: 4 } }
           : { id: "gen-1", model: m, choices: [{ message: { role: "assistant", content: "Hello from the model" } }], usage: { prompt_tokens: 10, completion_tokens: 5 } });
       }
+      // agents that hire agents: the plan is taken and holds room, as the engine would answer
+      if (path === "/subjobs/plan") return json(res, 200, { ok: true, plan: `0x${"ab".repeat(32)}`, burnWei: "100000000000000", depth: 1 });
       return json(res, 200, path === "/compute/key" ? { key: "fck_a-key-from-the-stub-0123456789ab", expiresAt: "2026-10-20T00:00:00.000Z", agent: (posts.at(-1)!.body as { address: string }).address } : { ok: true });
     }
     const credit = /^\/compute\/credit\/(0x[0-9a-f]{40})$/.exec(path);
@@ -68,15 +70,18 @@ export async function stub(): Promise<Stub> {
     if (path === "/ledger") return json(res, 200, { total: 0, more: false, items: [] });
     const a = /^\/agents\/(.+)$/.exec(path);
     if (a) { const g = site.state.agents.find((x) => x.address === a[1].toLowerCase() || x.name === a[1]); return g ? json(res, 200, { agent: g, jobs: site.state.jobs, events: [] }) : json(res, 404, { error: "no such agent" }); }
+    const t = /^\/jobs\/(\d+)\/tree$/.exec(path);
+    if (t) return site.tree ? json(res, 200, site.tree) : json(res, 404, { error: "that job hired nobody" });
     const j = /^\/jobs\/(\d+)$/.exec(path);
-    if (j) { const g = site.state.jobs.find((x) => x.n === Number(j[1])); return g ? json(res, 200, { job: g, agent: site.state.agents[0], events: [] }) : json(res, 404, { error: "no such job" }); }
+    if (j) { const g = site.state.jobs.find((x) => x.n === Number(j[1])); return g ? json(res, 200, { job: g, agent: site.state.agents[0], events: [], ...site.jobExtra }) : json(res, 404, { error: "no such job" }); }
     json(res, 404, { error: "not found" });
   });
   const rpc = createServer(async (req, res) => {
     const call = JSON.parse(await body(req)) as { id: number; method: string } | { id: number; method: string }[];
     const one = (c: { id: number; method: string }) => {
       node.calls.push(c.method);
-      const result = c.method === "eth_chainId" ? `0x${node.chainId.toString(16)}` : c.method === "eth_getCode" ? node.code : c.method === "eth_blockNumber" ? "0x10" : null;
+      const block = { number: "0x10", hash: `0x${"11".repeat(32)}`, parentHash: `0x${"10".repeat(32)}`, timestamp: `0x${Math.floor(Date.now() / 1000).toString(16)}`, gasLimit: "0x1c9c380", gasUsed: "0x0", baseFeePerGas: "0x1", transactions: [], miner: `0x${"00".repeat(20)}`, extraData: "0x", logsBloom: `0x${"00".repeat(256)}`, nonce: "0x0000000000000000", difficulty: "0x0", sha3Uncles: `0x${"00".repeat(32)}`, size: "0x1", stateRoot: `0x${"00".repeat(32)}`, receiptsRoot: `0x${"00".repeat(32)}`, transactionsRoot: `0x${"00".repeat(32)}`, uncles: [], mixHash: `0x${"00".repeat(32)}` };
+      const result = c.method === "eth_chainId" ? `0x${node.chainId.toString(16)}` : c.method === "eth_getCode" ? node.code : c.method === "eth_blockNumber" ? "0x10" : c.method === "eth_getBlockByNumber" ? block : null;
       return result === null ? { jsonrpc: "2.0", id: c.id, error: { code: -32601, message: `the stub node does not do ${c.method}` } } : { jsonrpc: "2.0", id: c.id, result };
     };
     json(res, 200, Array.isArray(call) ? call.map(one) : one(call));

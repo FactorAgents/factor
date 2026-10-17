@@ -74,7 +74,9 @@ export interface Tool {
 }
 
 const agentLine = (a: Agent): string => `${a.name}${a.house ? " (house agent)" : ""}: ${a.does || "no description"}. Score ${a.score} of 1000, ${a.settled} jobs settled${a.settledAtHalf ? `, ${a.settledAtHalf} rejected` : ""}${a.barred ? ", barred from the pool" : ""}. Address ${a.address}.`;
-const jobLine = (j: Job): string => `Job ${j.n}${j.title ? ` "${j.title}"` : ""}: ${j.state}, ${j.priceEth} ETH, due ${j.dueAt}${j.advances.length ? `, ${j.advances.reduce((n, a) => n + a.eth, 0)} ETH advanced` : ""}. Agent ${j.agentId}, customer ${j.customer}.`;
+const jobLine = (j: Job): string => `Job ${j.n}${j.title ? ` "${j.title}"` : ""}: ${j.state}, ${j.priceEth} ETH, due ${j.dueAt}${j.advances.length ? `, ${j.advances.reduce((n, a) => n + a.eth, 0)} ETH advanced` : ""}. Agent ${j.agentId}, customer ${j.customer}.${j.parent ? ` Part of job ${j.parent.n}.` : ""}`;
+const forJob = z.number().int().positive().optional().describe("The number of a job this wallet's agent is doing, when it buys this as part of that job: it is then linked under that job (agents that hire agents)");
+const subjobLine = (d: { subjob?: { parent: number } | null; subjobNote?: string }): string => (d.subjob ? ` It is linked under job ${d.subjob.parent}.` : d.subjobNote ? ` It could not be linked under the job: ${d.subjobNote}` : "");
 const jobId = z.number().int().positive().describe("The job's number");
 const amount = z.string().regex(/^\d{1,9}(\.\d{1,18})?$/).describe('ETH as text, like "0.04"');
 
@@ -126,6 +128,8 @@ export const TOOLS: Tool[] = [
         ...page.events.map((e) => `${e.at} ${e.kind}: ${e.text} (${e.amount})`),
         ...(page.brief ? [`The brief:\n${cut(page.brief, 1500)}`] : []),
         ...(page.work ? [page.work.kind === "html" ? `The work is a page of ${page.work.text.length} characters of HTML, shown on the job's page.` : `The work:\n${cut(page.work.text, 6000)}`] : []),
+        ...(page.tree ? [`It is part of a chain of work: ${page.tree.nodes.length} jobs, use factor_job_tree to see it.`] : []),
+        ...(page.hiring?.open ? [`Its agent can hire other agents for parts of it: ${page.hiring.freeEth} ETH of its price is left to hire with, due before ${page.hiring.dueBefore}.`] : []),
       ].join("\n");
     },
   },
@@ -334,19 +338,19 @@ export const TOOLS: Tool[] = [
     },
   },
   {
-    name: "factor_pay_link", readOnly: false, input: { link: z.string().describe("A Pay with Factor link") },
+    name: "factor_pay_link", readOnly: false, input: { link: z.string().describe("A Pay with Factor link"), for_job: forJob },
     description: "Pay a Pay with Factor link: lock its price for its agent on Robinhood Chain and add its small share to $FACTOR's burn. THIS SPENDS ETH from the wallet: the price is held by the desk and paid to the agent when it delivers, comes back if it does not deliver in time, and half comes back if the delivery is rejected. It cannot be cancelled. Read it with factor_pay_link_info and confirm with the user first unless they already said to pay it.",
     async run(f, a, spending) {
       const i = await f.payLinkInfo(String(a.link));
       const total = BigInt(i.totalWei);
       spending?.check(total, true);
-      const d = await f.payLink(String(a.link), { maxEth: total });
+      const d = await f.payLink(String(a.link), { maxEth: total, ...(a.for_job ? { forJob: a.for_job as number } : {}) });
       spending?.add(total);
-      return `Job ${d.jobId} is locked: ${eth(d.priceWei)} ETH for "${i.link.title}"${d.burnTx ? `, and ${eth(d.burnWei)} ETH went to the burn` : ""}. ${d.jobUrl} Transaction ${d.explorer}. Use factor_job to follow it, then factor_accept or factor_reject once it is delivered.`;
+      return `Job ${d.jobId} is locked: ${eth(d.priceWei)} ETH for "${i.link.title}"${d.burnTx ? `, and ${eth(d.burnWei)} ETH went to the burn` : ""}.${subjobLine(d)} ${d.jobUrl} Transaction ${d.explorer}. Use factor_job to follow it, then factor_accept or factor_reject once it is delivered.`;
     },
   },
   {
-    name: "factor_pay_x402", readOnly: false, input: { url: z.string().url().describe("The x402 address of an agent's work"), max_eth: amount.optional().describe("The most to spend on it, the burn included") },
+    name: "factor_pay_x402", readOnly: false, input: { url: z.string().url().describe("The x402 address of an agent's work"), max_eth: amount.optional().describe("The most to spend on it, the burn included"), for_job: forJob },
     description: "Buy another agent's work over x402: read the 402 the address answers, pay it on Factor's desk (only to Factor's desk, and only for the agent its signed link names), and get the job's number. THIS SPENDS ETH from the wallet, held by the desk until delivery as with factor_pay_link.",
     async run(f, a, spending) {
       const url = String(a.url);
@@ -358,9 +362,53 @@ export const TOOLS: Tool[] = [
       const cap = a.max_eth ? toWei(String(a.max_eth)) : null;
       if (cap !== null && total > cap) return `It costs ${eth(total)} ETH with its burn, over the ${eth(cap)} ETH allowed. Nothing was sent.`;
       spending?.check(total, true);
-      const d = await f.payX402(url, { maxEth: total });
+      const d = await f.payX402(url, { maxEth: total, ...(a.for_job ? { forJob: a.for_job as number } : {}) });
       spending?.add(total);
-      return `Job ${d.jobId} is locked through x402: ${eth(d.priceWei)} ETH${d.burnTx ? `, and ${eth(d.burnWei)} ETH to the burn` : ""}. ${d.jobUrl} Transaction ${d.explorer}.`;
+      return `Job ${d.jobId} is locked through x402: ${eth(d.priceWei)} ETH${d.burnTx ? `, and ${eth(d.burnWei)} ETH to the burn` : ""}.${subjobLine(d)} ${d.jobUrl} Transaction ${d.explorer}.`;
+    },
+  },
+  {
+    name: "factor_hire_for_job", readOnly: false,
+    input: {
+      parent_job: jobId.describe("The job this wallet's agent is doing, that the other agent does part of"),
+      agent: z.string().describe("The agent to hire: its name or address"),
+      price: amount,
+      brief: z.string().max(12000).describe("What the other agent should do, at any length up to 12,000 characters. Anyone can read it on the job's page. Factor's own agents need one: factor_agent says what to put in it"),
+      title: z.string().min(3).max(80).optional().describe("One line without links. \"Part of job N\" when not given"),
+      due_in_hours: z.number().min(1).max(720).optional().describe("Hours from now. It must be before the parent job is due; when not given, a quarter of the time left before it, at most a day"),
+      allow_early: z.boolean().optional().describe("true lets the hired agent take up to half before delivering; that part is NOT refunded if it does not deliver. false when not given"),
+    },
+    description: "Hire another agent for part of a job this wallet's agent is doing, paid from this wallet (where the job's advance and its pay arrive). THIS SPENDS ETH: the price is locked on Robinhood Chain as a job whose customer is this agent, plus 1% of it that buys and burns $FACTOR. The hired agent delivers to this agent, which then accepts (it is paid) or rejects (it settles at half) with factor_accept or factor_reject. Factor links it under the job and refuses a hire over what is left of the job's price, due after the job, more than two levels deep, or of an agent of the same owner. Confirm the agent and the price with the user first unless they already gave them.",
+    async run(f, a, spending) {
+      need(f);
+      const price = toWei(String(a.price));
+      const burn = (price + 99n) / 100n;
+      spending?.check(price + burn, true);
+      const r = await f.hireForJob(a.parent_job as number, String(a.agent), price, String(a.brief), { ...(typeof a.title === "string" ? { title: a.title } : {}), dueInHours: a.due_in_hours as number | undefined, allowEarly: a.allow_early === true, maxEth: price + burn });
+      spending?.add(r.priceWei + (r.burnTx ? r.burnWei : 0n));
+      return `Job ${r.jobId} is locked for ${a.agent}: ${eth(r.priceWei)} ETH${r.burnTx ? `, and ${eth(r.burnWei)} ETH to the burn` : ""}. ${r.linked ? `It is linked under job ${r.parentJobId}, ${r.depth} level${r.depth === 1 ? "" : "s"} under the customer's job.` : `It could not be linked under job ${r.parentJobId}: ${r.note ?? "Factor did not answer"} The money is locked as an ordinary job of this wallet's.`} ${r.jobUrl} Transaction ${r.explorer}. Accept or reject it with factor_accept or factor_reject once it is delivered.`;
+    },
+  },
+  {
+    name: "factor_job_tree", readOnly: true, input: { job: jobId },
+    description: "The chain of work a job is part of: the customer's job, the agents its agent hired for parts of it, and whom they hired in turn. Each with its state, price, the burn its deal added, and whether the desk confirms the link.",
+    async run(f, a) {
+      const t = await f.jobTree(a.job as number);
+      if (!t) return `Job ${a.job} hired nobody, and is not part of another job.`;
+      const lines = t.nodes.map((n) => `${"  ".repeat(n.depth)}${n.depth === 0 ? "Customer's job" : "Hired"} ${n.job}${n.title ? ` "${n.title}"` : ""}: agent ${n.agent}, customer ${n.customer}, ${n.state}, ${n.priceEth} ETH${n.burnEth ? `, ${n.burnEth} ETH to the burn` : ""}${n.canReject ? ". Its customer may still reject the delivery" : ""}${n.depth > 0 && n.verified === false ? ". THE DESK DOES NOT CONFIRM THIS LINK" : ""}.`);
+      return [...lines, `${t.burn.deals} deal${t.burn.deals === 1 ? "" : "s"} in it added ${t.burn.eth} ETH to the burn.`].join("\n");
+    },
+  },
+  {
+    name: "factor_reject_sub_jobs", readOnly: false, input: { parent_job: jobId },
+    description: "When the customer rejected a job this wallet's agent hired for (it settled at half), pass the rejection down: reject the deliveries of its sub-jobs still within their 24 hours. EACH SETTLES AT HALF: half of its price comes back, the other half is its agent's. There is no judge and it cannot be undone. Only on the user's clear say-so: it is a choice, never required.",
+    async run(f, a) {
+      const r = await f.rejectSubJobs(a.parent_job as number);
+      if (!r.rejected.length && !r.left.length) return `Job ${a.parent_job} has no sub-jobs of this wallet's.`;
+      return [
+        ...r.rejected.map((x) => `Job ${x.jobId} is rejected and settled at half (transaction ${x.hash}).`),
+        ...r.left.map((x) => `Job ${x.jobId} was not rejected: ${x.why}.`),
+      ].join("\n");
     },
   },
   {
@@ -374,6 +422,8 @@ export const TOOLS: Tool[] = [
         `${r.name} (${r.agent}): score ${r.score} of 1000${r.barred ? ", barred from the pool" : ""}.`,
         `Jobs: ${j.delivered} delivered (${j.onTime} on time, ${j.late} late), ${j.settled} settled, ${j.settledAtHalf} settled at half, ${j.refunded} refunded (${j.refundedAfterDrawing} after drawing on them), ${j.declined} declined, ${j.open} open. Volume ${r.volumeEth} ETH, ${r.customers} customers counted by the desk (${r.distinctCustomers} different ones).`,
         `Advances: ${r.advances.repaid} repaid, ${r.advances.notRepaid} not repaid. Paid with Factor: ${r.payWithFactor.deals} deals, ${r.payWithFactor.burnedEth} ETH to the burn.`,
+        ...(r.hiring?.hiredBy.length ? [`Hired by: ${r.hiring.hiredBy.map((x) => `${x.name} (${x.jobs} job${x.jobs === 1 ? "" : "s"})`).join(", ")}.`] : []),
+        ...(r.hiring?.hires.length ? [`Hires: ${r.hiring.hires.map((x) => `${x.name} (${x.jobs} job${x.jobs === 1 ? "" : "s"})`).join(", ")}.`] : []),
         `As of block ${r.block}. Attestation: ${v.ok ? `signed by Factor (${r.attestation?.signer})` : `not confirmed, ${v.why}`}.`,
       ].join("\n");
     },

@@ -21,7 +21,8 @@ import { factorAccountAbi } from "./abi/FactorAccount.js";
 import { factorAccountsAbi } from "./abi/FactorAccounts.js";
 import { factorDeskAbi } from "./abi/FactorDesk.js";
 import { CHAIN_ID, DEFAULT_API, DEFAULT_RPC } from "./defaults.js";
-import type { AccountInfo, Agent, AgentPage, ComputeCredit, ComputeKey, Deal, Job, JobPage, JobState, LedgerLine, ModelAnswer, Page, PayLinkInfo, RouterModel, Sent, State } from "./types.js";
+import type { AccountInfo, Agent, AgentPage, ComputeCredit, ComputeKey, Deal, Job, JobPage, JobState, JobTree, LedgerLine, ModelAnswer, Page, PayLinkInfo, RouterModel, Sent, State, SubJob } from "./types.js";
+import { hireMessage, type HirePlan } from "./subjobs.js";
 import { explain, Refusal, WORDS } from "./words.js";
 
 import { encodePayLink, LINK_BRIEF_MOST, readPayLink, tokenOf, verifyRecord, x402PaymentHeader, X402_NETWORK, X402_SCHEME, type AgentRecord, type PayLink, type X402Requirements, payLinkMessage } from "./pay.js";
@@ -30,6 +31,8 @@ export { Refusal, explain } from "./words.js";
 export type * from "./types.js";
 export { encodePayLink, payLinkId, payLinkMessage, readPayLink, tokenOf, verifyRecord, x402PaymentHeader, RECORD_TYPES, X402_NETWORK, X402_SCHEME } from "./pay.js";
 export type { AgentRecord, PayLink, RecordMessage, X402Requirements } from "./pay.js";
+export { hireMessage, planIdOf } from "./subjobs.js";
+export type { HirePlan } from "./subjobs.js";
 
 const ABI = factorDeskAbi as Abi;
 const KIND = { early: 0, pool: 1, compute: 2 } as const;
@@ -552,12 +555,12 @@ export class Factor {
    * Factor, which checks both on the chain. With `gasless` the two go in one order; from a wallet they are two
    * transactions, the lock first. `maxEth` refuses a link that costs more, before anything is sent.
    */
-  async payLink(linkOrUrl: string, o: { maxEth?: Amount } = {}): Promise<Deal> {
+  async payLink(linkOrUrl: string, o: { maxEth?: Amount; forJob?: number } = {}): Promise<Deal> {
     this.mine();
     const info = await this.payLinkInfo(linkOrUrl);
     if (!info.registered) throw new Refusal(sentence(info.error ?? "This agent has not signed up on Factor yet"), "not_registered");
     if (info.paused) throw new Refusal(info.paused, "paused");
-    return this.lockForLink(tokenOf(linkOrUrl)!, info.link, BigInt(info.burnWei), info.burnPot, o.maxEth, "kit");
+    return this.lockForLink(tokenOf(linkOrUrl)!, info.link, BigInt(info.burnWei), info.burnPot, o.maxEth, "kit", o.forJob);
   }
 
   /**
@@ -565,7 +568,7 @@ export class Factor {
    * checked on the chain, and only to the agent the link names), and ask again with the proof. Answers the job's
    * number; delivery and settling happen on the desk like any job's. `maxEth` caps what it may spend, burn included.
    */
-  async payX402(url: string, o: { maxEth?: Amount } = {}): Promise<Deal & { response: Record<string, unknown> }> {
+  async payX402(url: string, o: { maxEth?: Amount; forJob?: number } = {}): Promise<Deal & { response: Record<string, unknown> }> {
     this.mine();
     const first = await fetchJson(url, {});
     if (first.status !== 402) throw new Refusal(first.status === 200 ? "That address did not ask for a payment." : sentence(String(first.body.error ?? `it answered ${first.status}`)), "not_x402");
@@ -576,11 +579,12 @@ export class Factor {
     const info = await this.payLinkInfo(accepts.extra.link);
     if (info.link.agent !== accepts.extra.agent.toLowerCase() || info.priceWei !== accepts.extra.priceWei) throw new Refusal("The 402 does not say what its link says. Nothing was sent.", "bad_link");
     if (!info.registered) throw new Refusal(sentence(info.error ?? "This agent has not signed up on Factor yet"), "not_registered");
-    const deal = await this.lockForLink(tokenOf(accepts.extra.link)!, info.link, BigInt(info.burnWei), info.burnPot, o.maxEth, null);
-    const header = x402PaymentHeader({ job: deal.jobId, lockTx: deal.lockTx, burnTx: deal.burnTx });
+    const deal = await this.lockForLink(tokenOf(accepts.extra.link)!, info.link, BigInt(info.burnWei), info.burnPot, o.maxEth, null, o.forJob);
+    const header = x402PaymentHeader({ job: deal.jobId, lockTx: deal.lockTx, burnTx: deal.burnTx, plan: deal.plan ?? null });
+    const { plan: _plan, ...bare } = deal;
     for (let tries = 0; ; tries++) {
       const again = await fetchJson(url, { "x-payment": header });
-      if (again.status === 200) return { ...deal, burned: again.body.burned === true, response: again.body };
+      if (again.status === 200) return { ...bare, burned: again.body.burned === true, ...subjobOf(again.body, o.forJob), response: again.body };
       // the chain has the lock and the node behind the site does not yet: a few seconds
       if (again.status === 402 && /again in a few seconds/.test(String(again.body.error)) && tries < 20) { await sleep(1500); continue; }
       throw new Refusal(`Job ${deal.jobId} is locked (${deal.lockTx}), and the seller's address did not take the payment: ${String(again.body.error ?? again.status)}`, "x402_refused");
@@ -607,8 +611,11 @@ export class Factor {
     return verifyRecord(rec, { signer: by });
   }
 
-  /** The lock and the burn of one deal, then Factor told of it. */
-  private async lockForLink(token: string, link: PayLink, burnWei: bigint, burnPot: string, maxEth: Amount | undefined, via: "kit" | null): Promise<Deal> {
+  /**
+   * The lock and the burn of one deal, then Factor told of it. `forJob`: this agent buys it for a job it is doing
+   * itself, so the hire is signed first (a plan) and the deal is linked under that job.
+   */
+  private async lockForLink(token: string, link: PayLink, burnWei: bigint, burnPot: string, maxEth: Amount | undefined, via: "kit" | null, forJob?: number): Promise<Deal & { plan?: Hex }> {
     const price = BigInt(link.price);
     const cap = maxEth === undefined ? null : toWei(maxEth);
     if (cap !== null && price + burnWei > cap) throw new Refusal(`The link costs ${ethText(price + burnWei)} ETH with its burn, over the ${ethText(cap)} ETH allowed.`, "over_cap");
@@ -618,12 +625,36 @@ export class Factor {
     const pot = s.contracts.burnPot?.toLowerCase();
     if (!pot || pot !== burnPot.toLowerCase()) throw new Refusal("The burn pot the link names is not Factor's. Nothing was sent.", "wrong_pot");
     const now = Number((await this.pub.getBlock()).timestamp);
-    const args = [link.agent, BigInt(now + link.due * 3600), link.early] as const;
+    const dueAt = now + link.due * 3600;
+    // bought for a job of this agent's own: the engine checks the hire and holds its room before anything is locked
+    const plan = forJob === undefined ? null : (await this.planHire(s, { parent: whole(forJob), agent: link.agent, price: link.price, dueAt, early: link.early, title: link.title, brief: link.brief })).plan;
+    const { lockTx, burnTx, jobId } = await this.lockAndBurn(link.agent, dueAt, link.early, price, burnWei, pot);
+    const site = this.api.replace(/\/api\/v1$/, "").replace(/\/v1$/, "");
+    const deal: Deal & { plan?: Hex } = { jobId, lockTx, burnTx, burned: false, priceWei: price, burnWei, jobUrl: `${site}/jobs/${String(jobId).padStart(4, "0")}`, explorer: `${this.explorer}/tx/${lockTx}`, ...(plan ? { plan } : {}) };
+    if (via === null) return deal; // over x402 the seller's address tells Factor
+    try {
+      const r = await this.askPatient<Record<string, unknown>>("/pay/deal", { link: token, job: jobId, lockTx, burnTx, via, ...(plan ? { plan } : {}) });
+      deal.burned = r.burned === true;
+      Object.assign(deal, subjobOf(r, forJob));
+    } catch {
+      // the job is locked and is the agent's to do whatever Factor says; only the "paid with Factor" mark waits
+    }
+    const { plan: _plan, ...out } = deal;
+    return out;
+  }
+
+  /**
+   * A lock for an agent and, beside it, a share for the burn pot. With `gasless` the two go in one order; from a
+   * wallet they are two transactions, the lock first, so a burn that fails never leaves the buyer without the job.
+   */
+  private async lockAndBurn(agent: string, dueAt: number, early: boolean, price: bigint, burnWei: bigint, pot: string): Promise<{ lockTx: Hex; burnTx: Hex | null; jobId: number }> {
+    const args = [agent, BigInt(dueAt), early] as const;
     let lockTx: Hex, burnTx: Hex | null = null, jobId: number | null;
     if (this.via) {
       try {
         await this.pub.simulateContract({ address: this.desk, abi: ABI, functionName: "lock", args, account: this.via, value: price } as never);
       } catch (e) {
+        if (/insufficient (funds|balance)|exceeds the balance/i.test(`${(e as { shortMessage?: string }).shortMessage} ${(e as Error).message}`)) throw new Refusal(WORDS.AccountShort!([await this.pub.getBalance({ address: this.via }), price + burnWei]), "account_short");
         throw e instanceof Refusal ? e : new Refusal(explain(e), "desk_refused");
       }
       const calls = [{ to: this.desk, value: price, data: encodeFunctionData({ abi: ABI, functionName: "lock", args } as never) }, ...(burnWei > 0n ? [{ to: pot, value: burnWei, data: "0x" as Hex }] : [])];
@@ -646,16 +677,101 @@ export class Factor {
       }
     }
     if (jobId === null) throw new Refusal(`The payment is locked (${lockTx}), and the job's number could not be read from the transaction.`, "no_job_id");
+    return { lockTx, burnTx, jobId };
+  }
+
+  // ---------- agents that hire agents ----------
+
+  /**
+   * Hire another agent for part of a job this agent is doing. The price is locked on the desk from this wallet (or
+   * account), where the job's advance and what it earns arrive, as an ordinary job whose customer is this agent; the
+   * other agent delivers to this agent, and this agent accepts or rejects as any customer does. Factor links it under
+   * the job and holds it to the rules: never more than what is left of the job's price, due before the job, two
+   * levels under a customer's job at most, and never an agent of the same hand. Each hire also adds its 1% to the
+   * burn, like any deal. `maxEth` caps the price and the burn together.
+   */
+  async hireForJob(parentJobId: number, agent: string, price: Amount, brief: string, o: { title?: string; dueInHours?: number; allowEarly?: boolean; maxEth?: Amount } = {}): Promise<SubJob> {
+    const me = this.mine();
+    const parent = whole(parentJobId);
+    const wei = toWei(price);
+    const s = await this.state();
+    if (s.paused) throw new Refusal(s.paused, "paused");
+    const found = await this.agent(agent);
+    const to = found?.agent.address ?? (/^0x[0-9a-fA-F]{40}$/.test(agent) ? agent.toLowerCase() : null);
+    if (!to) throw new Refusal(`There is no agent called "${agent}" on Factor.`, "no_agent");
+    if (to === me) throw new Refusal("An agent cannot hire itself.", "self_hire");
+    const text = brief === undefined || brief.trim() === "" ? "" : briefText(brief);
+    const service = found?.agent.service;
+    if (service && !text) throw new Refusal(`${found.agent.name} works from a brief. ${service.needs}`, "no_brief");
+    if (service && wei < parseEther(String(service.fromEth))) throw new Refusal(`${found.agent.name} takes a job from ${service.fromEth} ETH. Under that it declines.`, "under_price");
+    const title = oneLine(o.title ?? `Part of job ${String(parent).padStart(4, "0")}`);
+    if (!s.subjobs?.enabled) throw new Refusal("Agents hiring agents is not switched on yet.", "subjobs_off");
+    const page = await this.job(parent);
+    if (!page) throw new Refusal(`There is no job ${parent} on Factor (a new job shows up a few seconds after it is locked).`, "no_job");
+    if (page.job.agentId.toLowerCase() !== me) throw new Refusal(`Only the agent of job ${parent} can hire for it. This wallet is not that agent.`, "not_your_job");
+    if (page.hiring && !page.hiring.open) throw new Refusal(sentence(`Job ${parent} cannot hire now: ${page.hiring.why ?? "it is not open"}`), "cannot_hire");
+    if (page.hiring && wei > BigInt(page.hiring.freeWei)) throw new Refusal(`Only ${page.hiring.freeEth} ETH is left of job ${parent}'s price to hire with.`, "over_room");
+    // the due time, on the chain's own clock: before the job's own, and at least an hour away (the desk's rule)
+    const now = Number((await this.pub.getBlock()).timestamp);
+    const parentDue = Math.floor(Date.parse(page.job.dueAt) / 1000);
+    const dueAt = o.dueInHours !== undefined ? now + Math.max(Math.round(o.dueInHours * 3600), 3600 + 300) : Math.min(now + 86_400, parentDue - Math.max(3600, Math.floor((parentDue - now) / 4)));
+    if (dueAt < now + 3600 + 300 || dueAt >= parentDue) throw new Refusal(`A sub-job must be due at least an hour from now and before job ${parent} itself (${page.job.dueAt.slice(0, 16).replace("T", " ")} UTC).`, "bad_due");
+    const planned = await this.planHire(s, { parent, agent: to, price: wei.toString(), dueAt, early: o.allowEarly === true, title, brief: text }, page);
+    const burnWei = BigInt(planned.burnWei);
+    const cap = o.maxEth === undefined ? null : toWei(o.maxEth);
+    if (cap !== null && wei + burnWei > cap) throw new Refusal(`It costs ${ethText(wei + burnWei)} ETH with its burn, over the ${ethText(cap)} ETH allowed. Nothing was locked; the plan lapses by itself.`, "over_cap");
+    const pot = s.contracts.burnPot?.toLowerCase() ?? "";
+    if (burnWei > 0n && !/^0x[0-9a-f]{40}$/.test(pot)) throw new Refusal("Factor names no burn pot. Nothing was locked.", "wrong_pot");
+    const { lockTx, burnTx, jobId } = await this.lockAndBurn(to, dueAt, o.allowEarly === true, wei, burnWei, pot);
     const site = this.api.replace(/\/api\/v1$/, "").replace(/\/v1$/, "");
-    const deal: Deal = { jobId, lockTx, burnTx, burned: false, priceWei: price, burnWei, jobUrl: `${site}/jobs/${String(jobId).padStart(4, "0")}`, explorer: `${this.explorer}/tx/${lockTx}` };
-    if (via === null) return deal; // over x402 the seller's address tells Factor
+    const out: SubJob = { jobId, parentJobId: parent, depth: planned.depth, agent: to, lockTx, burnTx, burned: false, priceWei: wei, burnWei, plan: planned.plan, linked: false, jobUrl: `${site}/jobs/${String(jobId).padStart(4, "0")}`, explorer: `${this.explorer}/tx/${lockTx}` };
     try {
-      const r = await this.askPatient<{ burned: boolean }>("/pay/deal", { link: token, job: jobId, lockTx, burnTx, via });
-      deal.burned = r.burned === true;
-    } catch {
-      // the job is locked and is the agent's to do whatever Factor says; only the "paid with Factor" mark waits
+      const r = await this.askPatient<{ burned?: boolean; depth?: number }>("/subjobs/link", { plan: planned.plan, job: jobId, lockTx, burnTx });
+      out.linked = true;
+      out.burned = r.burned === true;
+    } catch (e) {
+      // the money is locked for the agent all the same: an ordinary job of this agent's, with the reason
+      out.note = e instanceof Refusal ? e.message : "Factor could not be told of it.";
     }
-    return deal;
+    return out;
+  }
+
+  /** The whole chain of work a job is part of, from the customer's job down. null: it hired nobody and nobody hired for it. */
+  jobTree(jobId: number): Promise<JobTree | null> {
+    return read<JobTree>(this.api, `/jobs/${whole(jobId)}/tree`);
+  }
+
+  /**
+   * When the customer rejected a job this agent hired for, the agent may pass it down: reject the deliveries of its
+   * sub-jobs that are still within their 24 hours, each of which then settles at half (the desk's own rule). Its
+   * choice, never done for it. Answers what was rejected, and what could not be any more.
+   */
+  async rejectSubJobs(parentJobId: number): Promise<{ rejected: { jobId: number; hash: Hex }[]; left: { jobId: number; why: string }[] }> {
+    const me = this.mine();
+    const parent = whole(parentJobId);
+    const tree = await this.jobTree(parent);
+    const under = (tree?.nodes ?? []).filter((n) => n.parent === parent && n.customer.toLowerCase() === me);
+    const rejected: { jobId: number; hash: Hex }[] = [], left: { jobId: number; why: string }[] = [];
+    for (const n of under) {
+      if (!n.canReject) { left.push({ jobId: n.job, why: n.state === "delivered" ? "its 24 hours to answer are over, or the job above was not rejected" : `it is ${n.state}` }); continue; }
+      rejected.push({ jobId: n.job, hash: (await this.reject(n.job)).hash });
+    }
+    return { rejected, left };
+  }
+
+  /** A hire signed by this agent and checked by Factor, which holds its room for 15 minutes. Nothing is locked here. */
+  private async planHire(s: State, p: Omit<HirePlan, "at">, page?: JobPage | null): Promise<{ plan: Hex; burnWei: string; depth: number }> {
+    const me = this.mine();
+    if (!s.subjobs?.enabled) throw new Refusal("Agents hiring agents is not switched on yet.", "subjobs_off");
+    const job = page ?? (await this.job(p.parent));
+    if (!job) throw new Refusal(`There is no job ${p.parent} on Factor (a new job shows up a few seconds after it is locked).`, "no_job");
+    if (job.job.agentId.toLowerCase() !== me) throw new Refusal(`Only the agent of job ${p.parent} can hire for it. This wallet is not that agent.`, "not_your_job");
+    if (job.hiring && !job.hiring.open) throw new Refusal(sentence(`Job ${p.parent} cannot hire now: ${job.hiring.why ?? "it is not open"}`), "cannot_hire");
+    if (job.hiring && BigInt(p.price) > BigInt(job.hiring.freeWei)) throw new Refusal(`Only ${job.hiring.freeEth} ETH is left of job ${p.parent}'s price to hire with.`, "over_room");
+    const plan: HirePlan = { ...p, at: await this.clock() };
+    const signature = await this.sign(hireMessage(plan));
+    const r = await this.askPatient<{ plan: Hex; burnWei: string; depth: number }>("/subjobs/plan", { ...plan, signature });
+    return { plan: r.plan, burnWei: r.burnWei ?? "0", depth: r.depth ?? 1 };
   }
 
   /** A post that waits for the chain to catch up (a lock the site's node has not seen yet), then says no in words. */
@@ -845,6 +961,14 @@ function briefText(raw: string): string {
   const text = typeof raw === "string" ? raw.replace(/\r\n?/g, "\n").trim() : "";
   if (text.length < 1 || text.length > 12_000) throw new Refusal("A brief is plain text of up to 12,000 characters.", "bad_text");
   return text;
+}
+
+/** What a deal's answer says of the job it was bought for. */
+function subjobOf(body: Record<string, unknown>, forJob?: number): Pick<Deal, "subjob" | "subjobNote"> {
+  if (forJob === undefined) return {};
+  const sub = body.subjob as { parent?: number; depth?: number } | undefined;
+  if (sub?.parent) return { subjob: { parent: sub.parent, depth: sub.depth ?? 1 } };
+  return { subjob: null, ...(typeof body.subjobNote === "string" ? { subjobNote: sentence(body.subjobNote) } : {}) };
 }
 
 const sentence = (text: string): string => { const t = text.charAt(0).toUpperCase() + text.slice(1); return /[.!?]$/.test(t) ? t : `${t}.`; };

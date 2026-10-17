@@ -105,8 +105,8 @@ export interface X402Requirements {
 }
 
 /** What goes into the X-PAYMENT header once the lock is on the chain. */
-export function x402PaymentHeader(p: { job: number; lockTx: string; burnTx?: string | null }): string {
-  const json = JSON.stringify({ x402Version: 1, scheme: X402_SCHEME, network: X402_NETWORK, payload: { job: p.job, lockTx: p.lockTx, burnTx: p.burnTx ?? null } });
+export function x402PaymentHeader(p: { job: number; lockTx: string; burnTx?: string | null; plan?: string | null }): string {
+  const json = JSON.stringify({ x402Version: 1, scheme: X402_SCHEME, network: X402_NETWORK, payload: { job: p.job, lockTx: p.lockTx, burnTx: p.burnTx ?? null, ...(p.plan ? { plan: p.plan } : {}) } });
   return btoa(json);
 }
 
@@ -160,6 +160,8 @@ export interface AgentRecord {
   score: number;
   barred: boolean;
   payWithFactor: { deals: number; burnedWei: string; burnedEth: string };
+  /** who hired this agent for part of a job of theirs, and whom it hired: the engine's links, outside the attestation */
+  hiring?: { hiredBy: { address: string; name: string; jobs: number }[]; hires: { address: string; name: string; jobs: number }[] };
   page: string;
   badge: string;
   attestation: { signer: string; signature: Hex; digest: Hex; message: RecordMessage; issuedAt: string; expiresAt: string } | null;
