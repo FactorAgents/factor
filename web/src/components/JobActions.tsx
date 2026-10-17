@@ -5,7 +5,8 @@ import { useEffect, useState } from "react";
 import { briefMessage, canDrawOn, fromWei, KIND, proofOf, Refusal, send, titleMessage, toWei } from "@/lib/desk";
 import { signText } from "@/lib/wallet";
 import { dayTime, eth, fromNow } from "@/lib/format";
-import type { Job, Params } from "@/lib/types";
+import type { HireRoom, Job, Params } from "@/lib/types";
+import HireForJob from "./HireForJob";
 import { engineNow, Go, saveSigned, StatusLine, useSend, useWallet, type Done } from "./Wallet";
 
 type Kind = keyof typeof KIND;
@@ -16,7 +17,7 @@ const KIND_WHY: Record<Kind, string> = {
   customer: "Out of the payment the customer locked. They allowed it for this job.",
 };
 
-export default function JobActions({ job, agentName, desk, explorer, params, now, compute, hasBrief = false, briefHint = "" }: { job: Job; agentName: string; desk: string | null; explorer: string; params: Params; now: string; compute: boolean; hasBrief?: boolean; briefHint?: string }) {
+export default function JobActions({ job, agentName, desk, explorer, params, now, compute, hasBrief = false, briefHint = "", hiring = null, agents = [], burnPot = null, burnPct = 0 }: { job: Job; agentName: string; desk: string | null; explorer: string; params: Params; now: string; compute: boolean; hasBrief?: boolean; briefHint?: string; /** what the agent can still hire for this job, while hiring is on */ hiring?: HireRoom | null; agents?: { name: string; address: string }[]; burnPot?: string | null; burnPct?: number }) {
   const { address } = useWallet();
   const open = job.state === "locked" || job.state === "advanced" || job.state === "delivered";
   const isAgent = address === job.agentId.toLowerCase();
@@ -49,6 +50,7 @@ export default function JobActions({ job, agentName, desk, explorer, params, now
 
       {isAgent && working ? <Draw {...shared} params={params} compute={compute} /> : null}
       {isAgent && working ? <Deliver {...shared} late={t > Date.parse(job.dueAt)} /> : null}
+      {isAgent && working && hiring?.open ? <HireForJob job={job} room={hiring} desk={desk} burnPot={burnPot} burnPct={burnPct} agents={agents} explorer={explorer} now={now} onDone={setLast} /> : null}
       {isAgent && job.state === "locked" && !canRefund ? <One {...shared} fn="decline" label="Decline the job" line title="Not for you?" text="Declining sends the whole payment back to the customer and leaves no mark on your record. It can only be done before you draw on the job." done="Declined. The customer has the payment back." /> : null}
       {isAgent && job.state === "delivered" && !canSettle ? <p className="small rest">You have delivered. Your customer can accept or reject until {dayTime(acceptBy)}, {fromNow(acceptBy, now)}. If they say nothing, the job settles by itself and you are paid.</p> : null}
 

@@ -18,7 +18,9 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
   const [s, got] = await Promise.all([getState(), getAgent((await params).id)]);
   if (got === "down") return <section className="wrap page-head"><Link className="more quiet back" href="/agents">← All agents</Link><h1 className="h1">This agent&apos;s page is not arriving right now.</h1><p className="lead">Its record is on the chain and is not lost. Try again in a moment.</p></section>;
   if (!got) notFound();
-  const { agent: a, jobs } = got;
+  const { agent: a, jobs, hiring } = got;
+  const hiredBy = hiring?.hiredBy ?? [], hires = hiring?.hires ?? [];
+  const who = (x: { address: string; name: string; named: boolean }) => `/agents/${x.named ? x.name : x.address}`;
   const less = 50 * a.settledAtHalf;
   const links = await getPayLinks(a.address);
   const deals = jobs.filter((j) => j.deal);
@@ -96,6 +98,26 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
         </div></Reveal>
       </section>
 
+      {hiredBy.length || hires.length ? (
+        <section className="wrap sec" id="hiring">
+          <Reveal><SecHead n="" kicker="Agents that hire agents" title={hires.length && hiredBy.length ? <>It hires, and is <em>hired</em>.</> : hires.length ? <>It hires other <em>agents</em>.</> : <>Other agents <em>hire</em> it.</>} lead="For parts of a job: each one its own job on the desk, locked by the hiring agent and paid on delivery." /></Reveal>
+          <Reveal delay={120}><div className={`sec-body${hiredBy.length && hires.length ? " cols two" : ""}`}>
+            {hiredBy.length ? (
+              <div>
+                <span className="label">Hired by</span>
+                <div className="hiring-list" style={{ marginTop: 14 }}>{hiredBy.map((x) => <Link key={x.address} href={who(x)}><span className="nm">{x.name}</span><span className="mono small">{x.jobs} job{x.jobs === 1 ? "" : "s"}</span></Link>)}</div>
+              </div>
+            ) : null}
+            {hires.length ? (
+              <div>
+                <span className="label">Hires</span>
+                <div className="hiring-list" style={{ marginTop: 14 }}>{hires.map((x) => <Link key={x.address} href={who(x)}><span className="nm">{x.name}</span><span className="mono small">{x.jobs} job{x.jobs === 1 ? "" : "s"}</span></Link>)}</div>
+              </div>
+            ) : null}
+          </div></Reveal>
+        </section>
+      ) : null}
+
       <section className="wrap sec">
         <Reveal><SecHead n="" kicker="Its jobs" title={jobs.length ? "The latest ones." : "No jobs yet."} /></Reveal>
         <Reveal delay={120}><div className="sec-body">
@@ -103,7 +125,7 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
             <table className="table stack">
               <thead><tr><th>Job</th><th>What</th><th>State</th><th className="r">Locked</th></tr></thead>
               <tbody>{jobs.map((j) => (
-                <tr key={j.id}><td className="m"><Link href={`/jobs/${j.id}`}>{j.id}</Link></td><td className="wide">{j.title || "A job with no title"}{j.deal ? <span className="house" title="Paid through one of this agent's Pay with Factor links">Pay with Factor</span> : null}</td><td><Tag kind={j.state} /></td><td className="m r">{eth(j.priceEth)}</td></tr>
+                <tr key={j.id}><td className="m"><Link href={`/jobs/${j.id}`}>{j.id}</Link></td><td className="wide">{j.title || "A job with no title"}{j.deal ? <span className="house" title="Paid through one of this agent's Pay with Factor links">Pay with Factor</span> : null}{j.parent ? <span className="house" title="Hired by the agent of that job, for part of it">Part of {j.parent.id}</span> : null}</td><td><Tag kind={j.state} /></td><td className="m r">{eth(j.priceEth)}</td></tr>
               ))}</tbody>
             </table>
           ) : <p className="note">A new agent starts with no limit from the pool. Its first jobs are paid on delivery, or with an advance the customer allows.</p>}

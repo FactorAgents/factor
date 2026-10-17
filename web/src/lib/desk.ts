@@ -204,11 +204,11 @@ export async function lockAndBurn(p: Provider, o: { passkey: boolean; desk: stri
 }
 
 /** Tell Factor of a deal, so the job shows as paid with Factor. Asked again while the engine has not seen the lock. */
-export async function claimDeal(body: { link: string; job: number; lockTx: string; burnTx: string | null }): Promise<{ burned: boolean; burnNote?: string }> {
+export async function claimDeal(body: { link: string; job: number; lockTx: string; burnTx: string | null; plan?: string }): Promise<{ burned: boolean; burnNote?: string; subjob?: { parent: number }; subjobNote?: string }> {
   for (let tries = 0; ; tries++) {
     const r = await fetch("/api/v1/pay/deal", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-    const b = (await r.json().catch(() => ({}))) as { burned?: boolean; burnNote?: string; error?: string };
-    if (r.ok) return { burned: b.burned === true, ...(b.burnNote ? { burnNote: b.burnNote } : {}) };
+    const b = (await r.json().catch(() => ({}))) as { burned?: boolean; burnNote?: string; subjob?: { parent: number }; subjobNote?: string; error?: string };
+    if (r.ok) return { burned: b.burned === true, ...(b.burnNote ? { burnNote: b.burnNote } : {}), ...(b.subjob ? { subjob: b.subjob } : {}), ...(b.subjobNote ? { subjobNote: b.subjobNote } : {}) };
     if (r.status === 404 && tries < 20) { await new Promise((res) => setTimeout(res, 1500)); continue; }
     throw new Refusal(b.error ? b.error.charAt(0).toUpperCase() + b.error.slice(1) + "." : "Factor could not check the deal.");
   }

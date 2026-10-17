@@ -41,6 +41,8 @@ export interface Job {
   tx: string;
   /** locked through a Pay with Factor link: how it was paid, and what the buyer added to the burn beside it */
   deal?: { via: string; burnEth: number };
+  /** a sub-job: the job its customer (that job's agent) hired for, and how far under the customer's job it is */
+  parent?: { n: number; id: string; depth: number };
 }
 
 export interface ScorePart { name: string; value: string; points: number; max: number }
@@ -161,6 +163,8 @@ export interface FactorState {
   desk?: Desk;
   /** Pay with Factor: whether links are taken, what a deal adds to the burn (hundredths of a percent of its price), and the deals so far */
   pay?: { enabled: boolean; burnBps: number; deals: number; burnedEth: number };
+  /** agents that hire agents: whether a job's agent can hire for it, how deep a chain goes and how many under one job */
+  subjobs?: { enabled: boolean; maxDepth: number; perParent: number };
 }
 
 /** One of Factor's own agents: what it does and what it takes a job for. */
@@ -171,12 +175,40 @@ export interface DeskNote { kind: "opening" | "file" | "reason" | "letter"; subj
 export interface DeskFile { text: string; at: string }
 export interface Desk { on: boolean; writing: boolean; letter: DeskNote | null; latest: DeskNote[] }
 
+/** The other agents one agent hired for parts of its jobs, and those that hired it. Only there when there is any. */
+export interface Hiring { hiredBy: Counterpart[]; hires: Counterpart[] }
+export interface Counterpart { address: string; name: string; named: boolean; jobs: number }
 /** One agent with what the page about it shows. */
-export interface AgentPage { agent: Agent; jobs: Job[]; events: LedgerEvent[] }
+export interface AgentPage { agent: Agent; jobs: Job[]; events: LedgerEvent[]; hiring?: Hiring }
+
+/** One job in a chain of work: the customer's job at depth 0, the jobs its agent hired for at 1, and so on. */
+export interface TreeNode {
+  job: number;
+  id: string;
+  parent: number | null;
+  depth: number;
+  customer: string;
+  agent: string;
+  state: JobState;
+  priceEth: number;
+  title: string;
+  lockTx: string;
+  /** what the buyer added to the burn beside this job */
+  burnEth: number;
+  via: string | null;
+  /** the hiring agent may still reject this delivery, now that the job above it was rejected */
+  canReject?: boolean;
+  /** the desk says the sub-job's customer is its parent's agent; null until both are read from the chain */
+  verified: boolean | null;
+  hire?: { message: string; signature: string; by: string };
+}
+export interface JobTree { root: number; nodes: TreeNode[]; burn: { deals: number; eth: number } }
+/** What a job's agent can still hire for it, while hiring is switched on. */
+export interface HireRoom { open: boolean; why?: string; freeEth: number; freeWei: string; used: number; perParent: number; depth: number; maxDepth: number; dueBefore: string }
 /** One job with what the page about it shows. */
 /**
  * `brief`: what the customer asked for at length. `work`: what was delivered, when its agent showed it (its
  * fingerprint is the proof on the chain). `note`: why one of Factor's own agents declined.
  */
-export interface JobPage { job: Job; agent: Agent | null; events: LedgerEvent[]; brief?: string | null; /** "agent": the brief came with the agent's Pay with Factor link, signed by the agent */ briefBy?: "agent"; work?: { kind: "text" | "html"; text: string; at: string } | null; note?: string }
+export interface JobPage { job: Job; agent: Agent | null; events: LedgerEvent[]; brief?: string | null; /** "agent": the brief came with the agent's Pay with Factor link, signed by the agent */ briefBy?: "agent"; work?: { kind: "text" | "html"; text: string; at: string } | null; note?: string; /** the chain of work it is part of */ tree?: JobTree; /** what its agent can still hire for it */ hiring?: HireRoom }
 export interface Page<T> { total: number; more: boolean; items: T[] }
