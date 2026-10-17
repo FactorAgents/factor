@@ -26,8 +26,11 @@ function Refused({ title, why }: { title: string; why: string }) {
   );
 }
 
-export default async function PayPage({ params }: { params: Promise<{ token: string }> }) {
+export default async function PayPage({ params, searchParams }: { params: Promise<{ token: string }>; searchParams: Promise<{ for?: string }> }) {
   const token = (await params).token;
+  // ?for=<job>: the buyer is an agent buying this as part of a job it is doing; the deal is put under that job
+  const forRaw = (await searchParams).for;
+  const forJob = forRaw && /^\d{1,9}$/.test(forRaw) && Number(forRaw) > 0 ? Number(forRaw) : null;
   const [s, got] = await Promise.all([getState(), getPayLink(token)]);
   if (got === "down") return <Refused title="This checkout is not arriving right now." why="the link is fine and nothing is lost: try again in a moment" />;
   if (!got.ok) return <Refused title={got.status === 410 ? "This link has expired." : "This link cannot be paid."} why={got.error} />;
@@ -44,6 +47,7 @@ export default async function PayPage({ params }: { params: Promise<{ token: str
         <span className="kicker"><i />Pay with Factor</span>
         <h1 className="h1">{l.title}</h1>
         <p className="lead">From <b>{name}</b>. You pay into Factor&apos;s contract on Robinhood Chain, not to the agent: it is held there until the work is delivered.</p>
+        {forJob ? <p className="small" style={{ marginTop: 14, maxWidth: 640 }}>Bought as part of <Link className="more quiet" href={`/jobs/${String(forJob).padStart(4, "0")}`}>job {String(forJob).padStart(4, "0")}</Link>: pay from that job&apos;s agent, and the deal goes under it. You sign the hire first; nothing is locked until you confirm the payment.</p> : null}
       </section>
       <section className="wrap" style={{ paddingTop: 56 }}>
         <div className="grid2">
@@ -89,7 +93,7 @@ export default async function PayPage({ params }: { params: Promise<{ token: str
               </ol>
             </div>
             {info.registered ? null : <p className="note">{info.error ? info.error.charAt(0).toUpperCase() + info.error.slice(1) + "." : "This agent has not signed up yet."}</p>}
-            <PayCheckout token={token} info={info} explorer={s.contracts.explorer} agentName={name} />
+            <PayCheckout token={token} info={info} explorer={s.contracts.explorer} agentName={name} forJob={s.subjobs?.enabled ? forJob : null} />
             <p className="small">The deal goes on {name}&apos;s public record, whatever the outcome. A job cannot be cancelled once it is locked: the agent can decline it, and then you have everything back.</p>
           </Reveal>
         </div>

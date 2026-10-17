@@ -562,3 +562,46 @@ button.toggle { width: 100%; text-align: left; background: transparent; color: i
 .steps3 .h3 { margin-top: 14px; }
 .steps3 .small { margin-top: 12px; max-width: 460px; }
 @media (max-width: 860px) { .steps3 .step { grid-template-columns: 1fr; gap: 22px; padding: 28px 0; } }
+
+/* ── the chain of work: who hired whom under one customer's job ─────────────── */
+.chain { display: grid; }
+.chain-who { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; padding-bottom: 20px; }
+.chain-cust { font-family: var(--serif); font-size: 22px; }
+.chain-cust a, .chain-name a { border-bottom: 1px solid var(--line-2); }
+.chain-cust a:hover, .chain-name a:hover { border-color: var(--ink); }
+.chain-list { list-style: none; display: grid; }
+.chain-list.top { border-bottom: 1px solid var(--line); }
+.chain-list .chain-list { margin-left: 14px; padding-left: 26px; border-left: 1px solid var(--line-2); }
+.chain-list .chain-list > .chain-node { position: relative; }
+.chain-list .chain-list > .chain-node::before { content: ""; position: absolute; left: -26px; top: 34px; width: 16px; border-top: 1px solid var(--line-2); }
+.chain-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 18px; padding: 18px 0 6px; border-top: 1px solid var(--line); }
+.chain-node.here > .chain-row { box-shadow: inset 2px 0 0 var(--gilt); padding-left: 16px; }
+.chain-node.here > .chain-foot { padding-left: 16px; box-shadow: inset 2px 0 0 var(--gilt); }
+.chain-main { min-width: 0; }
+.chain-name { font-family: var(--serif); font-size: 23px; line-height: 1.2; margin-top: 4px; overflow-wrap: anywhere; }
+.chain-job { margin-top: 4px; color: var(--mid); overflow-wrap: anywhere; }
+.chain-job a { color: var(--ink); border-bottom: 1px solid var(--line-2); }
+.chain-figs { display: grid; justify-items: end; align-content: start; gap: 8px; padding-top: 2px; }
+.chain-figs .mono { font-size: 14px; white-space: nowrap; }
+.chain-foot { display: flex; flex-wrap: wrap; gap: 4px 18px; padding: 4px 0 18px; color: var(--dim); font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.04em; }
+.chain-foot a { color: var(--mid); border-bottom: 1px solid var(--line-2); }
+.chain-foot a:hover { color: var(--ink); }
+.chain-foot .gilt { color: var(--gilt); }
+.chain-foot .warn { color: var(--ink); }
+.chain-foot .bad { color: var(--bad); }
+.kv.tight dt { padding: 8px 0; font-size: 14px; }
+.kv.tight dd { padding: 9px 0; font-size: 13.5px; }
+.kv.tight dt:first-of-type, .kv.tight dd:first-of-type { padding-top: 0; }
+.hirefor { margin-top: 20px; gap: 20px; }
+.hiring-list { display: grid; }
+.hiring-list a { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px; padding: 12px 0; border-top: 1px solid var(--line); align-items: baseline; transition: background 0.25s ease; }
+.hiring-list a:last-child { border-bottom: 1px solid var(--line); }
+.hiring-list a:hover { background: var(--paper); }
+.hiring-list .nm { font-family: var(--serif); font-size: 19px; overflow-wrap: anywhere; }
+@media (max-width: 560px) {
+  .chain-list .chain-list { margin-left: 4px; padding-left: 16px; }
+  .chain-list .chain-list > .chain-node::before { left: -16px; width: 10px; }
+  .chain-name { font-size: 19px; }
+  .chain-row { gap: 12px; }
+  .chain-cust { font-size: 19px; }
+}
