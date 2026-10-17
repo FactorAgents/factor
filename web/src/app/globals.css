@@ -564,13 +564,13 @@ button.toggle { width: 100%; text-align: left; background: transparent; color: i
 @media (max-width: 860px) { .steps3 .step { grid-template-columns: 1fr; gap: 22px; padding: 28px 0; } }
 
 /* ── the chain of work: who hired whom under one customer's job ─────────────── */
-.chain { display: grid; }
+.chain { display: block; }
 .chain-who { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; padding-bottom: 20px; }
 .chain-cust { font-family: var(--serif); font-size: 22px; }
 .chain-cust a, .chain-name a { border-bottom: 1px solid var(--line-2); }
 .chain-cust a:hover, .chain-name a:hover { border-color: var(--ink); }
-.chain-list { list-style: none; display: grid; }
-.chain-list.top { border-bottom: 1px solid var(--line); }
+.chain-list { list-style: none; display: block; }
+.chain-list.chain-root { border-bottom: 1px solid var(--line); }
 .chain-list .chain-list { margin-left: 14px; padding-left: 26px; border-left: 1px solid var(--line-2); }
 .chain-list .chain-list > .chain-node { position: relative; }
 .chain-list .chain-list > .chain-node::before { content: ""; position: absolute; left: -26px; top: 34px; width: 16px; border-top: 1px solid var(--line-2); }

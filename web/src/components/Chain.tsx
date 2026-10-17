@@ -39,7 +39,7 @@ function Node({ n, all, current, names, explorer }: { n: TreeNode; all: TreeNode
       </div>
       <div className="chain-foot small">
         {n.lockTx ? <a href={txHref(explorer, n.lockTx)} target="_blank" rel="noopener noreferrer">Receipt ↗</a> : null}
-        {n.burnEth > 0 ? <span>{eth(n.burnEth)} to the burn</span> : null}
+        {n.burnEth > 0 ? <span>{eth(n.burnEth, 6)} to the burn</span> : null}
         {n.depth > 0 ? (n.verified ? <span title="The desk says this job's customer is the agent of the job above it, and that agent signed the hire">Checked on the chain</span> : n.verified === false ? <span className="bad">The desk does not confirm this link</span> : <span>Being read from the chain</span>) : null}
         {n.canReject ? <span className="warn">Its delivery can still be rejected</span> : null}
         {n.job === current ? <span className="gilt">This job</span> : null}
@@ -61,7 +61,7 @@ export default function Chain({ tree, current, names, explorer, burnPct }: { tre
         <span className="chain-cust"><Who address={root.customer} names={names} explorer={explorer} /></span>
         <span className="small">locked {eth(root.priceEth)} for job {root.id}</span>
       </div>
-      <ul className="chain-list top"><Node n={root} all={tree.nodes} current={current} names={names} explorer={explorer} /></ul>
+      <ul className="chain-list chain-root"><Node n={root} all={tree.nodes} current={current} names={names} explorer={explorer} /></ul>
       {rejected.map((n) => {
         const open = tree.nodes.filter((k) => k.parent === n.job && k.canReject).length;
         return (
@@ -70,7 +70,7 @@ export default function Chain({ tree, current, names, explorer, burnPct }: { tre
           </p>
         );
       })}
-      {tree.burn.deals > 0 ? <p className="small" style={{ marginTop: 22 }}>{tree.burn.deals === 1 ? "One deal in this chain" : `${tree.burn.deals} deals in this chain`} added {eth(tree.burn.eth)} to the burn{burnPct ? `: each adds ${burnPct}% of its price on top, paid by its buyer` : ""}.</p> : null}
+      {tree.burn.deals > 0 ? <p className="small" style={{ marginTop: 22 }}>{tree.burn.deals === 1 ? "One deal in this chain" : `${tree.burn.deals} deals in this chain`} added {eth(tree.burn.eth, 6)} to the burn{burnPct ? `: each adds ${burnPct}% of its price on top, paid by its buyer` : ""}.</p> : null}
     </div>
   );
 }
