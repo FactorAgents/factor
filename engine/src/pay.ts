@@ -5,8 +5,9 @@
 // The link holds everything: Factor keeps no copy unless the agent publishes it on its page.
 //
 //   GET  /v1/pay/link/<token>    what a link says, checked: its agent's signature, its expiry, the agent's record
-//   POST /v1/pay/deal            a job locked through a link: { link, job, lockTx, burnTx? }. Checked against the
-//                                chain (the lock's own log) and kept, so the job shows as paid with Factor
+//   POST /v1/pay/deal            a job locked through a link: { link, job, lockTx, burnTx?, plan? }. Checked against
+//                                the chain (the lock's own log) and kept, so the job shows as paid with Factor. With
+//                                a plan (./subjobs.ts), the buyer bought it for a job it is doing: linked under that job
 //   POST /v1/pay/links           an agent publishes a link on its page: { link }
 //   GET  /v1/pay/links/<agent>   the links an agent published that have not expired
 //   GET|POST /v1/x402/<token>    the same link for another agent's program, over x402: a 402 that says how to pay,
@@ -25,6 +26,7 @@ import { normalizeAddress } from "./chain/address.js";
 import type { Chain } from "./chain/chain.js";
 import type { EngineDb } from "./chain/db.js";
 import { briefText, oneLine } from "./profiles.js";
+import type { Subjobs } from "./subjobs.js";
 
 type Env = Record<string, string | undefined>;
 const DESK = factorDeskAbi as Abi;
@@ -242,6 +244,32 @@ export class PayStore {
   }
 }
 
+/** What the desk's own Locked log says of a job, and its block's time. */
+export interface LockFacts { customer: string; agent: string; price: bigint; dueAt: number; allowEarly: boolean; at: number }
+
+/**
+ * The lock of a job, read from the transaction that made it: the desk's own Locked log, and its block's time. A string
+ * says why it is not one; one that starts with "not yet" may be one in a few seconds.
+ */
+export async function readLock(chain: Pick<Chain, "receipt" | "block">, desk: string, job: number, lockTx: string): Promise<LockFacts | string> {
+  const receipt = await chain.receipt(lockTx);
+  if (!receipt) return "not yet: that transaction is not mined yet, or not on this chain";
+  if (!receipt.ok) return "that transaction was refused by the chain: nothing was locked";
+  for (const log of receipt.logs) {
+    if (log.address !== desk) continue;
+    try {
+      const e = decodeEventLog({ abi: DESK, topics: log.topics as [Hex, ...Hex[]], data: log.data }) as unknown as { eventName: string; args: Record<string, unknown> };
+      if (e.eventName !== "Locked" || Number(e.args.id) !== job) continue;
+      const block = await chain.block(receipt.blockNumber);
+      if (!block) return "not yet: the block of that transaction could not be read";
+      return { customer: normalizeAddress(e.args.customer)!, agent: normalizeAddress(e.args.agent)!, price: BigInt(String(e.args.price)), dueAt: Number(e.args.dueAt), allowEarly: !!e.args.allowEarly, at: block.timestamp };
+    } catch {
+      // another of the desk's logs
+    }
+  }
+  return "that transaction did not lock that job on Factor's desk";
+}
+
 // ---------- what the engine checks ----------
 
 export interface PayDeps {
@@ -257,6 +285,8 @@ export interface PayDeps {
   nowS: () => number;
   /** new jobs are paused by the owner: the note to say, or null */
   paused: () => string | null;
+  /** agents that hire agents (./subjobs.ts): a deal can be a sub-job of a job its buyer is doing. null while it is off */
+  subjobs?: () => Subjobs | null;
 }
 
 export type Checked = { ok: true; link: PayLink; id: Hex; token: string; signature: Hex } | { ok: false; status: number; error: string };
@@ -290,7 +320,7 @@ export class Pay {
   }
 
   burnFor(priceWei: bigint): bigint {
-    return dealBurnWei(priceWei, this.d.cfg.burnBps);
+    return this.d.cfg.enabled ? dealBurnWei(priceWei, this.d.cfg.burnBps) : 0n;
   }
 
   /** What a checkout shows of a link: the link itself, what the buyer pays, and where each part goes. */
@@ -339,7 +369,7 @@ export class Pay {
     if (job === null || !lockTx) return fail(400, "send { link, job, lockTx }: the job's number and the transaction that locked it");
     if (burnTx === "bad") return fail(400, "burnTx is a transaction's hash");
     // the link is checked at the lock's own time: a link that expired after it was paid still counts
-    const locked = await this.lockOf(job, lockTx);
+    const locked = await readLock(this.d.chain, this.d.desk, job, lockTx);
     if (typeof locked === "string") return fail(locked.startsWith("not yet") ? 404 : 400, locked);
     const c = await this.check(body.link, locked.at);
     if (!c.ok) return { status: c.status, body: { error: c.error } };
@@ -363,7 +393,7 @@ export class Pay {
     let burnNote: string | null = null;
     if (burnTx && burn === 0n) {
       const used = this.store.byBurnTx(burnTx);
-      if (used && used.job_id !== job) burnNote = "that transfer to the burn pot was already counted for another deal";
+      if ((used && used.job_id !== job) || this.d.subjobs?.()?.store.byBurnTx(burnTx)) burnNote = "that transfer to the burn pot was already counted for another deal";
       else {
         const sent = await this.burnIn(locked.customer, burnTx);
         if (typeof sent === "string") burnNote = sent;
@@ -374,27 +404,18 @@ export class Pay {
         }
       }
     }
-    return { status: 200, body: { ok: true, job, linkId: c.id, agent: l.agent, customer: locked.customer, priceWei: l.price, burnWei: burn.toString(), burnNeededWei: need.toString(), burned: burn >= need && burn > 0n, ...(burnNote ? { burnNote } : {}), jobUrl: `${this.d.cfg.site}/jobs/${String(job).padStart(4, "0")}` } };
-  }
-
-  /** The lock of a job, read from the transaction that made it: the desk's own Locked log, and its block's time. */
-  private async lockOf(job: number, lockTx: string): Promise<{ customer: string; agent: string; price: bigint; dueAt: number; allowEarly: boolean; at: number } | string> {
-    const receipt = await this.d.chain.receipt(lockTx);
-    if (!receipt) return "not yet: that transaction is not mined yet, or not on this chain";
-    if (!receipt.ok) return "that transaction was refused by the chain: nothing was locked";
-    for (const log of receipt.logs) {
-      if (log.address !== this.d.desk) continue;
-      try {
-        const e = decodeEventLog({ abi: DESK, topics: log.topics as [Hex, ...Hex[]], data: log.data }) as unknown as { eventName: string; args: Record<string, unknown> };
-        if (e.eventName !== "Locked" || Number(e.args.id) !== job) continue;
-        const block = await this.d.chain.block(receipt.blockNumber);
-        if (!block) return "not yet: the block of that transaction could not be read";
-        return { customer: normalizeAddress(e.args.customer)!, agent: normalizeAddress(e.args.agent)!, price: BigInt(String(e.args.price)), dueAt: Number(e.args.dueAt), allowEarly: !!e.args.allowEarly, at: block.timestamp };
-      } catch {
-        // another of the desk's logs
+    // a deal its buyer makes as part of a job it is doing itself: linked under that job, by the plan the buyer signed
+    let sub: Record<string, unknown> = {};
+    if (body.plan !== undefined && body.plan !== null && body.plan !== "") {
+      const s = this.d.subjobs?.() ?? null;
+      if (typeof body.plan !== "string" || !/^0x[0-9a-f]{64}$/.test(body.plan)) sub = { subjobNote: "plan is the number POST /v1/subjobs/plan answered" };
+      else if (!s) sub = { subjobNote: "agents hiring agents is switched off for now: the deal stands as an ordinary one" };
+      else {
+        const r = s.attach(body.plan, job, locked, lockTx, via);
+        sub = r.status === 200 ? { subjob: r.body } : { subjobNote: String(r.body.error) };
       }
     }
-    return "that transaction did not lock that job on Factor's desk";
+    return { status: 200, body: { ok: true, job, linkId: c.id, agent: l.agent, customer: locked.customer, priceWei: l.price, burnWei: burn.toString(), burnNeededWei: need.toString(), burned: burn >= need && burn > 0n, ...(burnNote ? { burnNote } : {}), ...sub, jobUrl: `${this.d.cfg.site}/jobs/${String(job).padStart(4, "0")}` } };
   }
 
   /**
@@ -460,6 +481,7 @@ export class Pay {
         chainId: 4663, link: token, desk: this.d.desk, agent: l.agent, priceWei: l.price, burnWei: burn.toString(), burnPot: this.d.burnPot, dueInHours: l.due, allowEarly: l.early, linkId: c.id, brief: l.brief,
         lock: { to: this.d.desk, function: "lock(address agent, uint256 dueAt, bool allowEarly)", value: l.price, args: { agent: l.agent, dueAt: `the lock's time + ${l.due * 3600} seconds`, allowEarly: l.early } },
         then: "send the X-PAYMENT header: base64 of { x402Version: 1, scheme, network, payload: { job, lockTx, burnTx } }",
+        ...(this.d.subjobs?.() ? { forAJob: "an agent paying this as part of a job it is doing signs a plan first (POST /api/v1/subjobs/plan), locks with the plan's due time, and adds plan to the payload: the job is then linked under its own" } : {}),
       },
     };
     const required = (error: string) => ({ status: 402, headers: {}, body: { x402Version: 1, error, accepts: [requirements] } });
@@ -471,7 +493,7 @@ export class Pay {
       return required("the X-PAYMENT header is not base64 of JSON");
     }
     if (p?.scheme !== X402_SCHEME || p.network !== X402_NETWORK || !p.payload || typeof p.payload !== "object") return required(`the payment is not of the scheme ${X402_SCHEME} on ${X402_NETWORK}`);
-    const r = await this.claim({ link: token, job: p.payload.job, lockTx: p.payload.lockTx, burnTx: p.payload.burnTx }, "x402");
+    const r = await this.claim({ link: token, job: p.payload.job, lockTx: p.payload.lockTx, burnTx: p.payload.burnTx, plan: p.payload.plan }, "x402");
     if (r.status === 404) return required(`${String(r.body.error)}. Send it again in a few seconds`);
     if (r.status !== 200) return required(String(r.body.error));
     const settled = Buffer.from(JSON.stringify({ success: true, transaction: String(p.payload.lockTx).toLowerCase(), network: X402_NETWORK, payer: r.body.customer, job: r.body.job })).toString("base64");

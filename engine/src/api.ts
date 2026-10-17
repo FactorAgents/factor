@@ -4,12 +4,14 @@
 //   GET  /v1/agents            every agent, by score
 //   GET  /v1/agents/<id>       one agent (its address or its name), its jobs and its lines of the ledger
 //   GET  /v1/jobs              jobs, newest first: ?limit=50&before=<number>&agent=<address>&customer=<address>
-//   GET  /v1/jobs/<number>     one job, its advances and its lines of the ledger
+//   GET  /v1/jobs/<number>     one job, its advances and its lines of the ledger; the chain of work it is part of
+//   GET  /v1/jobs/<number>/tree  the chain of work alone: the customer's job and every sub-job under it (subjobs.ts)
 //   GET  /v1/ledger            the ledger, newest first: ?limit=50&before=<n>&show=locked|advanced|settled|refunded|burned
 //   GET  /v1/burns             every buy back and burn: ?limit=50&before=<burn number>
 //   GET  /v1/health            for the owner: cursors, actions, the gas wallet, the nodes, the last error
 //   POST /v1/agents/profile    an agent's name and what it does, signed by its wallet (profiles.ts)
 //   POST /v1/jobs/title        what a job is about, signed by the customer who locked it
+//   POST /v1/subjobs/plan      a job's agent signs a hire for part of it; /v1/subjobs/link links the lock (subjobs.ts)
 //
 // Every GET is answered from the database (the last reading of the chain, the ledger, the engine's copy of each
 // job and agent), so a burst of visitors costs the node nothing. Before the contracts are given, and whenever the
@@ -41,6 +43,7 @@ import type { Matcher } from "./match.js";
 import { signerOf } from "./profiles.js";
 import type { Pay } from "./pay.js";
 import { recordOf, type RecordSigner } from "./record.js";
+import { treeOf, type Subjobs, type TreeJson } from "./subjobs.js";
 
 export interface Answer {
   status: number;
@@ -75,6 +78,8 @@ export interface EngineView {
   matcher?: Matcher | null;
   /** Pay with Factor (./pay.ts) */
   pay?: Pay | null;
+  /** agents that hire agents (./subjobs.ts) */
+  subjobs?: Subjobs | null;
   /** the key that signs agents' records (./record.ts) */
   recordSigner?: RecordSigner | null;
 }
@@ -130,7 +135,13 @@ export interface JobJson {
   tx: string;
   /** locked through a Pay with Factor link: how it was paid, and what the buyer added to the burn beside it */
   deal?: { via: string; burnEth: number };
+  /** a sub-job: the job its customer (that job's agent) hired for, and how far under the customer's job it is */
+  parent?: { n: number; id: string; depth: number };
 }
+/** The other agents one agent hired for parts of its jobs, and those that hired it: one line each, with how many jobs. */
+export interface HiringJson { hiredBy: { address: string; name: string; named: boolean; jobs: number }[]; hires: { address: string; name: string; named: boolean; jobs: number }[] }
+/** Whether a job's agent can hire for it now, and what is left: what the job's page offers its agent. */
+export interface HireRoomJson { open: boolean; why?: string; freeEth: number; freeWei: string; used: number; perParent: number; depth: number; maxDepth: number; dueBefore: string }
 export interface AgentJson {
   /** the Desk's credit file on it, newest */
   file?: { text: string; at: string };
@@ -216,6 +227,8 @@ export interface FactorState {
   desk: DeskJson;
   /** Pay with Factor: whether links are taken, what a deal adds to the burn (hundredths of a percent of its price), and the deals so far */
   pay: { enabled: boolean; burnBps: number; deals: number; burnedEth: number };
+  /** agents that hire agents: whether a job's agent can hire for it, how deep a chain goes, and how many under one job */
+  subjobs: { enabled: boolean; maxDepth: number; perParent: number };
 }
 export interface RosterJson { name: string; does: string; needs: string; delivers: string; fromEth: number; asksAModel: boolean; /** the Desk's opening file on it */ file?: { text: string; at: string } }
 // what Factor's own agents are, said the same before the launch and after it
@@ -289,7 +302,7 @@ export function agentJson(row: AgentRow, names: Names, nowS: number): AgentJson 
 
 const advanceJson = (a: AdvanceRow): AdvanceJson => ({ kind: KIND_NAME[a.kind] ?? "pool", eth: eth(a.amount), feeEth: eth(a.fee), at: iso(a.at) });
 
-export function jobJson(j: JobRow, advances: AdvanceRow[], title: string | undefined, demo = false, deal?: { via: string; burn_wei: string }): JobJson {
+export function jobJson(j: JobRow, advances: AdvanceRow[], title: string | undefined, demo = false, deal?: { via: string; burn_wei: string }, parent?: { parent_id: number; depth: number }): JobJson {
   const state = (STATE_NAME[j.state] ?? "locked") as JobJson["state"];
   const closed = j.state >= STATE.settled;
   // one line for the bill: everything drawn, under the kind most of it came by
@@ -318,6 +331,7 @@ export function jobJson(j: JobRow, advances: AdvanceRow[], title: string | undef
     ...(j.state === STATE.refunded && j.not_repaid !== "0" ? { notRepaidEth: eth(j.not_repaid) } : {}),
     tx: j.locked_tx,
     ...(deal ? { deal: { via: deal.via, burnEth: eth(deal.burn_wei) } } : {}),
+    ...(parent ? { parent: { n: parent.parent_id, id: pad(parent.parent_id), depth: parent.depth } } : {}),
   };
 }
 
@@ -416,6 +430,8 @@ export class EngineApi {
     if (m) return (v) => this.agent(v, m![1]);
     m = /^\/v1\/jobs\/(\d{1,9})$/.exec(path);
     if (m) return (v) => this.job(v, Number(m![1]));
+    m = /^\/v1\/jobs\/(\d{1,9})\/tree$/.exec(path);
+    if (m) return (v) => { const t = this.tree(v, Number(m![1])); return t ? ok(t as unknown as Record<string, unknown>) : notFound("that job hired nobody and was not hired for another"); };
     return null;
   }
 
@@ -453,6 +469,7 @@ export class EngineApi {
       return ok(await recordOf({
         db: r.ctx.db, row, name: p?.name ?? shortAddress(row.address), named: !!p, does: p?.does ?? "", chainId: v.config.chainId, desk: r.ctx.addr.desk, block: r.snap.block,
         nowS: this.chainNow(v, r.snap), site: v.config.pay.site, pay: v.pay.store.totals(row.address), signer: v.recordSigner ?? null,
+        hiring: this.hiring(v, row.address),
       }) as unknown as Record<string, unknown>);
     }
     return null;
@@ -466,6 +483,19 @@ export class EngineApi {
     if (this.tooMany(from, "pay", 60)) return { status: 429, body: { error: "too many requests: try again in a minute" } };
     const b = body as Record<string, unknown>;
     const a = path === "/v1/pay/deal" ? await v.pay.claim(b, b.via === "kit" ? "kit" : "checkout") : await v.pay.publish(b);
+    if (a.status === 200) this.cache.clear();
+    return a;
+  }
+
+  // A job's agent hires another for part of it: the signed plan, then the lock linked to it (./subjobs.ts).
+  private async subjobsPost(path: string, body: unknown, from: string): Promise<Answer> {
+    const v = this.view();
+    if (!v.subjobs || v.state !== "running") return { status: 503, body: { error: "the engine is not reading the chain yet" } };
+    if (!v.config.subjobs.enabled) return { status: 503, body: { error: "agents hiring agents is switched off for now" } };
+    if (!body || typeof body !== "object" || Array.isArray(body)) return { status: 400, body: { error: "the body is not a JSON object" } };
+    if (this.tooMany(from, "subjobs", 60)) return { status: 429, body: { error: "too many requests: try again in a minute" } };
+    const b = body as Record<string, unknown>;
+    const a = path === "/v1/subjobs/plan" ? await v.subjobs.plan(b) : await v.subjobs.link(b, "kit");
     if (a.status === 200) this.cache.clear();
     return a;
   }
@@ -561,6 +591,7 @@ export class EngineApi {
   async post(path: string, body: unknown, from: string, adminKey?: string): Promise<Answer | null> {
     if (path === "/v1/match") return this.matchPost(body, from);
     if (path === "/v1/pay/deal" || path === "/v1/pay/links") return this.payPost(path, body, from);
+    if (path === "/v1/subjobs/plan" || path === "/v1/subjobs/link") return this.subjobsPost(path, body, from);
     if (path === "/v1/accounts" || path.startsWith("/v1/accounts/")) return this.accountsPost(path, body, from);
     if (path === "/v1/agents/make" || path === "/v1/agents/pause") return this.hostedPost(path, body, from);
     if (path !== "/v1/agents/profile" && path !== "/v1/jobs/title" && path !== "/v1/jobs/brief" && path !== "/v1/jobs/delivery" && path !== "/v1/admin/hide" && path !== "/v1/admin/switch") return null;
@@ -644,7 +675,7 @@ export class EngineApi {
     const titles = v.profiles?.titles(ids) ?? new Map<number, string>();
     const demo = this.demoJobs(v);
     const deals = v.pay?.store.deals(ids) ?? new Map();
-    return rows.map((j) => jobJson(j, advances.get(j.id) ?? [], titles.get(j.id), demo.has(j.id), deals.get(j.id)));
+    return rows.map((j) => jobJson(j, advances.get(j.id) ?? [], titles.get(j.id), demo.has(j.id), deals.get(j.id), v.subjobs?.store.link(j.id) ?? undefined));
   }
 
   private jobs(v: EngineView, limit: number, before?: number, agent?: string, customer?: string): Record<string, unknown> {
@@ -673,7 +704,38 @@ export class EngineApi {
       agent: agentJson(row, names, this.chainNow(v, r.snap)),
       jobs: this.jobsJson(v, r.store, r.store.jobs(PAGE, undefined, row.address)),
       events: r.store.ledger(30, { agent: row.address }).map((l) => eventJson(l, names)),
+      // whom it hired for parts of its jobs and who hired it: only when there is any, so a page never shows empty counts
+      ...((h) => (h.hiredBy.length || h.hires.length ? { hiring: h } : {}))(this.hiring(v, row.address)),
     });
+  }
+
+  /** The agents one agent hired for parts of its jobs, and those that hired it, with names. */
+  private hiring(v: EngineView, address: string): HiringJson {
+    const rel = v.subjobs?.store.relations(address) ?? { hiredBy: [], hires: [] };
+    const profiles = v.profiles?.all() ?? new Map<string, Profile>();
+    const named = (x: { address: string; jobs: number }) => { const p = profiles.get(x.address); return { address: x.address, name: p?.name ?? shortAddress(x.address), named: !!p, jobs: x.jobs }; };
+    return { hiredBy: rel.hiredBy.map(named), hires: rel.hires.map(named) };
+  }
+
+  /** The chain of work a job is part of, with titles and each deal's burn, or null when there is none. */
+  private tree(v: EngineView, id: number): TreeJson | null {
+    const r = this.running(v);
+    if (!r || !v.subjobs) return null;
+    const family = v.subjobs.store.family(v.subjobs.rootOf(id));
+    if (!family.length) return null;
+    const ids = [v.subjobs.rootOf(id), ...family.map((l) => l.job_id)];
+    return treeOf(v.subjobs, r.ctx.db, id, { nowS: this.chainNow(v, r.snap), reviewS: RULES.reviewS, titles: v.profiles?.titles(ids) ?? new Map(), deals: v.pay?.store.deals(ids) ?? new Map() });
+  }
+
+  /** What a job's agent can still hire for it: whether it may now, and what is left of the price. Null while hiring is off. */
+  private hireRoom(v: EngineView, row: JobRow, nowS: number): HireRoomJson | null {
+    const s = v.subjobs;
+    if (!s || !v.config.subjobs.enabled) return null;
+    const c = v.config.subjobs;
+    const room = s.room(row.id, nowS);
+    const depth = s.depthOf(row.id);
+    const why = row.state !== STATE.locked && row.state !== STATE.advanced ? "the job is no longer open" : depth >= c.maxDepth ? `a job ${c.maxDepth} levels under a customer's job cannot hire again` : room.used >= c.perParent ? `a job has ${c.perParent} sub-jobs at most` : room.freeWei < 10n ** 15n ? "nothing is left of its price to hire with" : row.due_at - nowS < 2 * 3600 ? "it is due too soon to hire for: a sub-job is due at least an hour from now and before the job" : null;
+    return { open: !why, ...(why ? { why } : {}), freeEth: eth(room.freeWei), freeWei: room.freeWei.toString(), used: room.used, perParent: c.perParent, depth, maxDepth: c.maxDepth, dueBefore: iso(row.due_at) };
   }
 
   private job(v: EngineView, id: number): Answer {
@@ -694,6 +756,9 @@ export class EngineApi {
       ...(v.profiles?.briefBy(id) && v.profiles.briefBy(id) === row.agent && row.agent !== row.customer ? { briefBy: "agent" } : {}),
       work: work ? { kind: work.kind, text: work.body, at: new Date(work.at).toISOString() } : null,
       ...(note ? { note } : {}),
+      // the chain of work it is part of, and what its agent can still hire for it
+      ...((t) => (t ? { tree: t } : {}))(this.tree(v, id)),
+      ...((h) => (h ? { hiring: h } : {}))(this.hireRoom(v, row, this.chainNow(v, r.snap))),
     });
   }
 
@@ -811,7 +876,8 @@ export class EngineApi {
     const activity = (v.activity?.latest(8) ?? []).map((x) => ({ n: x.n, at: new Date(x.at).toISOString(), agent: x.agent, kind: x.kind, text: x.text }));
     const deals = v.pay?.store.all() ?? { deals: 0, burnedWei: 0n };
     const pay = { enabled: !!v.pay && c.pay.enabled && v.state === "running", burnBps: c.pay.burnBps, deals: deals.deals, burnedEth: eth(deals.burnedWei) };
-    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused, roster: this.rosterJson(v), hosted, pulse: pulseJson(v, 8), desk: this.deskJson(v), signups, activity, pay };
+    const subjobs = { enabled: !!v.subjobs && c.subjobs.enabled && v.state === "running", maxDepth: c.subjobs.maxDepth, perParent: c.subjobs.perParent };
+    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused, roster: this.rosterJson(v), hosted, pulse: pulseJson(v, 8), desk: this.deskJson(v), signups, activity, pay, subjobs };
     if (!r) {
       return { ...base, launched: false, stats: { advancedEth: 0, settledJobs: 0, jobs: 0, poolEth: 0, reserveEth: 0, outEth: 0, heldEth: 0, burnedTokens: 0, supplyLeft: SUPPLY, agents: 0, demoJobs: 0, lostEth: 0, poolFromTradingEth: 0 }, burn: null, agents: [], jobs: [], events: [], burns: [] };
     }
