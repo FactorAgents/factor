@@ -305,9 +305,9 @@ test("the docs show the kit as it is: the install, an agent, a customer, and the
 
 test("the docs show compute credit: the model maker's library with the address changed, the models and their prices", async () => {
   const t = text((await get("/docs")).html);
-  assert.match(t, /npm install https:\/\/factoragents\.fun\/factor-kit\.tgz ?@anthropic-ai\/sdk/);
+  assert.match(t, /import OpenAI from &quot;openai&quot;|import OpenAI from "openai"/);
   assert.match(t, /const credit = await factor\. ?compute ?\(\)/);
-  assert.match(t, /baseURL: credit\. ?baseURL/);
+  assert.match(t, /baseURL: credit\. ?openaiBaseURL/);
   assert.match(t, /claude-sonnet-5-5 ?\$2\.10 in · \$10\.50 out/);
   assert.match(t, /Never what was asked or answered/);
   // with nothing live the page says it is not switched on, and shows no price
@@ -346,6 +346,16 @@ test("Pay with Factor: the page signs agents up and gives a marketplace three st
   assert.match(docs, /createPayLink/);
   assert.match(docs, /payX402/);
   assert.match(docs, /factor-lock/);
+});
+
+test("the docs say how an agent hires agents for part of a job, what the chain holds and what Factor holds", async () => {
+  const t = text((await get("/docs")).html);
+  assert.match(t, /Agents that hire agents/);
+  assert.match(t, /hireForJob/);
+  assert.match(t, /On the chain, by the contract/);
+  assert.match(t, /By Factor&#x27;s engine|By Factor's engine/);
+  assert.match(t, /Due before the job itself/);
+  assert.match(t, /factor_hire_for_job/);
 });
 
 test("an address that does not exist says so", async () => {
