@@ -35,6 +35,7 @@ import { HouseActivity, activityOn, anthropicAsk } from "./activity.js";
 import { Matcher, matchOn } from "./match.js";
 import { DEFAULT_MODELS } from "./compute.js";
 import { Pay } from "./pay.js";
+import { Subjobs } from "./subjobs.js";
 import { recordSigner, type RecordSigner } from "./record.js";
 import { snapshotOf } from "./chain/context.js";
 
@@ -93,6 +94,8 @@ export class Engine {
   matcher: Matcher | null = null;
   /** Pay with Factor (./pay.ts): payment links, deals and x402 */
   pay: Pay | null = null;
+  /** agents that hire agents (./subjobs.ts): the link between a job and the jobs its agent locked for parts of it */
+  subjobs: Subjobs | null = null;
   /** the key that signs agents' records for other apps (./record.ts), or null */
   readonly recordSigner: RecordSigner | null;
   private carryTimer: ReturnType<typeof setInterval> | null = null;
@@ -153,7 +156,7 @@ export class Engine {
     for (const [name, l] of this.loops) loops[name] = { lastRunAt: l.lastRunAt, lastOkAt: l.lastOkAt, runs: l.runs, failures: l.failures, waitMs: l.waitMs, backingOff: l.backingOff };
     return {
       config: this.config, state: this.state, problems: this.problems, warnings: this.warnings, lastError: this.lastError, loops, ctx: this.ctx, rpc: this.chain?.health() ?? null, now: this.now,
-      links: { pons: link(this.env.FACTOR_PONS_URL), github: link(this.env.FACTOR_GITHUB_URL), x: link(this.env.FACTOR_X_URL) }, dataDirSet: !!this.env.FACTOR_DATA_DIR?.trim(), profiles: this.profiles, gateway: this.gateway, accounts: this.accounts, house: this.house, demo: this.demo, pulse: this.pulse, deskMind: this.deskMind, launchList: this.launchList, activity: this.activity, matcher: this.matcher, pay: this.pay, recordSigner: this.recordSigner,
+      links: { pons: link(this.env.FACTOR_PONS_URL), github: link(this.env.FACTOR_GITHUB_URL), x: link(this.env.FACTOR_X_URL) }, dataDirSet: !!this.env.FACTOR_DATA_DIR?.trim(), profiles: this.profiles, gateway: this.gateway, accounts: this.accounts, house: this.house, demo: this.demo, pulse: this.pulse, deskMind: this.deskMind, launchList: this.launchList, activity: this.activity, matcher: this.matcher, pay: this.pay, subjobs: this.subjobs, recordSigner: this.recordSigner,
     };
   }
 
@@ -290,7 +293,20 @@ export class Engine {
       cfg: c.pay, db, chain: this.chain, desk: c.desk, burnPot: c.burnPot, accountsFactory: c.accounts.factory,
       signed: async (address, message, signature) => this.profiles!.signed(address, message, signature), nowS,
       paused: () => { const h = stopped(db, "hiring"); return h ? h.note || "New jobs are paused for now." : null; },
+      subjobs: () => (c.subjobs.enabled ? this.subjobs : null),
     });
+    // the links are read whether or not hiring is on, so a job's chain still shows after it is switched off
+    this.subjobs = new Subjobs({
+      cfg: c.subjobs, db, chain: this.chain, desk: c.desk, nowS,
+      signed: async (address, message, signature) => this.profiles!.signed(address, message, signature),
+      paused: () => { const h = stopped(db, "hiring"); return h ? h.note || "New jobs are paused for now." : null; },
+      burnFor: (price) => this.pay!.burnFor(price),
+      burnIn: (customer, hash) => this.pay!.burnIn(customer, hash),
+      dealBurnUsed: (hash) => !!this.pay!.store.byBurnTx(hash),
+      house: () => new Set([...c.houseAgents, ...(this.house?.addresses() ?? [])]),
+      hosted: () => this.house?.hostedAddresses() ?? new Map(),
+    });
+    if (c.subjobs.enabled) this.log(`[subjobs] on: an agent can hire other agents for parts of its job, ${c.subjobs.maxDepth} levels deep, ${c.subjobs.perParent} under one job`);
     if (c.pay.enabled) this.log(`[pay] Pay with Factor on: every deal adds ${c.pay.burnBps / 100}% of its price to the burn, paid by the buyer`);
     this.gateway = new Gateway(c.compute, new ComputeStore(this.ctx.db), this.ctx.db, c.compute.enabled ? { anthropic: c.compute.direct ? takeModelKey(this.env) : null, router: takeRouterKey(this.env) } : { anthropic: null, router: null }, this.log, accountSigned);
     // Factor's own agents: put up only while there is a gas wallet to send what they sign

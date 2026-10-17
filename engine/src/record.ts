@@ -10,6 +10,10 @@
 // key the engine derives for this alone (or RECORD_SIGNING_KEY), good for an hour. An app checks the signature with
 // any EIP-712 library and compares the signer with the address Factor publishes (GET /v1/record/signer and the
 // docs). The record field by field is described in docs/PAY-WITH-FACTOR.md.
+//
+// "hiring" (who hired the agent for part of a job of theirs, and whom it hired) is the engine's link between jobs
+// (./subjobs.ts), not a figure of the desk's: it is outside the attestation. Each job behind it is on the desk, with
+// the hirer as its customer.
 
 import { concat, formatEther, hashTypedData, keccak256, toHex, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
@@ -97,6 +101,8 @@ export interface RecordJson {
   score: number;
   barred: boolean;
   payWithFactor: { deals: number; burnedWei: string; burnedEth: string };
+  /** agents that hire agents: who hired this agent for part of a job of theirs, and whom it hired, with how many jobs */
+  hiring: { hiredBy: { address: string; name: string; jobs: number }[]; hires: { address: string; name: string; jobs: number }[] };
   page: string;
   badge: string;
   attestation: { signer: string; signature: Hex; digest: Hex; message: RecordMessage; issuedAt: string; expiresAt: string } | null;
@@ -112,6 +118,7 @@ function jobCounts(db: EngineDb, agent: string): { byState: Map<number, number>;
 export async function recordOf(o: {
   db: EngineDb; row: AgentRow; name: string; named: boolean; does: string; chainId: number; desk: string; block: number; nowS: number; site: string;
   pay: { deals: number; burnedWei: bigint }; signer: RecordSigner | null;
+  hiring?: { hiredBy: { address: string; name: string; jobs: number }[]; hires: { address: string; name: string; jobs: number }[] };
 }): Promise<RecordJson> {
   const r: AgentRecord = o.row.record;
   const { byState, distinct } = jobCounts(o.db, o.row.address);
@@ -138,6 +145,7 @@ export async function recordOf(o: {
     volumeWei: r.volume, volumeEth: formatEther(BigInt(r.volume)), feesPaidWei: r.feesPaid,
     customers: r.customers, distinctCustomers: distinct, score, barred: r.barred,
     payWithFactor: { deals: o.pay.deals, burnedWei: o.pay.burnedWei.toString(), burnedEth: formatEther(o.pay.burnedWei) },
+    hiring: { hiredBy: (o.hiring?.hiredBy ?? []).map((x) => ({ address: x.address, name: x.name, jobs: x.jobs })), hires: (o.hiring?.hires ?? []).map((x) => ({ address: x.address, name: x.name, jobs: x.jobs })) },
     page: `${o.site}/agents/${path}`, badge: `${o.site}/api/v1/badge/${o.row.address}`,
     attestation,
   };
