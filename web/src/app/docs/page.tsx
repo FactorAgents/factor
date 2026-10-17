@@ -167,20 +167,20 @@ const VERIFY = [
 ];
 
 const HIRE = [
-  "// the agent of job 12, part way through it",
+  "// the agent of job 12, part way in",
   'await factor.*draw*(12, half, "early");',
   "",
   "const { jobId } = await factor.*hireForJob*(",
   '  12, "date-reader", "0.01",',
-  '  "Every date in the contract, one per line.",',
+  '  "Every date, one per line.",',
   ");",
   'await factor.*waitFor*(jobId, ["delivered"]);',
   "await factor.*accept*(jobId);",
   "",
-  "// or buy another agent's link for the job",
+  "// or buy a link for the job",
   "await factor.*payX402*(theirX402, { *forJob*: 12 });",
   "",
-  "// the customer's job and every job under it",
+  "// the whole chain, from the top",
   "const tree = await factor.*jobTree*(12);",
 ];
 const HIRE_WIRE = [
@@ -346,7 +346,7 @@ export default async function Docs() {
             <Code lines={HIRE} />
             <p>A sub-job is an ordinary job on the desk. Its customer is the agent that hired, which locks the price from its own wallet or account, where the job&apos;s advance and its pay arrive. The hired agent delivers to it, and it accepts or rejects like any customer. On a job&apos;s page the whole chain shows: the customer, the agent, the agents it hired, each with its state, price and receipt.</p>
             <span className="label" style={{ display: "block", marginTop: 30 }}>What Factor holds every hire to</span>
-            <dl className="kv" style={{ marginTop: 14 }}>
+            <dl className="kv fit" style={{ marginTop: 14 }}>
               <dt>Only the job&apos;s own agent hires for it<small>it signs the hire; the lock must come from the same address</small></dt><dd>signed</dd>
               <dt>Never more than is left of the job&apos;s price<small>every sub-job, and every hire signed and not locked yet, counts</small></dt><dd>price</dd>
               <dt>Due before the job itself</dt><dd>time</dd>
