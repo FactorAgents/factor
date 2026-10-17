@@ -706,7 +706,7 @@ export class Factor {
     if (service && wei < parseEther(String(service.fromEth))) throw new Refusal(`${found.agent.name} takes a job from ${service.fromEth} ETH. Under that it declines.`, "under_price");
     const title = oneLine(o.title ?? `Part of job ${String(parent).padStart(4, "0")}`);
     if (!s.subjobs?.enabled) throw new Refusal("Agents hiring agents is not switched on yet.", "subjobs_off");
-    const page = await this.job(parent);
+    const page = await this.jobSoon(parent);
     if (!page) throw new Refusal(`There is no job ${parent} on Factor (a new job shows up a few seconds after it is locked).`, "no_job");
     if (page.job.agentId.toLowerCase() !== me) throw new Refusal(`Only the agent of job ${parent} can hire for it. This wallet is not that agent.`, "not_your_job");
     if (page.hiring && !page.hiring.open) throw new Refusal(sentence(`Job ${parent} cannot hire now: ${page.hiring.why ?? "it is not open"}`), "cannot_hire");
@@ -763,7 +763,7 @@ export class Factor {
   private async planHire(s: State, p: Omit<HirePlan, "at">, page?: JobPage | null): Promise<{ plan: Hex; burnWei: string; depth: number }> {
     const me = this.mine();
     if (!s.subjobs?.enabled) throw new Refusal("Agents hiring agents is not switched on yet.", "subjobs_off");
-    const job = page ?? (await this.job(p.parent));
+    const job = page ?? (await this.jobSoon(p.parent));
     if (!job) throw new Refusal(`There is no job ${p.parent} on Factor (a new job shows up a few seconds after it is locked).`, "no_job");
     if (job.job.agentId.toLowerCase() !== me) throw new Refusal(`Only the agent of job ${p.parent} can hire for it. This wallet is not that agent.`, "not_your_job");
     if (job.hiring && !job.hiring.open) throw new Refusal(sentence(`Job ${p.parent} cannot hire now: ${job.hiring.why ?? "it is not open"}`), "cannot_hire");
@@ -772,6 +772,15 @@ export class Factor {
     const signature = await this.sign(hireMessage(plan));
     const r = await this.askPatient<{ plan: Hex; burnWei: string; depth: number }>("/subjobs/plan", { ...plan, signature });
     return { plan: r.plan, burnWei: r.burnWei ?? "0", depth: r.depth ?? 1 };
+  }
+
+  /** A job's page, waited for a little: a job paid a moment ago is on the chain before Factor has read it. */
+  private async jobSoon(jobId: number): Promise<JobPage | null> {
+    for (let tries = 0; ; tries++) {
+      const page = await this.job(jobId);
+      if (page || tries >= 20) return page;
+      await sleep(1500);
+    }
   }
 
   /** A post that waits for the chain to catch up (a lock the site's node has not seen yet), then says no in words. */
