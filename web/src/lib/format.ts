@@ -10,6 +10,8 @@ export const eth = (n: number, places = 4): string => {
   let p = places;
   while (p < 8 && n !== 0 && Number(Math.abs(n).toFixed(p)) === 0) p++;
   if (p > places && p < 8) p++;
+  // a small figure keeps its digits, so a bill still adds up: 0.00075 is not 0.0008
+  while (p < 8 && Math.abs(n) < 0.01 && Number(n.toFixed(p)) !== Number(n.toFixed(8))) p++;
   return `${n.toFixed(p)} ETH`;
 };
 /** Dollars, for compute credit: cents, and the parts of a cent when it is under a dollar. */
