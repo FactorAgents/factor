@@ -26,6 +26,7 @@ import { normalizeAddress } from "./chain/address.js";
 import type { Chain } from "./chain/chain.js";
 import type { EngineDb } from "./chain/db.js";
 import { briefText, oneLine } from "./profiles.js";
+import type { Firms } from "./firms.js";
 import type { Subjobs } from "./subjobs.js";
 
 type Env = Record<string, string | undefined>;
@@ -68,7 +69,10 @@ export function readPay(env: Env, problems: string[] = []): PayConfig {
   return { enabled: !off, burnBps, linksPerAgent: Number.isSafeInteger(per) && per > 0 && per <= 200 ? per : 20, site };
 }
 
-/** What a link says. `price` is wei as text; `due` is hours from the lock; `exp` is when the link stops, in unix seconds. */
+/**
+ * What a link says. `price` is wei as text; `due` is hours from the lock; `exp` is when the link stops, in unix seconds.
+ * `firm`, when there is one: the agent leads that firm and sells the firm's work with this link (./firms.ts).
+ */
 export interface PayLink {
   v: 1;
   agent: string;
@@ -79,6 +83,7 @@ export interface PayLink {
   early: boolean;
   exp: number;
   id: string;
+  firm?: string;
 }
 
 /**
@@ -89,6 +94,8 @@ export function payLinkMessage(l: PayLink): string {
   return [
     "Factor: Pay with Factor link",
     `agent: ${l.agent}`,
+    // only a link for a firm says so: every other link signs the same words it always did
+    ...(l.firm ? [`firm: ${l.firm}`] : []),
     `price: ${formatEther(BigInt(l.price))} ETH`,
     `title: ${l.title}`,
     `brief: ${l.brief ? keccak256(toHex(l.brief)) : "none"}`,
@@ -110,7 +117,7 @@ const unb64 = (s: string): string => Buffer.from(s, "base64url").toString("utf8"
 
 /** A link and its signature as one piece of text that goes into an address: `<facts>.<signature>`. */
 export function encodePayLink(l: PayLink, signature: Hex): string {
-  const facts = JSON.stringify({ v: l.v, agent: l.agent, price: l.price, title: l.title, brief: l.brief, due: l.due, early: l.early, exp: l.exp, id: l.id });
+  const facts = JSON.stringify({ v: l.v, agent: l.agent, price: l.price, title: l.title, brief: l.brief, due: l.due, early: l.early, exp: l.exp, id: l.id, ...(l.firm ? { firm: l.firm } : {}) });
   return `${b64(facts)}.${Buffer.from(signature.slice(2), "hex").toString("base64url")}`;
 }
 
@@ -127,7 +134,7 @@ export function decodePayLink(token: unknown): { link: PayLink; signature: Hex }
     return "that is not a Pay with Factor link";
   }
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return "that is not a Pay with Factor link";
-  const link: PayLink = { v: raw.v as 1, agent: String(raw.agent ?? ""), price: String(raw.price ?? ""), title: String(raw.title ?? ""), brief: String(raw.brief ?? ""), due: raw.due as number, early: raw.early as boolean, exp: raw.exp as number, id: String(raw.id ?? "") };
+  const link: PayLink = { v: raw.v as 1, agent: String(raw.agent ?? ""), price: String(raw.price ?? ""), title: String(raw.title ?? ""), brief: String(raw.brief ?? ""), due: raw.due as number, early: raw.early as boolean, exp: raw.exp as number, id: String(raw.id ?? ""), ...(raw.firm !== undefined ? { firm: String(raw.firm) } : {}) };
   const problem = linkProblem(link);
   if (problem) return problem;
   const signature = `0x${Buffer.from(sig, "base64url").toString("hex")}` as Hex;
@@ -149,6 +156,7 @@ export function linkProblem(l: PayLink): string | null {
   if (typeof l.early !== "boolean") return "the link does not say whether an early advance is allowed";
   if (!Number.isSafeInteger(l.exp) || l.exp < 1_700_000_000) return "the link has no expiry";
   if (!/^[0-9a-f]{16}$/.test(l.id)) return "the link has no id";
+  if (l.firm !== undefined && !/^[a-z0-9](?:[a-z0-9-]{1,30})[a-z0-9]$/.test(l.firm)) return "the link's firm is not a firm's short name";
   return null;
 }
 
@@ -287,6 +295,8 @@ export interface PayDeps {
   paused: () => string | null;
   /** agents that hire agents (./subjobs.ts): a deal can be a sub-job of a job its buyer is doing. null while it is off */
   subjobs?: () => Subjobs | null;
+  /** agent firms (./firms.ts): a link its lead signed for a firm files the deal under the firm. null while it is off */
+  firms?: () => Firms | null;
 }
 
 export type Checked = { ok: true; link: PayLink; id: Hex; token: string; signature: Hex } | { ok: false; status: number; error: string };
@@ -330,10 +340,13 @@ export class Pay {
     const l = c.link;
     const registered = !!this.d.db.q("SELECT 1 FROM desk_agents WHERE address = ?").get(l.agent);
     const burn = this.burnFor(BigInt(l.price));
+    // a link for a firm: the firm, when Factor knows it and the link's agent still leads it
+    const fr = l.firm ? this.d.firms?.()?.store.bySlug(l.firm) ?? null : null;
+    const firm = fr && !fr.hidden && fr.lead === l.agent ? { slug: fr.slug, name: fr.name, house: !!fr.house } : null;
     return {
       status: 200,
       body: {
-        id: c.id, link: l, registered, paused: this.d.paused(),
+        id: c.id, link: l, registered, paused: this.d.paused(), ...(l.firm ? { firm } : {}),
         priceWei: l.price, priceEth: formatEther(BigInt(l.price)), burnWei: burn.toString(), burnEth: formatEther(burn), totalWei: (BigInt(l.price) + burn).toString(),
         desk: this.d.desk, burnPot: this.d.burnPot, url: `${this.d.cfg.site}/pay/${c.token}`, x402: `${this.d.cfg.site}/api/v1/x402/${c.token}`,
         ...(registered ? {} : { error: "this agent has not signed up on Factor yet, so nothing can be locked for it. Ask it to sign up at factoragents.fun/pay" }),
@@ -352,8 +365,12 @@ export class Pay {
     return { status: 200, body: { ok: true, id: c.id } };
   }
 
-  linksOf(agent: string): { id: string; title: string; priceEth: string; due: number; early: boolean; exp: string; url: string }[] {
-    return this.store.links(agent, this.d.nowS(), this.d.cfg.linksPerAgent).map((r) => ({ id: r.id, title: r.title, priceEth: formatEther(BigInt(r.price)), due: r.due, early: !!r.early, exp: new Date(r.exp * 1000).toISOString(), url: `${this.d.cfg.site}/pay/${r.token}` }));
+  linksOf(agent: string): { id: string; title: string; priceEth: string; due: number; early: boolean; exp: string; url: string; firm?: string }[] {
+    return this.store.links(agent, this.d.nowS(), this.d.cfg.linksPerAgent).map((r) => {
+      const got = decodePayLink(r.token);
+      const firm = typeof got === "string" ? undefined : got.link.firm;
+      return { id: r.id, title: r.title, priceEth: formatEther(BigInt(r.price)), due: r.due, early: !!r.early, exp: new Date(r.exp * 1000).toISOString(), url: `${this.d.cfg.site}/pay/${r.token}`, ...(firm ? { firm } : {}) };
+    });
   }
 
   /**
@@ -415,7 +432,13 @@ export class Pay {
         sub = r.status === 200 ? { subjob: r.body } : { subjobNote: String(r.body.error) };
       }
     }
-    return { status: 200, body: { ok: true, job, linkId: c.id, agent: l.agent, customer: locked.customer, priceWei: l.price, burnWei: burn.toString(), burnNeededWei: need.toString(), burned: burn >= need && burn > 0n, ...(burnNote ? { burnNote } : {}), ...sub, jobUrl: `${this.d.cfg.site}/jobs/${String(job).padStart(4, "0")}` } };
+    // a link the lead signed for its firm: the deal is the firm's (./firms.ts), when the rules allow it
+    let firm: Record<string, unknown> = {};
+    if (l.firm) {
+      const f = this.d.firms?.() ?? null;
+      firm = f ? f.attachDeal(job, l.firm, locked, c.id, via) : { firmNote: "firms are switched off for now: the deal stands as an ordinary one" };
+    }
+    return { status: 200, body: { ok: true, job, linkId: c.id, agent: l.agent, customer: locked.customer, priceWei: l.price, burnWei: burn.toString(), burnNeededWei: need.toString(), burned: burn >= need && burn > 0n, ...(burnNote ? { burnNote } : {}), ...sub, ...firm, jobUrl: `${this.d.cfg.site}/jobs/${String(job).padStart(4, "0")}` } };
   }
 
   /**
@@ -478,7 +501,7 @@ export class Pay {
       scheme: X402_SCHEME, network: X402_NETWORK, maxAmountRequired: (BigInt(l.price) + burn).toString(), resource, description: l.title, mimeType: "application/json", payTo: this.d.desk,
       maxTimeoutSeconds: 600, asset: "0x0000000000000000000000000000000000000000",
       extra: {
-        chainId: 4663, link: token, desk: this.d.desk, agent: l.agent, priceWei: l.price, burnWei: burn.toString(), burnPot: this.d.burnPot, dueInHours: l.due, allowEarly: l.early, linkId: c.id, brief: l.brief,
+        chainId: 4663, link: token, desk: this.d.desk, agent: l.agent, ...(l.firm ? { firm: l.firm } : {}), priceWei: l.price, burnWei: burn.toString(), burnPot: this.d.burnPot, dueInHours: l.due, allowEarly: l.early, linkId: c.id, brief: l.brief,
         lock: { to: this.d.desk, function: "lock(address agent, uint256 dueAt, bool allowEarly)", value: l.price, args: { agent: l.agent, dueAt: `the lock's time + ${l.due * 3600} seconds`, allowEarly: l.early } },
         then: "send the X-PAYMENT header: base64 of { x402Version: 1, scheme, network, payload: { job, lockTx, burnTx } }",
         ...(this.d.subjobs?.() ? { forAJob: "an agent paying this as part of a job it is doing signs a plan first (POST /api/v1/subjobs/plan), locks with the plan's due time, and adds plan to the payload: the job is then linked under its own" } : {}),

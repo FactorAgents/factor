@@ -206,6 +206,8 @@ export interface SubjobDeps {
   house: () => Set<string>;
   /** agents made on the site, by address: who made each */
   hosted: () => Map<string, string>;
+  /** Factor's own firm lets its agents hire each other for a job a customer from outside hired it for (./firms.ts) */
+  teamAllows?: (parent: number, hirer: string, agent: string) => boolean;
 }
 
 type Answer = { status: number; body: Record<string, unknown> };
@@ -305,7 +307,7 @@ export class Subjobs {
     return out;
   }
 
-  private sameHand(a: string, b: string): boolean {
+  sameHand(a: string, b: string): boolean {
     const x = this.controllers(a), y = this.controllers(b);
     for (const v of x) if (y.has(v)) return true;
     return false;
@@ -329,7 +331,7 @@ export class Subjobs {
     if (!agent) return "that agent has not registered on the desk";
     if (p.agent === p.hirer) return "an agent cannot hire itself";
     if (this.chainAbove(p.parent).has(p.agent)) return "that agent is already in this chain of work, above this job";
-    if (this.sameHand(p.hirer, p.agent)) return "that agent is run by the same hand as the one hiring it, so the job would only make records";
+    if (this.sameHand(p.hirer, p.agent) && !this.d.teamAllows?.(p.parent, p.hirer, p.agent)) return "that agent is run by the same hand as the one hiring it, so the job would only make records";
     if (p.price < MIN_JOB_WEI) return "the smallest job is 0.001 ETH";
     const room = this.room(p.parent, t, o.except ?? "");
     if (room.used >= c.perParent) return `a job has ${c.perParent} sub-jobs at most`;
@@ -404,6 +406,31 @@ export class Subjobs {
     if (r.status !== 200 || !burnTx) return r;
     const burn = await this.addBurn(job, locked.customer, burnTx);
     return { status: 200, body: { ...r.body, ...burn } };
+  }
+
+  /**
+   * A hire by one of Factor's own agents, made by the engine itself (./house/firm.ts): the same rules as a signed one,
+   * and the words its key signed kept beside it. Nothing is locked here.
+   */
+  ownPlan(p: HirePlan, hirer: string, signature: string): Answer {
+    if (!this.d.cfg.enabled) return no(503, "agents hiring agents is switched off for now");
+    const paused = this.d.paused();
+    if (paused) return no(409, paused);
+    const t = this.d.nowS();
+    const id = planIdOf(p);
+    return this.d.db.tx((): Answer => {
+      if (this.store.plan(id)) return { status: 200, body: { ok: true, plan: id } };
+      const why = this.problem({ parent: p.parent, hirer, agent: p.agent, price: BigInt(p.price), dueAt: p.dueAt }, { t });
+      if (why) return no(409, why);
+      this.d.db.q("INSERT INTO subjob_plans (id, parent_id, hirer, agent, price, due_at, allow_early, title, brief, signed_at, signature, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+        .run(id, p.parent, hirer, p.agent, p.price, p.dueAt, p.early ? 1 : 0, p.title, p.brief, p.at, signature, t + this.d.cfg.planLifeS);
+      return { status: 200, body: { ok: true, plan: id } };
+    });
+  }
+
+  /** What one of Factor's own agents sent to the burn beside a sub-job, in the very order that locked it. */
+  ownBurn(job: number, wei: bigint, tx: string): void {
+    this.d.db.q("UPDATE subjobs SET burn_wei = ?, burn_tx = ? WHERE job_id = ? AND burn_wei = '0'").run(wei.toString(), tx, job);
   }
 
   /** The link itself, once the lock was read from the chain. Pay with Factor calls this for a deal that carries a plan. */
@@ -494,10 +521,14 @@ export interface TreeNodeJson {
   /** true: the desk says the sub-job's customer is its parent's agent. null: not read from the desk yet */
   verified: boolean | null;
   hire?: { message: string; signature: string; by: string };
+  /** in a chain hired through a firm: whether this job's agent is the firm's lead or one of its members */
+  inFirm?: boolean;
 }
 export interface TreeJson {
   root: number;
   nodes: TreeNodeJson[];
+  /** the firm the customer's job at the top was hired through */
+  firm?: { slug: string; name: string; house: boolean };
   /** every deal in the chain together: how many added to the burn, and how much */
   burn: { deals: number; eth: number };
 }

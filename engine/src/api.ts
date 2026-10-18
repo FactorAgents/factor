@@ -12,6 +12,8 @@
 //   POST /v1/agents/profile    an agent's name and what it does, signed by its wallet (profiles.ts)
 //   POST /v1/jobs/title        what a job is about, signed by the customer who locked it
 //   POST /v1/subjobs/plan      a job's agent signs a hire for part of it; /v1/subjobs/link links the lock (subjobs.ts)
+//   GET  /v1/firms             agent firms; /v1/firms/<slug> one firm, its members, jobs and record; /record signed (firms.ts)
+//   POST /v1/firms/form|join|leave|hire   a lead signs a firm, an agent joins or leaves, a customer hires one
 //
 // Every GET is answered from the database (the last reading of the chain, the ledger, the engine's copy of each
 // job and agent), so a burst of visitors costs the node nothing. Before the contracts are given, and whenever the
@@ -44,6 +46,7 @@ import { signerOf } from "./profiles.js";
 import type { Pay } from "./pay.js";
 import { recordOf, type RecordSigner } from "./record.js";
 import { treeOf, type Subjobs, type TreeJson } from "./subjobs.js";
+import type { FirmJson, Firms } from "./firms.js";
 
 export interface Answer {
   status: number;
@@ -82,6 +85,8 @@ export interface EngineView {
   subjobs?: Subjobs | null;
   /** the key that signs agents' records (./record.ts) */
   recordSigner?: RecordSigner | null;
+  /** agent firms (./firms.ts) */
+  firms?: Firms | null;
 }
 
 // ---- the site's shape: web/src/lib/types.ts. Keep the two in step by hand. ----
@@ -137,6 +142,8 @@ export interface JobJson {
   deal?: { via: string; burnEth: number };
   /** a sub-job: the job its customer (that job's agent) hired for, and how far under the customer's job it is */
   parent?: { n: number; id: string; depth: number };
+  /** hired through a firm (part: false), or a sub-job under such a job (part: true) */
+  firm?: { slug: string; name: string; house: boolean; part: boolean };
 }
 /** The other agents one agent hired for parts of its jobs, and those that hired it: one line each, with how many jobs. */
 export interface HiringJson { hiredBy: { address: string; name: string; named: boolean; jobs: number }[]; hires: { address: string; name: string; named: boolean; jobs: number }[] }
@@ -229,6 +236,8 @@ export interface FactorState {
   pay: { enabled: boolean; burnBps: number; deals: number; burnedEth: number };
   /** agents that hire agents: whether a job's agent can hire for it, how deep a chain goes, and how many under one job */
   subjobs: { enabled: boolean; maxDepth: number; perParent: number };
+  /** agent firms: whether agents can form one and customers hire one, how many there are, and the first of them */
+  firms: { enabled: boolean; count: number; mostMembers: number; items: FirmJson[] };
 }
 export interface RosterJson { name: string; does: string; needs: string; delivers: string; fromEth: number; asksAModel: boolean; /** the Desk's opening file on it */ file?: { text: string; at: string } }
 // what Factor's own agents are, said the same before the launch and after it
@@ -307,7 +316,7 @@ export function agentJson(row: AgentRow, names: Names, nowS: number): AgentJson 
 
 const advanceJson = (a: AdvanceRow): AdvanceJson => ({ kind: KIND_NAME[a.kind] ?? "pool", eth: eth(a.amount), feeEth: eth(a.fee), at: iso(a.at) });
 
-export function jobJson(j: JobRow, advances: AdvanceRow[], title: string | undefined, demo = false, deal?: { via: string; burn_wei: string }, parent?: { parent_id: number; depth: number }): JobJson {
+export function jobJson(j: JobRow, advances: AdvanceRow[], title: string | undefined, demo = false, deal?: { via: string; burn_wei: string }, parent?: { parent_id: number; depth: number }, firm?: JobJson["firm"]): JobJson {
   const state = (STATE_NAME[j.state] ?? "locked") as JobJson["state"];
   const closed = j.state >= STATE.settled;
   // one line for the bill: everything drawn, under the kind most of it came by
@@ -337,6 +346,7 @@ export function jobJson(j: JobRow, advances: AdvanceRow[], title: string | undef
     tx: j.locked_tx,
     ...(deal ? { deal: { via: deal.via, burnEth: eth(deal.burn_wei) } } : {}),
     ...(parent ? { parent: { n: parent.parent_id, id: pad(parent.parent_id), depth: parent.depth } } : {}),
+    ...(firm ? { firm } : {}),
   };
 }
 
@@ -396,6 +406,20 @@ export class EngineApi {
       const hit = this.cache.get(path);
       if (hit && ttl > 0 && Date.now() - hit.at < ttl) return hit.answer;
       const answer = await this.payGet(v, path);
+      if (answer && ttl > 0) {
+        if (this.cache.size > 2000) this.cache.clear();
+        this.cache.set(path, { at: Date.now(), answer });
+      }
+      return answer;
+    }
+    // agent firms: the list, one firm's page and its record (signed, like an agent's), kept a few seconds like the rest
+    if (path === "/v1/firms" || path.startsWith("/v1/firms/")) {
+      if (from && this.tooMany(from, "firms-get", 600)) return { status: 429, body: { error: "too many requests: try again in a minute" } };
+      const v = this.view();
+      const ttl = v.config.params.apiCacheMs;
+      const hit = this.cache.get(path);
+      if (hit && ttl > 0 && Date.now() - hit.at < ttl) return hit.answer;
+      const answer = await this.firmsGet(v, path);
       if (answer && ttl > 0) {
         if (this.cache.size > 2000) this.cache.clear();
         this.cache.set(path, { at: Date.now(), answer });
@@ -505,6 +529,45 @@ export class EngineApi {
     return a;
   }
 
+  // Agent firms: the list, one firm's page (its members, its jobs with the chain of work under each, its links), and
+  // its record with Factor's attestation (./firms.ts).
+  private async firmsGet(v: EngineView, path: string): Promise<Answer | null> {
+    const f = v.firms;
+    const r = this.running(v);
+    if (path === "/v1/firms") return ok({ enabled: !!f && v.config.firms.enabled && !!r, items: f && r ? f.list() : [] });
+    const m = /^\/v1\/firms\/([a-z0-9-]{3,32})(\/record)?$/.exec(path);
+    if (!m) return null;
+    if (!f || !r) return notFound("no such firm");
+    const firm = f.store.bySlug(m[1]!);
+    if (!firm || firm.hidden) return notFound("no such firm");
+    const record = await f.record(firm, { chainId: v.config.chainId, desk: r.ctx.addr.desk, block: r.snap.block, site: v.config.pay.site, signer: m[2] ? v.recordSigner ?? null : null });
+    if (m[2]) return ok(record as unknown as Record<string, unknown>);
+    const rows = f.store.jobs(firm.id, 30).map((x) => r.store.job(x.job_id)).filter((x): x is JobRow => !!x);
+    const jobs = this.jobsJson(v, r.store, rows);
+    // the lead's links that sell the firm's work
+    const links = (v.pay?.linksOf(firm.lead) ?? []).filter((l) => l.firm === firm.slug);
+    return ok({
+      enabled: v.config.firms.enabled,
+      firm: f.json(firm),
+      record: { ...record, attestation: null },
+      jobs: jobs.map((j, i) => (i < 10 ? { ...j, tree: this.tree(v, j.n) } : j)),
+      links,
+    });
+  }
+
+  // A lead signs a firm, an agent joins or leaves one, a customer files a job under one.
+  private async firmsPost(path: string, body: unknown, from: string): Promise<Answer> {
+    const v = this.view();
+    if (!v.firms || v.state !== "running") return { status: 503, body: { error: "the engine is not reading the chain yet" } };
+    if (!v.config.firms.enabled) return { status: 503, body: { error: "firms are switched off for now" } };
+    if (!body || typeof body !== "object" || Array.isArray(body)) return { status: 400, body: { error: "the body is not a JSON object" } };
+    if (this.tooMany(from, "firms", 30)) return { status: 429, body: { error: "too many requests: try again in a minute" } };
+    const b = body as Record<string, unknown>;
+    const a = path === "/v1/firms/form" ? await v.firms.form(b) : path === "/v1/firms/join" ? await v.firms.join(b) : path === "/v1/firms/leave" ? await v.firms.leave(b) : await v.firms.hire(b);
+    if (a.status === 200) this.cache.clear();
+    return a;
+  }
+
   // One caller's requests of one kind in a minute: true when it is one too many.
   private tooMany(from: string, kind: string, most: number): boolean {
     const now = Date.now();
@@ -597,6 +660,7 @@ export class EngineApi {
     if (path === "/v1/match") return this.matchPost(body, from);
     if (path === "/v1/pay/deal" || path === "/v1/pay/links") return this.payPost(path, body, from);
     if (path === "/v1/subjobs/plan" || path === "/v1/subjobs/link") return this.subjobsPost(path, body, from);
+    if (path === "/v1/firms/form" || path === "/v1/firms/join" || path === "/v1/firms/leave" || path === "/v1/firms/hire") return this.firmsPost(path, body, from);
     if (path === "/v1/accounts" || path.startsWith("/v1/accounts/")) return this.accountsPost(path, body, from);
     if (path === "/v1/agents/make" || path === "/v1/agents/pause") return this.hostedPost(path, body, from);
     if (path !== "/v1/agents/profile" && path !== "/v1/jobs/title" && path !== "/v1/jobs/brief" && path !== "/v1/jobs/delivery" && path !== "/v1/admin/hide" && path !== "/v1/admin/switch") return null;
@@ -626,7 +690,7 @@ export class EngineApi {
       return ok({ ok: true, stopped: allStopped(v.ctx.db) });
     }
     if (path === "/v1/admin/hide") {
-      const done = (b.what === "agent" || b.what === "job") && (typeof b.key === "string" || typeof b.key === "number") ? v.profiles.hide(b.what, String(b.key), b.hidden !== false) : false;
+      const done = b.what === "firm" && typeof b.key === "string" ? !!v.firms?.store.hide(b.key, b.hidden !== false) : (b.what === "agent" || b.what === "job") && (typeof b.key === "string" || typeof b.key === "number") ? v.profiles.hide(b.what, String(b.key), b.hidden !== false) : false;
       this.cache.clear();
       return done ? ok({ ok: true }) : notFound("nothing by that key");
     }
@@ -680,7 +744,13 @@ export class EngineApi {
     const titles = v.profiles?.titles(ids) ?? new Map<number, string>();
     const demo = this.demoJobs(v);
     const deals = v.pay?.store.deals(ids) ?? new Map();
-    return rows.map((j) => jobJson(j, advances.get(j.id) ?? [], titles.get(j.id), demo.has(j.id), deals.get(j.id), v.subjobs?.store.link(j.id) ?? undefined));
+    return rows.map((j) => jobJson(j, advances.get(j.id) ?? [], titles.get(j.id), demo.has(j.id), deals.get(j.id), v.subjobs?.store.link(j.id) ?? undefined, this.firmOf(v, j.id)));
+  }
+
+  /** The firm a job was hired through, or is part of the work of. */
+  private firmOf(v: EngineView, id: number): JobJson["firm"] | undefined {
+    const f = v.firms?.firmOfJob(id);
+    return f ? { slug: f.firm.slug, name: f.firm.name, house: !!f.firm.house, part: f.part } : undefined;
   }
 
   private jobs(v: EngineView, limit: number, before?: number, agent?: string, customer?: string): Record<string, unknown> {
@@ -711,6 +781,8 @@ export class EngineApi {
       events: r.store.ledger(30, { agent: row.address }).map((l) => eventJson(l, names)),
       // whom it hired for parts of its jobs and who hired it: only when there is any, so a page never shows empty counts
       ...((h) => (h.hiredBy.length || h.hires.length ? { hiring: h } : {}))(this.hiring(v, row.address)),
+      // the firms it leads, belongs to or is invited to: only when there is any
+      ...((f) => (f.length ? { firms: f } : {}))((v.firms?.store.of(row.address) ?? []).map((x) => ({ slug: x.firm.slug, name: x.firm.name, house: !!x.firm.house, role: x.role }))),
     });
   }
 
@@ -729,7 +801,14 @@ export class EngineApi {
     const family = v.subjobs.store.family(v.subjobs.rootOf(id));
     if (!family.length) return null;
     const ids = [v.subjobs.rootOf(id), ...family.map((l) => l.job_id)];
-    return treeOf(v.subjobs, r.ctx.db, id, { nowS: this.chainNow(v, r.snap), reviewS: RULES.reviewS, titles: v.profiles?.titles(ids) ?? new Map(), deals: v.pay?.store.deals(ids) ?? new Map() });
+    const t = treeOf(v.subjobs, r.ctx.db, id, { nowS: this.chainNow(v, r.snap), reviewS: RULES.reviewS, titles: v.profiles?.titles(ids) ?? new Map(), deals: v.pay?.store.deals(ids) ?? new Map() });
+    // a chain hired through a firm: which firm, and which of its agents are the firm's
+    const f = t ? v.firms?.firmOfJob(t.root) : null;
+    if (t && f) {
+      const team = v.firms!.team(f.firm);
+      return { ...t, firm: { slug: f.firm.slug, name: f.firm.name, house: !!f.firm.house }, nodes: t.nodes.map((n) => ({ ...n, inFirm: team.includes(n.agent) })) };
+    }
+    return t;
   }
 
   /** What a job's agent can still hire for it: whether it may now, and what is left of the price. Null while hiring is off. */
@@ -751,6 +830,8 @@ export class EngineApi {
     const agent = r.store.agent(row.agent);
     const work = v.profiles?.work(id) ?? null;
     const note = v.house?.note(id) ?? null;
+    // how Factor's own firm went about a job hired through it (./house/firm.ts)
+    const firmNote = v.house?.firmNote(id) ?? null;
     return ok({
       job: this.jobsJson(v, r.store, [row])[0],
       agent: agent ? agentJson(agent, names, this.chainNow(v, r.snap)) : null,
@@ -761,6 +842,7 @@ export class EngineApi {
       ...(v.profiles?.briefBy(id) && v.profiles.briefBy(id) === row.agent && row.agent !== row.customer ? { briefBy: "agent" } : {}),
       work: work ? { kind: work.kind, text: work.body, at: new Date(work.at).toISOString() } : null,
       ...(note ? { note } : {}),
+      ...(firmNote ? { firmNote } : {}),
       // the chain of work it is part of, and what its agent can still hire for it
       ...((t) => (t ? { tree: t } : {}))(this.tree(v, id)),
       ...((h) => (h ? { hiring: h } : {}))(this.hireRoom(v, row, this.chainNow(v, r.snap))),
@@ -882,7 +964,10 @@ export class EngineApi {
     const deals = v.pay?.store.all() ?? { deals: 0, burnedWei: 0n };
     const pay = { enabled: !!v.pay && c.pay.enabled && v.state === "running", burnBps: c.pay.burnBps, deals: deals.deals, burnedEth: eth(deals.burnedWei) };
     const subjobs = { enabled: !!v.subjobs && c.subjobs.enabled && v.state === "running", maxDepth: c.subjobs.maxDepth, perParent: c.subjobs.perParent };
-    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused, roster: this.rosterJson(v), hosted, pulse: pulseJson(v, 8), desk: this.deskJson(v), signups, activity, pay, subjobs };
+    const firmsOn = !!v.firms && c.firms.enabled && v.state === "running";
+    const firmList = v.firms && v.state === "running" ? v.firms.list() : [];
+    const firms = { enabled: firmsOn, count: firmList.length, mostMembers: c.firms.mostMembers, items: firmList.slice(0, 24) };
+    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused, roster: this.rosterJson(v), hosted, pulse: pulseJson(v, 8), desk: this.deskJson(v), signups, activity, pay, subjobs, firms };
     if (!r) {
       return { ...base, launched: false, stats: { advancedEth: 0, settledJobs: 0, jobs: 0, poolEth: 0, reserveEth: 0, outEth: 0, heldEth: 0, burnedTokens: 0, supplyLeft: SUPPLY, agents: 0, demoJobs: 0, lostEth: 0, poolFromTradingEth: 0 }, burn: null, agents: [], jobs: [], events: [], burns: [] };
     }

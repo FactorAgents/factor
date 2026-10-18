@@ -28,6 +28,9 @@ import { stopped } from "../switches.js";
 import { proofOf, type Profiles } from "../profiles.js";
 import { FEED_ABI, FEEDS } from "./feeds.js";
 import { hostedService, type HostedRow } from "./hosted.js";
+import { FirmRunner, type JobFacts } from "./firm.js";
+import { HOUSE_FIRM, type Firms } from "../firms.js";
+import type { Subjobs } from "../subjobs.js";
 import { SERVICES, type Asked, type Done, type Service } from "./services.js";
 
 type Env = Record<string, string | undefined>;
@@ -107,10 +110,12 @@ export function takeHouseSeed(env: Env = process.env): Hex | null {
 export interface HouseSigner {
   address: string; // the key's own address: what its account obeys
   signTypedData(typed: ReturnType<typeof orderTypedData>): Promise<Hex>;
+  /** plain words, signed: what a hire by Factor's own firm carries (./firm.ts) */
+  signMessage?(message: string): Promise<Hex>;
 }
 export function houseSigner(seed: Hex, name: string): HouseSigner {
   const account = privateKeyToAccount(keccak256(concat([seed, toHex(`factor house agent ${name}`)])));
-  return { address: account.address.toLowerCase(), signTypedData: (typed) => account.signTypedData(typed) };
+  return { address: account.address.toLowerCase(), signTypedData: (typed) => account.signTypedData(typed), signMessage: (message) => account.signMessage({ message }) };
 }
 
 type State = "waiting" | "worked" | "delivering" | "delivered" | "to_decline" | "declining" | "declined" | "gave_up";
@@ -140,6 +145,13 @@ export interface HouseDeps {
   /** for the tests: other signers than the ones made from the seed, and no waiting between reads */
   signers?: (name: string) => HouseSigner;
   paceMs?: number;
+  /** agent firms and agents that hire agents, for Factor's own firm (./firm.ts); without them it does not work as one */
+  firms?: () => Firms | null;
+  subjobs?: () => Subjobs | null;
+  burnFor?: (priceWei: bigint) => bigint;
+  burnPot?: string;
+  /** the chain's clock, seconds */
+  nowS?: () => number;
 }
 
 export class House {
@@ -148,8 +160,24 @@ export class House {
   /** the account of the demonstration customer (./demo.ts), once it is known: its jobs are marked wherever they show */
   demoCustomer: string | null = null;
 
+  /** Factor's own firm at work (./firm.ts) */
+  readonly firm: FirmRunner | null = null;
+
   constructor(readonly cfg: HouseConfig, private d: HouseDeps) {
     if (!cfg.enabled) return;
+    if (d.firms && d.subjobs && d.burnPot) {
+      const lead = () => this.agents.find((x) => !x.hosted && x.service.name === HOUSE_FIRM.lead) ?? null;
+      this.firm = new FirmRunner({
+        db: d.db, chain: d.chain, desk: d.desk, burnPot: d.burnPot, accounts: d.accounts, profiles: d.profiles, firms: d.firms, subjobs: d.subjobs, burnFor: d.burnFor ?? (() => 0n),
+        members: () => HOUSE_FIRM.members.map((name) => { const a = this.agents.find((x) => !x.hosted && x.service.name === name); return a ? { name, address: a.address, ready: a.setUp, service: a.service } : null; }).filter((m): m is NonNullable<typeof m> => !!m),
+        order: (calls) => { const a = lead(); return a ? this.order(a, calls) : Promise.resolve(null); },
+        ask: (q) => this.ask(q),
+        canSpend: () => this.spentToday() < this.cfg.dailyMicro,
+        decline: async (job, note) => { const a = lead(); if (a) await this.decline(a, job as JobRow, note); },
+        worked: (job, work, cost) => { const a = lead(); if (a) this.save(job.id, a, { state: "worked", work, kind: /^\s*<!doctype html/i.test(work) ? "html" : "text", cost_micro: cost.micro, input: cost.input, output: cost.output, tries: 0, next_at: 0 }); },
+        now: d.now, nowS: d.nowS ?? (() => Math.floor(d.now() / 1000)), log: d.log,
+      });
+    }
     for (const service of SERVICES) {
       const signer = d.signers?.(service.name) ?? (d.seed ? houseSigner(d.seed, service.name) : null);
       if (!signer) continue;
@@ -236,6 +264,17 @@ export class House {
     return r && r.note && ["to_decline", "declining", "declined", "gave_up"].includes(r.state) ? r.note : null;
   }
 
+  /** How Factor's own firm went about a job hired through it, for the job's page. */
+  firmNote(jobId: number): string | null {
+    return this.firm?.note(jobId) ?? null;
+  }
+
+  /** The address of one of Factor's own agents on the desk, once it is set up. */
+  addressOf(name: string): string | null {
+    const a = this.agents.find((x) => !x.hosted && x.service.name === name);
+    return a?.setUp ? a.address : null;
+  }
+
   /** What was spent on models today (UTC), by all of them or by one. */
   spentToday(agent?: string): number {
     const now = this.d.now(), from = now - (now % 86_400_000);
@@ -273,6 +312,8 @@ export class House {
           const job = open.find((j) => j.id === id) ?? (this.d.db.q(`SELECT ${JOB} FROM desk_jobs WHERE id = ?`).get(id) as JobRow | undefined);
           if (!job) continue;
           try {
+            // a job hired through Factor's own firm: its lead runs the team until the work is ready to deliver
+            if (this.firm && !a.hosted && a.service.name === HOUSE_FIRM.lead && this.firm.isFirmJob(job) && (await this.firm.step({ name: a.service.name, address: a.address!, service: a.service, signMessage: a.signer.signMessage ? (m) => a.signer.signMessage!(m) : undefined }, job as JobFacts))) continue;
             await this.step(a, job);
           } catch (e) {
             if (nodeBusy(e)) throw e;
@@ -440,6 +481,8 @@ export class House {
     if (!to || now < a.payoutAt) return;
     a.payoutAt = now + 600_000;
     if (this.d.db.q("SELECT 1 FROM house_jobs WHERE agent = ? AND state IN ('worked', 'delivering', 'to_decline', 'declining') LIMIT 1").get(a.address)) return;
+    // the lead of Factor's own firm keeps what it drew early while its team is at work: that is what pays them
+    if (this.firm && a.service.name === HOUSE_FIRM.lead && this.d.db.q("SELECT 1 FROM house_firm_jobs f JOIN desk_jobs j ON j.id = f.job_id WHERE j.agent = ? AND f.state NOT IN ('done', 'alone') LIMIT 1").get(a.address)) return;
     const balance = await this.d.chain.balance(a.address!);
     if (balance < (a.hosted ? this.cfg.hosted.payoutMinWei : this.cfg.payoutMinWei)) return;
     const calls: Call[] = [];

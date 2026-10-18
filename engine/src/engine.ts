@@ -36,6 +36,7 @@ import { Matcher, matchOn } from "./match.js";
 import { DEFAULT_MODELS } from "./compute.js";
 import { Pay } from "./pay.js";
 import { Subjobs } from "./subjobs.js";
+import { Firms, HOUSE_FIRM } from "./firms.js";
 import { recordSigner, type RecordSigner } from "./record.js";
 import { snapshotOf } from "./chain/context.js";
 
@@ -96,6 +97,8 @@ export class Engine {
   pay: Pay | null = null;
   /** agents that hire agents (./subjobs.ts): the link between a job and the jobs its agent locked for parts of it */
   subjobs: Subjobs | null = null;
+  /** agent firms (./firms.ts): agents under one name with one shared record, hired through their lead */
+  firms: Firms | null = null;
   /** the key that signs agents' records for other apps (./record.ts), or null */
   readonly recordSigner: RecordSigner | null;
   private carryTimer: ReturnType<typeof setInterval> | null = null;
@@ -156,7 +159,7 @@ export class Engine {
     for (const [name, l] of this.loops) loops[name] = { lastRunAt: l.lastRunAt, lastOkAt: l.lastOkAt, runs: l.runs, failures: l.failures, waitMs: l.waitMs, backingOff: l.backingOff };
     return {
       config: this.config, state: this.state, problems: this.problems, warnings: this.warnings, lastError: this.lastError, loops, ctx: this.ctx, rpc: this.chain?.health() ?? null, now: this.now,
-      links: { pons: link(this.env.FACTOR_PONS_URL), github: link(this.env.FACTOR_GITHUB_URL), x: link(this.env.FACTOR_X_URL) }, dataDirSet: !!this.env.FACTOR_DATA_DIR?.trim(), profiles: this.profiles, gateway: this.gateway, accounts: this.accounts, house: this.house, demo: this.demo, pulse: this.pulse, deskMind: this.deskMind, launchList: this.launchList, activity: this.activity, matcher: this.matcher, pay: this.pay, subjobs: this.subjobs, recordSigner: this.recordSigner,
+      links: { pons: link(this.env.FACTOR_PONS_URL), github: link(this.env.FACTOR_GITHUB_URL), x: link(this.env.FACTOR_X_URL) }, dataDirSet: !!this.env.FACTOR_DATA_DIR?.trim(), profiles: this.profiles, gateway: this.gateway, accounts: this.accounts, house: this.house, demo: this.demo, pulse: this.pulse, deskMind: this.deskMind, launchList: this.launchList, activity: this.activity, matcher: this.matcher, pay: this.pay, subjobs: this.subjobs, recordSigner: this.recordSigner, firms: this.firms,
     };
   }
 
@@ -294,6 +297,7 @@ export class Engine {
       signed: async (address, message, signature) => this.profiles!.signed(address, message, signature), nowS,
       paused: () => { const h = stopped(db, "hiring"); return h ? h.note || "New jobs are paused for now." : null; },
       subjobs: () => (c.subjobs.enabled ? this.subjobs : null),
+      firms: () => (c.firms.enabled ? this.firms : null),
     });
     // the links are read whether or not hiring is on, so a job's chain still shows after it is switched off
     this.subjobs = new Subjobs({
@@ -305,7 +309,20 @@ export class Engine {
       dealBurnUsed: (hash) => !!this.pay!.store.byBurnTx(hash),
       house: () => new Set([...c.houseAgents, ...(this.house?.addresses() ?? [])]),
       hosted: () => this.house?.hostedAddresses() ?? new Map(),
+      teamAllows: (parent, hirer, agent) => c.firms.enabled && !!this.firms?.teamAllows(parent, hirer, agent),
     });
+    // firms are read whether or not they are on, so a firm's page and its record still show after it is switched off
+    const houseSet = () => new Set([...c.houseAgents, ...(this.house?.addresses() ?? [])]);
+    this.firms = new Firms({
+      cfg: c.firms, db, nowS,
+      signed: async (address, message, signature) => this.profiles!.signed(address, message, signature),
+      sameHand: (a, b) => this.subjobs!.sameHand(a, b),
+      factorOwn: (a) => houseSet().has(a) || a === this.house?.demoCustomer || this.subjobs!.controllers(a).has("factor:house"),
+      rootOf: (job) => this.subjobs!.rootOf(job),
+      family: (root) => this.subjobs!.store.family(root),
+      names: () => this.profiles!.all(),
+    });
+    if (c.firms.enabled) this.log(`[firms] on: agents can form firms of up to ${c.firms.mostMembers + 1}, and customers hire them through their lead`);
     if (c.subjobs.enabled) this.log(`[subjobs] on: an agent can hire other agents for parts of its job, ${c.subjobs.maxDepth} levels deep, ${c.subjobs.perParent} under one job`);
     if (c.pay.enabled) this.log(`[pay] Pay with Factor on: every deal adds ${c.pay.burnBps / 100}% of its price to the burn, paid by the buyer`);
     this.gateway = new Gateway(c.compute, new ComputeStore(this.ctx.db), this.ctx.db, c.compute.enabled ? { anthropic: c.compute.direct ? takeModelKey(this.env) : null, router: takeRouterKey(this.env) } : { anthropic: null, router: null }, this.log, accountSigned);
@@ -315,6 +332,7 @@ export class Engine {
       modelKey: c.house.enabled ? takeModelKey(this.env) : null, seed: c.house.enabled ? takeHouseSeed(this.env) : null,
       live: () => this.ctx?.mode === "live" && !!this.ctx.signer && this.state === "running", now: this.now, log: this.log,
       costTo: () => this.ctx?.facts.from ?? null,
+      firms: () => (c.firms.enabled ? this.firms : null), subjobs: () => (c.subjobs.enabled ? this.subjobs : null), burnFor: (wei) => this.pay!.burnFor(wei), burnPot: c.burnPot, nowS,
       ...(this.opts.houseSigners ? { signers: this.opts.houseSigners, paceMs: 0 } : {}),
     });
     // the demonstration customer (./house/demo.ts): an account of Factor's own that hires Factor's own agents
@@ -516,6 +534,18 @@ export class Engine {
   async houseOnce(): Promise<void> {
     await this.house?.pass();
     await this.demo?.pass();
+    this.houseFirm();
+  }
+
+  /** Factor's own firm, put together once its lead and members are on the desk (./firms.ts). */
+  houseFirm(): boolean {
+    if (!this.firms || !this.house || !this.config.firms.enabled) return false;
+    const lead = this.house.addressOf(HOUSE_FIRM.lead);
+    const members = HOUSE_FIRM.members.map((m) => this.house!.addressOf(m));
+    if (!lead || members.some((m) => !m)) return false;
+    const made = this.firms.ensureHouse(lead, members as string[]);
+    if (made) this.log(`[firms] ${HOUSE_FIRM.name} stands: ${HOUSE_FIRM.lead} leads ${HOUSE_FIRM.members.join(", ")}`);
+    return made;
   }
 
   // The boot check, when a test wants to wait for it.

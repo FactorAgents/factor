@@ -385,7 +385,8 @@ export class FakeChain implements Chain {
     }
     if (who === A.burnPot) this.potEth += amount;
     // the gateway's wallet really holds what it is paid: it may have to send some of it back
-    if (who === this.gatewayAddr) this.balances.set(who, (this.balances.get(who) ?? 0n) + amount);
+    // and so does an account: it may spend what it was paid (an agent's account hires with its advance)
+    if (who === this.gatewayAddr || this.made.has(who)) this.balances.set(who, (this.balances.get(who) ?? 0n) + amount);
     this.paid.set(who, (this.paid.get(who) ?? 0n) + amount);
   }
 
