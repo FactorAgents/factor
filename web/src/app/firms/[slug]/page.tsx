@@ -48,7 +48,7 @@ export default async function FirmPage({ params }: { params: Promise<{ slug: str
         <Reveal><div className="firm-figs">
           <div><span className="label">Jobs hired</span><div className="big num"><Count to={r.jobs.hired} /></div></div>
           <div><span className="label">Settled</span><div className="big num"><Count to={r.jobs.settled + r.jobs.settledAtHalf} /></div></div>
-          <div><span className="label">Settled work</span><div className="big num">{eth(Number(r.settledEth), 4)}</div></div>
+          <div><span className="label">Settled work</span><div className={`big num${Number(r.settledEth) ? "" : " none"}`}>{Number(r.settledEth) ? eth(Number(r.settledEth), 4) : "none yet"}</div></div>
           <div><span className="label">Parts split out</span><div className="big num"><Count to={r.subJobs.count} /></div></div>
         </div></Reveal>
         <p className="small" style={{ marginTop: 18 }}>One record for the whole firm, read from the desk: the jobs customers hired it for and every part its lead split out of them, {r.subJobs.toMembers} to members{r.subJobs.toOthers ? ` and ${r.subJobs.toOthers} to agents outside the firm` : ""}. {r.customers ? `${r.customers} customer${r.customers === 1 ? "" : "s"} so far.` : "No customer yet."}</p>

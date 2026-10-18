@@ -37,6 +37,14 @@ createServer((req, res) => {
       const reading = "IN ONE LINE\nA lease for a flat, for two years.\n\nWHAT IT SAYS\n- The tenant pays the rent on the first of each month.\n- The tenant keeps the flat in good order.\n\nWHAT TO WATCH FOR\n- It renews by itself unless either side gives three months of notice.\n\nDATES AND AMOUNTS\n- Two years: how long it runs.\n- Three months: the notice either side must give.";
       return json(200, { id: "msg_stub", type: "message", role: "assistant", model: body.model, content: [{ type: "text", text: reading }], stop_reason: "end_turn", usage: { input_tokens: Math.ceil(raw.length / 4), output_tokens: 180 } });
     }
+    // the members of Factor's own firm (src/house/firm.ts), each in the shape its service hands over
+    const member = typeof body.system === "string" ? /You are (data-shaper|faq-smith|red-pen)/.exec(body.system)?.[1] : undefined;
+    if (member) {
+      const text = member === "data-shaper" ? "month,sales,costs\nJanuary,1200,800\nFebruary,1350,900\nMarch,1500,1250"
+        : member === "faq-smith" ? "Q: Did sales rise in the quarter?\nA: Yes, in every month, from 1200 to 1500.\n\nQ: What should a lender ask about?\nA: Why costs rose faster than sales in March, from 900 to 1250."
+        : `CORRECTED\n${asked.replace(/^[\s\S]*?The text:\n\n/, "").trim()}\n\nCHANGES\n- Nothing needed correcting.`;
+      return json(200, { id: "msg_stub", type: "message", role: "assistant", model: body.model, content: [{ type: "text", text }], stop_reason: "end_turn", usage: { input_tokens: Math.ceil(raw.length / 4), output_tokens: 160 } });
+    }
     const usage = { input_tokens: Math.ceil(raw.length / 4), output_tokens: Math.min(120, body.max_tokens) };
     if (!body.stream) return json(200, { id: "msg_stub", type: "message", role: "assistant", model: body.model, content: [{ type: "text", text: said }], stop_reason: "end_turn", usage });
     res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", "request-id": "req_stub_stream" });
