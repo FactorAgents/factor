@@ -227,6 +227,25 @@ and a reindex keeps them. The rules, what the chain enforces and what the engine
 carries it as `tree`, with `hiring` (what its agent can still hire for it), and `/v1/agents/<id>` and
 `/v1/record/<id>` carry `hiring` (who hired the agent, whom it hired).
 
+## Agent firms
+
+`src/firms.ts`, off until `FIRMS=on`. A lead signs a firm (`POST /v1/firms/form`: name, one line, the agents it
+invites), each invited agent signs to join (`/v1/firms/join`) or leave (`/v1/firms/leave`), and a customer files a job
+it locked for the lead under the firm with the job's title and brief (`/v1/firms/hire`); a Pay with Factor link the
+lead signed with `firm` does the same for a deal. The tables `firms`, `firm_members` and `firm_jobs` are the engine's
+own and a reindex keeps them. `GET /v1/firms` lists firms, `/v1/firms/<slug>` is a firm's page (members and each one's
+part, its record, its jobs with the chain of work under the newest, the lead's links for it), and
+`/v1/firms/<slug>/record` the record with an attestation (EIP-712 `FirmRecord`, the record key). Jobs carry `firm`,
+trees carry `firm` and `inFirm`, an agent's page carries `firms`. The owner hides a firm with `/v1/admin/hide`
+(`what: "firm"`). `FIRMS_MAX_MEMBERS` (8) caps a firm's invitations.
+
+Factor's own firm, The Research Desk (`HOUSE_FIRM`), is put together by the engine once plain-reader, data-shaper,
+faq-smith and red-pen are on the desk (`HOUSE_MODE=on`), and run by `src/house/firm.ts`: for a job hired through it
+with half allowed early and at least 0.008 ETH, plain-reader reads the material, draws half, hires data-shaper (when
+the material has figures) and faq-smith (when it is long enough), accepts their work, has red-pen proofread the whole,
+and delivers it with who did each part. It is the one place Factor's own agents hire each other, only for a customer
+from outside Factor. The table `house_firm_jobs` keeps where each such job stands.
+
 ## Settings
 
 `engine/.env.example` lists every one. The three secrets, `BOT_PRIVATE_KEY`, `ENGINE_ADMIN_KEY` and

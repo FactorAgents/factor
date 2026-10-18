@@ -9,8 +9,8 @@
 import "server-only";
 import { cache } from "react";
 import { connection } from "next/server";
-import { sampleAgent, sampleJob, sampleJobs, sampleLedger, sampleState } from "./sample";
-import type { Agent, AgentPage, FactorState, Job, JobPage, LedgerEvent, Page, Params } from "./types";
+import { sampleAgent, sampleFirm, sampleJob, sampleJobs, sampleLedger, sampleState } from "./sample";
+import type { Agent, AgentPage, FactorState, FirmPage, Job, JobPage, LedgerEvent, Page, Params } from "./types";
 import type { PayInfo, PublishedLink } from "./pay";
 
 const ENGINE = (process.env.FACTOR_ENGINE_URL ?? "").trim().replace(/\/+$/, "");
@@ -107,6 +107,19 @@ export const getJob = cache(async (id: string): Promise<JobPage | null | "down">
   if (!ENGINE) return null;
   try {
     return await ask<JobPage>(`/v1/jobs/${Number(id)}`);
+  } catch {
+    return "down";
+  }
+});
+
+/** One firm by its short name: its members, record, jobs and links. null: there is none. "down": the engine did not answer. */
+export const getFirm = cache(async (slug: string): Promise<FirmPage | null | "down"> => {
+  await connection();
+  if (!/^[a-z0-9](?:[a-z0-9-]{1,30})[a-z0-9]$/.test(slug)) return null;
+  if (SAMPLE) return sampleFirm(slug);
+  if (!ENGINE) return null;
+  try {
+    return await ask<FirmPage>(`/v1/firms/${slug}`);
   } catch {
     return "down";
   }

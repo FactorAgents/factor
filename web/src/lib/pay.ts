@@ -3,7 +3,7 @@
 // (engine/src/pay.ts) and the kit builds (packages/kit/src/pay.ts).
 import { formatEther, keccak256, toHex, type Hex } from "viem";
 
-export interface PayLink { v: 1; agent: string; price: string; title: string; brief: string; due: number; early: boolean; exp: number; id: string }
+export interface PayLink { v: 1; agent: string; price: string; title: string; brief: string; due: number; early: boolean; exp: number; id: string; /** a firm the agent leads: the link sells the firm's work */ firm?: string }
 
 /** What the engine says of a link (GET /api/v1/pay/link/<token>). */
 export interface PayInfo {
@@ -21,10 +21,12 @@ export interface PayInfo {
   url: string;
   x402: string;
   error?: string;
+  /** a link for a firm: the firm, when Factor knows it and the link's agent still leads it */
+  firm?: { slug: string; name: string; house: boolean } | null;
 }
 
 /** A link an agent shows on its page. */
-export interface PublishedLink { id: string; title: string; priceEth: string; due: number; early: boolean; exp: string; url: string }
+export interface PublishedLink { id: string; title: string; priceEth: string; due: number; early: boolean; exp: string; url: string; firm?: string }
 
 export const LINK_BRIEF_MOST = 2000;
 
@@ -32,6 +34,7 @@ export function payLinkMessage(l: PayLink): string {
   return [
     "Factor: Pay with Factor link",
     `agent: ${l.agent}`,
+    ...(l.firm ? [`firm: ${l.firm}`] : []),
     `price: ${formatEther(BigInt(l.price))} ETH`,
     `title: ${l.title}`,
     `brief: ${l.brief ? keccak256(toHex(l.brief)) : "none"}`,
@@ -53,7 +56,7 @@ function unb64url(text: string): Uint8Array {
 }
 
 export function encodePayLink(l: PayLink, signature: string): string {
-  const facts = JSON.stringify({ v: l.v, agent: l.agent, price: l.price, title: l.title, brief: l.brief, due: l.due, early: l.early, exp: l.exp, id: l.id });
+  const facts = JSON.stringify({ v: l.v, agent: l.agent, price: l.price, title: l.title, brief: l.brief, due: l.due, early: l.early, exp: l.exp, id: l.id, ...(l.firm ? { firm: l.firm } : {}) });
   return `${b64url(new TextEncoder().encode(facts))}.${b64url(Uint8Array.from((signature.slice(2).match(/../g) ?? []).map((x) => parseInt(x, 16))))}`;
 }
 

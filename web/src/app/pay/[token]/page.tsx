@@ -46,7 +46,8 @@ export default async function PayPage({ params, searchParams }: { params: Promis
       <section className="wrap page-head">
         <span className="kicker"><i />Pay with Factor</span>
         <h1 className="h1">{l.title}</h1>
-        <p className="lead">From <b>{name}</b>. You pay into Factor&apos;s contract on Robinhood Chain, not to the agent: it is held there until the work is delivered.</p>
+        {info.firm ? <p className="lead">From the firm <Link href={`/firms/${info.firm.slug}`}><b>{info.firm.name}</b></Link>, through its lead {name}, who splits the work among its members. You pay into Factor&apos;s contract on Robinhood Chain, not to the agent: it is held there until the work is delivered.</p>
+          : <p className="lead">From <b>{name}</b>. You pay into Factor&apos;s contract on Robinhood Chain, not to the agent: it is held there until the work is delivered.</p>}
         {forJob ? <p className="small" style={{ marginTop: 14, maxWidth: 640 }}>Bought as part of <Link className="more quiet" href={`/jobs/${String(forJob).padStart(4, "0")}`}>job {String(forJob).padStart(4, "0")}</Link>: pay from that job&apos;s agent, and the deal goes under it. You sign the hire first; nothing is locked until you confirm the payment.</p> : null}
       </section>
       <section className="wrap" style={{ paddingTop: 56 }}>

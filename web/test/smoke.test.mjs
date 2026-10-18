@@ -10,7 +10,7 @@ import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 
 const PORT = Number(process.env.SMOKE_PORT) || 3611, BASE = `http://127.0.0.1:${PORT}`, BARE = `http://127.0.0.1:${PORT + 1}`;
-const PAGES = ["/", "/ledger", "/ledger?show=burned", "/agents", "/agents/lumen-07", "/jobs/0412", "/jobs/0406", "/jobs/0404", "/jobs/0403", "/hire", "/hire?agent=page-smith", "/work", "/protocol", "/token", "/burn", "/docs", "/log", "/security", "/pay"];
+const PAGES = ["/", "/ledger", "/ledger?show=burned", "/agents", "/agents/lumen-07", "/jobs/0412", "/jobs/0406", "/jobs/0404", "/jobs/0403", "/hire", "/hire?agent=page-smith", "/work", "/protocol", "/token", "/burn", "/docs", "/log", "/security", "/pay", "/firms/night-desk", "/hire?firm=night-desk"];
 const NAV = ["/ledger", "/agents", "/hire", "/work", "/protocol", "/token", "/burn", "/docs"];
 // Words the copy does not use: no long dash, no promise of gain. A list kept beside this file and out of the repo
 // (forbidden.local.json, pairs of pattern and flags) adds to them on the machine it is on.
@@ -359,7 +359,46 @@ test("the docs say how an agent hires agents for part of a job, what the chain h
 });
 
 test("an address that does not exist says so", async () => {
-  for (const path of ["/nope", "/agents/nobody", "/jobs/9999"]) assert.equal((await get(path)).status, 404, path);
+  for (const path of ["/nope", "/agents/nobody", "/jobs/9999", "/firms/no-such-firm", "/firms/Not_A_Slug"]) assert.equal((await get(path)).status, 404, path);
+});
+
+test("agent firms: listed with the agents, a firm's page with its members and each one's part, its record and badge, and the docs", async () => {
+  const list = text((await get("/agents")).html);
+  assert.match(list, /Firms · 1/);
+  assert.match(list, /Night Desk Contracts read overnight, every change watched Led by lumen-07/);
+  const page = await get("/firms/night-desk");
+  const t = text(page.html);
+  assert.match(t, /Night Desk/);
+  assert.match(t, /a firm · since .* · led by lumen-07/);
+  assert.match(t, /Hire the firm/);
+  assert.match(page.html, /href="\/hire\?firm=night-desk"/);
+  // its members, each with its role and its part; the invited one says it has not signed to join
+  assert.match(t, /lumen-07 Lead · since .* Firm jobs 1 Settled 1 Worth 0\.0400 ETH/);
+  assert.match(t, /orbit-ops Member · since/);
+  assert.match(t, /quill-02 Invited · has not signed to join yet/);
+  // the shared record, the badge and the record for an app
+  assert.match(t, /Jobs hired 1 Settled 1 Settled work 0\.0400 ETH Parts split out 0/);
+  assert.match(page.html, /\/api\/v1\/firms\/night-desk\/badge/);
+  assert.match(t, /GET https:\/\/factoragents\.fun\/api\/v1\/firms\/night-desk\/record/);
+  // the list itself lives with the agents
+  const r = await fetch(`${BASE}/firms`, { redirect: "manual" });
+  assert.ok([307, 308].includes(r.status) && /\/agents#firms$/.test(r.headers.get("location") ?? ""), `/firms goes to the agents: ${r.status} ${r.headers.get("location")}`);
+  // the hire form offers the firm, through its lead
+  assert.match(text((await get("/hire?firm=night-desk")).html), /The agent, or a firm|The agent/);
+  // the door passes the firms' reads, and their writes go to the engine only
+  assert.equal((await fetch(`${BASE}/api/v1/firms`)).status, 200);
+  assert.equal((await fetch(`${BASE}/api/v1/firms/night-desk`)).status, 200);
+  for (const w of ["firms/form", "firms/join", "firms/leave", "firms/hire"]) assert.equal((await fetch(`${BASE}/api/v1/${w}`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).status, 503, w);
+  assert.equal((await fetch(`${BASE}/api/v1/firms/night-desk/record`)).status, 503, "the sample has no record to sign");
+  const badge = await fetch(`${BASE}/api/v1/firms/night-desk/badge`);
+  assert.equal(badge.headers.get("content-type"), "image/svg+xml; charset=utf-8");
+  // the docs say how firms work
+  const d = text((await get("/docs")).html);
+  assert.match(d, /10 Agent firms/);
+  assert.match(d, /formFirm/);
+  assert.match(d, /hireFirm/);
+  assert.match(d, /A job is the firm.s only when it is locked for its lead/);
+  assert.match(d, /factor_hire_firm/);
 });
 
 test("each page is small enough for a phone, and nothing loads from another site", async () => {

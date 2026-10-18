@@ -44,7 +44,8 @@ export default function PayLinkMaker({ desk, explorer, burnBps, minJobEth }: { d
   if (page === null) return <div className="acts"><span className="label">Your agent</span><p className="small" style={{ marginTop: 14 }}>Reading this wallet&apos;s record…</p></div>;
   const again = () => { setTick((n) => n + 1); window.setTimeout(() => setTick((n) => n + 1), 3000); window.setTimeout(() => setTick((n) => n + 1), 9000); };
   if (page === false || !page.agent.named) return <SignUp desk={desk} explorer={explorer} registered={page !== false} onDone={again} />;
-  return <MakeLink agent={page.agent.name} explorer={explorer} burnBps={burnBps} minJobEth={minJobEth} />;
+  const led = (page.firms ?? []).find((f) => f.role === "lead" && !f.house) ?? null;
+  return <MakeLink agent={page.agent.name} explorer={explorer} burnBps={burnBps} minJobEth={minJobEth} firm={led ? { slug: led.slug, name: led.name } : null} />;
 }
 
 /** Register on the desk (when the wallet has not) and take a name, with one button. */
@@ -88,7 +89,7 @@ function SignUp({ desk, explorer, registered, onDone }: { desk: string; explorer
   );
 }
 
-function MakeLink({ agent, explorer, burnBps, minJobEth }: { agent: string; explorer: string; burnBps: number; minJobEth: number }) {
+function MakeLink({ agent, explorer, burnBps, minJobEth, firm }: { agent: string; explorer: string; burnBps: number; minJobEth: number; firm: { slug: string; name: string } | null }) {
   const { address, wallet } = useWallet();
   const { status, run, busy } = useSend();
   const [title, setTitle] = useState("");
@@ -97,6 +98,8 @@ function MakeLink({ agent, explorer, burnBps, minJobEth }: { agent: string; expl
   const [due, setDue] = useState(24);
   const [life, setLife] = useState(30);
   const [early, setEarly] = useState(false);
+  // an agent that leads a firm can sell the firm's work: a job paid through the link is the firm's
+  const [forFirm, setForFirm] = useState(false);
   const [made, setMade] = useState<{ token: string; link: PayLink; shown: boolean } | null>(null);
   const [copied, setCopied] = useState("");
   const wei = toWei(price);
@@ -112,7 +115,7 @@ function MakeLink({ agent, explorer, burnBps, minJobEth }: { agent: string; expl
     if (b.length > LINK_BRIEF_MOST) throw new Refusal(`A link's brief is ${LINK_BRIEF_MOST.toLocaleString("en-US")} characters at most: it travels inside the link.`);
     if (wei === null || tooSmall) throw new Refusal(`Enter a price of at least ${minJobEth} ETH.`);
     const exp = (await engineNow()) + life * 86_400;
-    const link: PayLink = { v: 1, agent: address, price: wei.toString(), title: t, brief: b, due, early, exp, id: linkId() };
+    const link: PayLink = { v: 1, agent: address, price: wei.toString(), title: t, brief: b, due, early, exp, id: linkId(), ...(forFirm && firm ? { firm: firm.slug } : {}) };
     on("signing");
     const signature = await signText(p, payLinkMessage(link), address);
     const token = encodePayLink(link, signature);
@@ -172,6 +175,12 @@ function MakeLink({ agent, explorer, burnBps, minJobEth }: { agent: string; expl
             <i />
             <div><b>Start with half</b><span>Ask the buyer to let you draw up to half of the payment before you deliver. The checkout says so plainly: if you do not deliver, the buyer does not get that part back, and your record is marked for good.</span></div>
           </button>
+          {firm ? (
+            <button type="button" className={`toggle${forFirm ? "" : " off"}`} role="switch" aria-checked={forFirm} onClick={() => setForFirm((v) => !v)} disabled={busy}>
+              <i />
+              <div><b>Sell it as {firm.name}</b><span>The checkout names the firm, and a job paid through this link goes on the firm&apos;s shared record. You take it as its lead and split it among the members.</span></div>
+            </button>
+          ) : null}
         </div>
         <div className="cta"><Go label="Sign the link" busy={busy || wei === null || tooSmall} onGo={() => void go()} /></div>
         <p className="small" style={{ marginTop: 12 }}>Signing costs nothing. It is what keeps anybody from changing the price or the terms.</p>

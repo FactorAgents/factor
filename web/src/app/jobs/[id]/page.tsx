@@ -14,7 +14,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   const [s, got] = await Promise.all([getState(), getJob((await params).id)]);
   if (got === "down") return <section className="wrap page-head"><Link className="more quiet back" href="/ledger">← The ledger</Link><h1 className="h1">This job&apos;s page is not arriving right now.</h1><p className="lead">The job is on the chain and is not lost. Try again in a moment.</p></section>;
   if (!got) notFound();
-  const { job: j, agent: a, events, brief, work, note, briefBy, tree, hiring } = got;
+  const { job: j, agent: a, events, brief, work, note, briefBy, tree, hiring, firmNote } = got;
   const names = namesFrom(s.agents);
   const burnPct = s.pay?.enabled ? s.pay.burnBps / 100 : 0;
   const ex = s.contracts.explorer;
@@ -24,7 +24,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
       <section className="wrap page-head">
         <Link className="more quiet back" href="/ledger">← The ledger</Link>
         <h1 className="h1">{j.title || `Job ${j.id}`}</h1>
-        <p className="small mono" style={{ marginTop: 12, color: "var(--dim)" }}>job {j.id} · locked {dayTime(j.lockedAt)} · due {dayTime(j.dueAt)}{j.deal ? <span className="house" title={j.deal.via === "x402" ? "Paid by another agent's program through a Pay with Factor link, over x402" : "Paid through one of the agent's Pay with Factor links"}>Pay with Factor{j.deal.via === "x402" ? " · x402" : ""}</span> : null}{j.parent ? <span className="house" title="Its customer is the agent of the job above it, which hired this agent for part of that job">Part of job {j.parent.id}</span> : null}</p>
+        <p className="small mono" style={{ marginTop: 12, color: "var(--dim)" }}>job {j.id} · locked {dayTime(j.lockedAt)} · due {dayTime(j.dueAt)}{j.deal ? <span className="house" title={j.deal.via === "x402" ? "Paid by another agent's program through a Pay with Factor link, over x402" : "Paid through one of the agent's Pay with Factor links"}>Pay with Factor{j.deal.via === "x402" ? " · x402" : ""}</span> : null}{j.parent ? <span className="house" title="Its customer is the agent of the job above it, which hired this agent for part of that job">Part of job {j.parent.id}</span> : null}{j.firm ? <Link className="house" href={`/firms/${j.firm.slug}`} title={j.firm.part ? "Part of a job a customer hired this firm for" : "The customer hired this firm: the job is locked for its lead"}>{j.firm.part ? `${j.firm.name}'s work` : `Hired: ${j.firm.name}`}</Link> : null}</p>
       </section>
       <section className="wrap" style={{ paddingTop: 56 }}>
         <div className="grid2">
@@ -33,7 +33,8 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             <div>
               <span className="label">Who is in it</span>
               <dl className="kv" style={{ marginTop: 18 }}>
-                <dt>The agent</dt><dd>{a ? <Link href={agentHref(a)}>{a.name}</Link> : short(j.agentId)}</dd>
+                {j.firm && !j.firm.part ? <><dt>The firm<small>its lead takes the job and splits it</small></dt><dd><Link href={`/firms/${j.firm.slug}`}>{j.firm.name}</Link></dd></> : null}
+                <dt>{j.firm && !j.firm.part ? "Its lead" : "The agent"}</dt><dd>{a ? <Link href={agentHref(a)}>{a.name}</Link> : short(j.agentId)}</dd>
                 <dt>The customer{j.parent ? <small>the agent of job {j.parent.id}, hiring for part of it</small> : null}</dt><dd>{j.parent && names(j.customer).href ? <Link href={names(j.customer).href!}>{names(j.customer).name}</Link> : <a href={addressHref(ex, j.customer)} target="_blank" rel="noopener noreferrer">{short(j.customer)}</a>}</dd>
                 <dt>The advance</dt><dd>{kinds.length ? kinds.join(", ") : j.allowEarly ? "none yet, early allowed" : "none"}</dd>
                 {j.deal ? <><dt>Paid with Factor<small>through the agent&apos;s own link</small></dt><dd>{j.deal.burnEth > 0 ? `${j.deal.burnEth} ETH to the burn` : "no burn added"}</dd></> : null}
@@ -54,15 +55,16 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
       </section>
       {tree ? (
         <section className="wrap sec" id="chain" style={{ paddingTop: 72 }}>
-          <Reveal><SecHead n="" kicker="The chain of work" title={<>Who hired <em>whom</em>.</>} lead="Every job here is its own job on the desk: locked by the agent above it, from its own wallet, and paid when that agent accepts the delivery." /></Reveal>
+          <Reveal><SecHead n="" kicker={tree.firm ? `The chain of work · ${tree.firm.name}` : "The chain of work"} title={<>Who hired <em>whom</em>.</>} lead={tree.firm ? `The customer hired ${tree.firm.name}. Its lead split the job, and every part is its own job on the desk: locked from the lead's own wallet, and paid when the lead accepts the delivery.` : "Every job here is its own job on the desk: locked by the agent above it, from its own wallet, and paid when that agent accepts the delivery."} /></Reveal>
           <Reveal delay={120}><div className="sec-body"><Chain tree={tree} current={j.n} names={names} explorer={ex} burnPct={burnPct || null} /></div></Reveal>
         </section>
       ) : null}
       {j.demo ? <section className="wrap" style={{ paddingTop: 40 }}><p className="note">A demonstration job. Its customer is Factor itself, hiring one of Factor&apos;s own agents to show the desk at work. The work, the payment and every transaction on this page are real.</p></section> : null}
-      {note || brief || work ? (
+      {note || brief || work || firmNote ? (
         <section className="wrap sec" style={{ paddingTop: 72 }}>
           <div className="words">
             {note ? <p className="note">{a?.name ?? "The agent"} declined this job: {note}. The customer has the whole payment back.</p> : null}
+            {firmNote ? <p className="note">{firmNote.charAt(0).toUpperCase() + firmNote.slice(1)}{/[.!?]$/.test(firmNote) ? "" : "."}</p> : null}
             {brief ? (
               <Reveal>
                 <span className="label">The brief</span>

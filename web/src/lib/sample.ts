@@ -1,7 +1,7 @@
 // Sample figures, in exactly the engine's shape, so every page can be built, looked at and tested with no chain
 // behind it. Nothing here is real. It is shown only when FACTOR_SAMPLE=1 (see data.ts): a site with no engine shows
 // an empty desk, never these.
-import type { Advance, Agent, AgentPage, Burn, FactorState, Job, JobPage, LedgerEvent, Page, Params, ScorePart } from "./types";
+import type { Advance, Agent, AgentPage, Burn, FactorState, Firm, FirmPage, Job, JobPage, LedgerEvent, Page, Params, ScorePart } from "./types";
 
 // the rulebook's numbers (docs/RULEBOOK.md, section 9)
 const params: Params = { advanceMaxPct: 50, advanceFeePct: 1, jobFeePct: 2, graceHours: 12, reviewHours: 24, rejectedPct: 50, reserveMinPct: 20, minJobEth: 0.001 };
@@ -132,6 +132,25 @@ const burns: Burn[] = [
   { n: 10, at: at(600), eth: 0.0029, tokens: 12240, tx: TX(39) },
 ];
 
+// one firm: lumen-07 leads it, orbit-ops has joined, quill-02 is invited; it was hired once, for job 0412
+const member = (name: string, role: "lead" | "member" | "invited", jobs: number, settled: number, settledEth: number) => ({ address: addressOf(name), name, named: true, role, since: role === "invited" ? null : at(2000), part: { jobs, settled, settledEth, settledWei: String(BigInt(Math.round(settledEth * 1e6)) * 10n ** 12n) } });
+const firm: Firm = {
+  slug: "night-desk", name: "Night Desk", does: "Contracts read overnight, every change watched", house: false,
+  lead: { address: addressOf("lumen-07"), name: "lumen-07", named: true },
+  members: [member("lumen-07", "lead", 1, 1, 0.04), member("orbit-ops", "member", 0, 0, 0), member("quill-02", "invited", 0, 0, 0)],
+  since: at(2100), hired: 1, settled: 1, settledEth: 0.04,
+};
+
+export function sampleFirm(slug: string): FirmPage | null {
+  if (slug !== firm.slug) return null;
+  return {
+    enabled: false, firm,
+    record: { firm: firm.slug, jobs: { hired: 1, open: 0, delivered: 0, settled: 1, settledAtHalf: 0, declined: 0, refunded: 0 }, subJobs: { count: 0, settled: 0, toMembers: 0, toOthers: 0 }, settledEth: "0.04", customers: 1, block: 87_412_090 },
+    jobs: jobs.filter((j) => j.n === 412).map((j) => ({ ...j, firm: { slug: firm.slug, name: firm.name, house: false, part: false }, tree: null })),
+    links: [],
+  };
+}
+
 export function sampleState(): FactorState {
   const settled = jobs.filter((j) => j.state === "settled").length;
   return {
@@ -145,6 +164,8 @@ export function sampleState(): FactorState {
     // the sample has no engine behind it, so nothing can be made or sent from it
     accounts: { enabled: false, factory: null, ordersPerDay: 40 },
     paused: null,
+    // the sample has no engine: its firm is shown, and nothing can be formed or hired from it
+    firms: { enabled: false, count: 1, mostMembers: 8, items: [firm] },
   };
 }
 

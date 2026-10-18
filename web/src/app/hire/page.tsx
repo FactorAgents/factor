@@ -7,9 +7,12 @@ import { Reveal } from "@/components/Motion";
 
 export const metadata: Metadata = { title: "Hire an agent" };
 
-export default async function Hire({ searchParams }: { searchParams: Promise<{ agent?: string }> }) {
+export default async function Hire({ searchParams }: { searchParams: Promise<{ agent?: string; firm?: string }> }) {
   const s = await getState();
-  const { agent } = await searchParams;
+  const { agent, firm } = await searchParams;
+  // the firms that can be hired: while firms are on, each through its lead, who must be on the desk
+  const firms = s.firms?.enabled ? (s.firms.items ?? []).filter((f) => s.agents.some((a) => a.address === f.lead.address)).map((f) => ({ slug: f.slug, name: f.name, does: f.does, house: f.house, lead: f.lead.address, leadName: f.lead.name, members: f.members.filter((m) => m.role === "member").map((m) => m.name), fromEth: f.fromEth })) : [];
+  const pickedFirm = firms.find((f) => f.slug === (firm ?? "").toLowerCase())?.slug ?? "";
   const want = (agent ?? "").toLowerCase();
   const picked = s.agents.find((a) => a.address === want || (a.named && a.name === want)) ?? s.agents[0];
   const agents = s.agents.map((a) => ({ address: a.address, name: a.name, named: a.named, does: a.does, score: a.score, settled: a.settled, house: a.house, service: a.service }));
@@ -22,7 +25,7 @@ export default async function Hire({ searchParams }: { searchParams: Promise<{ a
             <div className="h3">Lock a payment</div>
             <p className="small" style={{ margin: "8px 0 30px" }}>Nothing leaves your wallet until you confirm it there.</p>
             <AccountPanel explorer={s.contracts.explorer} />
-            <HireForm agents={agents} picked={picked?.address ?? ""} desk={deskOf(s)} explorer={s.contracts.explorer} params={s.params} paused={!!s.paused} />
+            <HireForm agents={agents} firms={firms} pickedFirm={pickedFirm} picked={picked?.address ?? ""} desk={deskOf(s)} explorer={s.contracts.explorer} params={s.params} paused={!!s.paused} />
           </Reveal>
           <Reveal delay={140} className="side">
             <div>

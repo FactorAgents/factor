@@ -5,30 +5,37 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { briefMessage, lockedJob, send, titleMessage, toWei, fromWei, Refusal } from "@/lib/desk";
 import { signText } from "@/lib/wallet";
+import { firmHireMessage, signAndSend } from "@/lib/firms";
 import { STATE_TONE, STATE_WORD, eth } from "@/lib/format";
 import type { Agent, Job, Page, Params } from "@/lib/types";
 import { engineNow, Go, saveSigned, StatusLine, useSend, useWallet } from "./Wallet";
 import MatchBox, { type Suggestion } from "./MatchBox";
 
 type Pick_ = Pick<Agent, "address" | "name" | "named" | "does" | "score" | "settled" | "house" | "service">;
+/** A firm that can be hired: through its lead, who takes the job and splits it among the members. */
+export interface FirmPick { slug: string; name: string; does: string; house: boolean; lead: string; leadName: string; members: string[]; fromEth?: number }
 const BRIEF_MOST = 12_000;
 const DUE: [string, number][] = [["2 hours", 2 * 3600], ["6 hours", 6 * 3600], ["24 hours", 24 * 3600], ["3 days", 3 * 86400], ["7 days", 7 * 86400], ["29 days", 29 * 86400]];
 const TITLE = /^[^<>\n\r]{3,80}$/;
 
-export default function HireForm({ agents, picked, desk, explorer, params, paused = false }: { agents: Pick_[]; picked: string; desk: string | null; explorer: string; params: Params; paused?: boolean }) {
+export default function HireForm({ agents, firms = [], pickedFirm = "", picked, desk, explorer, params, paused = false }: { agents: Pick_[]; firms?: FirmPick[]; pickedFirm?: string; picked: string; desk: string | null; explorer: string; params: Params; paused?: boolean }) {
   const { address, wallet } = useWallet();
   const { status, run, busy } = useSend();
-  const [agent, setAgent] = useState(picked);
+  // the choice is an agent's address, or "firm:<slug>": a firm is hired through its lead
+  const [choice, setChoice] = useState(pickedFirm ? `firm:${pickedFirm}` : picked);
+  const firm = choice.startsWith("firm:") ? firms.find((f) => `firm:${f.slug}` === choice) ?? null : null;
+  const agent = firm ? firm.lead : choice;
   const [title, setTitle] = useState("");
   const [brief, setBrief] = useState("");
   const [price, setPrice] = useState("0.0400");
   const [due, setDue] = useState(24 * 3600);
-  const [early, setEarly] = useState(false);
+  // Factor's own firm pays its team out of half of the job drawn early: hired as a firm, early is on unless turned off
+  const [early, setEarly] = useState(!!firms.find((f) => f.slug === pickedFirm)?.house);
   const who = agents.find((a) => a.address === agent);
   const wei = toWei(price);
   const tooSmall = wei !== null && wei < (toWei(String(params.minJobEth)) ?? 0n);
   // one of Factor's own agents says what it takes a job for: under that it would only decline
-  const floor = who?.service ? toWei(String(who.service.fromEth)) : null;
+  const floor = firm ? (firm.fromEth ? toWei(String(firm.fromEth)) : null) : who?.service ? toWei(String(who.service.fromEth)) : null;
   const underFloor = wei !== null && floor !== null && wei < floor;
   const half = wei ? fromWei(wei / 2n) : "0";
 
@@ -41,7 +48,8 @@ export default function HireForm({ agents, picked, desk, explorer, params, pause
     if (text && (!TITLE.test(text) || /https?:|www\.|:\/\//i.test(text))) throw new Refusal("Say what you want done in one line of 3 to 80 characters, without links.");
     const details = brief.replace(/\r\n?/g, "\n").trim();
     if (details.length > BRIEF_MOST) throw new Refusal(`A brief is ${BRIEF_MOST.toLocaleString("en-US")} characters at most. This one is ${details.length.toLocaleString("en-US")}.`);
-    if (who.service && !details) throw new Refusal(`${who.name} works from a brief. ${who.service.needs}`);
+    if (who.service && !details) throw new Refusal(`${firm ? firm.name : who.name} works from a brief. ${who.service.needs}`);
+    if (firm && !text) throw new Refusal(`Say what you want done in one line: it is the title of the firm's job.`);
     // a brief Factor wrote leaves [what the customer has to add] in brackets: it is not locked until that is in
     const left = details.match(/\[[^\]\n]{2,80}\]/g);
     if (left) throw new Refusal(`Fill in ${left.slice(0, 3).join(", ")} in the brief first.`);
@@ -50,6 +58,20 @@ export default function HireForm({ agents, picked, desk, explorer, params, pause
     const id = lockedJob(receipt, desk);
     if (id === null) return { note: "The payment is locked.", hash };
     const href = `/jobs/${String(id).padStart(4, "0")}`;
+    if (firm) {
+      // the job is the firm's: the customer signs that, with its title and brief, once. The money is locked for the
+      // lead whatever happens next; without the signature it stays an ordinary job of the lead's
+      try {
+        on("signing");
+        const at = await engineNow();
+        on("saving");
+        await signAndSend(p, address, firmHireMessage({ slug: firm.slug, lead: firm.lead, job: id, title: text, brief: details, at }), "firms/hire", { firm: firm.slug, job: id, title: text, brief: details, at });
+        setBrief("");
+      } catch (e) {
+        return { note: `Job ${String(id).padStart(4, "0")} is locked for ${firm.leadName}. It could not be filed under ${firm.name}: ${e instanceof Error ? e.message : "Factor did not answer"}`, hash, href, hrefText: "Open the job" };
+      }
+      return { note: `Job ${String(id).padStart(4, "0")} is locked for ${firm.name}. ${firm.leadName} takes it and splits it among the team.`, hash, href, hrefText: "Open the job" };
+    }
     if (details) {
       // the title and the brief are signed together, once. The money is locked whatever happens next: without the
       // signature the job only has no brief, which can still be signed on its page
@@ -82,7 +104,7 @@ export default function HireForm({ agents, picked, desk, explorer, params, pause
   const use = (sg: Suggestion) => {
     const a = agents.find((x) => x.named && x.name === sg.agent);
     if (!a) return;
-    setAgent(a.address);
+    setChoice(a.address);
     setBrief(sg.brief);
     if (TITLE.test(sg.title)) setTitle(sg.title);
     if (sg.fromEth) setPrice(sg.fromEth.toFixed(4));
@@ -93,12 +115,13 @@ export default function HireForm({ agents, picked, desk, explorer, params, pause
     <div className="form">
       <MatchBox known={agents.filter((a) => a.named).map((a) => a.name)} onUse={use} disabled={busy} />
       <label className="field">
-        <span className="label">The agent</span>
-        <select value={agent} onChange={(e) => setAgent(e.target.value)} disabled={busy || agents.length === 0}>
+        <span className="label">{firms.length ? "The agent, or a firm" : "The agent"}</span>
+        <select value={choice} onChange={(e) => { setChoice(e.target.value); if (firms.find((f) => `firm:${f.slug}` === e.target.value)?.house) setEarly(true); }} disabled={busy || agents.length === 0}>
           {agents.length === 0 ? <option value="">No agent has registered yet</option> : null}
-          {agents.map((a) => <option key={a.address} value={a.address}>{a.name}</option>)}
+          {firms.length ? <optgroup label="Agents">{agents.map((a) => <option key={a.address} value={a.address}>{a.name}</option>)}</optgroup> : agents.map((a) => <option key={a.address} value={a.address}>{a.name}</option>)}
+          {firms.length ? <optgroup label="Firms">{firms.map((f) => <option key={f.slug} value={`firm:${f.slug}`}>{f.name}</option>)}</optgroup> : null}
         </select>
-        <div className="hint">{who ? `${who.does ? `${who.does}. ` : ""}${who.house ? "One of Factor's own agents. " : ""}Score ${who.score}, ${who.settled} jobs settled.` : "An agent appears here once it has registered on the desk."}</div>
+        <div className="hint">{firm ? `${firm.does}. Its lead, ${firm.leadName}, takes the job and splits it${firm.members.length ? ` among ${firm.members.join(", ")}` : ""}.${firm.house ? " Factor's own firm: it pays its team out of half of the job drawn early." : ""}` : who ? `${who.does ? `${who.does}. ` : ""}${who.house ? "One of Factor's own agents. " : ""}Score ${who.score}, ${who.settled} jobs settled.` : "An agent appears here once it has registered on the desk."}</div>
       </label>
       <label className="field">
         <span className="label">What you want done</span>
@@ -114,7 +137,7 @@ export default function HireForm({ agents, picked, desk, explorer, params, pause
         <label className="field">
           <span className="label">Price in ETH</span>
           <input value={price} onChange={(e) => setPrice(e.target.value)} inputMode="decimal" disabled={busy} aria-invalid={wei === null || tooSmall || underFloor} />
-          <div className="hint">{wei === null ? "An amount like 0.04." : tooSmall ? `The smallest job is ${params.minJobEth} ETH.` : underFloor && who?.service ? `${who.name} takes a job from ${who.service.fromEth} ETH. Under that it declines, and you have it all back.` : who?.service ? `${who.name} takes a job from ${who.service.fromEth} ETH.` : `The agent pays a ${params.jobFeePct}% fee out of it when the job settles.`}</div>
+          <div className="hint">{wei === null ? "An amount like 0.04." : tooSmall ? `The smallest job is ${params.minJobEth} ETH.` : firm?.fromEth ? (underFloor ? `${firm.name} takes a job for the whole team from ${firm.fromEth} ETH. Under that its lead does it alone.` : `${firm.name} takes a job for the whole team from ${firm.fromEth} ETH.`) : underFloor && who?.service ? `${who.name} takes a job from ${who.service.fromEth} ETH. Under that it declines, and you have it all back.` : who?.service ? `${who.name} takes a job from ${who.service.fromEth} ETH.` : `The agent pays a ${params.jobFeePct}% fee out of it when the job settles.`}</div>
         </label>
         <label className="field">
           <span className="label">Due in</span>
@@ -129,7 +152,7 @@ export default function HireForm({ agents, picked, desk, explorer, params, pause
         <div><b>Let the agent have half early</b><span>Up to {half} ETH goes to the agent as soon as it asks. If it does not deliver, that part is not refunded. Leave this off and the agent can only be advanced by the pool, which never touches what you locked.</span></div>
       </button>
       <div className="cta" style={{ marginTop: 4 }}>
-        <Go label={`Lock ${wei ? fromWei(wei) : "0"} ETH`} busy={busy || wei === null || tooSmall || underFloor || !who} onGo={lock} off={!desk ? "Nothing is live yet" : paused ? "New jobs are paused" : null} />
+        <Go label={`Lock ${wei ? fromWei(wei) : "0"} ETH${firm ? ` for ${firm.name}` : ""}`} busy={busy || wei === null || tooSmall || (underFloor && !firm) || !who} onGo={lock} off={!desk ? "Nothing is live yet" : paused ? "New jobs are paused" : null} />
       </div>
       <StatusLine status={status} explorer={explorer} />
     </div>

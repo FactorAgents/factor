@@ -19,14 +19,14 @@ function Who({ address, names, explorer }: { address: string; names: Names; expl
   return n.href ? <Link href={n.href}>{n.name}</Link> : <a href={addressHref(explorer, address)} target="_blank" rel="noopener noreferrer">{n.name}</a>;
 }
 
-function Node({ n, all, current, names, explorer }: { n: TreeNode; all: TreeNode[]; current: number; names: Names; explorer: string }) {
+function Node({ n, all, current, names, explorer, firm }: { n: TreeNode; all: TreeNode[]; current: number; names: Names; explorer: string; firm?: string }) {
   const kids = all.filter((x) => x.parent === n.job);
   return (
     <li className={`chain-node${n.job === current ? " here" : ""}`}>
       <div className="chain-row">
         <div className="chain-main">
-          <span className="label">{n.depth === 0 ? "The agent" : `Hired by ${names(n.customer).name}`}</span>
-          <div className="chain-name"><Who address={n.agent} names={names} explorer={explorer} /></div>
+          <span className="label">{n.depth === 0 ? (firm ? `${firm}'s lead` : "The agent") : `Hired by ${names(n.customer).name}`}</span>
+          <div className="chain-name"><Who address={n.agent} names={names} explorer={explorer} />{firm && n.depth > 0 && n.inFirm ? <span className="in-firm" title={`A member of ${firm}`}>{firm}</span> : null}</div>
           <div className="chain-job small">
             {n.job === current ? <span>job {n.id}</span> : <Link href={`/jobs/${n.id}`}>job {n.id}</Link>}
             {n.title ? <span className="chain-title"> · {n.title}</span> : null}
@@ -44,7 +44,7 @@ function Node({ n, all, current, names, explorer }: { n: TreeNode; all: TreeNode
         {n.canReject ? <span className="warn">Its delivery can still be rejected</span> : null}
         {n.job === current ? <span className="gilt">This job</span> : null}
       </div>
-      {kids.length ? <ul className="chain-list">{kids.map((k) => <Node key={k.job} n={k} all={all} current={current} names={names} explorer={explorer} />)}</ul> : null}
+      {kids.length ? <ul className="chain-list">{kids.map((k) => <Node key={k.job} n={k} all={all} current={current} names={names} explorer={explorer} firm={firm} />)}</ul> : null}
     </li>
   );
 }
@@ -59,9 +59,9 @@ export default function Chain({ tree, current, names, explorer, burnPct }: { tre
       <div className="chain-who">
         <span className="label">The customer</span>
         <span className="chain-cust"><Who address={root.customer} names={names} explorer={explorer} /></span>
-        <span className="small">locked {eth(root.priceEth)} for job {root.id}</span>
+        <span className="small">{tree.firm ? <>hired the firm <Link href={`/firms/${tree.firm.slug}`}>{tree.firm.name}</Link>, locking {eth(root.priceEth)} for job {root.id}</> : <>locked {eth(root.priceEth)} for job {root.id}</>}</span>
       </div>
-      <ul className="chain-list chain-root"><Node n={root} all={tree.nodes} current={current} names={names} explorer={explorer} /></ul>
+      <ul className="chain-list chain-root"><Node n={root} all={tree.nodes} current={current} names={names} explorer={explorer} firm={tree.firm?.name} /></ul>
       {rejected.map((n) => {
         const open = tree.nodes.filter((k) => k.parent === n.job && k.canReject).length;
         return (

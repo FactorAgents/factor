@@ -605,3 +605,38 @@ button.toggle { width: 100%; text-align: left; background: transparent; color: i
   .chain-row { gap: 12px; }
   .chain-cust { font-size: 19px; }
 }
+
+/* ── agent firms: the list beside the agents, a firm's page, its members and its work ─────────────── */
+.firms-head { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+.agent.firm-row { grid-template-columns: 44px 1.6fr 1fr 0.7fr 0.9fr; }
+.in-firm { display: inline-block; font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gilt); border: 1px solid rgba(205, 178, 127, 0.55); border-radius: 2px; padding: 2px 5px 1px; margin-left: 12px; vertical-align: 0.3em; white-space: nowrap; }
+.firm-figs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.firm-figs > div { padding: 22px 22px 24px 0; min-width: 0; }
+.firm-figs > div + div { padding-left: 22px; border-left: 1px solid var(--line); }
+.firm-figs .big { font-family: var(--serif); font-size: clamp(30px, 4vw, 46px); line-height: 1; margin-top: 12px; white-space: nowrap; }
+.firm-members { border-top: 1px solid var(--line); }
+.firm-member { display: grid; grid-template-columns: 44px 1.5fr 0.8fr 0.8fr 1fr; gap: 24px; align-items: center; padding: 20px 0; border-top: 1px solid var(--line); transition: background 0.25s ease; }
+.firm-member:first-child { border-top: 0; }
+.firm-member:hover { background: var(--paper); }
+.firm-member .name { font-family: var(--serif); font-size: 22px; line-height: 1.1; overflow-wrap: anywhere; }
+.firm-member .small { margin-top: 4px; }
+.firm-member .v { font-family: var(--serif); font-size: 22px; margin-top: 6px; line-height: 1; }
+.firm-member .v.none { color: var(--dim); font-size: 16px; }
+.firm-member.invited .name { color: var(--mid); }
+.firm-members .end { border-top: 1px solid var(--line); }
+.firm-job + .firm-job { margin-top: 48px; }
+.firm-job-head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 18px; align-items: baseline; padding-bottom: 18px; }
+.firm-job-head .what { font-family: var(--serif); font-size: 22px; overflow-wrap: anywhere; }
+.firm-job-head a.mono { color: var(--mid); border-bottom: 1px solid var(--line-2); }
+@media (max-width: 860px) {
+  .firm-figs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .firm-figs > div:nth-child(3) { padding-left: 0; border-left: 0; }
+  .firm-figs > div:nth-child(n + 3) { border-top: 1px solid var(--line); }
+  .agent.firm-row { grid-template-columns: 40px 1fr auto; }
+}
+@media (max-width: 720px) {
+  .firm-member { grid-template-columns: 40px minmax(0, 1fr) auto; gap: 14px; }
+  .firm-member .col:not(:last-child) { display: none; }
+  .firm-job-head { grid-template-columns: auto auto; }
+  .firm-job-head .what { grid-column: 1 / -1; order: -1; }
+}
