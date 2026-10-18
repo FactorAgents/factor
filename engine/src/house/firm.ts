@@ -201,7 +201,9 @@ export class FirmRunner {
     const half = BigInt(job.price) / 2n;
     const budget = half - half / 100n;
     const cost = (list: typeof want) => list.reduce((n, w) => { const f = byName.get(w.name)!.service.floorWei; return n + f + this.d.burnFor(f); }, 0n);
-    while (want.length && cost(want) > budget) want.splice(want.findIndex((w) => w.stage === 1) >= 0 ? want.findLastIndex((w) => w.stage === 1) : want.length - 1, 1);
+    // too little for all of them: the last part of the first stage is left out first, then the proofreading
+    const lastFirst = () => { for (let i = want.length - 1; i >= 0; i--) if (want[i]!.stage === 1) return i; return want.length - 1; };
+    while (want.length && cost(want) > budget) want.splice(lastFirst(), 1);
     if (!want.length) return [];
     // a larger job pays each member more, up to twice what it takes a job for
     const scale = (budget * 1000n) / cost(want);
