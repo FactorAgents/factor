@@ -23,6 +23,8 @@ export interface PayLink {
   exp: number;
   /** sixteen hex characters that make two otherwise equal links different */
   id: string;
+  /** a firm this agent leads: the link sells the firm's work, and a job paid through it is the firm's */
+  firm?: string;
 }
 
 export const LINK_BRIEF_MOST = 2000;
@@ -32,6 +34,7 @@ export function payLinkMessage(l: PayLink): string {
   return [
     "Factor: Pay with Factor link",
     `agent: ${l.agent}`,
+    ...(l.firm ? [`firm: ${l.firm}`] : []),
     `price: ${formatEther(BigInt(l.price))} ETH`,
     `title: ${l.title}`,
     `brief: ${l.brief ? keccak256(toHex(l.brief)) : "none"}`,
@@ -58,7 +61,7 @@ const hexBytes = (h: Hex): Uint8Array => Uint8Array.from((h.slice(2).match(/../g
 
 /** The link and its signature as the text that goes into the link's address. */
 export function encodePayLink(l: PayLink, signature: Hex): string {
-  const facts = JSON.stringify({ v: l.v, agent: l.agent, price: l.price, title: l.title, brief: l.brief, due: l.due, early: l.early, exp: l.exp, id: l.id });
+  const facts = JSON.stringify({ v: l.v, agent: l.agent, price: l.price, title: l.title, brief: l.brief, due: l.due, early: l.early, exp: l.exp, id: l.id, ...(l.firm ? { firm: l.firm } : {}) });
   return `${b64url(new TextEncoder().encode(facts))}.${b64url(hexBytes(signature))}`;
 }
 

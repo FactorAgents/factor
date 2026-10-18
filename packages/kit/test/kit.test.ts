@@ -12,9 +12,10 @@ import { WORDS } from "../src/words.js";
 import { keyMessage as engineComputeKey } from "../../../engine/src/compute.js";
 import { briefMessage as engineBrief, profileMessage as engineProfile, proofOf as engineProof, titleMessage as engineTitle } from "../../../engine/src/profiles.js";
 import { hireMessage as engineHire, planIdOf as enginePlanId } from "../../../engine/src/subjobs.js";
-import { hireMessage, planIdOf } from "../src/index.js";
+import { hireMessage, planIdOf, firmHireMessage, firmMessage, joinMessage, leaveMessage, slugOf } from "../src/index.js";
+import { firmHireMessage as engineFirmHire, firmMessage as engineFirm, joinMessage as engineJoin, leaveMessage as engineLeave, slugOf as engineSlug } from "../../../engine/src/firms.js";
 import { recoverMessageAddress } from "viem";
-import { AGENTS, DESK, JOB, KEY, stub, type Stub } from "./stub.js";
+import { AGENTS, DESK, JOB, KEY, state, stub, type Stub } from "./stub.js";
 
 let s: Stub;
 beforeAll(async () => { s = await stub(); });
@@ -339,11 +340,11 @@ describe("the assistant's caps", () => {
 
 describe("the tools", () => {
   it("have a name, a description and an input each, and say which of them send something", () => {
-    expect(TOOLS.map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_hire", "factor_accept", "factor_reject", "factor_set_title", "factor_register", "factor_set_profile", "factor_bond", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_ask_model", "factor_draw", "factor_deliver", "factor_decline", "factor_sign_up", "factor_create_pay_link", "factor_pay_link_info", "factor_pay_link", "factor_pay_x402", "factor_hire_for_job", "factor_job_tree", "factor_reject_sub_jobs", "factor_record"]);
+    expect(TOOLS.map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_hire", "factor_accept", "factor_reject", "factor_set_title", "factor_register", "factor_set_profile", "factor_bond", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_ask_model", "factor_draw", "factor_deliver", "factor_decline", "factor_sign_up", "factor_create_pay_link", "factor_pay_link_info", "factor_pay_link", "factor_pay_x402", "factor_hire_for_job", "factor_job_tree", "factor_reject_sub_jobs", "factor_record", "factor_firms", "factor_firm_record", "factor_hire_firm"]);
     for (const t of TOOLS) expect(t.description.length, t.name).toBeGreaterThan(40);
-    expect(TOOLS.filter((t) => t.readOnly).map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_pay_link_info", "factor_job_tree", "factor_record"]);
+    expect(TOOLS.filter((t) => t.readOnly).map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_pay_link_info", "factor_job_tree", "factor_record", "factor_firms", "factor_firm_record"]);
     // the ones that spend or cannot be undone say so in capitals, where an assistant will not miss it
-    for (const name of ["factor_hire", "factor_reject", "factor_bond", "factor_pay_link", "factor_pay_x402", "factor_hire_for_job", "factor_reject_sub_jobs"]) expect(TOOLS.find((t) => t.name === name)!.description).toMatch(/SPENDS ETH|SETTLES AT HALF/);
+    for (const name of ["factor_hire", "factor_reject", "factor_bond", "factor_pay_link", "factor_pay_x402", "factor_hire_for_job", "factor_reject_sub_jobs", "factor_hire_firm"]) expect(TOOLS.find((t) => t.name === name)!.description).toMatch(/SPENDS ETH|SETTLES AT HALF/);
   });
 
   it("answer in words", async () => {
@@ -566,5 +567,66 @@ describe("agents that hire agents", () => {
     expect(text).toContain("2 deals in it added 0.0005 ETH to the burn.");
     // the tool that spends asks for a key, and is capped like a hire
     expect((await runTool(f, "factor_hire_for_job", { parent_job: 12, agent: "lumen-07", price: "0.01", brief: "x" }, null)).text).toMatch(/No wallet key is set/);
+  });
+});
+
+
+describe("agent firms", () => {
+  const LEAD = "0x00000000000000000000000000000000000000a1", MEMBER = "0x00000000000000000000000000000000000000a2";
+  const firm = { slug: "figure-check-co", name: "Figure Check Co", does: "Market notes, every figure checked", house: false, lead: { address: LEAD, name: "lumen-07", named: true }, members: [{ address: LEAD, name: "lumen-07", named: true, role: "lead", since: null, part: { jobs: 2, settled: 1, settledEth: 0.01, settledWei: "10000000000000000" } }, { address: MEMBER, name: "page-smith", named: true, role: "member", since: null, part: { jobs: 1, settled: 1, settledEth: 0.002, settledWei: "2000000000000000" } }], since: "2026-10-18T00:00:00.000Z", hired: 2, settled: 1, settledEth: 0.01 };
+
+  it("signs to the letter the words the engine checks", () => {
+    const f = { slug: "figure-check-co", name: "Figure Check Co", does: "Market notes", lead: LEAD, members: [MEMBER], at: 1_800_000_000 };
+    expect(firmMessage(f)).toBe(engineFirm(f));
+    expect(joinMessage({ slug: f.slug, lead: LEAD, member: MEMBER, at: 1 })).toBe(engineJoin({ slug: f.slug, lead: LEAD, member: MEMBER, at: 1 }));
+    expect(leaveMessage({ slug: f.slug, member: MEMBER, at: 1 })).toBe(engineLeave({ slug: f.slug, member: MEMBER, at: 1 }));
+    for (const brief of ["", "Line one\nLine two"]) expect(firmHireMessage({ slug: f.slug, lead: LEAD, job: 9, title: "A note", brief, at: 1 })).toBe(engineFirmHire({ slug: f.slug, lead: LEAD, job: 9, title: "A note", brief, at: 1 }));
+    for (const n of ["Figure Check & Co.", "  The   Research Desk ", "Ünïcode Desk"]) expect(slugOf(n)).toBe(engineSlug(n));
+    const link = { v: 1 as const, agent: LEAD, price: "10000000000000000", title: "A note", brief: "", due: 24, early: true, exp: 1_800_000_000, id: "0123456789abcdef" };
+    expect(payLinkMessage({ ...link, firm: "figure-check-co" })).toBe(enginePayLink({ ...link, firm: "figure-check-co" }));
+    expect(payLinkMessage(link)).toBe(enginePayLink(link));
+  });
+
+  it("forms a firm with the agents named, signed by the lead's own key", async () => {
+    const f = await connect({ privateKey: KEY });
+    const r = await f.formFirm({ name: "Figure Check Co", does: "Market notes, every figure checked", members: ["page-smith"] });
+    expect(r).toMatchObject({ slug: "figure-check-co", edited: false, invited: [AGENTS[1]!.address] });
+    expect(r.url).toMatch(/\/firms\/figure-check-co$/);
+    const sent = s.posts.at(-1)!;
+    expect(sent.path).toBe("/firms/form");
+    const b = sent.body as { name: string; does: string; lead: string; members: string[]; at: number; signature: `0x${string}`; slug: string };
+    expect((await recoverMessageAddress({ message: engineFirm(b), signature: b.signature })).toLowerCase()).toBe(b.lead);
+    expect((await refusal(f.formFirm({ name: "Figure Check Co", does: "Market notes", members: ["nobody-here"] }))).code).toBe("no_agent");
+  });
+
+  it("reads firms and a firm's record, and its tools say them in words", async () => {
+    s.site.firms = [firm];
+    s.site.firm = { enabled: true, firm, record: null, jobs: [], links: [] };
+    s.site.firmRecord = { version: 1, firm: "figure-check-co", name: "Figure Check Co", does: "Market notes", house: false, lead: LEAD, chainId: 4663, desk: DESK, block: 100, asOf: "", since: "", members: [{ address: LEAD, name: "lumen-07", role: "lead", jobs: 2, settled: 1, settledWei: "1" }], jobs: { hired: 2, open: 1, delivered: 0, settled: 1, settledAtHalf: 0, declined: 0, refunded: 0 }, subJobs: { count: 3, settled: 2, toMembers: 2, toOthers: 1 }, settledWei: "10000000000000000", settledEth: "0.01", customers: 1, page: "https://factoragents.fun/firms/figure-check-co", badge: "", attestation: null };
+    const f = await connect();
+    expect((await f.firms()).map((x) => x.slug)).toEqual(["figure-check-co"]);
+    expect((await f.firm("figure-check-co"))?.firm.lead.name).toBe("lumen-07");
+    expect(await f.firm("Not A Slug")).toBeNull();
+    expect((await f.firmRecord("figure-check-co")).subJobs.toOthers).toBe(1);
+    s.site.firmRecord = null;
+    expect((await refusal(f.firmRecord("no-such-firm-x"))).code).toBe("no_firm");
+    expect((await runTool(f, "factor_firms", {}, null)).text).toMatch(/Figure Check Co \(figure-check-co\): Market notes, every figure checked\. Led by lumen-07, with page-smith\. 2 jobs hired, 1 settled/);
+    s.site.firmRecord = { ...(s.site.firm as { firm: unknown }), version: 1, firm: "figure-check-co", name: "Figure Check Co", does: "Market notes", house: false, lead: LEAD, block: 100, members: [{ address: LEAD, name: "lumen-07", role: "lead", jobs: 2, settled: 1, settledWei: "1" }], jobs: { hired: 2, open: 1, delivered: 0, settled: 1, settledAtHalf: 0, declined: 0, refunded: 0 }, subJobs: { count: 3, settled: 2, toMembers: 2, toOthers: 1 }, settledEth: "0.01", customers: 1, page: "https://factoragents.fun/firms/figure-check-co", attestation: null };
+    expect((await runTool(f, "factor_firm_record", { firm: "figure-check-co" }, null)).text).toMatch(/Sub-jobs: 3 \(2 settled\), 2 to members and 1 to agents outside the firm/);
+    expect((await runTool(f, "factor_hire_firm", { firm: "figure-check-co", price: "0.01", title: "A note" }, null)).text).toMatch(/No wallet key is set/);
+  });
+
+  it("hires a firm only while firms are on, and sells a firm's work by link only as its lead", async () => {
+    s.site.firm = { enabled: true, firm, record: null, jobs: [], links: [] };
+    const f = await connect({ privateKey: KEY });
+    s.site.state = state();
+    expect((await refusal(f.hireFirm("figure-check-co", { price: "0.01", title: "A note" }))).code).toBe("firms_off");
+    s.site.state = state({ firms: { enabled: true, count: 1, mostMembers: 8, items: [] } } as never);
+    s.site.firm = null;
+    expect((await refusal(f.hireFirm("no-such-firm-x", { price: "0.01", title: "A note" }))).code).toBe("no_firm");
+    s.site.firm = { enabled: true, firm, record: null, jobs: [], links: [] };
+    expect((await refusal(f.hireFirm("figure-check-co", { price: "0.02", title: "A note", maxEth: "0.01" }))).code).toBe("over_cap");
+    expect((await refusal(f.createPayLink({ price: "0.01", title: "A note", firm: "figure-check-co" }))).code).toBe("not_lead");
+    s.site.state = state();
   });
 });

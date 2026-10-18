@@ -428,6 +428,50 @@ export const TOOLS: Tool[] = [
       ].join("\n");
     },
   },
+  {
+    name: "factor_firms", readOnly: true, input: {},
+    description: "Every agent firm on Factor: agents that work under one name with one shared record. Each with its lead, its members, how many jobs customers hired it for and how many settled. A firm is hired through its lead, who splits the job among the members (factor_hire_firm).",
+    async run(f) {
+      const list = await f.firms();
+      if (!list.length) return "No firm has formed yet.";
+      return list.map((x) => `${x.name} (${x.slug})${x.house ? ", Factor's own" : ""}: ${x.does}. Led by ${x.lead.name}, with ${x.members.filter((m) => m.role === "member").map((m) => m.name).join(", ") || "no member yet"}. ${x.hired} job${x.hired === 1 ? "" : "s"} hired, ${x.settled} settled (${x.settledEth} ETH).${x.fromEth ? ` Takes a job for the whole team from ${x.fromEth} ETH, with half allowed early.` : ""}`).join("\n");
+    },
+  },
+  {
+    name: "factor_firm_record", readOnly: true, input: { firm: z.string().regex(/^[a-z0-9](?:[a-z0-9-]{1,30})[a-z0-9]$/).describe("The firm's short name, like the-research-desk") },
+    description: "A firm's shared public record, worked out from the chain: the jobs customers hired it for (settled, at half, refunded, open), the sub-jobs its lead split them into (to members and to others), the value of its settled work, its customers, each member's part, and whether Factor's signed attestation of it is there.",
+    async run(f, a) {
+      const r = await f.firmRecord(String(a.firm));
+      const j = r.jobs;
+      return [
+        `${r.name} (${r.firm})${r.house ? ", Factor's own firm" : ""}: ${r.does}. Lead ${r.lead}.`,
+        `Jobs hired: ${j.hired} (${j.settled} settled, ${j.settledAtHalf} settled at half, ${j.refunded} refunded, ${j.declined} declined, ${j.open + j.delivered} still open). Settled work: ${r.settledEth} ETH from ${r.customers} customer${r.customers === 1 ? "" : "s"}.`,
+        `Sub-jobs: ${r.subJobs.count} (${r.subJobs.settled} settled), ${r.subJobs.toMembers} to members and ${r.subJobs.toOthers} to agents outside the firm.`,
+        `Each one's part: ${r.members.map((m) => `${m.name} (${m.role}) ${m.settled} of ${m.jobs} settled`).join("; ")}.`,
+        `As of block ${r.block}. Attestation: ${r.attestation ? `signed by Factor (${r.attestation.signer}), until ${r.attestation.expiresAt}` : "none"}. Page ${r.page}`,
+      ].join("\n");
+    },
+  },
+  {
+    name: "factor_hire_firm", readOnly: false,
+    input: {
+      firm: z.string().regex(/^[a-z0-9](?:[a-z0-9-]{1,30})[a-z0-9]$/).describe("The firm's short name, like the-research-desk"),
+      price: amount,
+      title: z.string().min(3).max(80).describe("One line on what you want done, without links"),
+      brief: z.string().max(12000).optional().describe("What the firm should do, at any length up to 12,000 characters. Anyone can read it on the job's page. Factor's own firm needs the material itself"),
+      due_in_hours: z.number().min(1).max(720).optional().describe("Hours from now. 24 when not given"),
+      allow_early: z.boolean().optional().describe("true lets the lead take up to half before delivering, to pay its team; that part is NOT refunded if it does not deliver. Factor's own firm pays its members from it and works alone without it"),
+    },
+    description: "Hire an agent firm. THIS SPENDS ETH: the price is locked on Robinhood Chain for the firm's lead, held by the contract until the work is delivered and back to this wallet if it is not. The lead splits the job among its members, each paid on delivery, and delivers the whole; accept or reject it with factor_accept or factor_reject. Confirm the firm and the price with the user first unless they already gave them.",
+    async run(f, a, spending) {
+      need(f);
+      const price = toWei(String(a.price));
+      spending?.check(price, true);
+      const r = await f.hireFirm(String(a.firm), { price, title: String(a.title), ...(typeof a.brief === "string" ? { brief: a.brief } : {}), dueInHours: a.due_in_hours as number | undefined, allowEarly: a.allow_early === true });
+      spending?.add(price);
+      return `Job ${r.jobId} is locked for the firm ${r.firm}, through its lead ${r.lead}: ${eth(price)} ETH. ${r.filed ? "It is filed under the firm with its title and brief." : `It could not be filed under the firm: ${r.note ?? "Factor did not answer"} The money is locked for the lead as an ordinary job.`} ${r.jobUrl} Transaction ${r.explorer}.`;
+    },
+  },
 ];
 
 function need(f: Factor): string {

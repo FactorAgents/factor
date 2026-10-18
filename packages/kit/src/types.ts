@@ -32,6 +32,8 @@ export interface Job {
   deal?: { via: string; burnEth: number };
   /** a sub-job: the job its customer (that job's agent) hired for, and how far under the customer's job it is */
   parent?: { n: number; id: string; depth: number };
+  /** hired through a firm (part: false), or a sub-job under such a job (part: true) */
+  firm?: { slug: string; name: string; house: boolean; part: boolean };
 }
 
 export interface Agent {
@@ -83,6 +85,8 @@ export interface State {
   paused: string | null;
   /** agents that hire agents: whether a job's agent can hire for it, how deep a chain goes and how many under one job */
   subjobs?: { enabled: boolean; maxDepth: number; perParent: number };
+  /** agent firms: whether they can be formed and hired, how many there are, and the first of them */
+  firms?: { enabled: boolean; count: number; mostMembers: number; items: Firm[] };
 }
 
 /** A Factor account: what an agent's key acts through when Factor pays its gas (connect with `gasless: true`). */
@@ -115,7 +119,54 @@ export interface ModelAnswer { text: string; model: string; inputTokens: number;
 /** The other agents one agent hired for parts of its jobs, and those that hired it, with how many jobs. */
 export interface Hiring { hiredBy: { address: string; name: string; named?: boolean; jobs: number }[]; hires: { address: string; name: string; named?: boolean; jobs: number }[] }
 /** `hiring` is there only when the agent hired somebody or was hired by one. */
-export interface AgentPage { agent: Agent; jobs: Job[]; events: LedgerLine[]; hiring?: Hiring }
+export interface AgentPage { agent: Agent; jobs: Job[]; events: LedgerLine[]; hiring?: Hiring; /** the firms it leads, belongs to or is invited to */ firms?: { slug: string; name: string; house: boolean; role: "lead" | "member" | "invited" }[] }
+
+/** One of a firm's agents, and its part of the firm's work. */
+export interface FirmMember { address: string; name: string; named: boolean; role: "lead" | "member" | "invited"; since: string | null; part: { jobs: number; settled: number; settledEth: number; settledWei: string } }
+/** A firm: agents under one name, hired through their lead. */
+export interface Firm {
+  slug: string;
+  name: string;
+  does: string;
+  /** Factor's own firm, run by Factor */
+  house: boolean;
+  lead: { address: string; name: string; named: boolean };
+  members: FirmMember[];
+  since: string;
+  /** jobs customers hired the firm for, how many settled, and their value */
+  hired: number;
+  settled: number;
+  settledEth: number;
+  /** Factor's own firm takes a job for the whole team from this price */
+  fromEth?: number;
+}
+/** A firm's shared record, worked out from the desk, with Factor's attestation (Factor.firmRecord). */
+export interface FirmRecord {
+  version: 1;
+  firm: string;
+  name: string;
+  does: string;
+  house: boolean;
+  lead: string;
+  chainId: number;
+  desk: string;
+  block: number;
+  asOf: string;
+  since: string;
+  members: { address: string; name: string; role: "lead" | "member"; jobs: number; settled: number; settledWei: string }[];
+  jobs: { hired: number; open: number; delivered: number; settled: number; settledAtHalf: number; declined: number; refunded: number };
+  subJobs: { count: number; settled: number; toMembers: number; toOthers: number };
+  settledWei: string;
+  settledEth: string;
+  customers: number;
+  page: string;
+  badge: string;
+  attestation: { signer: string; signature: `0x${string}`; digest: `0x${string}`; message: Record<string, unknown>; issuedAt: string; expiresAt: string } | null;
+}
+/** A firm's page: the firm, its record, its jobs with the chain of work under the newest, and its links. */
+export interface FirmPage { enabled: boolean; firm: Firm; record: FirmRecord; jobs: (Job & { tree?: JobTree | null })[]; links: { id: string; title: string; priceEth: string; due: number; early: boolean; exp: string; url: string; firm?: string }[] }
+/** A job hired through a firm (Factor.hireFirm). */
+export interface FirmHire { jobId: number; firm: string; lead: string; hash: `0x${string}`; explorer: string; jobUrl: string; filed: boolean; note?: string }
 
 /** One job in a chain of work: the customer's job at depth 0, the jobs its agent hired for at 1, and so on. */
 export interface TreeNode {
@@ -154,6 +205,8 @@ export interface Sent { hash: `0x${string}`; explorer: string }
 /** What Factor says of a payment link (Factor.payLinkInfo). */
 export interface PayLinkInfo {
   id: string;
+  /** a link for a firm: the firm, when Factor knows it and the link's agent still leads it */
+  firm?: { slug: string; name: string; house: boolean } | null;
   link: import("./pay.js").PayLink;
   /** whether the link's agent is on the desk: nothing can be locked for one that is not */
   registered: boolean;
@@ -208,4 +261,7 @@ export interface Deal {
   subjob?: { parent: number; depth: number } | null;
   /** why it could not be linked under that job; the deal stands as an ordinary one */
   subjobNote?: string;
+  /** a link sold for a firm: the firm the job is filed under, or why it could not be */
+  firm?: string;
+  firmNote?: string;
 }

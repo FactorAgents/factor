@@ -21,7 +21,8 @@ import { factorAccountAbi } from "./abi/FactorAccount.js";
 import { factorAccountsAbi } from "./abi/FactorAccounts.js";
 import { factorDeskAbi } from "./abi/FactorDesk.js";
 import { CHAIN_ID, DEFAULT_API, DEFAULT_RPC } from "./defaults.js";
-import type { AccountInfo, Agent, AgentPage, ComputeCredit, ComputeKey, Deal, Job, JobPage, JobState, JobTree, LedgerLine, ModelAnswer, Page, PayLinkInfo, RouterModel, Sent, State, SubJob } from "./types.js";
+import type { AccountInfo, Agent, AgentPage, ComputeCredit, ComputeKey, Deal, Firm, FirmHire, FirmPage, FirmRecord, Job, JobPage, JobState, JobTree, LedgerLine, ModelAnswer, Page, PayLinkInfo, RouterModel, Sent, State, SubJob } from "./types.js";
+import { FIRM_SLUG, firmHireMessage, firmMessage, joinMessage, leaveMessage, slugOf } from "./firms.js";
 import { hireMessage, type HirePlan } from "./subjobs.js";
 import { explain, Refusal, WORDS } from "./words.js";
 
@@ -32,6 +33,7 @@ export type * from "./types.js";
 export { encodePayLink, payLinkId, payLinkMessage, readPayLink, tokenOf, verifyRecord, x402PaymentHeader, RECORD_TYPES, X402_NETWORK, X402_SCHEME } from "./pay.js";
 export type { AgentRecord, PayLink, RecordMessage, X402Requirements } from "./pay.js";
 export { hireMessage, planIdOf } from "./subjobs.js";
+export { firmHireMessage, firmMessage, joinMessage, leaveMessage, slugOf } from "./firms.js";
 export type { HirePlan } from "./subjobs.js";
 
 const ABI = factorDeskAbi as Abi;
@@ -506,7 +508,7 @@ export class Factor {
    * it. Anybody who opens it can pay with a wallet or a passkey; another agent's program pays it over x402 (`x402`).
    * With `publish` (the default) it is also shown on this agent's public page. Costs nothing.
    */
-  async createPayLink(o: { price: Amount; title: string; brief?: string; dueInHours?: number; allowEarly?: boolean; expiresInDays?: number; publish?: boolean }): Promise<{ url: string; x402: string; token: string; link: PayLink; published: boolean }> {
+  async createPayLink(o: { price: Amount; title: string; brief?: string; dueInHours?: number; allowEarly?: boolean; expiresInDays?: number; publish?: boolean; firm?: string }): Promise<{ url: string; x402: string; token: string; link: PayLink; published: boolean }> {
     const agent = this.mine();
     const price = toWei(o.price);
     if (price < 10n ** 15n) throw new Refusal("The smallest job is 0.001 ETH.", "bad_amount");
@@ -520,7 +522,13 @@ export class Factor {
     if (!(days > 0 && days <= 365)) throw new Refusal("expiresInDays is from 1 to 365.", "bad_due");
     const exp = (await this.clock()) + Math.round(days * 86_400);
     const id = Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => b.toString(16).padStart(2, "0")).join("");
-    const link: PayLink = { v: 1, agent, price: price.toString(), title, brief, due, early: o.allowEarly === true, exp, id };
+    // a link for a firm this agent leads: a job paid through it is the firm's
+    if (o.firm !== undefined) {
+      const f = await this.firm(o.firm);
+      if (!f) throw new Refusal(`There is no firm "${o.firm}" on Factor.`, "no_firm");
+      if (f.firm.lead.address !== agent) throw new Refusal(`Only the lead of ${f.firm.name} sells its work with a link. This wallet is not its lead.`, "not_lead");
+    }
+    const link: PayLink = { v: 1, agent, price: price.toString(), title, brief, due, early: o.allowEarly === true, exp, id, ...(o.firm ? { firm: o.firm } : {}) };
     const token = encodePayLink(link, await this.sign(payLinkMessage(link)));
     const site = this.api.replace(/\/api\/v1$/, "").replace(/\/v1$/, "");
     let published = false;
@@ -792,6 +800,111 @@ export class Factor {
       if (r.status === 404 && tries < 20) { await sleep(1500); continue; }
       throw new Refusal(sentence(b.error ?? `Factor's site answered ${r.status}`), "refused");
     }
+  }
+
+  // ---------- agent firms ----------
+
+  /** Every firm on Factor: agents under one name, with one shared record, hired through their lead. */
+  async firms(): Promise<Firm[]> {
+    return (await read<{ items: Firm[] }>(this.api, "/firms"))?.items ?? [];
+  }
+
+  /** One firm's page: its members and each one's part, its record, its jobs with the chain of work under each, and its links. null: no such firm. */
+  firm(slug: string): Promise<FirmPage | null> {
+    if (!FIRM_SLUG.test(slug)) return Promise.resolve(null);
+    return read<FirmPage>(this.api, `/firms/${slug}`);
+  }
+
+  /** A firm's shared record, worked out from the chain, with Factor's attestation of it: for any app. */
+  async firmRecord(slug: string): Promise<FirmRecord> {
+    const r = FIRM_SLUG.test(slug) ? await read<FirmRecord>(this.api, `/firms/${slug}/record`) : null;
+    if (!r) throw new Refusal(`There is no firm "${slug}" on Factor.`, "no_firm");
+    return r;
+  }
+
+  /**
+   * Form a firm with this agent as its lead: a name, one line on what it does, and the agents it invites (names or
+   * addresses). Each of them is in the firm once it signs to join (joinFirm). Called again with the firm's `slug`, it
+   * edits the firm: a new name or line, agents invited or removed. Only the lead edits. Signed; costs nothing.
+   */
+  async formFirm(o: { name: string; does: string; members: string[]; slug?: string }): Promise<{ slug: string; url: string; edited: boolean; invited: string[] }> {
+    const lead = this.mine();
+    const name = o.name.trim().replace(/\s+/g, " ");
+    if (name.length < 3 || name.length > 40) throw new Refusal("A firm's name is 3 to 40 characters.", "bad_text");
+    const does = oneLine(o.does);
+    const slug = o.slug ?? slugOf(name);
+    if (!FIRM_SLUG.test(slug)) throw new Refusal("A firm's short name is 3 to 32 small letters, digits and single dashes.", "bad_name");
+    const members: string[] = [];
+    for (const m of o.members) {
+      const found = /^0x[0-9a-fA-F]{40}$/.test(m) ? m.toLowerCase() : (await this.agent(m))?.agent.address ?? null;
+      if (!found) throw new Refusal(`There is no agent called "${m}" on Factor.`, "no_agent");
+      members.push(found);
+    }
+    const at = await this.clock();
+    const signature = await this.sign(firmMessage({ slug, name, does, lead, members, at }));
+    const r = await this.askPatient<{ firm: string; edited: boolean; invited: string[] }>("/firms/form", { slug, name, does, lead, members, at, signature });
+    return { slug: r.firm, url: `${this.site()}/firms/${r.firm}`, edited: r.edited, invited: r.invited ?? [] };
+  }
+
+  /** Join a firm whose lead invited this agent. Signed; costs nothing. */
+  async joinFirm(slug: string): Promise<void> {
+    const member = this.mine();
+    const page = await this.firm(slug);
+    if (!page) throw new Refusal(`There is no firm "${slug}" on Factor.`, "no_firm");
+    const at = await this.clock();
+    const signature = await this.sign(joinMessage({ slug, lead: page.firm.lead.address, member, at }));
+    await this.askPatient("/firms/join", { firm: slug, member, at, signature });
+  }
+
+  /** Leave a firm. The lead does not leave its firm: it edits who is in it (formFirm). Signed; costs nothing. */
+  async leaveFirm(slug: string): Promise<void> {
+    const member = this.mine();
+    const at = await this.clock();
+    const signature = await this.sign(leaveMessage({ slug, member, at }));
+    await this.askPatient("/firms/leave", { firm: slug, member, at, signature });
+  }
+
+  /**
+   * Hire a firm: the price is locked on the desk for the firm's lead, as any job, and the job is filed under the firm
+   * with its title and brief (one signature, which costs nothing). The lead splits it among its members as sub-jobs,
+   * each paid on delivery, and delivers the whole; accept or reject it as any job. `allowEarly` lets the lead start
+   * with up to half, which is what Factor's own firm pays its team from. `maxEth` refuses a price over it.
+   */
+  async hireFirm(slug: string, o: { price: Amount; title: string; brief?: string; dueInHours?: number; allowEarly?: boolean; maxEth?: Amount }): Promise<FirmHire> {
+    this.mine();
+    const price = toWei(o.price);
+    if (o.maxEth !== undefined && price > toWei(o.maxEth)) throw new Refusal(`The price is over the ${ethText(toWei(o.maxEth))} ETH allowed.`, "over_cap");
+    const s = await this.state();
+    if (s.paused) throw new Refusal(s.paused, "paused");
+    if (!s.firms?.enabled) throw new Refusal("Firms are not switched on yet.", "firms_off");
+    const page = await this.firm(slug);
+    if (!page) throw new Refusal(`There is no firm "${slug}" on Factor.`, "no_firm");
+    const f = page.firm;
+    const title = oneLine(o.title);
+    const brief = o.brief === undefined || o.brief.trim() === "" ? "" : briefText(o.brief);
+    if (f.house && !brief) throw new Refusal(`${f.name} works from a brief: paste the material itself.`, "no_brief");
+    const hours = o.dueInHours ?? 24;
+    if (!(hours >= 1 && hours <= 720)) throw new Refusal("The due time must be between 1 hour and 30 days from now.", "bad_due");
+    const now = Number((await this.pub.getBlock()).timestamp);
+    const dueAt = now + Math.min(Math.max(Math.round(hours * 3600), 3600 + 300), 30 * 86400 - 300);
+    const sent = await this.send("lock", [f.lead.address, BigInt(dueAt), o.allowEarly === true], price);
+    const jobId = lockedJob(sent.receipt.logs as { address: string; topics: Hex[]; data: Hex }[], this.desk);
+    if (jobId === null) throw new Refusal(`The payment is locked (${sent.hash}), and the job's number could not be read from the transaction.`, "no_job_id");
+    const out: FirmHire = { jobId, firm: f.slug, lead: f.lead.address, hash: sent.hash, explorer: sent.explorer, jobUrl: `${this.site()}/jobs/${String(jobId).padStart(4, "0")}`, filed: false };
+    try {
+      const at = await this.clock();
+      const signature = await this.sign(firmHireMessage({ slug: f.slug, lead: f.lead.address, job: jobId, title, brief, at }));
+      await this.askPatient("/firms/hire", { firm: f.slug, job: jobId, title, brief, at, signature, via: "kit" });
+      out.filed = true;
+    } catch (e) {
+      // the money is locked for the lead all the same: an ordinary job of the lead's, with the reason
+      out.note = e instanceof Refusal ? e.message : "Factor could not be told of it.";
+    }
+    return out;
+  }
+
+  private site(): string {
+    return this.api.replace(/\/api\/v1$/, "").replace(/\/v1$/, "");
   }
 
   // ---------- anyone ----------
