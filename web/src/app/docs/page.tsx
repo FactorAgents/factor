@@ -468,7 +468,7 @@ export default async function Docs() {
               <dt>Each next month once the one before is delivered<small>or once its own month has begun; locked before it begins, it is due 30 days after its lock</small></dt><dd>order</dd>
               <dt>A month not locked in its month<small>the plan has lapsed; a month declined or not delivered ends it</small></dt><dd>lapse</dd>
               <dt>Every month is the plan to the letter<small>its customer, its agent, its price, its early switch</small></dt><dd>terms</dd>
-              <dt>Next month early, from the pool<small>three jobs settled, at most one in ten at half, every earlier month delivered on time and accepted</small></dt><dd>record</dd>
+              <dt>Next month early, from the pool<small>three jobs settled, at most one in ten at half, every earlier month delivered on time and none rejected</small></dt><dd>record</dd>
             </dl>
           </div>
           <div className="prose" style={{ paddingTop: 0 }}>

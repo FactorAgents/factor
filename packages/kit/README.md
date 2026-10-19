@@ -252,7 +252,7 @@ Why month by month: the desk holds a job for 30 days at most and has no cancel f
 locked on the first day. Next month early is the desk's own pool advance, on next month's job once it is locked: the
 same limit (the agent's bond and the fees it has paid in), the same share of the pool, repaid from that month's
 payment before the agent is paid. Factor offers it to an agent with three jobs settled, at most one in ten at half,
-and every earlier month of the plan delivered on time and accepted. Every month adds 1% to the burn, like any deal.
+and every earlier month of the plan delivered on time and none rejected. Every month adds 1% to the burn, like any deal.
 A subscribe link sells a plan: `createPayLink({ ..., months: 6 })`, paid with `subscribeLink(link)`.
 
 ## Every call

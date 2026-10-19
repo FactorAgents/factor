@@ -538,7 +538,7 @@ export const TOOLS: Tool[] = [
   },
   {
     name: "factor_draw_next_month", readOnly: false, input: { plan: PLAN_ID, amount: amount.optional().describe("ETH to draw. All that is offered when not given") },
-    description: "As the agent of a monthly plan: draw on its newest open month from the pool. Before that month begins, this is next month's income, early. Factor offers it only with a good record (three jobs settled, at most one in ten at half, every earlier month of the plan delivered on time and accepted), within the desk's own limits for every pool advance; the month's own payment repays the pool before the agent is paid. The 1% fee comes out of it and buys and burns $FACTOR.",
+    description: "As the agent of a monthly plan: draw on its newest open month from the pool. Before that month begins, this is next month's income, early. Factor offers it only with a good record (three jobs settled, at most one in ten at half, every earlier month of the plan delivered on time and none rejected), within the desk's own limits for every pool advance; the month's own payment repays the pool before the agent is paid. The 1% fee comes out of it and buys and burns $FACTOR.",
     async run(f, a) {
       const r = await f.drawNextMonth(String(a.plan), typeof a.amount === "string" ? a.amount : undefined);
       return `Drew ${eth(r.amountWei)} ETH from the pool on month ${r.month} (job ${r.jobId}). Transaction ${r.explorer}.`;

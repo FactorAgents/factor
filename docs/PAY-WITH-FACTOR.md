@@ -345,7 +345,7 @@ desk's own pool advance, held to the same limit as every pool advance (the agent
 paid in, counted once), the same 80% of the pool that may be out, and repaid from that month's own payment before the
 agent is paid. Factor offers it (on the plan's page, `drawEarly`, and the kit's `drawNextMonth`) when the agent has
 settled `PLANS_NEXT_MIN_SETTLED` jobs (3), at most one in ten at half, and every earlier month of the plan was
-delivered on time and accepted. Nothing here gives the pool more risk than a pool advance on any job.
+delivered on time and none rejected. Nothing here gives the pool more risk than a pool advance on any job.
 
 **On the record.** `GET /api/v1/plans/<plan>` is a plan: its months, each one's job and what was drawn and paid, what
 the customer can lock next (`next`) and what the agent can draw (`drawEarly`), and the words the customer signed with

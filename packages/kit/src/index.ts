@@ -1036,7 +1036,7 @@ export class Factor {
   /**
    * As the plan's agent: draw on the plan's newest open month from the pool, which before its month begins is next
    * month's income, early. Factor offers it by the agent's record (three jobs settled, at most one in ten at half, and
-   * every earlier month of the plan delivered on time and accepted); the desk's own limits hold as for any pool
+   * every earlier month of the plan delivered on time and none rejected); the desk's own limits hold as for any pool
    * advance. `amount`: less than what is offered, if wanted. The 1% fee comes out of it.
    */
   async drawNextMonth(planId: string, amount?: Amount): Promise<Sent & { jobId: number; month: number; amountWei: bigint }> {
