@@ -377,6 +377,18 @@ button.toggle { width: 100%; text-align: left; background: transparent; color: i
 
 /* ── phones ────────────────────────────────────────────────────────────────── */
 .menu { display: none; }
+.nav a { white-space: nowrap; }
+/* a narrow laptop: the pages sit closer, and below 1180px they fold into the menu as on a phone */
+@media (max-width: 1280px) { .top .wrap { gap: 30px; } .nav { gap: 20px; } }
+@media (max-width: 1180px) {
+  .nav { display: none; }
+  .burger { display: grid; }
+  .menu { position: fixed; left: 0; right: 0; top: 66px; background: var(--bg); border-bottom: 1px solid var(--line); padding: 6px var(--pad) 20px; z-index: 19; }
+  .menu.open { display: grid; }
+  .menu a { padding: 14px 0; border-top: 1px solid var(--line); font-family: var(--serif); font-size: 22px; }
+  .menu a:first-child { border-top: 0; }
+  .menu .rowx { display: flex; gap: 8px; padding-top: 16px; border-top: 1px solid var(--line); }
+}
 @media (max-width: 960px) {
   .nav { display: none; }
   .burger { display: grid; }
@@ -692,3 +704,86 @@ button.toggle { width: 100%; text-align: left; background: transparent; color: i
   .plan-list .of:first-of-type { display: none; }
 }
 .monthly .income.none { color: var(--dim); font-size: clamp(24px, 3vw, 32px); }
+
+/* ── the roadmap: one line through every phase, gilt where it is live, dashed where it is planned ─────────── */
+.road { --rx: 186px; --gold-ink: #15120b; }
+[data-theme="light"] .road { --gold-ink: #fbfaf6; }
+.road-meter { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 40px; align-items: center; padding: 22px 0 24px; border-top: 1px solid var(--line-2); border-bottom: 1px solid var(--line); }
+.road-count { display: flex; align-items: baseline; gap: 12px; white-space: nowrap; }
+.road-count b { font-family: var(--serif); font-weight: 400; font-size: 54px; line-height: 0.9; letter-spacing: -0.015em; color: var(--gilt); }
+.road-count span { font-size: 14.5px; color: var(--mid); }
+.road-ticks { display: flex; gap: 14px; min-width: 0; }
+.road-ticks > span { display: flex; gap: 5px; min-width: 0; }
+.road-ticks i { flex: 1; height: 4px; background: var(--line); border-radius: 1px; }
+.road-ticks i.on { background: var(--gilt); }
+.road-ticks i.next { background: var(--gilt); animation: lamp 1.6s ease-in-out infinite; }
+.road-next { display: grid; gap: 6px; text-align: right; }
+.road-next > span:last-child { font-family: var(--serif); font-size: 21px; line-height: 1.1; white-space: nowrap; }
+.road-next em { font-style: italic; color: var(--mid); margin-left: 10px; font-size: 16px; }
+
+.road-row { position: relative; display: grid; grid-template-columns: 140px 44px minmax(0, 1fr); column-gap: 24px; --ny: 37px; }
+.road-row.is-stage { --ny: 69px; }
+/* the line: the half that reaches a row and the half that leaves it */
+.road-row::before, .road-row::after { content: ""; position: absolute; left: calc(var(--rx) - 0.5px); width: 1px; background: repeating-linear-gradient(to bottom, var(--line-2) 0 4px, transparent 4px 9px); }
+.road-row::before { top: 0; height: var(--ny); }
+.road-row::after { top: var(--ny); bottom: 0; }
+.road-row.up::before, .road-row.down::after { background: var(--gilt); width: 2px; left: calc(var(--rx) - 1px); }
+.road-row.first::before { display: none; }
+.road-row.last::after { -webkit-mask: linear-gradient(to bottom, #000, transparent); mask: linear-gradient(to bottom, #000, transparent); }
+.road-when { grid-column: 1; padding-top: 29px; display: grid; gap: 8px; align-content: start; justify-items: end; text-align: right; }
+.road-row.is-stage .road-when { padding-top: 61px; }
+.road-day { font-family: var(--serif); font-size: 20px; line-height: 1.15; color: var(--ink); }
+.road-row.next .road-day, .road-row.plan .road-day { font-size: 17px; color: var(--mid); }
+.road-row.next .road-day { color: var(--ink); }
+.road-body { grid-column: 3; display: grid; grid-template-columns: minmax(0, 300px) minmax(0, 1fr); gap: 40px; padding: 26px 0 30px; border-top: 1px solid var(--line); }
+.road-row.is-stage .road-body { padding: 56px 0 26px; border-top: 0; align-items: end; }
+
+/* the marks on the line */
+.road-node { position: absolute; left: var(--rx); top: var(--ny); transform: translate(-50%, -50%); width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; z-index: 1; }
+.road-node.live { background: var(--gilt); box-shadow: 0 0 0 5px var(--bg); }
+.road-node.live svg { width: 13px; height: 13px; fill: none; stroke: var(--gold-ink); stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.road-node.next { border: 1px solid var(--gilt); background: var(--bg); box-shadow: 0 0 0 5px var(--bg), 0 0 0 6px var(--gilt-soft); }
+.road-node.next i { width: 8px; height: 8px; border-radius: 50%; background: var(--gilt); animation: lamp 1.6s ease-in-out infinite; }
+.road-node.plan { width: 14px; height: 14px; border: 1px solid var(--line-2); background: var(--bg); box-shadow: 0 0 0 5px var(--bg); }
+.road-node.stage { width: 14px; height: 14px; border-radius: 1px; transform: translate(-50%, -50%) rotate(45deg); border: 1px solid var(--line-2); background: var(--bg); box-shadow: 0 0 0 6px var(--bg); }
+.road-node.stage.live { background: var(--gilt); border-color: var(--gilt); }
+.rv.in .road-node.live:not(.stage) { animation: tick 0.7s var(--ease) both; animation-delay: calc(var(--k, 0) * 90ms + 220ms); }
+@keyframes tick { from { transform: translate(-50%, -50%) scale(0.3); opacity: 0; } }
+
+/* the words */
+.road-stagename { font-family: var(--serif); font-size: clamp(28px, 2.6vw, 34px); line-height: 1.08; letter-spacing: -0.01em; }
+.road-line { margin-top: 8px; font-family: var(--serif); font-style: italic; font-size: 16.5px; color: var(--mid); }
+.road-sum { display: flex; flex-direction: column; gap: 6px; padding-bottom: 4px; font-size: 14px; color: var(--mid); }
+.road-sum b { font-family: var(--mono); font-weight: 400; font-size: var(--t-label); letter-spacing: 0.16em; text-transform: uppercase; color: var(--dim); }
+.road-sum.live b { color: var(--gilt); }
+.road-name .h3 { margin-top: 8px; }
+.road-row.plan .road-name .idx { color: var(--dim); }
+.road-text { max-width: 620px; }
+.road-text p { color: var(--mid); line-height: 1.6; }
+.road-row.live .road-text p:first-child { color: var(--ink); opacity: 0.86; }
+.road-builds { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line); display: flex; gap: 14px; align-items: baseline; }
+.road-builds b { flex: none; font-family: var(--mono); font-weight: 400; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--gilt); }
+.road-builds span { font-family: var(--serif); font-style: italic; font-size: 16px; color: var(--ink); }
+.road-foot { margin-top: 30px; padding-left: calc(var(--rx) + 46px); font-size: 13px; color: var(--dim); }
+#roadmap { scroll-margin-top: 0; }
+
+@media (max-width: 960px) {
+  .road { --rx: 11px; }
+  .road-meter { grid-template-columns: auto minmax(0, 1fr); gap: 18px 24px; }
+  .road-next { grid-column: 1 / -1; display: flex; gap: 12px; align-items: baseline; text-align: left; }
+  .road-row { grid-template-columns: 22px minmax(0, 1fr); column-gap: 20px; --ny: 33px; }
+  .road-row.is-stage { --ny: 53px; }
+  .road-when { grid-column: 2; grid-row: 1; padding-top: 24px; display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; justify-items: start; text-align: left; border-top: 1px solid var(--line); }
+  .road-row.is-stage .road-when { padding-top: 46px; border-top: 0; }
+  .road-day, .road-row.next .road-day, .road-row.plan .road-day { font-size: 15px; font-family: var(--mono); letter-spacing: 0.02em; }
+  .road-body { grid-column: 2; grid-row: 2; grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 10px 0 26px; border-top: 0; }
+  .road-row.is-stage .road-body { padding: 8px 0 18px; align-items: start; }
+  .road-sum { flex-direction: row; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
+  .road-name .h3 { margin-top: 4px; }
+  .road-foot { padding-left: 42px; }
+}
+@media (max-width: 520px) {
+  .road-meter { grid-template-columns: 1fr; }
+  .road-count b { font-size: 44px; }
+}
+@media (prefers-reduced-motion: reduce) { .road-node.next i, .road-ticks i.next { animation: none; opacity: 0.6; } }
