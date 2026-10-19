@@ -541,7 +541,8 @@ export class Plans {
 
   /** The months of a stopped plan that are locked and that nobody has started: the agent can decline each, which gives it all back. */
   notStarted(planId: string): number[] {
-    return this.store.months(planId).map((m) => this.job(m.job_id)).filter((j): j is DeskJob => !!j && j.state === STATE.locked).map((j) => j.id);
+    // a month linked a moment ago may not be read from the desk yet: it was locked, and nobody can have started it
+    return this.store.months(planId).filter((m) => { const j = this.job(m.job_id); return !j || j.state === STATE.locked; }).map((m) => m.job_id);
   }
 
   /**
