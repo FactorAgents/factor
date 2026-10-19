@@ -3,9 +3,11 @@
 // the plan's agent draws on next month from the pool when its record allows it. Everything else (starting a month
 // with half, delivering, accepting) happens on that month's own job page, as with any job.
 import Link from "next/link";
+import { useState } from "react";
 import { canDrawOn, fromWei, KIND, Refusal, send } from "@/lib/desk";
 import { lockMonth, MONTH_S, stopPlan } from "@/lib/plans";
 import type { Plan } from "@/lib/types";
+import { dayTime } from "@/lib/format";
 import { engineNow, Go, SignedInAs, StatusLine, useSend, useWallet } from "./Wallet";
 
 export default function PlanActions({ plan: p, desk, burnPot, burnWei, explorer, enabled }: { plan: Plan; desk: string | null; burnPot: string | null; burnWei: string; explorer: string; enabled: boolean }) {
@@ -18,11 +20,14 @@ export default function PlanActions({ plan: p, desk, burnPot, burnWei, explorer,
   const isAgent = !!address && address === p.agent.address.toLowerCase();
   const next = p.next, early = p.drawEarly;
   const open = p.items.find((m) => m.state === "locked" || m.state === "advanced");
+  // the month being locked: its box stays with the answer once the page moves on to the month after it
+  const [locking, setLocking] = useState<number | null>(null);
 
   const lockNext = () => lock.run(async (on) => {
     const w = wallet();
     if (!w || !address || !desk) throw new Refusal("Connect the customer's wallet first.");
     if (!next?.open) throw new Refusal("The next month cannot be locked yet.");
+    setLocking(next.month);
     // due at the end of its month, or 30 days after the lock when that is sooner: the desk's longest due time
     const at = await engineNow();
     const ends = Math.floor(Date.parse(p.startAt!) / 1000) + next.month * MONTH_S;
@@ -56,10 +61,16 @@ export default function PlanActions({ plan: p, desk, burnPot, burnWei, explorer,
   return (
     <div className="acts">
       <span className="label">{isCustomer ? "Your plan" : isAgent ? "Your monthly client" : "The plan"}</span>
+      {isCustomer && !next && locking !== null && lock.status.at !== "idle" ? (
+        <div className="act">
+          <div className="h3">Month {locking} of {p.months}</div>
+          <StatusLine status={lock.status} explorer={explorer} />
+        </div>
+      ) : null}
       {isCustomer && next ? (
         <div className="act">
           <div className="h3">Month {next.month} of {p.months}</div>
-          <p className="small">{next.open ? `Lock ${fromWei(price)} ETH for ${p.firm ? p.firm.name : p.agent.name}${burn > 0n ? `, and ${fromWei(burn)} ETH that buys and burns $FACTOR` : ""}. Due ${next.dueAt?.slice(0, 16).replace("T", " ")} UTC.` : `It can be locked once ${next.why?.replace(/ is not delivered yet$/, " is delivered") ?? "it opens"}${next.from ? `, or from ${next.from.slice(0, 16).replace("T", " ")} UTC` : ""}.`} Without it, the plan lapses at {next.lapsesAt.slice(0, 16).replace("T", " ")} UTC.</p>
+          <p className="small">{next.open ? `Lock ${fromWei(price)} ETH for ${p.firm ? p.firm.name : p.agent.name}${burn > 0n ? `, and ${fromWei(burn)} ETH that buys and burns $FACTOR` : ""}. Due ${next.dueAt ? dayTime(next.dueAt) : "a month after it is locked"}.` : `It can be locked once ${next.why?.replace(/ is not delivered yet$/, " is delivered") ?? "it opens"}${next.from ? `, or from ${dayTime(next.from)}` : ""}.`} Without it, the plan lapses on {dayTime(next.lapsesAt)}.</p>
           <div className="cta"><Go label={`Lock month ${next.month}`} busy={lock.busy || !next.open} onGo={() => void lockNext()} off={!desk ? "Nothing is live yet" : !enabled ? "Monthly plans are off for now" : null} /></div>
           <StatusLine status={lock.status} explorer={explorer} />
         </div>
