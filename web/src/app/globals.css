@@ -764,7 +764,14 @@ button.toggle { width: 100%; text-align: left; background: transparent; color: i
 .road-builds { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line); display: flex; gap: 14px; align-items: baseline; }
 .road-builds b { flex: none; font-family: var(--mono); font-weight: 400; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--gilt); }
 .road-builds span { font-family: var(--serif); font-style: italic; font-size: 16px; color: var(--ink); }
-.road-foot { margin-top: 30px; padding-left: calc(var(--rx) + 46px); font-size: 13px; color: var(--dim); }
+/* the stage still being planned: an open diamond, and the line running on below it until it fades */
+.road-node.open { width: 22px; height: 22px; border-radius: 0; }
+.road-node.open svg { width: 22px; height: 22px; overflow: visible; }
+.road-node.open path { fill: var(--bg); stroke: var(--mid); stroke-width: 1.1; stroke-dasharray: 3 3; stroke-dashoffset: 1.5; }
+.road-row.is-more { padding-bottom: 72px; }
+.road-row.is-more::after { -webkit-mask: linear-gradient(to bottom, #000 0, #000 30%, transparent); mask: linear-gradient(to bottom, #000 0, #000 30%, transparent); }
+.road-row.is-more .road-body { padding-bottom: 0; align-items: start; }
+.road-more { padding-top: 6px; max-width: 520px; color: var(--mid); line-height: 1.6; }
 #roadmap { scroll-margin-top: 0; }
 
 @media (max-width: 960px) {
@@ -780,7 +787,8 @@ button.toggle { width: 100%; text-align: left; background: transparent; color: i
   .road-row.is-stage .road-body { padding: 8px 0 18px; align-items: start; }
   .road-sum { flex-direction: row; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
   .road-name .h3 { margin-top: 4px; }
-  .road-foot { padding-left: 42px; }
+  .road-row.is-more { padding-bottom: 56px; }
+  .road-more { padding-top: 2px; }
 }
 @media (max-width: 520px) {
   .road-meter { grid-template-columns: 1fr; }

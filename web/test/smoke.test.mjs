@@ -455,7 +455,12 @@ test("the roadmap: on the home page, every phase in order, what is live checked 
   assert.match(t, /Next Phase 07 Factor Score/);
   assert.equal((t.match(/Planned Phase/g) ?? []).length, 3);
   for (const w of ["October", "November", "December"]) assert.ok(!t.slice(t.indexOf("Stage 2")).includes(w), `no planned date: ${w}`);
-  assert.match(t, /More phases will be added/);
+  // the line runs on past the last phase into a stage still being planned, with no phase number and no date
+  const more = t.slice(t.indexOf("Phase 10 Factor everywhere"));
+  assert.match(more, /Stage 4 Coming What comes next/);
+  assert.match(more, /The next stage is being planned\. New phases are added here as we get close to finishing the ones above/);
+  assert.ok(!/Phase 11/.test(t), "no phase number for what comes next");
+  assert.equal((t.match(/checked off the day it goes live/g) ?? []).length, 1);
   assert.equal((t.match(/Builds on/g) ?? []).length, 4);
   // the footer leads to it on every page, as the header does
   assert.match(html, /<footer[\s\S]*href="\/roadmap"/);

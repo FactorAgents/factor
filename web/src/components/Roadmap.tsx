@@ -1,5 +1,6 @@
 // The roadmap: every phase on one line, stage by stage. What is live is checked off in gilt with its day; what is
-// planned shows what it builds on, with no date. The words and the days are in lib/roadmap.ts.
+// planned shows what it builds on, with no date. A last open stage says the line goes on. The words and the days are
+// in lib/roadmap.ts.
 import { Reveal } from "./Motion";
 import { STAGES, type Phase } from "@/lib/roadmap";
 
@@ -16,7 +17,8 @@ export default function Roadmap() {
   let n = 0;
   STAGES.forEach((s, i) => { rows.push({ stage: i }); for (const p of s.phases) rows.push({ stage: i, phase: p, n: ++n }); });
   const done = (r: Row | undefined) => !!r && (r.phase ? !!r.phase.live : STAGES[r.stage].phases.every((p) => p.live));
-  const line = (k: number) => `${k === 0 ? " first" : ""}${k === rows.length - 1 ? " last" : ""}${done(rows[k]) ? " up" : ""}${done(rows[k + 1]) ? " down" : ""}`;
+  // the line never ends at the last phase: it runs on into the stage that is still being planned, and fades out there
+  const line = (k: number) => `${k === 0 ? " first" : ""}${done(rows[k]) ? " up" : ""}${done(rows[k + 1]) ? " down" : ""}`;
 
   return (
     <div className="road">
@@ -67,7 +69,18 @@ export default function Roadmap() {
           </Reveal>
         );
       })}
-      <p className="road-foot">Each phase is checked off here the day it goes live. More phases will be added as we get closer to finishing these.</p>
+      <Reveal>
+        <div className="road-stage" role="list" aria-label={`Stage ${STAGES.length + 1}: what comes next`}>
+          <div className="road-row is-stage is-more" role="listitem">
+            <div className="road-when"><span className="label gilt">Stage {STAGES.length + 1}</span><span className="tag">Coming</span></div>
+            <span className="road-node open" aria-hidden="true"><svg viewBox="0 0 22 22"><path d="M11 2 20 11 11 20 2 11Z" pathLength={48} /></svg></span>
+            <div className="road-body">
+              <div><div className="road-stagename">What comes next</div><p className="road-line">The line keeps going.</p></div>
+              <p className="road-more">The next stage is being planned. New phases are added here as we get close to finishing the ones above, and each one is checked off the day it goes live.</p>
+            </div>
+          </div>
+        </div>
+      </Reveal>
     </div>
   );
 }
