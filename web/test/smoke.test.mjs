@@ -10,7 +10,7 @@ import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 
 const PORT = Number(process.env.SMOKE_PORT) || 3611, BASE = `http://127.0.0.1:${PORT}`, BARE = `http://127.0.0.1:${PORT + 1}`;
-const PAGES = ["/", "/ledger", "/ledger?show=burned", "/agents", "/agents/lumen-07", "/jobs/0412", "/jobs/0406", "/jobs/0404", "/jobs/0403", "/hire", "/hire?agent=page-smith", "/work", "/protocol", "/token", "/burn", "/docs", "/log", "/security", "/pay", "/firms/night-desk", "/hire?firm=night-desk"];
+const PAGES = ["/", "/ledger", "/ledger?show=burned", "/agents", "/agents/lumen-07", "/jobs/0412", "/jobs/0406", "/jobs/0404", "/jobs/0403", "/hire", "/hire?agent=page-smith", "/work", "/protocol", "/token", "/burn", "/docs", "/log", "/security", "/pay", "/firms/night-desk", "/hire?firm=night-desk", "/plans/0x5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a"];
 const NAV = ["/ledger", "/agents", "/hire", "/work", "/protocol", "/token", "/burn", "/docs"];
 // Words the copy does not use: no long dash, no promise of gain. A list kept beside this file and out of the repo
 // (forbidden.local.json, pairs of pattern and flags) adds to them on the machine it is on.
@@ -359,7 +359,7 @@ test("the docs say how an agent hires agents for part of a job, what the chain h
 });
 
 test("an address that does not exist says so", async () => {
-  for (const path of ["/nope", "/agents/nobody", "/jobs/9999", "/firms/no-such-firm", "/firms/Not_A_Slug"]) assert.equal((await get(path)).status, 404, path);
+  for (const path of ["/nope", "/agents/nobody", "/jobs/9999", "/firms/no-such-firm", "/firms/Not_A_Slug", `/plans/0x${"00".repeat(32)}`, "/plans/not-a-plan"]) assert.equal((await get(path)).status, 404, path);
 });
 
 test("agent firms: listed with the agents, a firm's page with its members and each one's part, its record and badge, and the docs", async () => {
@@ -408,4 +408,34 @@ test("each page is small enough for a phone, and nothing loads from another site
     assert.doesNotMatch(html, /(src|href)="https?:\/\/(?!ponsfamily\.com|github\.com|x\.com|robinhoodchain\.blockscout\.com\/(tx|address)\/0x)/, `${path} loads from another site`);
     assert.match(headers.get("content-security-policy") ?? "", /default-src 'self'/, `${path} has no content policy`);
   }
+});
+
+test("monthly clients: a plan's page with its months, an agent's monthly income, the door, the docs and the words", async () => {
+  const page = await get("/plans/0x5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a");
+  const t = text(page.html);
+  assert.match(t, /A monthly plan Release notes every month/);
+  assert.match(t, /0\.0250 ETH a month · 3 months · Running/);
+  // the months as a row: month 1 locked and started from the pool, the next two not locked yet
+  assert.match(t, /Month 1 job 0415 0\.0250 ETH Advanced From the pool 0\.0125 ETH To the burn 0\.00025 ETH/);
+  assert.match(t, /Months delivered 0 of 3 Paid up front nothing yet Next month early nothing yet Paid on delivery nothing yet/);
+  assert.match(t, /Month 2 0\.0250 ETH Not locked yet Month 1 is not delivered yet\. Or from/);
+  assert.match(t, /Month 3 0\.0250 ETH Not locked yet Locked when it comes\./);
+  assert.match(t, /Months delivered 0 of 3/);
+  assert.match(t, /What the customer signed/);
+  assert.match(page.html, /href="\/jobs\/0415"/);
+  // the agent's page: its monthly clients, only because it has a plan
+  const a = text((await get("/agents/quill-02")).html);
+  assert.match(a, /Monthly clients Recurring income, on the record ?\./);
+  assert.match(a, /A month, from plans running now 0\.0250 ETH a month Plans running 1 Monthly clients 1 Months delivered 0 settled 0/);
+  assert.doesNotMatch(text((await get("/agents/lumen-07")).html), /Monthly clients/);
+  // the door passes the plans' reads, and their writes go to the engine only
+  assert.equal((await fetch(`${BASE}/api/v1/plans/0x${"5a".repeat(32)}`)).status, 200);
+  assert.equal((await fetch(`${BASE}/api/v1/plans?agent=quill-02`)).status, 200);
+  for (const w of ["plans/create", "plans/month", "plans/stop"]) assert.equal((await fetch(`${BASE}/api/v1/${w}`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).status, 503, w);
+  // the docs say how plans work and why month by month
+  const d = text((await get("/docs")).html);
+  assert.match(d, /11 Monthly clients/);
+  assert.match(d, /subscribe/);
+  assert.match(d, /Why month by month\./);
+  assert.match(d, /Next month early is the desk.s own pool advance/);
 });

@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { briefMessage, lockedJob, send, titleMessage, toWei, fromWei, Refusal } from "@/lib/desk";
 import { signText } from "@/lib/wallet";
 import { firmHireMessage, signAndSend } from "@/lib/firms";
+import { lockMonth, MONTH_S, PLAN_TITLE_MOST, signPlan } from "@/lib/plans";
 import { STATE_TONE, STATE_WORD, eth } from "@/lib/format";
 import type { Agent, Job, Page, Params } from "@/lib/types";
 import { engineNow, Go, saveSigned, StatusLine, useSend, useWallet } from "./Wallet";
@@ -18,9 +19,15 @@ const BRIEF_MOST = 12_000;
 const DUE: [string, number][] = [["2 hours", 2 * 3600], ["6 hours", 6 * 3600], ["24 hours", 24 * 3600], ["3 days", 3 * 86400], ["7 days", 7 * 86400], ["29 days", 29 * 86400]];
 const TITLE = /^[^<>\n\r]{3,80}$/;
 
-export default function HireForm({ agents, firms = [], pickedFirm = "", picked, desk, explorer, params, paused = false }: { agents: Pick_[]; firms?: FirmPick[]; pickedFirm?: string; picked: string; desk: string | null; explorer: string; params: Params; paused?: boolean }) {
-  const { address, wallet } = useWallet();
+const MONTHS = [2, 3, 6, 12, 24];
+
+export default function HireForm({ agents, firms = [], pickedFirm = "", picked, desk, explorer, params, paused = false, monthly = null, burnPot = null, pickedMonthly = false }: { agents: Pick_[]; firms?: FirmPick[]; pickedFirm?: string; picked: string; desk: string | null; explorer: string; params: Params; paused?: boolean; /** monthly plans, while they are on: the longest plan */ monthly?: { mostMonths: number } | null; burnPot?: string | null; pickedMonthly?: boolean }) {
+  const { address, wallet, kind } = useWallet();
   const { status, run, busy } = useSend();
+  // one job, or a monthly plan: every month an ordinary job, locked month by month
+  const [mode, setMode] = useState<"once" | "monthly">(pickedMonthly && monthly ? "monthly" : "once");
+  const [months, setMonths] = useState(3);
+  const plan = mode === "monthly" && !!monthly;
   // the choice is an agent's address, or "firm:<slug>": a firm is hired through its lead
   const [choice, setChoice] = useState(pickedFirm ? `firm:${pickedFirm}` : picked);
   const firm = choice.startsWith("firm:") ? firms.find((f) => `firm:${f.slug}` === choice) ?? null : null;
@@ -53,6 +60,17 @@ export default function HireForm({ agents, firms = [], pickedFirm = "", picked, 
     // a brief Factor wrote leaves [what the customer has to add] in brackets: it is not locked until that is in
     const left = details.match(/\[[^\]\n]{2,80}\]/g);
     if (left) throw new Refusal(`Fill in ${left.slice(0, 3).join(", ")} in the brief first.`);
+    if (plan) {
+      // a monthly plan: signed once (it costs nothing), then month 1 locked at once, due a month after its lock
+      if (!text) throw new Refusal("Say what the agent does each month in one line: it is the plan's title.");
+      if (text.length > PLAN_TITLE_MOST) throw new Refusal(`A plan's title is ${PLAN_TITLE_MOST} characters at most: each month is called "Month 2 of ${months}: ..."`);
+      on("signing");
+      const made = await signPlan(p, { customer: address, agent: who.address, ...(firm ? { firm: firm.slug } : {}), price: wei.toString(), months, early, title: text, brief: details, at: await engineNow() });
+      const r = await lockMonth(p, { passkey: kind === "passkey", desk, burnPot, from: address, plan: made.plan, agent: who.address, dueAt: (await engineNow()) + MONTH_S - 300, early, price: wei, burn: BigInt(made.burnWei || "0"), on });
+      setBrief("");
+      const name = firm ? firm.name : who.name;
+      return { note: r.linked ? `Month 1 of ${months} is locked for ${name}${r.job ? ` as job ${String(r.job).padStart(4, "0")}` : ""}.${r.burned ? " Its 1% went to the burn." : ""} Lock each next month on the plan's page.` : `Month 1 is locked for ${name}. ${r.note ?? ""}`, hash: r.lockTx, href: `/plans/${made.plan}`, hrefText: "Open the plan" };
+    }
     const dueAt = (await engineNow()) + due;
     const { hash, receipt } = await send(p, desk, address, "lock", [who.address, BigInt(dueAt), early], { value: wei, on });
     const id = lockedJob(receipt, desk);
@@ -113,7 +131,13 @@ export default function HireForm({ agents, firms = [], pickedFirm = "", picked, 
 
   return (
     <div className="form">
-      <MatchBox known={agents.filter((a) => a.named).map((a) => a.name)} onUse={use} disabled={busy} />
+      {monthly ? (
+        <div className="modes" role="group" aria-label="One job or a monthly plan">
+          <button type="button" aria-pressed={!plan} onClick={() => setMode("once")} disabled={busy}>One job</button>
+          <button type="button" aria-pressed={plan} onClick={() => setMode("monthly")} disabled={busy}>Monthly</button>
+        </div>
+      ) : null}
+      {plan ? null : <MatchBox known={agents.filter((a) => a.named).map((a) => a.name)} onUse={use} disabled={busy} />}
       <label className="field">
         <span className="label">{firms.length ? "The agent, or a firm" : "The agent"}</span>
         <select value={choice} onChange={(e) => { setChoice(e.target.value); if (firms.find((f) => `firm:${f.slug}` === e.target.value)?.house) setEarly(true); }} disabled={busy || agents.length === 0}>
@@ -124,9 +148,9 @@ export default function HireForm({ agents, firms = [], pickedFirm = "", picked, 
         <div className="hint">{firm ? `${firm.does}. Its lead, ${firm.leadName}, takes the job and splits it${firm.members.length ? ` among ${firm.members.join(", ")}` : ""}.${firm.house ? " Factor's own firm: it pays its team out of half of the job drawn early." : ""}` : who ? `${who.does ? `${who.does}. ` : ""}${who.house ? "One of Factor's own agents. " : ""}Score ${who.score}, ${who.settled} jobs settled.` : "An agent appears here once it has registered on the desk."}</div>
       </label>
       <label className="field">
-        <span className="label">What you want done</span>
-        <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={80} placeholder="Summarise this 40-page service agreement" disabled={busy} />
-        <div className="hint">One line, shown wherever the job shows. You sign it after the payment is locked; signing costs nothing.</div>
+        <span className="label">{plan ? "What it does each month" : "What you want done"}</span>
+        <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={plan ? PLAN_TITLE_MOST : 80} placeholder={plan ? "A weekly market note" : "Summarise this 40-page service agreement"} disabled={busy} />
+        <div className="hint">{plan ? `One line, ${PLAN_TITLE_MOST} characters at most: each month's job is called "Month 2 of ${months}" with it. You sign it with the plan; signing costs nothing.` : "One line, shown wherever the job shows. You sign it after the payment is locked; signing costs nothing."}</div>
       </label>
       <label className="field">
         <span className="label">The brief{who?.service ? "" : " (if it needs one)"}</span>
@@ -135,24 +159,34 @@ export default function HireForm({ agents, firms = [], pickedFirm = "", picked, 
       </label>
       <div className="pair">
         <label className="field">
-          <span className="label">Price in ETH</span>
+          <span className="label">{plan ? "Price a month, in ETH" : "Price in ETH"}</span>
           <input value={price} onChange={(e) => setPrice(e.target.value)} inputMode="decimal" disabled={busy} aria-invalid={wei === null || tooSmall || underFloor} />
           <div className="hint">{wei === null ? "An amount like 0.04." : tooSmall ? `The smallest job is ${params.minJobEth} ETH.` : firm?.fromEth ? (underFloor ? `${firm.name} takes a job for the whole team from ${firm.fromEth} ETH. Under that its lead does it alone.` : `${firm.name} takes a job for the whole team from ${firm.fromEth} ETH.`) : underFloor && who?.service ? `${who.name} takes a job from ${who.service.fromEth} ETH. Under that it declines, and you have it all back.` : who?.service ? `${who.name} takes a job from ${who.service.fromEth} ETH.` : `The agent pays a ${params.jobFeePct}% fee out of it when the job settles.`}</div>
         </label>
-        <label className="field">
-          <span className="label">Due in</span>
-          <select value={due} onChange={(e) => setDue(Number(e.target.value))} disabled={busy}>
-            {DUE.map(([name, s]) => <option key={s} value={s}>{name}</option>)}
-          </select>
-          <div className="hint">The agent has {params.graceHours} hours of grace after it.</div>
-        </label>
+        {plan ? (
+          <label className="field">
+            <span className="label">Months</span>
+            <select value={months} onChange={(e) => setMonths(Number(e.target.value))} disabled={busy}>
+              {MONTHS.filter((m) => m <= (monthly?.mostMonths ?? 12)).map((m) => <option key={m} value={m}>{m} months</option>)}
+            </select>
+            <div className="hint">{wei ? `${fromWei(wei * BigInt(months))} ETH over ${months} months, locked one month at a time.` : "Locked one month at a time."} Each month is due a month after it is locked.</div>
+          </label>
+        ) : (
+          <label className="field">
+            <span className="label">Due in</span>
+            <select value={due} onChange={(e) => setDue(Number(e.target.value))} disabled={busy}>
+              {DUE.map(([name, s]) => <option key={s} value={s}>{name}</option>)}
+            </select>
+            <div className="hint">The agent has {params.graceHours} hours of grace after it.</div>
+          </label>
+        )}
       </div>
       <button type="button" className={`toggle${early ? "" : " off"}`} role="switch" aria-checked={early} onClick={() => setEarly((v) => !v)} disabled={busy}>
         <i />
-        <div><b>Let the agent have half early</b><span>Up to {half} ETH goes to the agent as soon as it asks. If it does not deliver, that part is not refunded. Leave this off and the agent can only be advanced by the pool, which never touches what you locked.</span></div>
+        <div><b>{plan ? "Let the agent start each month with half" : "Let the agent have half early"}</b><span>{plan ? `Up to ${half} ETH of each month goes to the agent as soon as that month is locked. If it does not deliver a month, that part is not refunded. Leave this off and the agent can only be advanced by the pool, which never touches what you locked.` : `Up to ${half} ETH goes to the agent as soon as it asks. If it does not deliver, that part is not refunded. Leave this off and the agent can only be advanced by the pool, which never touches what you locked.`}</span></div>
       </button>
       <div className="cta" style={{ marginTop: 4 }}>
-        <Go label={`Lock ${wei ? fromWei(wei) : "0"} ETH${firm ? ` for ${firm.name}` : ""}`} busy={busy || wei === null || tooSmall || (underFloor && !firm) || !who} onGo={lock} off={!desk ? "Nothing is live yet" : paused ? "New jobs are paused" : null} />
+        <Go label={plan ? `Sign the plan and lock month 1: ${wei ? fromWei(wei) : "0"} ETH` : `Lock ${wei ? fromWei(wei) : "0"} ETH${firm ? ` for ${firm.name}` : ""}`} busy={busy || wei === null || tooSmall || (underFloor && !firm) || !who} onGo={lock} off={!desk ? "Nothing is live yet" : paused ? "New jobs are paused" : null} />
       </div>
       <StatusLine status={status} explorer={explorer} />
     </div>

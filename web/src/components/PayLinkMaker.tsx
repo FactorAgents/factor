@@ -15,7 +15,7 @@ const DUE: [string, number][] = [["2 hours", 2], ["6 hours", 6], ["24 hours", 24
 const LIFE: [string, number][] = [["7 days", 7], ["30 days", 30], ["90 days", 90], ["a year", 365]];
 const TITLE = /^[^<>\n\r]{3,80}$/;
 
-export default function PayLinkMaker({ desk, explorer, burnBps, minJobEth }: { desk: string | null; explorer: string; burnBps: number; minJobEth: number }) {
+export default function PayLinkMaker({ desk, explorer, burnBps, minJobEth, mostMonths = 0 }: { desk: string | null; explorer: string; burnBps: number; minJobEth: number; /** monthly plans, while they are on: the longest a subscribe link sells */ mostMonths?: number }) {
   const { address } = useWallet();
   const [got, setGot] = useState<{ for: string; page: AgentPage | false } | null>(null);
   const [tick, setTick] = useState(0);
@@ -45,7 +45,7 @@ export default function PayLinkMaker({ desk, explorer, burnBps, minJobEth }: { d
   const again = () => { setTick((n) => n + 1); window.setTimeout(() => setTick((n) => n + 1), 3000); window.setTimeout(() => setTick((n) => n + 1), 9000); };
   if (page === false || !page.agent.named) return <SignUp desk={desk} explorer={explorer} registered={page !== false} onDone={again} />;
   const led = (page.firms ?? []).find((f) => f.role === "lead" && !f.house) ?? null;
-  return <MakeLink agent={page.agent.name} explorer={explorer} burnBps={burnBps} minJobEth={minJobEth} firm={led ? { slug: led.slug, name: led.name } : null} />;
+  return <MakeLink agent={page.agent.name} explorer={explorer} burnBps={burnBps} minJobEth={minJobEth} firm={led ? { slug: led.slug, name: led.name } : null} mostMonths={mostMonths} />;
 }
 
 /** Register on the desk (when the wallet has not) and take a name, with one button. */
@@ -89,7 +89,7 @@ function SignUp({ desk, explorer, registered, onDone }: { desk: string; explorer
   );
 }
 
-function MakeLink({ agent, explorer, burnBps, minJobEth, firm }: { agent: string; explorer: string; burnBps: number; minJobEth: number; firm: { slug: string; name: string } | null }) {
+function MakeLink({ agent, explorer, burnBps, minJobEth, firm, mostMonths }: { agent: string; explorer: string; burnBps: number; minJobEth: number; firm: { slug: string; name: string } | null; mostMonths: number }) {
   const { address, wallet } = useWallet();
   const { status, run, busy } = useSend();
   const [title, setTitle] = useState("");
@@ -100,6 +100,8 @@ function MakeLink({ agent, explorer, burnBps, minJobEth, firm }: { agent: string
   const [early, setEarly] = useState(false);
   // an agent that leads a firm can sell the firm's work: a job paid through the link is the firm's
   const [forFirm, setForFirm] = useState(false);
+  // a subscribe link: the buyer puts this agent on a monthly plan, each month due a month after it is locked
+  const [months, setMonths] = useState(0);
   const [made, setMade] = useState<{ token: string; link: PayLink; shown: boolean } | null>(null);
   const [copied, setCopied] = useState("");
   const wei = toWei(price);
@@ -111,11 +113,12 @@ function MakeLink({ agent, explorer, burnBps, minJobEth, firm }: { agent: string
     if (!p || !address) throw new Refusal("Connect the agent's wallet first.");
     const t = title.trim().replace(/\s+/g, " ");
     if (!TITLE.test(t) || /https?:|www\.|:\/\//i.test(t)) throw new Refusal("Say what the buyer gets in one line of 3 to 80 characters, without links.");
+    if (months && t.length > 60) throw new Refusal("A subscribe link's title is 60 characters at most: each month is called \"Month 2 of 6: ...\".");
     const b = brief.replace(/\r\n?/g, "\n").trim();
     if (b.length > LINK_BRIEF_MOST) throw new Refusal(`A link's brief is ${LINK_BRIEF_MOST.toLocaleString("en-US")} characters at most: it travels inside the link.`);
     if (wei === null || tooSmall) throw new Refusal(`Enter a price of at least ${minJobEth} ETH.`);
     const exp = (await engineNow()) + life * 86_400;
-    const link: PayLink = { v: 1, agent: address, price: wei.toString(), title: t, brief: b, due, early, exp, id: linkId(), ...(forFirm && firm ? { firm: firm.slug } : {}) };
+    const link: PayLink = { v: 1, agent: address, price: wei.toString(), title: t, brief: b, due: months ? 720 : due, early, exp, id: linkId(), ...(forFirm && firm ? { firm: firm.slug } : {}), ...(months ? { months } : {}) };
     on("signing");
     const signature = await signText(p, payLinkMessage(link), address);
     const token = encodePayLink(link, signature);
@@ -133,7 +136,7 @@ function MakeLink({ agent, explorer, burnBps, minJobEth, firm }: { agent: string
         <span className="label gilt">Your link</span>
         <div className="act">
           <div className="h3">{made.link.title}</div>
-          <p className="small">{fromWei(BigInt(made.link.price))} ETH, due {made.link.due} hours after it is paid. Anybody who opens it pays with a wallet or a passkey.</p>
+          <p className="small">{made.link.months ? `A monthly plan: ${fromWei(BigInt(made.link.price))} ETH a month for ${made.link.months} months, each month due a month after it is locked.` : `${fromWei(BigInt(made.link.price))} ETH, due ${made.link.due} hours after it is paid.`} Anybody who opens it pays with a wallet or a passkey.</p>
           <div className="cta">
             <button type="button" className="btn go" onClick={() => copy("link", url)}>{copied === "link" ? "Copied" : "Copy the link"}</button>
             <a className="btn line" href={url} target="_blank" rel="noopener noreferrer">Open the checkout</a>
@@ -143,10 +146,12 @@ function MakeLink({ agent, explorer, burnBps, minJobEth, firm }: { agent: string
             <div className="code" style={{ marginTop: 12, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{buttonSnippet(site, made.token, made.link.title)}</div>
             <p className="small" style={{ marginTop: 10 }}>A plain link that the script turns into a button. A page that runs no script still has the link. The script loads nothing else and counts nobody. <button type="button" className="linkish" onClick={() => copy("button", buttonSnippet(site, made.token, made.link.title))}>{copied === "button" ? "copied" : "copy it"}</button></p>
           </div>
-          <div style={{ marginTop: 22 }}>
-            <span className="label">For another agent&apos;s program (x402)</span>
-            <div className="code" style={{ marginTop: 12, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{`${site}/api/v1/x402/${made.token}`}</div>
-          </div>
+          {made.link.months ? null : (
+            <div style={{ marginTop: 22 }}>
+              <span className="label">For another agent&apos;s program (x402)</span>
+              <div className="code" style={{ marginTop: 12, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{`${site}/api/v1/x402/${made.token}`}</div>
+            </div>
+          )}
           <div style={{ marginTop: 22 }}>
             <span className="label">Your badge</span>
             {/* a small SVG from this site's own API: next/image would only add a step */}
@@ -168,12 +173,22 @@ function MakeLink({ agent, explorer, burnBps, minJobEth, firm }: { agent: string
           <label className="field"><span className="label">The details (if it needs them)</span><textarea value={brief} onChange={(e) => setBrief(e.target.value)} rows={3} maxLength={LINK_BRIEF_MOST} placeholder="What is included, how the buyer sends you what you work from" disabled={busy} /><div className="hint">Up to {LINK_BRIEF_MOST.toLocaleString("en-US")} characters. Anyone with the link reads it.</div></label>
           <div className="pair">
             <label className="field"><span className="label">Price in ETH</span><input value={price} onChange={(e) => setPrice(e.target.value)} inputMode="decimal" disabled={busy} aria-invalid={wei === null || tooSmall} /><div className="hint">{wei === null ? "An amount like 0.01." : tooSmall ? `The smallest job is ${minJobEth} ETH.` : `The buyer adds ${fromWei(burn)} ETH that buys and burns $FACTOR.`}</div></label>
-            <label className="field"><span className="label">Due after payment</span><select value={due} onChange={(e) => setDue(Number(e.target.value))} disabled={busy}>{DUE.map(([n, h]) => <option key={h} value={h}>{n}</option>)}</select><div className="hint">You have 12 hours of grace after it.</div></label>
+            {months ? (
+              <label className="field"><span className="label">Months</span><select value={months} onChange={(e) => setMonths(Number(e.target.value))} disabled={busy}>{[2, 3, 6, 12, 24].filter((m) => m <= mostMonths).map((m) => <option key={m} value={m}>{m} months</option>)}</select><div className="hint">Each month is due a month after the buyer locks it.</div></label>
+            ) : (
+              <label className="field"><span className="label">Due after payment</span><select value={due} onChange={(e) => setDue(Number(e.target.value))} disabled={busy}>{DUE.map(([n, h]) => <option key={h} value={h}>{n}</option>)}</select><div className="hint">You have 12 hours of grace after it.</div></label>
+            )}
           </div>
           <label className="field"><span className="label">The link works for</span><select value={life} onChange={(e) => setLife(Number(e.target.value))} disabled={busy}>{LIFE.map(([n, d]) => <option key={d} value={d}>{n}</option>)}</select><div className="hint">Any number of buyers can pay it until then. Each payment is a job of its own.</div></label>
+          {mostMonths >= 2 ? (
+            <button type="button" className={`toggle${months ? "" : " off"}`} role="switch" aria-checked={!!months} onClick={() => setMonths((m) => (m ? 0 : Math.min(3, mostMonths)))} disabled={busy}>
+              <i />
+              <div><b>A monthly plan</b><span>A subscribe link: the buyer puts you on a monthly plan at this price each month. Each month is locked as its own job before its work starts, and the buyer can stop the plan at any time.</span></div>
+            </button>
+          ) : null}
           <button type="button" className={`toggle${early ? "" : " off"}`} role="switch" aria-checked={early} onClick={() => setEarly((v) => !v)} disabled={busy}>
             <i />
-            <div><b>Start with half</b><span>Ask the buyer to let you draw up to half of the payment before you deliver. The checkout says so plainly: if you do not deliver, the buyer does not get that part back, and your record is marked for good.</span></div>
+            <div><b>{months ? "Start each month with half" : "Start with half"}</b><span>Ask the buyer to let you draw up to half of the payment before you deliver. The checkout says so plainly: if you do not deliver, the buyer does not get that part back, and your record is marked for good.</span></div>
           </button>
           {firm ? (
             <button type="button" className={`toggle${forFirm ? "" : " off"}`} role="switch" aria-checked={forFirm} onClick={() => setForFirm((v) => !v)} disabled={busy}>

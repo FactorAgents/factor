@@ -45,6 +45,8 @@ export interface Job {
   parent?: { n: number; id: string; depth: number };
   /** hired through a firm (part: false), or a sub-job under such a job (part: true) */
   firm?: { slug: string; name: string; house: boolean; part: boolean };
+  /** a month of a monthly plan: which plan, and which month of how many */
+  plan?: { id: string; month: number; months: number };
 }
 
 export interface ScorePart { name: string; value: string; points: number; max: number }
@@ -169,6 +171,8 @@ export interface FactorState {
   subjobs?: { enabled: boolean; maxDepth: number; perParent: number };
   /** agent firms: whether one can be formed and hired, how many there are, and the first of them */
   firms?: { enabled: boolean; count: number; mostMembers: number; items: Firm[] };
+  /** monthly clients: whether a customer can put an agent or a firm on a plan, the longest plan, and the plans running */
+  plans?: { enabled: boolean; mostMonths: number; active: number; clients: number; monthlyEth: number };
 }
 
 /** One of a firm's agents and its part of the firm's work: the lead's is the firm's jobs, a member's the sub-jobs it took under them. */
@@ -199,7 +203,7 @@ export interface FirmRecord {
   block: number;
 }
 /** A firm's page: the firm, its record, its jobs (the newest with the chain of work under each), the lead's links for it. */
-export interface FirmPage { enabled: boolean; firm: Firm; record: FirmRecord; jobs: (Job & { tree?: JobTree | null })[]; links: { id: string; title: string; priceEth: string; due: number; early: boolean; exp: string; url: string; firm?: string }[] }
+export interface FirmPage { enabled: boolean; firm: Firm; record: FirmRecord; jobs: (Job & { tree?: JobTree | null })[]; links: { id: string; title: string; priceEth: string; due: number; early: boolean; exp: string; url: string; firm?: string }[]; /** its monthly clients, when it has any plan */ plans?: PlansSummary }
 
 /** One of Factor's own agents: what it does and what it takes a job for. */
 export interface RosterAgent { name: string; does: string; needs: string; delivers: string; fromEth: number; asksAModel: boolean; /** the Desk's opening file on it */ file?: DeskFile }
@@ -213,7 +217,7 @@ export interface Desk { on: boolean; writing: boolean; letter: DeskNote | null; 
 export interface Hiring { hiredBy: Counterpart[]; hires: Counterpart[] }
 export interface Counterpart { address: string; name: string; named: boolean; jobs: number }
 /** One agent with what the page about it shows. */
-export interface AgentPage { agent: Agent; jobs: Job[]; events: LedgerEvent[]; hiring?: Hiring; /** the firms it leads, belongs to or is invited to */ firms?: { slug: string; name: string; house: boolean; role: "lead" | "member" | "invited" }[] }
+export interface AgentPage { agent: Agent; jobs: Job[]; events: LedgerEvent[]; hiring?: Hiring; /** the firms it leads, belongs to or is invited to */ firms?: { slug: string; name: string; house: boolean; role: "lead" | "member" | "invited" }[]; /** its monthly clients, when it has any plan */ plans?: PlansSummary }
 
 /** One job in a chain of work: the customer's job at depth 0, the jobs its agent hired for at 1, and so on. */
 export interface TreeNode {
@@ -248,3 +252,41 @@ export interface HireRoom { open: boolean; why?: string; freeEth: number; freeWe
  */
 export interface JobPage { job: Job; agent: Agent | null; events: LedgerEvent[]; brief?: string | null; /** "agent": the brief came with the agent's Pay with Factor link, signed by the agent */ briefBy?: "agent"; work?: { kind: "text" | "html"; text: string; at: string } | null; note?: string; /** the chain of work it is part of */ tree?: JobTree; /** what its agent can still hire for it */ hiring?: HireRoom; /** how Factor's own firm went about it */ firmNote?: string }
 export interface Page<T> { total: number; more: boolean; items: T[] }
+
+// ---------- monthly clients (engine/src/plans.ts) ----------
+
+export type PlanStatus = "waiting" | "active" | "stopped" | "ended" | "lapsed" | "done";
+/** One month of a plan: a job on the desk. */
+export interface PlanMonth { month: number; job: number; id: string; state: JobState; dueAt: string; beginsAt: string; late: boolean; upFrontEth: number; fromPoolEth: number; nextEarlyEth: number; paidEth?: number; burnEth: number; lockTx: string }
+export interface Plan {
+  id: string;
+  status: PlanStatus;
+  note?: string;
+  customer: string;
+  agent: { address: string; name: string; named: boolean };
+  firm?: { slug: string; name: string; house: boolean };
+  title: string;
+  brief: string;
+  priceEth: number;
+  priceWei: string;
+  months: number;
+  early: boolean;
+  via: string;
+  signedAt: string;
+  startAt: string | null;
+  stoppedAt: string | null;
+  locked: number;
+  delivered: number;
+  settled: number;
+  paidEth: number;
+  lockedEth: number;
+  items: PlanMonth[];
+  /** the month the customer locks next: whether now, the due time it gets, and when the plan lapses without it */
+  next: { month: number; open: boolean; why?: string; from?: string; dueAt?: string; lapsesAt: string } | null;
+  /** what the agent can draw on its newest open month from the pool (next month early, by its record) and up front */
+  drawEarly: { month: number; job: number; ahead: boolean; open: boolean; why?: string; fromPoolEth: number; fromPoolWei: string; upFrontEth: number } | null;
+  signed: { message: string; signature: string; by: string };
+}
+export interface PlanPage { enabled: boolean; plan: Plan; jobs: Job[]; burnWei: string }
+/** An agent's or a firm's monthly clients: plans running, their clients, the price a month added up, months delivered. */
+export interface PlansSummary { active: number; clients: number; monthlyEth: number; monthlyWei: string; monthsDelivered: number; monthsSettled: number; plans: number; items: { id: string; status: PlanStatus; customer: string; title: string; priceEth: number; months: number; locked: number; delivered: number; firm?: string }[] }

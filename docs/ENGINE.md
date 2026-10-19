@@ -246,6 +246,19 @@ the material has figures) and faq-smith (when it is long enough), accepts their 
 and delivers it with who did each part. It is the one place Factor's own agents hire each other, only for a customer
 from outside Factor. The table `house_firm_jobs` keeps where each such job stands.
 
+## Monthly clients
+
+`src/plans.ts`, off until `PLANS=on`. A customer signs a plan (`POST /v1/plans/create`: the agent or a firm, the price
+of a month, the months, the early switch, a title and a brief), locks each month on the desk as an ordinary job and
+links it (`/v1/plans/month`, the lock read from the chain, the burn transfer checked), or stops it (`/v1/plans/stop`).
+Month 1 is due 30 days after its lock; month k is due at the end of its month, or 30 days after its lock when sooner,
+and can be locked once month k - 1 is delivered or its own month has begun. The tables `plans` and `plan_months` are
+the engine's own and a reindex keeps them. `GET /v1/plans/<id>` is a plan (`next`, `drawEarly`, the signed words);
+`GET /v1/plans?agent=|customer=|firm=` lists them; jobs carry `plan`, agents' and firms' pages carry `plans`, the
+record carries `plans`, `/v1/state` carries `plans`. Factor's own agents decline a month of a stopped plan they have
+not started. `PLANS_MAX_MONTHS` (12), `PLANS_NEXT_MIN_SETTLED` (3). The owner hides a plan with `/v1/admin/hide`
+(`what: "plan"`).
+
 ## Settings
 
 `engine/.env.example` lists every one. The three secrets, `BOT_PRIVATE_KEY`, `ENGINE_ADMIN_KEY` and

@@ -9,8 +9,8 @@
 import "server-only";
 import { cache } from "react";
 import { connection } from "next/server";
-import { sampleAgent, sampleFirm, sampleJob, sampleJobs, sampleLedger, sampleState } from "./sample";
-import type { Agent, AgentPage, FactorState, FirmPage, Job, JobPage, LedgerEvent, Page, Params } from "./types";
+import { sampleAgent, sampleFirm, sampleJob, sampleJobs, sampleLedger, samplePlan, sampleState } from "./sample";
+import type { Agent, AgentPage, FactorState, FirmPage, Job, JobPage, LedgerEvent, Page, Params, PlanPage } from "./types";
 import type { PayInfo, PublishedLink } from "./pay";
 
 const ENGINE = (process.env.FACTOR_ENGINE_URL ?? "").trim().replace(/\/+$/, "");
@@ -120,6 +120,19 @@ export const getFirm = cache(async (slug: string): Promise<FirmPage | null | "do
   if (!ENGINE) return null;
   try {
     return await ask<FirmPage>(`/v1/firms/${slug}`);
+  } catch {
+    return "down";
+  }
+});
+
+/** One monthly plan by its number: its months, what comes next, what can be drawn. null: there is none. "down": the engine did not answer. */
+export const getPlan = cache(async (id: string): Promise<PlanPage | null | "down"> => {
+  await connection();
+  if (!/^0x[0-9a-f]{64}$/.test(id)) return null;
+  if (SAMPLE) return samplePlan(id);
+  if (!ENGINE) return null;
+  try {
+    return await ask<PlanPage>(`/v1/plans/${id}`);
   } catch {
     return "down";
   }

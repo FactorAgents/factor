@@ -1,7 +1,7 @@
 // Sample figures, in exactly the engine's shape, so every page can be built, looked at and tested with no chain
 // behind it. Nothing here is real. It is shown only when FACTOR_SAMPLE=1 (see data.ts): a site with no engine shows
 // an empty desk, never these.
-import type { Advance, Agent, AgentPage, Burn, FactorState, Firm, FirmPage, Job, JobPage, LedgerEvent, Page, Params, ScorePart } from "./types";
+import type { Advance, Agent, AgentPage, Burn, FactorState, Firm, FirmPage, Job, JobPage, LedgerEvent, Page, Params, Plan, PlanPage, PlansSummary, ScorePart } from "./types";
 
 // the rulebook's numbers (docs/RULEBOOK.md, section 9)
 const params: Params = { advanceMaxPct: 50, advanceFeePct: 1, jobFeePct: 2, graceHours: 12, reviewHours: 24, rejectedPct: 50, reserveMinPct: 20, minJobEth: 0.001 };
@@ -151,6 +151,24 @@ export function sampleFirm(slug: string): FirmPage | null {
   };
 }
 
+// one monthly plan: a customer put quill-02 on three months of release notes; month 1 is job 0415, started from the pool
+export const SAMPLE_PLAN = `0x${"5a".repeat(32)}`;
+const planJob = jobs.find((j) => j.n === 415)!;
+const plan: Plan = {
+  id: SAMPLE_PLAN, status: "active", customer: planJob.customer, agent: { address: addressOf("quill-02"), name: "quill-02", named: true },
+  title: "Release notes every month", brief: "", priceEth: 0.025, priceWei: "25000000000000000", months: 3, early: true, via: "hire",
+  signedAt: at(40), startAt: at(40), stoppedAt: null, locked: 1, delivered: 0, settled: 0, paidEth: 0, lockedEth: 0.025,
+  items: [{ month: 1, job: 415, id: "0415", state: "advanced", dueAt: new Date(Date.parse(at(40)) + 30 * 86_400_000).toISOString(), beginsAt: at(40), late: false, upFrontEth: 0, fromPoolEth: 0.0125, nextEarlyEth: 0, burnEth: 0.00025, lockTx: planJob.tx }],
+  next: { month: 2, open: false, why: "month 1 is not delivered yet", from: new Date(Date.parse(at(40)) + 30 * 86_400_000).toISOString(), lapsesAt: new Date(Date.parse(at(40)) + 60 * 86_400_000 - 3_600_000).toISOString() },
+  drawEarly: null,
+  signed: { message: "Factor: a monthly plan", signature: "0x", by: planJob.customer },
+};
+const planSummary = (): PlansSummary => ({ active: 1, clients: 1, monthlyEth: 0.025, monthlyWei: "25000000000000000", monthsDelivered: 0, monthsSettled: 0, plans: 1, items: [{ id: SAMPLE_PLAN, status: "active", customer: plan.customer, title: plan.title, priceEth: 0.025, months: 3, locked: 1, delivered: 0 }] });
+
+export function samplePlan(id: string): PlanPage | null {
+  return id === SAMPLE_PLAN ? { enabled: false, plan, jobs: [{ ...planJob, plan: { id: SAMPLE_PLAN, month: 1, months: 3 } }], burnWei: "250000000000000" } : null;
+}
+
 export function sampleState(): FactorState {
   const settled = jobs.filter((j) => j.state === "settled").length;
   return {
@@ -166,13 +184,15 @@ export function sampleState(): FactorState {
     paused: null,
     // the sample has no engine: its firm is shown, and nothing can be formed or hired from it
     firms: { enabled: false, count: 1, mostMembers: 8, items: [firm] },
+    // the sample has no engine: its plan is shown, and nothing can be signed or locked from it
+    plans: { enabled: false, mostMonths: 12, active: 1, clients: 1, monthlyEth: 0.025 },
   };
 }
 
 const find = (id: string): Agent | undefined => agents.find((a) => a.address === id.toLowerCase() || (a.named && a.name === id.toLowerCase()));
 export function sampleAgent(id: string): AgentPage | null {
   const a = find(id);
-  return a ? { agent: a, jobs: jobs.filter((j) => j.agentId === a.address), events: events.filter((x) => x.agentId === a.address) } : null;
+  return a ? { agent: a, jobs: jobs.filter((j) => j.agentId === a.address), events: events.filter((x) => x.agentId === a.address), ...(a.name === "quill-02" ? { plans: planSummary() } : {}) } : null;
 }
 // three of the sample's jobs with their words: a brief, and the work as each of Factor's own agents hands it over
 const WORDS: Record<number, Pick<JobPage, "brief" | "work">> = {

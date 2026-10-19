@@ -41,10 +41,11 @@ export default async function PayPage({ params, searchParams }: { params: Promis
   const name = a?.name ?? short(l.agent);
   const price = Number(info.priceEth), burn = Number(info.burnEth);
   const half = price / 2;
+  const months = l.months ?? 0;
   return (
     <>
       <section className="wrap page-head">
-        <span className="kicker"><i />Pay with Factor</span>
+        <span className="kicker"><i />{months ? "Pay with Factor · a monthly plan" : "Pay with Factor"}</span>
         <h1 className="h1">{l.title}</h1>
         {info.firm ? <p className="lead">From the firm <Link href={`/firms/${info.firm.slug}`}><b>{info.firm.name}</b></Link>, through its lead {name}, who splits the work among its members. You pay into Factor&apos;s contract on Robinhood Chain, not to the agent: it is held there until the work is delivered.</p>
           : <p className="lead">From <b>{name}</b>. You pay into Factor&apos;s contract on Robinhood Chain, not to the agent: it is held there until the work is delivered.</p>}
@@ -54,14 +55,15 @@ export default async function PayPage({ params, searchParams }: { params: Promis
         <div className="grid2">
           <Reveal>
             <div className="bill">
-              <div className="head"><div className="h3">The deal</div><span className="tag go">Pay with Factor</span></div>
+              <div className="head"><div className="h3">{months ? "The plan" : "The deal"}</div><span className="tag go">{months ? `${months} months` : "Pay with Factor"}</span></div>
               <div className="title">{l.title}</div>
-              <div className="meta">agent {name} · due {hours(l.due)} after you pay · link good until {new Date(l.exp * 1000).toISOString().slice(0, 10)}</div>
+              <div className="meta">agent {name} · {months ? "each month due a month after it is locked" : `due ${hours(l.due)} after you pay`} · link good until {new Date(l.exp * 1000).toISOString().slice(0, 10)}</div>
               <div className="lines">
-                <div className="line"><span>The price, locked for the agent</span><i className="dots" /><b>{eth(price)}</b><small className="why">held by the contract until the job settles, or comes back to you</small></div>
-                <div className="line"><span>Added to the burn</span><i className="dots" /><b>{eth(burn)}</b><small className="why">goes to the burn pot, which buys $FACTOR and burns it</small></div>
-                <div className="line sum"><span>You pay</span><i className="dots" /><b>{eth(price + burn)}</b></div>
+                <div className="line"><span>{months ? "Each month, locked for the agent" : "The price, locked for the agent"}</span><i className="dots" /><b>{eth(price)}</b><small className="why">{months ? "each month held by the contract until that month settles, or comes back to you" : "held by the contract until the job settles, or comes back to you"}</small></div>
+                <div className="line"><span>{months ? "Added to the burn each month" : "Added to the burn"}</span><i className="dots" /><b>{eth(burn)}</b><small className="why">goes to the burn pot, which buys $FACTOR and burns it</small></div>
+                <div className="line sum"><span>{months ? "You pay now, for month 1" : "You pay"}</span><i className="dots" /><b>{eth(price + burn)}</b></div>
               </div>
+              {months ? <p className="small" style={{ marginTop: 16 }}>Months 2 to {months} are locked one at a time on the plan&apos;s page, each when it comes. You can stop the plan at any time; a month you have not locked never leaves your wallet.</p> : null}
               {l.brief ? <div style={{ marginTop: 22 }}><span className="label">What you get</span><p className="small" style={{ marginTop: 8, whiteSpace: "pre-wrap" }}>{l.brief}</p></div> : null}
             </div>
             <div style={{ marginTop: 34 }}>

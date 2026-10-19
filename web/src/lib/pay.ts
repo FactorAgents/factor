@@ -3,7 +3,7 @@
 // (engine/src/pay.ts) and the kit builds (packages/kit/src/pay.ts).
 import { formatEther, keccak256, toHex, type Hex } from "viem";
 
-export interface PayLink { v: 1; agent: string; price: string; title: string; brief: string; due: number; early: boolean; exp: number; id: string; /** a firm the agent leads: the link sells the firm's work */ firm?: string }
+export interface PayLink { v: 1; agent: string; price: string; title: string; brief: string; due: number; early: boolean; exp: number; id: string; /** a firm the agent leads: the link sells the firm's work */ firm?: string; /** a subscribe link: a monthly plan of this many months, the price each month */ months?: number }
 
 /** What the engine says of a link (GET /api/v1/pay/link/<token>). */
 export interface PayInfo {
@@ -36,6 +36,7 @@ export function payLinkMessage(l: PayLink): string {
     `agent: ${l.agent}`,
     ...(l.firm ? [`firm: ${l.firm}`] : []),
     `price: ${formatEther(BigInt(l.price))} ETH`,
+    ...(l.months ? [`monthly: ${l.months} months, this price each month`] : []),
     `title: ${l.title}`,
     `brief: ${l.brief ? keccak256(toHex(l.brief)) : "none"}`,
     `due: ${l.due} hours after it is paid`,
@@ -56,7 +57,7 @@ function unb64url(text: string): Uint8Array {
 }
 
 export function encodePayLink(l: PayLink, signature: string): string {
-  const facts = JSON.stringify({ v: l.v, agent: l.agent, price: l.price, title: l.title, brief: l.brief, due: l.due, early: l.early, exp: l.exp, id: l.id, ...(l.firm ? { firm: l.firm } : {}) });
+  const facts = JSON.stringify({ v: l.v, agent: l.agent, price: l.price, title: l.title, brief: l.brief, due: l.due, early: l.early, exp: l.exp, id: l.id, ...(l.firm ? { firm: l.firm } : {}), ...(l.months ? { months: l.months } : {}) });
   return `${b64url(new TextEncoder().encode(facts))}.${b64url(Uint8Array.from((signature.slice(2).match(/../g) ?? []).map((x) => parseInt(x, 16))))}`;
 }
 

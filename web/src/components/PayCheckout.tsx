@@ -4,6 +4,7 @@
 import { useState } from "react";
 import { claimDeal, fromWei, lockAndBurn, lockedJob, Refusal } from "@/lib/desk";
 import { planHire } from "@/lib/subjobs";
+import { lockMonth, MONTH_S, signPlan } from "@/lib/plans";
 import type { PayInfo } from "@/lib/pay";
 import AccountPanel from "./Account";
 import { engineNow, Go, SignedInAs, StatusLine, useSend, useWallet } from "./Wallet";
@@ -13,10 +14,20 @@ export default function PayCheckout({ token, info, explorer, agentName, forJob =
   const { status, run, busy } = useSend();
   const [done, setDone] = useState(false);
   const price = BigInt(info.priceWei), burn = BigInt(info.burnWei);
+  const months = info.link.months ?? 0;
   const pay = () => run(async (on) => {
     const p = wallet();
     if (!p || !address) throw new Refusal("Connect a wallet first, or use a passkey.");
     if (address === info.link.agent) throw new Refusal("This is the agent's own wallet. Pay from the buyer's.");
+    if (months) {
+      // a subscribe link: the buyer signs the plan the link describes, then month 1 is locked at once
+      const l = info.link;
+      on("signing");
+      const made = await signPlan(p, { customer: address, agent: l.agent, ...(l.firm ? { firm: l.firm } : {}), price: l.price, months, early: l.early, title: l.title, brief: l.brief, at: await engineNow() }, token);
+      const r = await lockMonth(p, { passkey: kind === "passkey", desk: info.desk, burnPot: info.burnPot, from: address, plan: made.plan, agent: l.agent, dueAt: (await engineNow()) + MONTH_S - 300, early: l.early, price, burn, on });
+      setDone(true);
+      return { note: r.linked ? `Subscribed. Month 1 of ${months} is locked for ${agentName}${r.job ? ` as job ${String(r.job).padStart(4, "0")}` : ""}.${r.burned ? ` ${fromWei(burn)} ETH went to the burn.` : ""} Lock each next month on the plan's page.` : `Month 1 is locked for ${agentName}. ${r.note ?? ""}`, hash: r.lockTx, href: `/plans/${made.plan}`, hrefText: "Open the plan" };
+    }
     // measured on the engine's clock, which follows the chain's: what the link's due time is checked against
     const at = await engineNow();
     const dueAt = at + info.link.due * 3600;
@@ -47,9 +58,9 @@ export default function PayCheckout({ token, info, explorer, agentName, forJob =
     <div className="form">
       <AccountPanel explorer={explorer} />
       <div className="cta" style={{ marginTop: 0 }}>
-        {done ? null : <Go label={`Pay ${fromWei(price + burn)} ETH`} busy={busy} onGo={() => void pay()} off={off} />}
+        {done ? null : <Go label={months ? `Subscribe: ${fromWei(price + burn)} ETH for month 1` : `Pay ${fromWei(price + burn)} ETH`} busy={busy} onGo={() => void pay()} off={off} />}
       </div>
-      {kind === "wallet" && !done ? <p className="small">Your wallet asks twice: once to lock the price, once for the burn. The job is locked by the first.</p> : null}
+      {kind === "wallet" && !done ? <p className="small">{months ? "Your wallet asks three times: a signature for the plan (it costs nothing), then the lock of month 1, then the burn." : "Your wallet asks twice: once to lock the price, once for the burn. The job is locked by the first."}</p> : null}
       {kind === "passkey" && !done ? <p className="small">One confirmation: the lock and the burn go together, and Factor pays the gas.</p> : null}
       <SignedInAs busy={busy} />
       <StatusLine status={status} explorer={explorer} />

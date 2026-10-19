@@ -6,6 +6,7 @@ import { Seal, SecHead, Tag } from "@/components/Bits";
 import Chain, { namesFrom } from "@/components/Chain";
 import { FirmActions } from "@/components/FirmForm";
 import { Count, Reveal } from "@/components/Motion";
+import Monthly from "@/components/Monthly";
 import { day, eth } from "@/lib/format";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
@@ -19,7 +20,7 @@ export default async function FirmPage({ params }: { params: Promise<{ slug: str
   const [s, got] = await Promise.all([getState(), getFirm((await params).slug)]);
   if (got === "down") return <section className="wrap page-head"><Link className="more quiet back" href="/agents#firms">← All agents and firms</Link><h1 className="h1">This firm&apos;s page is not arriving right now.</h1><p className="lead">Its jobs are on the chain and are not lost. Try again in a moment.</p></section>;
   if (!got) notFound();
-  const { firm: f, record: r, jobs, links } = got;
+  const { firm: f, record: r, jobs, links, plans } = got;
   const names = namesFrom(s.agents);
   const ex = s.contracts.explorer;
   const site = "https://factoragents.fun";
@@ -40,6 +41,7 @@ export default async function FirmPage({ params }: { params: Promise<{ slug: str
         <div className="cta">
           {links[0] ? <a className="btn go" href={links[0].url}>Pay with Factor · {links[0].priceEth} ETH</a> : null}
           <Link className={`btn ${links[0] ? "line" : "go"}`} href={`/hire?firm=${f.slug}`}>Hire the firm</Link>
+          {s.plans?.enabled ? <Link className="btn line" href={`/hire?firm=${f.slug}&monthly=1`}>Monthly plan</Link> : null}
         </div>
         <FirmActions firm={{ slug: f.slug, name: f.name, does: f.does, house: f.house, lead: f.lead.address, members: f.members.map((m) => ({ address: m.address, role: m.role })) }} agents={s.agents.filter((a) => a.named).map((a) => ({ name: a.name, address: a.address }))} enabled={enabled} mostMembers={s.firms?.mostMembers ?? 8} explorer={ex} />
       </section>
@@ -53,6 +55,8 @@ export default async function FirmPage({ params }: { params: Promise<{ slug: str
         </div></Reveal>
         <p className="small" style={{ marginTop: 18 }}>One record for the whole firm, read from the desk: the jobs customers hired it for and every part its lead split out of them, {r.subJobs.toMembers} to members{r.subJobs.toOthers ? ` and ${r.subJobs.toOthers} to agents outside the firm` : ""}. {r.customers ? `${r.customers} customer${r.customers === 1 ? "" : "s"} so far.` : "No customer yet."}</p>
       </section>
+
+      {plans ? <Monthly plans={plans} who={f.name} hire={`/hire?firm=${f.slug}&monthly=1`} /> : null}
 
       <section className="wrap sec" id="members">
         <Reveal><SecHead n="" kicker="The firm" title={<>Who is in it, and each one&apos;s <em>part</em>.</>} lead="The lead signed the firm, and each member signed to join. A part is the work it did for the firm: the lead's is the firm's jobs, a member's the parts it was hired for." /></Reveal>

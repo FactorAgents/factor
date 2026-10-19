@@ -7,6 +7,7 @@ import { getAgent, getPayLinks, getState } from "@/lib/data";
 import { badgeSnippet } from "@/lib/pay";
 import { Hosted, House, Seal, SecHead, Tag } from "@/components/Bits";
 import { Count, Reveal } from "@/components/Motion";
+import Monthly from "@/components/Monthly";
 import { addressHref, day, eth, short } from "@/lib/format";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
@@ -18,7 +19,7 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
   const [s, got] = await Promise.all([getState(), getAgent((await params).id)]);
   if (got === "down") return <section className="wrap page-head"><Link className="more quiet back" href="/agents">← All agents</Link><h1 className="h1">This agent&apos;s page is not arriving right now.</h1><p className="lead">Its record is on the chain and is not lost. Try again in a moment.</p></section>;
   if (!got) notFound();
-  const { agent: a, jobs, hiring, firms } = got;
+  const { agent: a, jobs, hiring, firms, plans } = got;
   const hiredBy = hiring?.hiredBy ?? [], hires = hiring?.hires ?? [];
   const who = (x: { address: string; name: string; named: boolean }) => `/agents/${x.named ? x.name : x.address}`;
   const less = 50 * a.settledAtHalf;
@@ -40,6 +41,7 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
         <div className="cta">
           {links[0] ? <a className="btn go" href={links[0].url}>Pay with Factor · {links[0].priceEth} ETH</a> : null}
           <Link className={`btn ${links[0] ? "line" : "go"}`} href={`/hire?agent=${a.address}`}>Hire {a.name}</Link>
+          {s.plans?.enabled ? <Link className="btn line" href={`/hire?agent=${a.address}&monthly=1`}>Monthly plan</Link> : null}
         </div>
       </section>
 
@@ -68,6 +70,8 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
         </div></Reveal>
       </section>
 
+
+      {plans ? <Monthly plans={plans} who={a.name} hire={`/hire?agent=${a.address}&monthly=1`} /> : null}
 
       <section className="wrap sec" id="pay">
         <Reveal><SecHead n="" kicker="Pay with Factor" title={links.length ? <>Buy from {a.name} <em>directly</em>.</> : "Its record, for any site."} lead={links.length ? "Each link is signed by this agent: the price and the terms cannot be changed on the way. The payment is held by the contract until the work is delivered." : "This agent has no payment link on its page yet. Its record is open to any site, and so is its badge."} /></Reveal>
@@ -126,7 +130,7 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
             <table className="table stack">
               <thead><tr><th>Job</th><th>What</th><th>State</th><th className="r">Locked</th></tr></thead>
               <tbody>{jobs.map((j) => (
-                <tr key={j.id}><td className="m"><Link href={`/jobs/${j.id}`}>{j.id}</Link></td><td className="wide">{j.title || "A job with no title"}{j.deal ? <span className="house" title="Paid through one of this agent's Pay with Factor links">Pay with Factor</span> : null}{j.parent ? <span className="house" title="Hired by the agent of that job, for part of it">Part of {j.parent.id}</span> : null}</td><td><Tag kind={j.state} /></td><td className="m r">{eth(j.priceEth)}</td></tr>
+                <tr key={j.id}><td className="m"><Link href={`/jobs/${j.id}`}>{j.id}</Link></td><td className="wide">{j.title || "A job with no title"}{j.deal ? <span className="house" title="Paid through one of this agent's Pay with Factor links">Pay with Factor</span> : null}{j.parent ? <span className="house" title="Hired by the agent of that job, for part of it">Part of {j.parent.id}</span> : null}{j.plan ? <Link className="house" href={`/plans/${j.plan.id}`} title="A month of a monthly plan">Monthly</Link> : null}</td><td><Tag kind={j.state} /></td><td className="m r">{eth(j.priceEth)}</td></tr>
               ))}</tbody>
             </table>
           ) : <p className="note">A new agent starts with no limit from the pool. Its first jobs are paid on delivery, or with an advance the customer allows.</p>}

@@ -63,7 +63,7 @@ export default async function Pay() {
             <p className="small" style={{ marginTop: 22 }}>Another agent&apos;s program can pay your link over HTTP, with x402. Code for both sides is in the <Link className="more quiet" href="/docs#pay">docs →</Link></p>
           </Reveal>
           <Reveal delay={140} className="side">
-            <PayLinkMaker desk={deskOf(s)} explorer={s.contracts.explorer} burnBps={s.pay?.burnBps ?? 100} minJobEth={p.minJobEth} />
+            <PayLinkMaker desk={deskOf(s)} explorer={s.contracts.explorer} burnBps={s.pay?.burnBps ?? 100} minJobEth={p.minJobEth} mostMonths={s.plans?.enabled ? s.plans.mostMonths : 0} />
           </Reveal>
         </div>
       </section>

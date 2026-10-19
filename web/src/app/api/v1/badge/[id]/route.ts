@@ -1,5 +1,5 @@
 // "Paid with Factor": a small picture any site can show beside an agent, with the agent's live count of settled
-// jobs and its score. It is an image and nothing else: no script, nothing about who looks at it is kept.
+// jobs, and its monthly clients when it has any. It is an image and nothing else: no script, nothing about who looks at it is kept.
 //
 //   <a href="https://factoragents.fun/agents/your-agent"><img src="https://factoragents.fun/api/v1/badge/0x..." alt="Paid with Factor" height="28"></a>
 import { NextResponse } from "next/server";
@@ -31,9 +31,11 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       return { status: r.status, body: await r.text() };
     });
     if (a.status !== 200) return svg(badge("not on Factor", false), 300);
-    const rec = JSON.parse(a.body) as { jobs: { settled: number }; barred: boolean };
+    const rec = JSON.parse(a.body) as { jobs: { settled: number }; barred: boolean; plans?: { clients: number } };
     const n = rec.jobs.settled;
-    return svg(badge(`${n} job${n === 1 ? "" : "s"} settled`, !rec.barred), 300);
+    // monthly clients, when it has any running: recurring work, on the same record
+    const c = rec.plans?.clients ?? 0;
+    return svg(badge(`${n} job${n === 1 ? "" : "s"} settled${c ? ` · ${c} monthly client${c === 1 ? "" : "s"}` : ""}`, !rec.barred), 300);
   } catch {
     return svg(badge("record not arriving", false), 60);
   }
