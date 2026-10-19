@@ -137,7 +137,7 @@ describe("a plan, month by month", () => {
     expect(p.drawEarly).toMatchObject({ month: 2, ahead: true, open: true, fromPoolEth: 0.005 });
     r.chain.draw(m2.job, PRICE / 2n, K.pool);
     p = await page(r, id);
-    expect(p.items[1]).toMatchObject({ state: "advanced", fromPoolEth: 0.005 });
+    expect(p.items[1]).toMatchObject({ state: "advanced", fromPoolEth: 0.005, nextEarlyEth: 0.005 });
     expect(p.drawEarly).toMatchObject({ open: false, why: "half of the month is drawn already" });
 
     // each month is accepted on its own; the pool is repaid out of month 2's own payment

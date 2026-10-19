@@ -274,7 +274,7 @@ export interface Deal {
 
 export type PlanStatus = "waiting" | "active" | "stopped" | "ended" | "lapsed" | "done";
 /** One month of a plan: a job on the desk. */
-export interface PlanMonth { month: number; job: number; id: string; state: JobState; dueAt: string; beginsAt: string; late: boolean; upFrontEth: number; fromPoolEth: number; paidEth?: number; burnEth: number; lockTx: string }
+export interface PlanMonth { month: number; job: number; id: string; state: JobState; dueAt: string; beginsAt: string; late: boolean; upFrontEth: number; fromPoolEth: number; nextEarlyEth: number; paidEth?: number; burnEth: number; lockTx: string }
 /** A monthly plan as Factor serves it (GET /api/v1/plans/<id>). */
 export interface Plan {
   id: string;

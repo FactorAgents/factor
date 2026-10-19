@@ -77,8 +77,8 @@ export function readPlans(env: Env, problems: string[] = []): PlansConfig {
 export const MONTH_S = 30 * 86_400;
 const MAX_DUE_S = 30 * 86_400;
 const MIN_DUE_S = 3600;
-/** How far a lock's due time may be from the one the plan asks for: the customer's clock and the chain's differ. */
-export const DUE_SLACK_S = 900;
+/** How far a lock's due time may be from the one the plan asks for: the customer's clock and the chain's differ, and a wallet can wait a while for its owner to confirm. */
+export const DUE_SLACK_S = 3600;
 /** A plan's title: shorter than a job's, since each month's job is called "Month 2 of 6: <title>". */
 export const TITLE_MOST = 60;
 
@@ -210,6 +210,8 @@ export interface PlanMonthJson {
   /** drawn on it so far: up front out of its own payment, and from the pool */
   upFrontEth: number;
   fromPoolEth: number;
+  /** of that, what was drawn from the pool before the month began: next month's income, early */
+  nextEarlyEth: number;
   /** what the agent was paid when it settled */
   paidEth?: number;
   burnEth: number;
@@ -570,6 +572,12 @@ export class Plans {
     return { status: "active", rows };
   }
 
+  /** What was drawn on a job from the pool (to the agent or as compute) before a moment: read from the desk's own logs. */
+  private poolBefore(job: number, before: number): bigint {
+    const rows = this.d.db.q("SELECT amount FROM desk_advances WHERE job_id = ? AND kind != 0 AND at < ?").all(job, before) as { amount: string }[];
+    return rows.reduce((n, r) => n + BigInt(r.amount), 0n);
+  }
+
   /** The pool's own figures, as the desk works them out: what it can still send out (it never has more than 80% out). */
   private poolRoom(): bigint {
     const p = this.d.pool();
@@ -638,6 +646,7 @@ export class Plans {
       month: m.month, job: m.job_id, id: pad(m.job_id), state: job ? STATE_WORD[job.state] ?? "locked" : "locked",
       dueAt: job ? iso(job.due_at) : "", beginsAt: plan.start_at !== null ? iso(plan.start_at + (m.month - 1) * MONTH_S) : "",
       late: !!job?.late, upFrontEth: ethNum(job?.early || "0"), fromPoolEth: ethNum(job?.from_pool || "0"),
+      nextEarlyEth: plan.start_at !== null ? ethNum(this.poolBefore(m.job_id, plan.start_at + (m.month - 1) * MONTH_S)) : 0,
       ...(job && (job.state === STATE.settled || job.state === STATE.half) ? { paidEth: ethNum(job.paid || "0") } : {}),
       burnEth: ethNum(m.burn_wei), lockTx: m.lock_tx,
     }));
