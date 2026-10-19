@@ -1,5 +1,5 @@
 // The roadmap: every phase on one line, stage by stage. What is live is checked off in gilt with its day; what is
-// planned shows its window and what it builds on. The words and the days are in lib/roadmap.ts.
+// planned shows what it builds on, with no date. The words and the days are in lib/roadmap.ts.
 import { Reveal } from "./Motion";
 import { STAGES, type Phase } from "@/lib/roadmap";
 
@@ -25,12 +25,12 @@ export default function Roadmap() {
         <div className="road-ticks" aria-hidden="true">
           {STAGES.map((s, i) => <span key={i} style={{ flex: s.phases.length }}>{s.phases.map((p, j) => <i key={j} className={p.live ? "on" : p === next ? "next" : undefined} />)}</span>)}
         </div>
-        {next ? <div className="road-next"><span className="label gilt">Next</span><span>{next.name}<em>{next.window}</em></span></div> : null}
+        {next ? <div className="road-next"><span className="label gilt">Next</span><span>{next.name}</span></div> : null}
       </div>
 
       {STAGES.map((s, i) => {
         const first = rows.findIndex((r) => r.stage === i);
-        const days = s.phases.map((p) => p.live ?? p.window ?? "");
+        const days = s.phases.map((p) => p.live ?? "");
         const allLive = s.phases.every((p) => p.live);
         return (
           <Reveal key={s.name} delay={i ? 0 : 60}>
@@ -40,7 +40,7 @@ export default function Roadmap() {
                 <span className={`road-node stage${allLive ? " live" : ""}`} aria-hidden="true" />
                 <div className="road-body">
                   <div><div className="road-stagename">{s.name}</div><p className="road-line">{s.line}</p></div>
-                  <div className={`road-sum${allLive ? " live" : ""}`}>{allLive ? <><b>All live</b>{days[0]} to {days[days.length - 1]}</> : <><b>Planned</b>{days[0]} to {days[days.length - 1].replace(/^End of |^Mid |^Early /, (w) => w.toLowerCase())}</>}</div>
+                  <div className={`road-sum${allLive ? " live" : ""}`}>{allLive ? <><b>All live</b>{days[0]} to {days[days.length - 1]}</> : <><b>Planned</b>{s.phases.length} phases, each building on the last</>}</div>
                 </div>
               </div>
               {s.phases.map((p, j) => {
@@ -50,7 +50,7 @@ export default function Roadmap() {
                   <div key={p.name} className={`road-row ${kind}${line(k)}`} style={{ ["--k" as string]: j }} role="listitem">
                     <div className="road-when">
                       <span className={`tag${p.live || isNext ? " go" : ""}`}>{p.live ? "Live" : isNext ? "Next" : "Planned"}</span>
-                      <span className="road-day">{p.live ?? p.window}</span>
+                      {p.live ? <span className="road-day">{p.live}</span> : null}
                     </div>
                     <span className={`road-node ${kind}`} aria-hidden="true">{p.live ? <svg viewBox="0 0 16 16"><path d={CHECK} /></svg> : <i />}</span>
                     <div className="road-body">
@@ -67,7 +67,7 @@ export default function Roadmap() {
           </Reveal>
         );
       })}
-      <p className="road-foot">Dates for planned phases are plans and can move. A phase is checked off here the day it goes live.</p>
+      <p className="road-foot">Each phase is checked off here the day it goes live. More phases will be added as we get closer to finishing these.</p>
     </div>
   );
 }

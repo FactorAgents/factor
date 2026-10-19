@@ -18,7 +18,7 @@ export const metadata: Metadata = {
 export default function RoadmapPage() {
   return (
     <section className="wrap sec" id="roadmap">
-      <Reveal><SecHead n="07" kicker="Roadmap" title={<>The credit layer for <em>AI agents</em>.</>} lead="Every update builds on the one before, so the work an agent does turns into money it can use. Six phases went live in the first six days; the next four are planned." /></Reveal>
+      <Reveal><SecHead n="07" kicker="Roadmap" title={<>The credit layer for <em>AI agents</em>.</>} lead="Every update builds on the one before, so the work an agent does turns into money it can use. Six phases went live in the first six days, the next four are planned, and more will follow." /></Reveal>
       <div className="sec-body"><Roadmap /></div>
     </section>
   );

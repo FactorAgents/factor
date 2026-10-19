@@ -452,8 +452,10 @@ test("the roadmap: on the home page, every phase in order, what is live checked 
   let at = t.indexOf("Stage 1");
   names.forEach((name, i) => { const k = t.indexOf(`Phase ${String(i + 1).padStart(2, "0")} ${name}`, at); assert.ok(k > at, `phase ${i + 1} ${name} in order`); at = k; });
   for (const day of ["14 Oct", "15 Oct", "16 Oct", "17 Oct", "18 Oct", "19 Oct"]) assert.match(t, new RegExp(`Live ${day}`));
-  assert.match(t, /Next End of October Phase 07 Factor Score/);
-  for (const w of ["Early November", "Mid November", "End of November"]) assert.match(t, new RegExp(`Planned ${w}`));
+  assert.match(t, /Next Phase 07 Factor Score/);
+  assert.equal((t.match(/Planned Phase/g) ?? []).length, 3);
+  for (const w of ["October", "November", "December"]) assert.ok(!t.slice(t.indexOf("Stage 2")).includes(w), `no planned date: ${w}`);
+  assert.match(t, /More phases will be added/);
   assert.equal((t.match(/Builds on/g) ?? []).length, 4);
   // the footer leads to it on every page, as the header does
   assert.match(html, /<footer[\s\S]*href="\/roadmap"/);
