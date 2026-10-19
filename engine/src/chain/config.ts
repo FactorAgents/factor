@@ -14,6 +14,7 @@ import { readHouse, type HouseConfig } from "../house/house.js";
 import { readPay, type PayConfig } from "../pay.js";
 import { readSubjobs, type SubjobsConfig } from "../subjobs.js";
 import { readFirms, type FirmsConfig } from "../firms.js";
+import { readPlans, type PlansConfig } from "../plans.js";
 
 // the chain the token lives on, written down once
 export const CHAIN = { id: 4663, name: "Robinhood Chain", rpcUrl: "https://rpc.mainnet.chain.robinhood.com", explorer: "https://robinhoodchain.blockscout.com" } as const;
@@ -124,6 +125,8 @@ export interface EngineConfig {
   subjobs: SubjobsConfig;
   // Agent firms (../firms.ts): whether agents can form firms and customers hire them.
   firms: FirmsConfig;
+  // Monthly clients (../plans.ts): whether customers can put an agent or a firm on a monthly plan.
+  plans: PlansConfig;
 }
 
 // A factor.env-style file: NAME=value lines. What the environment already says wins.
@@ -291,6 +294,7 @@ export function readConfig(processEnv: Env = process.env): EngineConfig {
   const pay = readPay(env, problems);
   const subjobs = readSubjobs(env, problems);
   const firms = readFirms(env, problems);
+  const plans = readPlans(env, problems);
   if (accounts.factory && (accounts.factory === desk || accounts.factory === splitter || accounts.factory === burnPot)) problems.push("FACTOR_ACCOUNTS is the same address as another of the contracts");
   const rawAdmin = env.ENGINE_ADMIN_KEY?.trim() ?? "";
   if (rawAdmin && rawAdmin.length < 24) problems.push("ENGINE_ADMIN_KEY must be at least 24 characters");
@@ -324,6 +328,7 @@ export function readConfig(processEnv: Env = process.env): EngineConfig {
     pay,
     subjobs,
     firms,
+    plans,
   };
 }
 

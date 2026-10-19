@@ -84,6 +84,8 @@ export interface PayLink {
   exp: number;
   id: string;
   firm?: string;
+  /** a subscribe link: a monthly plan of this many months at `price` each month (../plans.ts); `due` is then 720, a month */
+  months?: number;
 }
 
 /**
@@ -97,6 +99,8 @@ export function payLinkMessage(l: PayLink): string {
     // only a link for a firm says so: every other link signs the same words it always did
     ...(l.firm ? [`firm: ${l.firm}`] : []),
     `price: ${formatEther(BigInt(l.price))} ETH`,
+    // only a subscribe link says so: every other link signs the same words it always did
+    ...(l.months ? [`monthly: ${l.months} months, this price each month`] : []),
     `title: ${l.title}`,
     `brief: ${l.brief ? keccak256(toHex(l.brief)) : "none"}`,
     `due: ${l.due} hours after it is paid`,
@@ -117,7 +121,7 @@ const unb64 = (s: string): string => Buffer.from(s, "base64url").toString("utf8"
 
 /** A link and its signature as one piece of text that goes into an address: `<facts>.<signature>`. */
 export function encodePayLink(l: PayLink, signature: Hex): string {
-  const facts = JSON.stringify({ v: l.v, agent: l.agent, price: l.price, title: l.title, brief: l.brief, due: l.due, early: l.early, exp: l.exp, id: l.id, ...(l.firm ? { firm: l.firm } : {}) });
+  const facts = JSON.stringify({ v: l.v, agent: l.agent, price: l.price, title: l.title, brief: l.brief, due: l.due, early: l.early, exp: l.exp, id: l.id, ...(l.firm ? { firm: l.firm } : {}), ...(l.months ? { months: l.months } : {}) });
   return `${b64(facts)}.${Buffer.from(signature.slice(2), "hex").toString("base64url")}`;
 }
 
@@ -134,7 +138,7 @@ export function decodePayLink(token: unknown): { link: PayLink; signature: Hex }
     return "that is not a Pay with Factor link";
   }
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return "that is not a Pay with Factor link";
-  const link: PayLink = { v: raw.v as 1, agent: String(raw.agent ?? ""), price: String(raw.price ?? ""), title: String(raw.title ?? ""), brief: String(raw.brief ?? ""), due: raw.due as number, early: raw.early as boolean, exp: raw.exp as number, id: String(raw.id ?? ""), ...(raw.firm !== undefined ? { firm: String(raw.firm) } : {}) };
+  const link: PayLink = { v: raw.v as 1, agent: String(raw.agent ?? ""), price: String(raw.price ?? ""), title: String(raw.title ?? ""), brief: String(raw.brief ?? ""), due: raw.due as number, early: raw.early as boolean, exp: raw.exp as number, id: String(raw.id ?? ""), ...(raw.firm !== undefined ? { firm: String(raw.firm) } : {}), ...(raw.months !== undefined ? { months: raw.months as number } : {}) };
   const problem = linkProblem(link);
   if (problem) return problem;
   const signature = `0x${Buffer.from(sig, "base64url").toString("hex")}` as Hex;
@@ -157,6 +161,11 @@ export function linkProblem(l: PayLink): string | null {
   if (!Number.isSafeInteger(l.exp) || l.exp < 1_700_000_000) return "the link has no expiry";
   if (!/^[0-9a-f]{16}$/.test(l.id)) return "the link has no id";
   if (l.firm !== undefined && !/^[a-z0-9](?:[a-z0-9-]{1,30})[a-z0-9]$/.test(l.firm)) return "the link's firm is not a firm's short name";
+  if (l.months !== undefined) {
+    if (!Number.isSafeInteger(l.months) || l.months < 2 || l.months > 24) return "a subscribe link is a plan of 2 to 24 months";
+    if (l.due !== 720) return "a subscribe link's month is due 720 hours (30 days) after it is locked";
+    if (l.title.length > 60) return "a subscribe link's title is 60 characters at most";
+  }
   return null;
 }
 
@@ -391,6 +400,7 @@ export class Pay {
     const c = await this.check(body.link, locked.at);
     if (!c.ok) return { status: c.status, body: { error: c.error } };
     const l = c.link;
+    if (l.months) return fail(400, "a subscribe link starts a monthly plan: its months are linked with POST /v1/plans/month, not as a deal");
     if (locked.agent !== l.agent) return fail(400, "that job was locked for another agent than the link's");
     if (locked.price !== BigInt(l.price)) return fail(400, "that job's price is not the link's");
     if (locked.allowEarly !== l.early) return fail(400, "that job does not allow an early advance the way the link says");
@@ -494,6 +504,7 @@ export class Pay {
     const c = await this.check(token);
     if (!c.ok) return { status: c.status, headers: {}, body: { x402Version: 1, error: c.error } };
     const l = c.link;
+    if (l.months) return { status: 409, headers: {}, body: { x402Version: 1, error: "a subscribe link starts a monthly plan, which x402 does not carry: pay it on its page or with the kit (subscribe)" } };
     if (!this.d.db.q("SELECT 1 FROM desk_agents WHERE address = ?").get(l.agent)) return { status: 409, headers: {}, body: { x402Version: 1, error: "this agent has not signed up on Factor yet, so nothing can be locked for it" } };
     const paused = this.d.paused();
     const burn = this.burnFor(BigInt(l.price));

@@ -13,7 +13,8 @@
 //
 // "hiring" (who hired the agent for part of a job of theirs, and whom it hired) is the engine's link between jobs
 // (./subjobs.ts), not a figure of the desk's: it is outside the attestation. Each job behind it is on the desk, with
-// the hirer as its customer.
+// the hirer as its customer. "plans" (its monthly clients, ./plans.ts) is the same kind of link, outside it too: each
+// month behind it is a job on the desk, locked by the plan's customer.
 
 import { concat, formatEther, hashTypedData, keccak256, toHex, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
@@ -103,6 +104,8 @@ export interface RecordJson {
   payWithFactor: { deals: number; burnedWei: string; burnedEth: string };
   /** agents that hire agents: who hired this agent for part of a job of theirs, and whom it hired, with how many jobs */
   hiring: { hiredBy: { address: string; name: string; jobs: number }[]; hires: { address: string; name: string; jobs: number }[] };
+  /** monthly clients (./plans.ts): plans running now, their customers, the price a month of them added up, and the months delivered and settled */
+  plans: { active: number; clients: number; monthlyWei: string; monthlyEth: string; monthsDelivered: number; monthsSettled: number };
   page: string;
   badge: string;
   attestation: { signer: string; signature: Hex; digest: Hex; message: RecordMessage; issuedAt: string; expiresAt: string } | null;
@@ -119,6 +122,7 @@ export async function recordOf(o: {
   db: EngineDb; row: AgentRow; name: string; named: boolean; does: string; chainId: number; desk: string; block: number; nowS: number; site: string;
   pay: { deals: number; burnedWei: bigint }; signer: RecordSigner | null;
   hiring?: { hiredBy: { address: string; name: string; jobs: number }[]; hires: { address: string; name: string; jobs: number }[] };
+  plans?: { active: number; clients: number; monthlyWei: string; monthsDelivered: number; monthsSettled: number } | null;
 }): Promise<RecordJson> {
   const r: AgentRecord = o.row.record;
   const { byState, distinct } = jobCounts(o.db, o.row.address);
@@ -146,6 +150,7 @@ export async function recordOf(o: {
     customers: r.customers, distinctCustomers: distinct, score, barred: r.barred,
     payWithFactor: { deals: o.pay.deals, burnedWei: o.pay.burnedWei.toString(), burnedEth: formatEther(o.pay.burnedWei) },
     hiring: { hiredBy: (o.hiring?.hiredBy ?? []).map((x) => ({ address: x.address, name: x.name, jobs: x.jobs })), hires: (o.hiring?.hires ?? []).map((x) => ({ address: x.address, name: x.name, jobs: x.jobs })) },
+    plans: { active: o.plans?.active ?? 0, clients: o.plans?.clients ?? 0, monthlyWei: o.plans?.monthlyWei ?? "0", monthlyEth: formatEther(BigInt(o.plans?.monthlyWei ?? "0")), monthsDelivered: o.plans?.monthsDelivered ?? 0, monthsSettled: o.plans?.monthsSettled ?? 0 },
     page: `${o.site}/agents/${path}`, badge: `${o.site}/api/v1/badge/${o.row.address}`,
     attestation,
   };

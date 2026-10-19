@@ -144,7 +144,7 @@ CREATE TABLE IF NOT EXISTS firm_jobs (
   firm_id INTEGER NOT NULL,
   customer TEXT NOT NULL,
   lead TEXT NOT NULL,
-  via TEXT NOT NULL,                 -- hire | link | x402 | kit
+  via TEXT NOT NULL,                 -- hire | link | x402 | kit | plan
   title TEXT NOT NULL DEFAULT '',
   signed_at INTEGER NOT NULL,
   signature TEXT NOT NULL,           -- the customer's, or the link's own number
@@ -460,15 +460,20 @@ export class Firms {
     return [firm.lead, ...this.store.members(firm.id).filter((m) => m.joined_at && m.left_at === null).map((m) => m.address)];
   }
 
+  /** Why a customer cannot hire a firm (it is in it, or run by the same hand as one of its agents), or null. */
+  customerProblem(firm: FirmRow, customer: string): string | null {
+    const inFirm = [firm.lead, ...this.store.members(firm.id).filter((m) => m.left_at === null).map((m) => m.address)];
+    if (inFirm.includes(customer)) return "a firm cannot hire itself: its customer is in it";
+    if (inFirm.some((a) => this.d.sameHand(a, customer))) return "the customer is run by the same hand as an agent of the firm, so the job would only make records";
+    return null;
+  }
+
   /** Why a job locked for a firm's lead cannot be filed under the firm, or null. */
   private jobProblem(firm: FirmRow, job: { customer: string; agent: string; state: number } | null, open = true): string | null {
     if (!job) return "the desk has no such job yet (a new job shows up a few seconds after it is locked)";
     if (job.agent !== firm.lead) return "that job is not locked for the firm's lead: a firm is hired through its lead";
     if (open && job.state !== STATE.locked && job.state !== STATE.advanced) return "that job is no longer open";
-    const inFirm = [firm.lead, ...this.store.members(firm.id).filter((m) => m.left_at === null).map((m) => m.address)];
-    if (inFirm.includes(job.customer)) return "a firm cannot hire itself: its customer is in it";
-    if (inFirm.some((a) => this.d.sameHand(a, job.customer))) return "the customer is run by the same hand as an agent of the firm, so the job would only make records";
-    return null;
+    return this.customerProblem(firm, job.customer);
   }
 
   /** A customer files a job it locked for the lead under the firm, signing the job's title and brief with it. */
@@ -510,8 +515,9 @@ export class Firms {
   }
 
   /**
-   * A job paid through a link the lead signed for the firm (../pay.ts): the link is the lead's word that it sells the
-   * firm's work, and the lock read from the chain is the customer's. Filed when the rules allow it, or why not.
+   * A job paid through a link the lead signed for the firm (../pay.ts), or a month of a plan with the firm (../plans.ts):
+   * the link is the lead's word that it sells the firm's work, a plan the customer's word that it hires the firm, and
+   * the lock read from the chain is the customer's. Filed when the rules allow it, or why not.
    */
   attachDeal(jobId: number, slug: string, locked: LockFacts, linkId: string, via: string): { firm: string } | { firmNote: string } {
     if (!this.d.cfg.enabled) return { firmNote: "firms are switched off for now: the deal stands as an ordinary one" };
@@ -521,7 +527,7 @@ export class Firms {
     if (had) return had.firm_id === firm.id ? { firm: firm.slug } : { firmNote: "that job was hired through another firm" };
     const why = this.jobProblem(firm, { customer: locked.customer, agent: locked.agent, state: STATE.locked }, false);
     if (why) return { firmNote: `${why}: the deal stands as an ordinary one` };
-    this.d.db.q("INSERT INTO firm_jobs (job_id, firm_id, customer, lead, via, title, signed_at, signature, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(job_id) DO NOTHING").run(jobId, firm.id, locked.customer, firm.lead, via === "x402" ? "x402" : "link", "", locked.at, linkId, this.d.db.now());
+    this.d.db.q("INSERT INTO firm_jobs (job_id, firm_id, customer, lead, via, title, signed_at, signature, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(job_id) DO NOTHING").run(jobId, firm.id, locked.customer, firm.lead, via === "x402" ? "x402" : via === "plan" ? "plan" : "link", "", locked.at, linkId, this.d.db.now());
     return { firm: firm.slug };
   }
 

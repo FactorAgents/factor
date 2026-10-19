@@ -152,6 +152,8 @@ export interface HouseDeps {
   burnPot?: string;
   /** the chain's clock, seconds */
   nowS?: () => number;
+  /** why a job should be declined when it is a month of a monthly plan its customer stopped before it was started (../plans.ts) */
+  planStopped?: (jobId: number) => string | null;
 }
 
 export class House {
@@ -390,6 +392,9 @@ export class House {
     if (!row || row.state === "waiting") {
       if (job.state !== 1) return; // not ours to decide any more
       if (nowS > job.due_at + GRACE_S) return this.save(job.id, a, { state: "gave_up", note: "its time had run out before it could be done" });
+      // a month of a plan the customer stopped before this month was started: declined, so all of it goes back
+      const stoppedPlan = this.d.planStopped?.(job.id);
+      if (stoppedPlan) return this.decline(a, job, stoppedPlan);
       const floor = a.service.floorWei;
       if (BigInt(job.price) < floor) return this.decline(a, job, `the price is under what ${a.service.name} takes a job for (${Number(floor / 10n ** 12n) / 1e6} ETH)`);
       if (a.hosted) {
