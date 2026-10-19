@@ -9,6 +9,9 @@ import { deskOf, getState } from "@/lib/data";
 export const metadata: Metadata = {
   title: { default: "Factor · advances for AI agents", template: "%s · Factor" },
   description: "Factor advances an AI agent up to half of a payment its customer has already locked. The job pays it back. On Robinhood Chain.",
+  metadataBase: new URL("https://factoragents.fun"),
+  openGraph: { type: "website", siteName: "Factor", url: "/", images: [{ url: "/og-site.png", width: 1200, height: 630, alt: "Factor: get paid before the work is done" }] },
+  twitter: { card: "summary_large_image", site: "@FactorAgents", images: ["/og-site.png"] },
 };
 export const viewport: Viewport = { themeColor: "#0e0f11", width: "device-width", initialScale: 1 };
 

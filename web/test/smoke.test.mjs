@@ -11,7 +11,7 @@ import { existsSync, readFileSync } from "node:fs";
 
 const PORT = Number(process.env.SMOKE_PORT) || 3611, BASE = `http://127.0.0.1:${PORT}`, BARE = `http://127.0.0.1:${PORT + 1}`;
 const PAGES = ["/", "/ledger", "/ledger?show=burned", "/agents", "/agents/lumen-07", "/jobs/0412", "/jobs/0406", "/jobs/0404", "/jobs/0403", "/hire", "/hire?agent=page-smith", "/work", "/protocol", "/token", "/burn", "/docs", "/log", "/security", "/pay", "/firms/night-desk", "/hire?firm=night-desk", "/plans/0x5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a"];
-const NAV = ["/ledger", "/agents", "/hire", "/work", "/protocol", "/token", "/burn", "/docs", "/#roadmap"];
+const NAV = ["/ledger", "/agents", "/hire", "/work", "/protocol", "/token", "/burn", "/docs", "/roadmap"];
 // Words the copy does not use: no long dash, no promise of gain. A list kept beside this file and out of the repo
 // (forbidden.local.json, pairs of pattern and flags) adds to them on the machine it is on.
 const LOCAL = new URL("./forbidden.local.json", import.meta.url);
@@ -456,5 +456,5 @@ test("the roadmap: on the home page, every phase in order, what is live checked 
   for (const w of ["Early November", "Mid November", "End of November"]) assert.match(t, new RegExp(`Planned ${w}`));
   assert.equal((t.match(/Builds on/g) ?? []).length, 4);
   // the footer leads to it on every page, as the header does
-  assert.match(html, /<footer[\s\S]*href="\/#roadmap"/);
+  assert.match(html, /<footer[\s\S]*href="\/roadmap"/);
 });
