@@ -32,6 +32,7 @@ export function limitsFrom(env: Record<string, string | undefined>): Limits {
 }
 
 const eth = (wei: bigint): string => formatEther(wei);
+const PLAN_ID = z.string().regex(/^0x[0-9a-f]{64}$/).describe("The plan's number: 0x and 64 hex characters");
 const today = (): string => new Date().toISOString().slice(0, 10);
 
 /** What has left a wallet today through these tools. */
@@ -315,10 +316,12 @@ export const TOOLS: Tool[] = [
       due_in_hours: z.number().int().min(1).max(720).optional().describe("Hours the agent has once paid. 24 when not given"),
       allow_early: z.boolean().optional().describe("true lets the agent draw up to half of the payment before delivering. false when not given"),
       expires_in_days: z.number().min(1).max(365).optional().describe("When the link stops working. 30 days when not given"),
+      months: z.number().int().min(2).max(24).optional().describe("Makes it a subscribe link: a monthly plan of this many months, the price each month, each month due a month after it is locked. The title is then 60 characters at most"),
     },
-    description: "Make a Pay with Factor link for this agent's work: a page anybody can pay with a wallet or a passkey, and an x402 address another agent's program can pay. The buyer's payment is locked on Robinhood Chain until delivery; a rejected delivery settles at half. Signed by this agent's key, so nobody can change the price or the terms. A signature, not a transaction: it costs nothing.",
+    description: "Make a Pay with Factor link for this agent's work: a page anybody can pay with a wallet or a passkey, and an x402 address another agent's program can pay. With months, a subscribe link: the buyer puts this agent on a monthly plan, each month locked on Robinhood Chain (paid on its page, not over x402). The buyer's payment is locked on Robinhood Chain until delivery; a rejected delivery settles at half. Signed by this agent's key, so nobody can change the price or the terms. A signature, not a transaction: it costs nothing.",
     async run(f, a) {
-      const r = await f.createPayLink({ price: String(a.price), title: String(a.title), ...(typeof a.brief === "string" ? { brief: a.brief } : {}), dueInHours: a.due_in_hours as number | undefined, allowEarly: a.allow_early === true, expiresInDays: a.expires_in_days as number | undefined });
+      const r = await f.createPayLink({ price: String(a.price), title: String(a.title), ...(typeof a.brief === "string" ? { brief: a.brief } : {}), dueInHours: a.due_in_hours as number | undefined, allowEarly: a.allow_early === true, expiresInDays: a.expires_in_days as number | undefined, ...(typeof a.months === "number" ? { months: a.months } : {}) });
+      if (r.link.months) return `The subscribe link: ${r.url}\nIt sells "${r.link.title}" as a monthly plan of ${r.link.months} months at ${eth(BigInt(r.link.price))} ETH each month, until ${new Date(r.link.exp * 1000).toISOString()}.${r.published ? " It is shown on this agent's page." : ""}`;
       return `The link: ${r.url}\nFor another agent's program (x402): ${r.x402}\nIt sells "${r.link.title}" for ${eth(BigInt(r.link.price))} ETH, due ${r.link.due} hours after payment, until ${new Date(r.link.exp * 1000).toISOString()}.${r.published ? " It is shown on this agent's page." : ""}`;
     },
   },
@@ -424,6 +427,7 @@ export const TOOLS: Tool[] = [
         `Advances: ${r.advances.repaid} repaid, ${r.advances.notRepaid} not repaid. Paid with Factor: ${r.payWithFactor.deals} deals, ${r.payWithFactor.burnedEth} ETH to the burn.`,
         ...(r.hiring?.hiredBy.length ? [`Hired by: ${r.hiring.hiredBy.map((x) => `${x.name} (${x.jobs} job${x.jobs === 1 ? "" : "s"})`).join(", ")}.`] : []),
         ...(r.hiring?.hires.length ? [`Hires: ${r.hiring.hires.map((x) => `${x.name} (${x.jobs} job${x.jobs === 1 ? "" : "s"})`).join(", ")}.`] : []),
+        ...(r.plans && (r.plans.active || r.plans.monthsDelivered) ? [`Monthly clients: ${r.plans.active} plan${r.plans.active === 1 ? "" : "s"} running for ${r.plans.clients} client${r.plans.clients === 1 ? "" : "s"}, ${r.plans.monthlyEth} ETH a month; ${r.plans.monthsDelivered} month${r.plans.monthsDelivered === 1 ? "" : "s"} delivered, ${r.plans.monthsSettled} settled.`] : []),
         `As of block ${r.block}. Attestation: ${v.ok ? `signed by Factor (${r.attestation?.signer})` : `not confirmed, ${v.why}`}.`,
       ].join("\n");
     },
@@ -470,6 +474,74 @@ export const TOOLS: Tool[] = [
       const r = await f.hireFirm(String(a.firm), { price, title: String(a.title), ...(typeof a.brief === "string" ? { brief: a.brief } : {}), dueInHours: a.due_in_hours as number | undefined, allowEarly: a.allow_early === true });
       spending?.add(price);
       return `Job ${r.jobId} is locked for the firm ${r.firm}, through its lead ${r.lead}: ${eth(price)} ETH. ${r.filed ? "It is filed under the firm with its title and brief." : `It could not be filed under the firm: ${r.note ?? "Factor did not answer"} The money is locked for the lead as an ordinary job.`} ${r.jobUrl} Transaction ${r.explorer}.`;
+    },
+  },
+  {
+    name: "factor_plan", readOnly: true, input: { plan: PLAN_ID },
+    description: "One monthly plan: its agent or firm, the price each month, its months with each one's job, state, what was drawn up front and from the pool and what was paid, what the customer can lock next and when, and what the agent can draw on next month early.",
+    async run(f, a) {
+      const page = await f.plan(String(a.plan));
+      if (!page) return `There is no plan ${String(a.plan)} on Factor.`;
+      const p = page.plan;
+      return [
+        `"${p.title}": ${p.firm ? `the firm ${p.firm.name}, led by ${p.agent.name}` : p.agent.name}, ${p.priceEth} ETH a month for ${p.months} months. It is ${p.status}${p.note ? ` (${p.note})` : ""}. Customer ${p.customer}.`,
+        `Months locked ${p.locked} of ${p.months}, delivered ${p.delivered}, settled ${p.settled}; paid to the agent so far ${p.paidEth} ETH.`,
+        ...p.items.map((m) => `Month ${m.month}: job ${m.id}, ${m.state}${m.late ? " (late)" : ""}, due ${m.dueAt.slice(0, 16).replace("T", " ")} UTC${m.upFrontEth ? `, ${m.upFrontEth} ETH drawn up front` : ""}${m.fromPoolEth ? `, ${m.fromPoolEth} ETH from the pool` : ""}${m.paidEth !== undefined ? `, paid ${m.paidEth} ETH` : ""}.`),
+        ...(p.next ? [p.next.open ? `Month ${p.next.month} can be locked now (factor_pay_month); without it the plan lapses at ${p.next.lapsesAt.slice(0, 16).replace("T", " ")} UTC.` : `Month ${p.next.month} can be locked once ${p.next.why?.replace(/ is not delivered yet$/, " is delivered") ?? "it opens"}${p.next.from ? `, or from ${p.next.from.slice(0, 16).replace("T", " ")} UTC` : ""}.`] : []),
+        ...(p.drawEarly ? [p.drawEarly.open ? `The agent can draw ${p.drawEarly.fromPoolEth} ETH on month ${p.drawEarly.month} from the pool now${p.drawEarly.ahead ? ": next month's income, early" : ""} (factor_draw_next_month).` : `Month ${p.drawEarly.month} from the pool: not offered, ${p.drawEarly.why}.`] : []),
+      ].join("\n");
+    },
+  },
+  {
+    name: "factor_subscribe", readOnly: false,
+    input: {
+      agent: z.string().optional().describe("The agent's name or address. Give this or firm"),
+      firm: z.string().regex(/^[a-z0-9](?:[a-z0-9-]{1,30})[a-z0-9]$/).optional().describe("A firm's short name, hired through its lead. Give this or agent"),
+      price: amount.describe("The price of ONE month in ETH, like \"0.01\""),
+      months: z.number().int().min(2).max(24).describe("How many months"),
+      title: z.string().min(3).max(60).describe("One line on the monthly work, without links"),
+      brief: z.string().max(12000).optional().describe("What the agent does each month, up to 12,000 characters. Anyone can read it on each month's job page"),
+      allow_early: z.boolean().optional().describe("true lets the agent start each month with up to half of it; that part is NOT refunded if it then does not deliver. false when not given"),
+    },
+    description: "Put an agent or a firm on a monthly plan. THIS SPENDS ETH: the plan is signed and month 1 is locked now on Robinhood Chain (the price plus 1% that buys and burns $FACTOR); each next month is locked with factor_pay_month when it comes. Every month is an ordinary job: delivered, then accepted (paid) or rejected (settles at half) on its own. The plan can be stopped any time with factor_stop_plan; months not yet locked never leave the wallet. Confirm the agent, the monthly price and the months with the user first unless they already gave them.",
+    async run(f, a, spending) {
+      need(f);
+      const price = toWei(String(a.price));
+      spending?.check(price, true);
+      if (typeof a.agent !== "string" && typeof a.firm !== "string") throw new Refusal("Name the agent, or the firm.", "no_agent");
+      const r = await f.subscribe({ ...(typeof a.firm === "string" ? { firm: a.firm } : { agent: String(a.agent) }), price, months: a.months as number, title: String(a.title), ...(typeof a.brief === "string" ? { brief: a.brief } : {}), allowEarly: a.allow_early === true });
+      spending?.add(price);
+      return `Plan ${r.plan}: month 1 of ${r.months} is locked as job ${r.jobId}, ${eth(price)} ETH${r.burned ? ", with its 1% to the burn" : ""}. ${r.linked ? "Factor linked it to the plan." : `Factor could not link it to the plan: ${r.note ?? "no answer"} The money is locked for the agent as an ordinary job.`} Plan page ${r.planUrl}. Transaction ${r.explorer}.`;
+    },
+  },
+  {
+    name: "factor_pay_month", readOnly: false, input: { plan: PLAN_ID },
+    description: "Lock the next month of a monthly plan this wallet is the customer of. THIS SPENDS ETH: one month's price plus 1% that buys and burns $FACTOR, locked on Robinhood Chain until the agent delivers. It can be locked once the month before it is delivered, or once its own month has begun. Confirm with the user first unless they already said to keep the plan going.",
+    async run(f, a, spending) {
+      need(f);
+      const page = await f.plan(String(a.plan));
+      if (!page) return `There is no plan ${String(a.plan)} on Factor.`;
+      const price = BigInt(page.plan.priceWei);
+      spending?.check(price, true);
+      const r = await f.payMonth(String(a.plan));
+      spending?.add(price);
+      return `Month ${r.month} of ${r.months} is locked as job ${r.jobId}, ${eth(price)} ETH${r.burned ? ", with its 1% to the burn" : ""}. ${r.linked ? "Factor linked it to the plan." : `Factor could not link it to the plan: ${r.note ?? "no answer"}`} ${r.jobUrl} Transaction ${r.explorer}.`;
+    },
+  },
+  {
+    name: "factor_stop_plan", readOnly: false, input: { plan: PLAN_ID },
+    description: "Stop a monthly plan this wallet is the customer of. A signature, not a transaction: nothing is locked after it. Months already locked run as any job; a month locked ahead that the agent has not started can be declined by the agent, which gives it all back, and one nobody answers comes back by the desk's own clock.",
+    async run(f, a) {
+      const r = await f.stopPlan(String(a.plan));
+      return `The plan is stopped. ${r.notStarted.length ? `Locked and not started: job${r.notStarted.length === 1 ? "" : "s"} ${r.notStarted.join(", ")}; the agent can decline ${r.notStarted.length === 1 ? "it" : "them"}, which gives all of it back, or it comes back by itself after its due time and 12 hours.` : "No month was locked ahead."}`;
+    },
+  },
+  {
+    name: "factor_draw_next_month", readOnly: false, input: { plan: PLAN_ID, amount: amount.optional().describe("ETH to draw. All that is offered when not given") },
+    description: "As the agent of a monthly plan: draw on its newest open month from the pool. Before that month begins, this is next month's income, early. Factor offers it only with a good record (three jobs settled, at most one in ten at half, every earlier month of the plan delivered on time and accepted), within the desk's own limits for every pool advance; the month's own payment repays the pool before the agent is paid. The 1% fee comes out of it and buys and burns $FACTOR.",
+    async run(f, a) {
+      const r = await f.drawNextMonth(String(a.plan), typeof a.amount === "string" ? a.amount : undefined);
+      return `Drew ${eth(r.amountWei)} ETH from the pool on month ${r.month} (job ${r.jobId}). Transaction ${r.explorer}.`;
     },
   },
 ];

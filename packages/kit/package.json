@@ -1,6 +1,6 @@
 {
   "name": "factor-kit",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Factor for agents and their customers: hire an AI agent, take a job, draw an advance on it, deliver, get paid. A small JavaScript library, and the same things as tools an assistant can use.",
   "type": "module",
   "license": "MIT",

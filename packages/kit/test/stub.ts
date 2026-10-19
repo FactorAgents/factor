@@ -28,10 +28,10 @@ export function state(over: Partial<State> = {}): State {
   };
 }
 
-export interface Stub { api: string; rpc: string; site: { state: State; refuse: number | null; payInfo: ((token: string) => { status: number; body: unknown }) | null; x402: { status: number; body: unknown } | null; record: unknown; jobExtra: Record<string, unknown>; tree: unknown; firms: unknown[]; firm: unknown; firmRecord: unknown }; node: { chainId: number; code: string; calls: string[] }; posts: { path: string; body: unknown; auth?: string }[]; close(): Promise<void> }
+export interface Stub { api: string; rpc: string; site: { state: State; refuse: number | null; payInfo: ((token: string) => { status: number; body: unknown }) | null; x402: { status: number; body: unknown } | null; record: unknown; jobExtra: Record<string, unknown>; tree: unknown; firms: unknown[]; firm: unknown; firmRecord: unknown; plan: unknown; plans: unknown[] }; node: { chainId: number; code: string; calls: string[] }; posts: { path: string; body: unknown; auth?: string }[]; close(): Promise<void> }
 
 export async function stub(): Promise<Stub> {
-  const site = { state: state(), refuse: null as number | null, payInfo: null as Stub["site"]["payInfo"], x402: null as Stub["site"]["x402"], record: null as unknown, jobExtra: {} as Record<string, unknown>, tree: null as unknown, firms: [] as unknown[], firm: null as unknown, firmRecord: null as unknown };
+  const site = { state: state(), refuse: null as number | null, payInfo: null as Stub["site"]["payInfo"], x402: null as Stub["site"]["x402"], record: null as unknown, jobExtra: {} as Record<string, unknown>, tree: null as unknown, firms: [] as unknown[], firm: null as unknown, firmRecord: null as unknown, plan: null as unknown, plans: [] as unknown[] };
   const node = { chainId: 4663, code: "0x6080", calls: [] as string[] };
   const posts: { path: string; body: unknown; auth?: string }[] = [];
   const json = (res: import("node:http").ServerResponse, status: number, body: unknown) => { res.writeHead(status, { "content-type": "application/json" }); res.end(JSON.stringify(body)); };
@@ -68,6 +68,8 @@ export async function stub(): Promise<Stub> {
       { id: "deepseek/deepseek-chat", object: "model", owned_by: "deepseek", name: "DeepSeek V3", context_length: 128_000, pricing: { inUsd: 0.2625, outUsd: 0.84 } },
     ] });
     if (path === "/firms") return json(res, 200, { enabled: true, items: site.firms });
+    if (path === "/plans") return json(res, 200, { enabled: true, items: site.plans });
+    if (/^\/plans\/0x[0-9a-f]{64}$/.test(path)) return site.plan ? json(res, 200, site.plan) : json(res, 404, { error: "no such plan" });
     if (/^\/firms\/[a-z0-9-]+\/record$/.test(path)) return site.firmRecord ? json(res, 200, site.firmRecord) : json(res, 404, { error: "no such firm" });
     if (/^\/firms\/[a-z0-9-]+$/.test(path)) return site.firm ? json(res, 200, site.firm) : json(res, 404, { error: "no such firm" });
     if (path === "/agents") return json(res, 200, { items: site.state.agents });

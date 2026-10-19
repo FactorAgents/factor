@@ -21,7 +21,8 @@ import { factorAccountAbi } from "./abi/FactorAccount.js";
 import { factorAccountsAbi } from "./abi/FactorAccounts.js";
 import { factorDeskAbi } from "./abi/FactorDesk.js";
 import { CHAIN_ID, DEFAULT_API, DEFAULT_RPC } from "./defaults.js";
-import type { AccountInfo, Agent, AgentPage, ComputeCredit, ComputeKey, Deal, Firm, FirmHire, FirmPage, FirmRecord, Job, JobPage, JobState, JobTree, LedgerLine, ModelAnswer, Page, PayLinkInfo, RouterModel, Sent, State, SubJob } from "./types.js";
+import type { AccountInfo, Agent, AgentPage, ComputeCredit, ComputeKey, Deal, Firm, FirmHire, FirmPage, FirmRecord, Job, JobPage, JobState, JobTree, LedgerLine, ModelAnswer, Page, PayLinkInfo, Plan, PlanMonthSent, PlanPage, RouterModel, Sent, State, SubJob } from "./types.js";
+import { MONTH_S, PLAN_TITLE_MOST, planMessage, stopPlanMessage, type PlanText } from "./plans.js";
 import { FIRM_SLUG, firmHireMessage, firmMessage, joinMessage, leaveMessage, slugOf } from "./firms.js";
 import { hireMessage, type HirePlan } from "./subjobs.js";
 import { explain, Refusal, WORDS } from "./words.js";
@@ -34,6 +35,8 @@ export { encodePayLink, payLinkId, payLinkMessage, readPayLink, tokenOf, verifyR
 export type { AgentRecord, PayLink, RecordMessage, X402Requirements } from "./pay.js";
 export { hireMessage, planIdOf } from "./subjobs.js";
 export { firmHireMessage, firmMessage, joinMessage, leaveMessage, slugOf } from "./firms.js";
+export { MONTH_S, monthlyPlanId, planMessage, stopPlanMessage } from "./plans.js";
+export type { PlanText } from "./plans.js";
 export type { HirePlan } from "./subjobs.js";
 
 const ABI = factorDeskAbi as Abi;
@@ -508,7 +511,7 @@ export class Factor {
    * it. Anybody who opens it can pay with a wallet or a passkey; another agent's program pays it over x402 (`x402`).
    * With `publish` (the default) it is also shown on this agent's public page. Costs nothing.
    */
-  async createPayLink(o: { price: Amount; title: string; brief?: string; dueInHours?: number; allowEarly?: boolean; expiresInDays?: number; publish?: boolean; firm?: string }): Promise<{ url: string; x402: string; token: string; link: PayLink; published: boolean }> {
+  async createPayLink(o: { price: Amount; title: string; brief?: string; dueInHours?: number; allowEarly?: boolean; expiresInDays?: number; publish?: boolean; firm?: string; months?: number }): Promise<{ url: string; x402: string; token: string; link: PayLink; published: boolean }> {
     const agent = this.mine();
     const price = toWei(o.price);
     if (price < 10n ** 15n) throw new Refusal("The smallest job is 0.001 ETH.", "bad_amount");
@@ -516,7 +519,10 @@ export class Factor {
     const title = oneLine(o.title);
     const brief = o.brief === undefined || o.brief.trim() === "" ? "" : briefText(o.brief);
     if (brief.length > LINK_BRIEF_MOST) throw new Refusal(`A link's brief is ${LINK_BRIEF_MOST} characters at most: it travels inside the link. Put the rest on the job once it is paid.`, "bad_text");
-    const due = o.dueInHours ?? 24;
+    // a subscribe link: a monthly plan, each month due a month (720 hours) after it is locked
+    if (o.months !== undefined && (!Number.isSafeInteger(o.months) || o.months < 2 || o.months > 24)) throw new Refusal("A subscribe link is a plan of 2 to 24 months.", "bad_months");
+    if (o.months !== undefined && title.length > PLAN_TITLE_MOST) throw new Refusal(`A subscribe link's title is ${PLAN_TITLE_MOST} characters at most: each month is called "Month 2 of 6: <title>".`, "bad_text");
+    const due = o.months !== undefined ? 720 : o.dueInHours ?? 24;
     if (!Number.isSafeInteger(due) || due < 1 || due > 720) throw new Refusal("dueInHours is a whole number of hours from 1 to 720.", "bad_due");
     const days = o.expiresInDays ?? 30;
     if (!(days > 0 && days <= 365)) throw new Refusal("expiresInDays is from 1 to 365.", "bad_due");
@@ -528,7 +534,7 @@ export class Factor {
       if (!f) throw new Refusal(`There is no firm "${o.firm}" on Factor.`, "no_firm");
       if (f.firm.lead.address !== agent) throw new Refusal(`Only the lead of ${f.firm.name} sells its work with a link. This wallet is not its lead.`, "not_lead");
     }
-    const link: PayLink = { v: 1, agent, price: price.toString(), title, brief, due, early: o.allowEarly === true, exp, id, ...(o.firm ? { firm: o.firm } : {}) };
+    const link: PayLink = { v: 1, agent, price: price.toString(), title, brief, due, early: o.allowEarly === true, exp, id, ...(o.firm ? { firm: o.firm } : {}), ...(o.months !== undefined ? { months: o.months } : {}) };
     const token = encodePayLink(link, await this.sign(payLinkMessage(link)));
     const site = this.api.replace(/\/api\/v1$/, "").replace(/\/v1$/, "");
     let published = false;
@@ -568,6 +574,7 @@ export class Factor {
     const info = await this.payLinkInfo(linkOrUrl);
     if (!info.registered) throw new Refusal(sentence(info.error ?? "This agent has not signed up on Factor yet"), "not_registered");
     if (info.paused) throw new Refusal(info.paused, "paused");
+    if (info.link.months) throw new Refusal("That is a subscribe link: a monthly plan. Pay it with subscribeLink.", "subscribe_link");
     return this.lockForLink(tokenOf(linkOrUrl)!, info.link, BigInt(info.burnWei), info.burnPot, o.maxEth, "kit", o.forJob);
   }
 
@@ -901,6 +908,151 @@ export class Factor {
       out.note = e instanceof Refusal ? e.message : "Factor could not be told of it.";
     }
     return out;
+  }
+
+  // ---------- monthly clients ----------
+
+  /**
+   * Put an agent, or a firm (through its lead), on a monthly plan: `months` months at `price` each month. The plan is
+   * signed (costs nothing) and month 1 is locked at once, with its 1% for the burn; each next month is locked with
+   * payMonth when it comes, or as soon as the month before it is delivered. With `allowEarly` the agent can start each
+   * month with up to half of it, which is not refunded if it then does not deliver. Every month is an ordinary job:
+   * accepted or rejected on its own. `maxEth` caps one month and its burn.
+   */
+  async subscribe(o: { agent?: string; firm?: string; price: Amount; months: number; allowEarly?: boolean; title: string; brief?: string; maxEth?: Amount; link?: string }): Promise<PlanMonthSent> {
+    const customer = this.mine();
+    const s = await this.state();
+    if (s.paused) throw new Refusal(s.paused, "paused");
+    if (!s.plans?.enabled) throw new Refusal("Monthly plans are not switched on yet.", "plans_off");
+    let agent: string | null = null;
+    let firm: string | undefined;
+    if (o.firm !== undefined) {
+      if (!s.firms?.enabled) throw new Refusal("Firms are not switched on yet.", "firms_off");
+      const page = await this.firm(o.firm);
+      if (!page) throw new Refusal(`There is no firm "${o.firm}" on Factor.`, "no_firm");
+      agent = page.firm.lead.address;
+      firm = page.firm.slug;
+    } else if (o.agent !== undefined) {
+      const found = await this.agent(o.agent);
+      agent = found?.agent.address ?? (/^0x[0-9a-fA-F]{40}$/.test(o.agent) ? o.agent.toLowerCase() : null);
+      if (!agent) throw new Refusal(`There is no agent called "${o.agent}" on Factor.`, "no_agent");
+      const service = found?.agent.service;
+      if (service && toWei(o.price) < parseEther(String(service.fromEth))) throw new Refusal(`${found.agent.name} takes a job from ${service.fromEth} ETH. Under that it declines each month.`, "under_price");
+    } else throw new Refusal("Name the agent, or the firm.", "no_agent");
+    if (agent === customer) throw new Refusal("An agent cannot be its own monthly client.", "self_hire");
+    const price = toWei(o.price);
+    if (price < 10n ** 15n) throw new Refusal("A month is 0.001 ETH at least, the desk's smallest job.", "bad_amount");
+    const most = s.plans.mostMonths ?? 12;
+    if (!Number.isSafeInteger(o.months) || o.months < 2 || o.months > most) throw new Refusal(`A plan is 2 to ${most} months.`, "bad_months");
+    const title = oneLine(o.title);
+    if (title.length > PLAN_TITLE_MOST) throw new Refusal(`A plan's title is ${PLAN_TITLE_MOST} characters at most: each month is called "Month 2 of 6: <title>".`, "bad_text");
+    const brief = o.brief === undefined || o.brief.trim() === "" ? "" : briefText(o.brief);
+    const p: PlanText = { customer, agent, ...(firm ? { firm } : {}), price: price.toString(), months: o.months, early: o.allowEarly === true, title, brief, at: await this.clock() };
+    const signature = await this.sign(planMessage(p));
+    const made = await this.askPatient<{ plan: Hex; burnWei?: string }>("/plans/create", { ...p, signature, via: "kit", ...(o.link ? { link: o.link } : {}) });
+    const pot = s.contracts.burnPot?.toLowerCase() ?? "";
+    const burnWei = BigInt(made.burnWei ?? "0");
+    if (burnWei > 0n && !/^0x[0-9a-f]{40}$/.test(pot)) throw new Refusal("Factor names no burn pot. Nothing was locked.", "wrong_pot");
+    const cap = o.maxEth === undefined ? null : toWei(o.maxEth);
+    if (cap !== null && price + burnWei > cap) throw new Refusal(`A month costs ${ethText(price + burnWei)} ETH with its burn, over the ${ethText(cap)} ETH allowed. The plan is signed and nothing was locked: it lapses by itself in a day.`, "over_cap");
+    // month 1 is due a month after it is locked, on the chain's own clock (the desk's longest due time, 30 days)
+    const now = Number((await this.pub.getBlock()).timestamp);
+    return this.lockMonth(made.plan, 1, o.months, agent, now + MONTH_S - 300, p.early, price, burnWei, pot);
+  }
+
+  /** Pay a subscribe link (a Pay with Factor link for a monthly plan): the plan its agent signed, and month 1 locked. */
+  async subscribeLink(linkOrUrl: string, o: { maxEth?: Amount } = {}): Promise<PlanMonthSent> {
+    const info = await this.payLinkInfo(linkOrUrl);
+    const l = info.link;
+    if (!l.months) throw new Refusal("That link sells one job, not a monthly plan: pay it with payLink.", "not_a_plan");
+    return this.subscribe({ agent: l.agent, ...(l.firm ? { firm: l.firm } : {}), price: BigInt(l.price), months: l.months, allowEarly: l.early, title: l.title, ...(l.brief ? { brief: l.brief } : {}), ...(o.maxEth !== undefined ? { maxEth: o.maxEth } : {}), link: tokenOf(linkOrUrl)! });
+  }
+
+  /**
+   * Lock the next month of a plan this wallet is the customer of, with its 1% for the burn. It can be locked once the
+   * month before it is delivered, or once its own month has begun. Locked before its month begins, it is due 30 days
+   * after the lock (the desk's longest), a little before its month would end. `maxEth` caps the month and its burn.
+   */
+  async payMonth(planId: string, o: { maxEth?: Amount } = {}): Promise<PlanMonthSent> {
+    const customer = this.mine();
+    const page = await this.plan(planId);
+    if (!page) throw new Refusal(`There is no plan ${planId} on Factor.`, "no_plan");
+    const p = page.plan;
+    if (p.customer.toLowerCase() !== customer) throw new Refusal("Only the plan's customer locks its months. This wallet is not that customer.", "not_your_plan");
+    if (!p.next) throw new Refusal(p.status === "active" ? "Every month of this plan is locked already." : sentence(`The plan is ${p.status}${p.note ? `: ${p.note}` : ""}`), "plan_closed");
+    if (!p.next.open) throw new Refusal(sentence(`Month ${p.next.month} cannot be locked yet: ${p.next.why ?? "not now"}${p.next.from ? `, or from ${p.next.from.slice(0, 16).replace("T", " ")} UTC` : ""}`), "not_yet");
+    const s = await this.state();
+    if (s.paused) throw new Refusal(s.paused, "paused");
+    const price = BigInt(p.priceWei);
+    const burnWei = BigInt(page.burnWei ?? "0");
+    const cap = o.maxEth === undefined ? null : toWei(o.maxEth);
+    if (cap !== null && price + burnWei > cap) throw new Refusal(`A month costs ${ethText(price + burnWei)} ETH with its burn, over the ${ethText(cap)} ETH allowed.`, "over_cap");
+    const pot = s.contracts.burnPot?.toLowerCase() ?? "";
+    if (burnWei > 0n && !/^0x[0-9a-f]{40}$/.test(pot)) throw new Refusal("Factor names no burn pot. Nothing was locked.", "wrong_pot");
+    // due at the end of its month, or 30 days after the lock when that is sooner (the desk's longest)
+    const now = Number((await this.pub.getBlock()).timestamp);
+    const ends = Math.floor(Date.parse(p.startAt!) / 1000) + p.next.month * MONTH_S;
+    return this.lockMonth(p.id as Hex, p.next.month, p.months, p.agent.address, Math.min(ends, now + MONTH_S - 300), p.early, price, burnWei, pot);
+  }
+
+  private async lockMonth(plan: Hex, month: number, months: number, agent: string, dueAt: number, early: boolean, price: bigint, burnWei: bigint, pot: string): Promise<PlanMonthSent> {
+    const { lockTx, burnTx, jobId } = await this.lockAndBurn(agent, dueAt, early, price, burnWei, pot);
+    const out: PlanMonthSent = { plan, month, months, jobId, lockTx, burnTx, burned: false, linked: false, planUrl: `${this.site()}/plans/${plan}`, jobUrl: `${this.site()}/jobs/${String(jobId).padStart(4, "0")}`, explorer: `${this.explorer}/tx/${lockTx}` };
+    try {
+      const r = await this.askPatient<{ burned?: boolean; month?: number }>("/plans/month", { plan, job: jobId, lockTx, burnTx });
+      out.linked = true;
+      out.burned = r.burned === true;
+      if (r.month) out.month = r.month;
+    } catch (e) {
+      // the money is locked for the agent all the same: an ordinary job of this wallet's, with the reason
+      out.note = e instanceof Refusal ? e.message : "Factor could not be told of it.";
+    }
+    return out;
+  }
+
+  /** Stop a plan this wallet is the customer of. No month is locked after it; months already locked run as any job. Signed; costs nothing. */
+  async stopPlan(planId: string): Promise<{ stopped: boolean; notStarted: number[] }> {
+    const customer = this.mine();
+    if (!/^0x[0-9a-f]{64}$/.test(planId)) throw new Refusal("A plan's number is 0x and 64 hex characters.", "bad_plan");
+    const at = await this.clock();
+    const signature = await this.sign(stopPlanMessage({ plan: planId, customer, at }));
+    const r = await this.askPatient<{ stopped?: boolean; notStarted?: number[] }>("/plans/stop", { plan: planId, at, signature });
+    return { stopped: r.stopped === true, notStarted: r.notStarted ?? [] };
+  }
+
+  /** One plan: its months and each one's job, what the customer can lock next, and what the agent can draw. null: no such plan. */
+  plan(planId: string): Promise<PlanPage | null> {
+    if (!/^0x[0-9a-f]{64}$/.test(planId)) return Promise.resolve(null);
+    return read<PlanPage>(this.api, `/plans/${planId}`);
+  }
+
+  /** The plans of an agent (its monthly clients), of a customer, or of a firm, newest first. */
+  async plans(o: { agent?: string; customer?: string; firm?: string }): Promise<Plan[]> {
+    const q = o.agent ? `agent=${encodeURIComponent(o.agent)}` : o.customer ? `customer=${encodeURIComponent(o.customer)}` : o.firm ? `firm=${encodeURIComponent(o.firm)}` : null;
+    if (!q) throw new Refusal("Ask for the plans of an agent, a customer or a firm.", "bad_query");
+    return (await read<{ items: Plan[] }>(this.api, `/plans?${q}`))?.items ?? [];
+  }
+
+  /**
+   * As the plan's agent: draw on the plan's newest open month from the pool, which before its month begins is next
+   * month's income, early. Factor offers it by the agent's record (three jobs settled, at most one in ten at half, and
+   * every earlier month of the plan delivered on time and accepted); the desk's own limits hold as for any pool
+   * advance. `amount`: less than what is offered, if wanted. The 1% fee comes out of it.
+   */
+  async drawNextMonth(planId: string, amount?: Amount): Promise<Sent & { jobId: number; month: number; amountWei: bigint }> {
+    const me = this.mine();
+    const page = await this.plan(planId);
+    if (!page) throw new Refusal(`There is no plan ${planId} on Factor.`, "no_plan");
+    const p = page.plan;
+    if (p.agent.address.toLowerCase() !== me) throw new Refusal("Only the plan's agent draws on its months. This wallet is not that agent.", "not_your_plan");
+    const e = p.drawEarly;
+    if (!e) throw new Refusal("No month of this plan after the first is open to draw on: the customer locks the next month first.", "nothing_to_draw");
+    if (!e.open) throw new Refusal(sentence(`Month ${e.month} cannot be drawn on from the pool: ${e.why ?? "not now"}`), "not_offered");
+    const offered = BigInt(e.fromPoolWei);
+    const want = amount === undefined ? offered : toWei(amount);
+    if (want > offered) throw new Refusal(`At most ${ethText(offered)} ETH can be drawn on month ${e.month} from the pool right now.`, "over_offer");
+    const sent = await this.draw(e.job, want, "pool");
+    return { ...sent, jobId: e.job, month: e.month, amountWei: want };
   }
 
   private site(): string {

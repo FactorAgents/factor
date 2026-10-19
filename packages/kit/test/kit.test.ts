@@ -14,6 +14,8 @@ import { briefMessage as engineBrief, profileMessage as engineProfile, proofOf a
 import { hireMessage as engineHire, planIdOf as enginePlanId } from "../../../engine/src/subjobs.js";
 import { hireMessage, planIdOf, firmHireMessage, firmMessage, joinMessage, leaveMessage, slugOf } from "../src/index.js";
 import { firmHireMessage as engineFirmHire, firmMessage as engineFirm, joinMessage as engineJoin, leaveMessage as engineLeave, slugOf as engineSlug } from "../../../engine/src/firms.js";
+import { planMessage, stopPlanMessage, monthlyPlanId } from "../src/index.js";
+import { planIdOf as enginePlanIdOf, planMessage as enginePlan, stopMessage as engineStop } from "../../../engine/src/plans.js";
 import { recoverMessageAddress } from "viem";
 import { AGENTS, DESK, JOB, KEY, state, stub, type Stub } from "./stub.js";
 
@@ -340,11 +342,11 @@ describe("the assistant's caps", () => {
 
 describe("the tools", () => {
   it("have a name, a description and an input each, and say which of them send something", () => {
-    expect(TOOLS.map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_hire", "factor_accept", "factor_reject", "factor_set_title", "factor_register", "factor_set_profile", "factor_bond", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_ask_model", "factor_draw", "factor_deliver", "factor_decline", "factor_sign_up", "factor_create_pay_link", "factor_pay_link_info", "factor_pay_link", "factor_pay_x402", "factor_hire_for_job", "factor_job_tree", "factor_reject_sub_jobs", "factor_record", "factor_firms", "factor_firm_record", "factor_hire_firm"]);
+    expect(TOOLS.map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_hire", "factor_accept", "factor_reject", "factor_set_title", "factor_register", "factor_set_profile", "factor_bond", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_ask_model", "factor_draw", "factor_deliver", "factor_decline", "factor_sign_up", "factor_create_pay_link", "factor_pay_link_info", "factor_pay_link", "factor_pay_x402", "factor_hire_for_job", "factor_job_tree", "factor_reject_sub_jobs", "factor_record", "factor_firms", "factor_firm_record", "factor_hire_firm", "factor_plan", "factor_subscribe", "factor_pay_month", "factor_stop_plan", "factor_draw_next_month"]);
     for (const t of TOOLS) expect(t.description.length, t.name).toBeGreaterThan(40);
-    expect(TOOLS.filter((t) => t.readOnly).map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_pay_link_info", "factor_job_tree", "factor_record", "factor_firms", "factor_firm_record"]);
+    expect(TOOLS.filter((t) => t.readOnly).map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_pay_link_info", "factor_job_tree", "factor_record", "factor_firms", "factor_firm_record", "factor_plan"]);
     // the ones that spend or cannot be undone say so in capitals, where an assistant will not miss it
-    for (const name of ["factor_hire", "factor_reject", "factor_bond", "factor_pay_link", "factor_pay_x402", "factor_hire_for_job", "factor_reject_sub_jobs", "factor_hire_firm"]) expect(TOOLS.find((t) => t.name === name)!.description).toMatch(/SPENDS ETH|SETTLES AT HALF/);
+    for (const name of ["factor_hire", "factor_reject", "factor_bond", "factor_pay_link", "factor_pay_x402", "factor_hire_for_job", "factor_reject_sub_jobs", "factor_hire_firm", "factor_subscribe", "factor_pay_month"]) expect(TOOLS.find((t) => t.name === name)!.description).toMatch(/SPENDS ETH|SETTLES AT HALF/);
   });
 
   it("answer in words", async () => {
@@ -628,5 +630,68 @@ describe("agent firms", () => {
     expect((await refusal(f.hireFirm("figure-check-co", { price: "0.02", title: "A note", maxEth: "0.01" }))).code).toBe("over_cap");
     expect((await refusal(f.createPayLink({ price: "0.01", title: "A note", firm: "figure-check-co" }))).code).toBe("not_lead");
     s.site.state = state();
+  });
+});
+
+describe("monthly clients", () => {
+  const AGENT = "0x00000000000000000000000000000000000000a1", ME = "0x70997970c51812dc3a010c7d01b50e0d17dc79c8";
+  const ID = `0x${"cd".repeat(32)}`;
+  const plan = (over: Record<string, unknown> = {}) => ({
+    id: ID, status: "active", customer: "0x00000000000000000000000000000000000000c1", agent: { address: AGENT, name: "lumen-07", named: true }, title: "A weekly market note", brief: "", priceEth: 0.01, priceWei: "10000000000000000", months: 2, early: true, via: "kit",
+    signedAt: "2026-10-19T08:00:00.000Z", startAt: "2026-10-19T08:00:00.000Z", stoppedAt: null, locked: 1, delivered: 1, settled: 0, paidEth: 0, lockedEth: 0.01,
+    items: [{ month: 1, job: 12, id: "0012", state: "delivered", dueAt: "2026-11-18T08:00:00.000Z", beginsAt: "2026-10-19T08:00:00.000Z", late: false, upFrontEth: 0.005, fromPoolEth: 0, burnEth: 0.0001, lockTx: "0xabc" }],
+    next: { month: 2, open: true, dueAt: "2026-11-18T09:00:00.000Z", lapsesAt: "2026-12-18T07:00:00.000Z" },
+    drawEarly: { month: 2, job: 13, ahead: true, open: false, why: "the agent has settled 0 jobs: next month early takes 3", fromPoolEth: 0, fromPoolWei: "0", upFrontEth: 0.005 },
+    signed: { message: "", signature: "0x", by: "0x00000000000000000000000000000000000000c1" }, ...over,
+  });
+
+  it("signs to the letter the words the engine checks, and a subscribe link says its months", () => {
+    const p = { customer: ME, agent: AGENT, price: "10000000000000000", months: 6, early: true, title: "A weekly market note", brief: "Line one\nLine two", at: 1_800_000_000 };
+    expect(planMessage(p)).toBe(enginePlan(p));
+    expect(planMessage({ ...p, firm: "the-weekly-note", early: false, brief: "" })).toBe(enginePlan({ ...p, firm: "the-weekly-note", early: false, brief: "" }));
+    expect(monthlyPlanId(p)).toBe(enginePlanIdOf(p));
+    expect(stopPlanMessage({ plan: ID, customer: ME, at: 1 })).toBe(engineStop({ plan: ID, customer: ME, at: 1 }));
+    const link = { v: 1 as const, agent: AGENT, price: "10000000000000000", title: "A note", brief: "", due: 720, early: true, exp: 1_800_000_000, id: "0123456789abcdef", months: 6 };
+    expect(payLinkMessage(link)).toBe(enginePayLink(link));
+  });
+
+  it("subscribes only while plans are on, within the months and the caps", async () => {
+    const f = await connect({ privateKey: KEY });
+    s.site.state = state();
+    expect((await refusal(f.subscribe({ agent: "lumen-07", price: "0.01", months: 2, title: "A note" }))).code).toBe("plans_off");
+    s.site.state = state({ plans: { enabled: true, mostMonths: 12, active: 0, clients: 0, monthlyEth: 0 } } as never);
+    expect((await refusal(f.subscribe({ agent: "lumen-07", price: "0.01", months: 13, title: "A note" }))).code).toBe("bad_months");
+    expect((await refusal(f.subscribe({ agent: "lumen-07", price: "0.0001", months: 2, title: "A note" }))).code).toBe("bad_amount");
+    expect((await refusal(f.subscribe({ agent: "nobody-here", price: "0.01", months: 2, title: "A note" }))).code).toBe("no_agent");
+    expect((await refusal(f.subscribe({ agent: "lumen-07", price: "0.01", months: 2, title: "x".repeat(61) }))).code).toBe("bad_text");
+    // the plan is signed by the customer's own key; a month over the cap is never locked
+    const before = s.posts.length;
+    expect((await refusal(f.subscribe({ agent: "lumen-07", price: "0.01", months: 2, title: "A note", maxEth: "0.005" }))).code).toBe("over_cap");
+    const sent = s.posts.slice(before).find((x) => x.path === "/plans/create")!;
+    const b = sent.body as { customer: string; agent: string; price: string; months: number; early: boolean; title: string; brief: string; at: number; signature: `0x${string}` };
+    expect(b).toMatchObject({ agent: AGENT, months: 2, price: "10000000000000000", early: false, via: "kit" });
+    expect((await recoverMessageAddress({ message: enginePlan(b), signature: b.signature })).toLowerCase()).toBe(b.customer);
+    s.site.state = state();
+  });
+
+  it("reads a plan, and keeps each side to its own calls", async () => {
+    s.site.plan = { enabled: true, plan: plan(), jobs: [], burnWei: "100000000000000" };
+    const f = await connect({ privateKey: KEY });
+    expect((await f.plan(ID))?.plan.title).toBe("A weekly market note");
+    expect(await f.plan("0x12")).toBeNull();
+    expect((await refusal(f.payMonth(ID))).code).toBe("not_your_plan");
+    expect((await refusal(f.drawNextMonth(ID))).code).toBe("not_your_plan");
+    s.site.plan = { enabled: true, plan: plan({ agent: { address: f.address, name: "me", named: true } }), jobs: [], burnWei: "0" };
+    expect((await refusal(f.drawNextMonth(ID))).code).toBe("not_offered");
+    s.site.plan = { enabled: true, plan: plan({ customer: f.address, next: { month: 2, open: false, why: "month 1 is not delivered yet", from: "2026-11-18T08:00:00.000Z", lapsesAt: "2026-12-18T07:00:00.000Z" } }), jobs: [], burnWei: "0" };
+    expect((await refusal(f.payMonth(ID))).message).toMatch(/Month 2 cannot be locked yet: month 1 is not delivered yet, or from 2026-11-18 08:00 UTC/);
+    s.site.plan = { enabled: true, plan: plan(), jobs: [], burnWei: "0" };
+    const text = (await runTool(f, "factor_plan", { plan: ID }, null)).text;
+    expect(text).toMatch(/"A weekly market note": lumen-07, 0.01 ETH a month for 2 months\. It is active/);
+    expect(text).toMatch(/Month 1: job 0012, delivered, due 2026-11-18 08:00 UTC, 0.005 ETH drawn up front/);
+    expect(text).toMatch(/Month 2 can be locked now/);
+    expect(text).toMatch(/Month 2 from the pool: not offered, the agent has settled 0 jobs/);
+    expect((await refusal(f.createPayLink({ price: "0.01", title: "A note", months: 30 }))).code).toBe("bad_months");
+    s.site.plan = null;
   });
 });

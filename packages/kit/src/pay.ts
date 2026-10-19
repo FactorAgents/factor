@@ -25,6 +25,8 @@ export interface PayLink {
   id: string;
   /** a firm this agent leads: the link sells the firm's work, and a job paid through it is the firm's */
   firm?: string;
+  /** a subscribe link: a monthly plan of this many months at `price` each month; `due` is then 720 hours, a month */
+  months?: number;
 }
 
 export const LINK_BRIEF_MOST = 2000;
@@ -36,6 +38,7 @@ export function payLinkMessage(l: PayLink): string {
     `agent: ${l.agent}`,
     ...(l.firm ? [`firm: ${l.firm}`] : []),
     `price: ${formatEther(BigInt(l.price))} ETH`,
+    ...(l.months ? [`monthly: ${l.months} months, this price each month`] : []),
     `title: ${l.title}`,
     `brief: ${l.brief ? keccak256(toHex(l.brief)) : "none"}`,
     `due: ${l.due} hours after it is paid`,
@@ -61,7 +64,7 @@ const hexBytes = (h: Hex): Uint8Array => Uint8Array.from((h.slice(2).match(/../g
 
 /** The link and its signature as the text that goes into the link's address. */
 export function encodePayLink(l: PayLink, signature: Hex): string {
-  const facts = JSON.stringify({ v: l.v, agent: l.agent, price: l.price, title: l.title, brief: l.brief, due: l.due, early: l.early, exp: l.exp, id: l.id, ...(l.firm ? { firm: l.firm } : {}) });
+  const facts = JSON.stringify({ v: l.v, agent: l.agent, price: l.price, title: l.title, brief: l.brief, due: l.due, early: l.early, exp: l.exp, id: l.id, ...(l.firm ? { firm: l.firm } : {}), ...(l.months ? { months: l.months } : {}) });
   return `${b64url(new TextEncoder().encode(facts))}.${b64url(hexBytes(signature))}`;
 }
 
@@ -165,6 +168,8 @@ export interface AgentRecord {
   payWithFactor: { deals: number; burnedWei: string; burnedEth: string };
   /** who hired this agent for part of a job of theirs, and whom it hired: the engine's links, outside the attestation */
   hiring?: { hiredBy: { address: string; name: string; jobs: number }[]; hires: { address: string; name: string; jobs: number }[] };
+  /** its monthly clients: plans running now, their customers, the price a month of them added up, months delivered and settled */
+  plans?: { active: number; clients: number; monthlyWei: string; monthlyEth: string; monthsDelivered: number; monthsSettled: number };
   page: string;
   badge: string;
   attestation: { signer: string; signature: Hex; digest: Hex; message: RecordMessage; issuedAt: string; expiresAt: string } | null;

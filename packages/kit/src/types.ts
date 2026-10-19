@@ -34,6 +34,8 @@ export interface Job {
   parent?: { n: number; id: string; depth: number };
   /** hired through a firm (part: false), or a sub-job under such a job (part: true) */
   firm?: { slug: string; name: string; house: boolean; part: boolean };
+  /** a month of a monthly plan: which plan, and which month of how many */
+  plan?: { id: string; month: number; months: number };
 }
 
 export interface Agent {
@@ -87,6 +89,8 @@ export interface State {
   subjobs?: { enabled: boolean; maxDepth: number; perParent: number };
   /** agent firms: whether they can be formed and hired, how many there are, and the first of them */
   firms?: { enabled: boolean; count: number; mostMembers: number; items: Firm[] };
+  /** monthly clients: whether a customer can put an agent or a firm on a plan, the longest plan, and the plans running */
+  plans?: { enabled: boolean; mostMonths: number; active: number; clients: number; monthlyEth: number };
 }
 
 /** A Factor account: what an agent's key acts through when Factor pays its gas (connect with `gasless: true`). */
@@ -119,7 +123,7 @@ export interface ModelAnswer { text: string; model: string; inputTokens: number;
 /** The other agents one agent hired for parts of its jobs, and those that hired it, with how many jobs. */
 export interface Hiring { hiredBy: { address: string; name: string; named?: boolean; jobs: number }[]; hires: { address: string; name: string; named?: boolean; jobs: number }[] }
 /** `hiring` is there only when the agent hired somebody or was hired by one. */
-export interface AgentPage { agent: Agent; jobs: Job[]; events: LedgerLine[]; hiring?: Hiring; /** the firms it leads, belongs to or is invited to */ firms?: { slug: string; name: string; house: boolean; role: "lead" | "member" | "invited" }[] }
+export interface AgentPage { agent: Agent; jobs: Job[]; events: LedgerLine[]; hiring?: Hiring; /** the firms it leads, belongs to or is invited to */ firms?: { slug: string; name: string; house: boolean; role: "lead" | "member" | "invited" }[]; /** its monthly clients, when it has any plan */ plans?: PlansSummary }
 
 /** One of a firm's agents, and its part of the firm's work. */
 export interface FirmMember { address: string; name: string; named: boolean; role: "lead" | "member" | "invited"; since: string | null; part: { jobs: number; settled: number; settledEth: number; settledWei: string } }
@@ -265,3 +269,44 @@ export interface Deal {
   firm?: string;
   firmNote?: string;
 }
+
+// ---------- monthly clients ----------
+
+export type PlanStatus = "waiting" | "active" | "stopped" | "ended" | "lapsed" | "done";
+/** One month of a plan: a job on the desk. */
+export interface PlanMonth { month: number; job: number; id: string; state: JobState; dueAt: string; beginsAt: string; late: boolean; upFrontEth: number; fromPoolEth: number; paidEth?: number; burnEth: number; lockTx: string }
+/** A monthly plan as Factor serves it (GET /api/v1/plans/<id>). */
+export interface Plan {
+  id: string;
+  status: PlanStatus;
+  note?: string;
+  customer: string;
+  agent: { address: string; name: string; named: boolean };
+  firm?: { slug: string; name: string; house: boolean };
+  title: string;
+  brief: string;
+  priceEth: number;
+  priceWei: string;
+  months: number;
+  early: boolean;
+  via: string;
+  signedAt: string;
+  startAt: string | null;
+  stoppedAt: string | null;
+  locked: number;
+  delivered: number;
+  settled: number;
+  paidEth: number;
+  lockedEth: number;
+  items: PlanMonth[];
+  /** the month the customer locks next: whether it can be now, the due time it gets, and when the plan lapses without it */
+  next: { month: number; open: boolean; why?: string; from?: string; dueAt?: string; lapsesAt: string } | null;
+  /** what the agent can draw on its newest open month: from the pool (next month early, by its record) and up front */
+  drawEarly: { month: number; job: number; ahead: boolean; open: boolean; why?: string; fromPoolEth: number; fromPoolWei: string; upFrontEth: number } | null;
+  signed: { message: string; signature: string; by: string };
+}
+export interface PlanPage { enabled: boolean; plan: Plan; jobs: Job[]; burnWei: string }
+/** An agent's or a firm's monthly clients. */
+export interface PlansSummary { active: number; clients: number; monthlyEth: number; monthlyWei: string; monthsDelivered: number; monthsSettled: number; plans: number; items: { id: string; status: PlanStatus; customer: string; title: string; priceEth: number; months: number; locked: number; delivered: number; firm?: string }[] }
+/** A month locked by the kit: the job, the lock and its burn, and whether Factor linked it to the plan. */
+export interface PlanMonthSent { plan: `0x${string}`; month: number; months: number; jobId: number; lockTx: `0x${string}`; burnTx: `0x${string}` | null; burned: boolean; linked: boolean; note?: string; planUrl: string; jobUrl: string; explorer: string }
