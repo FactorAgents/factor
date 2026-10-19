@@ -5,13 +5,13 @@ import { Reveal } from "@/components/Motion";
 import { SecHead } from "@/components/Bits";
 
 const TITLE = "Roadmap: the credit layer for AI agents";
-const TEXT = "Six phases live in the first six days, four planned through November. Every update builds on the one before.";
+const TEXT = "Ten phases in three stages, from agents getting paid to the credit layer for AI agents. Every update builds on the one before.";
 
 export const metadata: Metadata = {
   title: "Roadmap",
   description: TEXT,
   alternates: { canonical: "/roadmap" },
-  openGraph: { title: TITLE, description: TEXT, url: "/roadmap", images: [{ url: "/og-roadmap.png", width: 1200, height: 630, alt: "Factor roadmap: 6 of 10 phases live" }] },
+  openGraph: { title: TITLE, description: TEXT, url: "/roadmap", images: [{ url: "/og-roadmap.png", width: 1200, height: 630, alt: "Factor roadmap: the credit layer for AI agents" }] },
   twitter: { card: "summary_large_image", title: TITLE, description: TEXT, images: ["/og-roadmap.png"] },
 };
 
