@@ -282,6 +282,8 @@ export interface PlansSummaryJson {
   monthlyWei: string;
   monthsDelivered: number;
   monthsSettled: number;
+  /** what the settled months of its plans paid it in all: up front, from the pool (which the month repaid) and on delivery */
+  paidEth: number;
   plans: number;
   items: { id: string; status: PlanStatus; customer: string; title: string; priceEth: number; months: number; locked: number; delivered: number; firm?: string }[];
 }
@@ -669,7 +671,7 @@ export class Plans {
   summary(o: { agent?: string; firm?: string }): PlansSummaryJson {
     const t = this.d.nowS();
     const plans = this.store.list(o);
-    let monthly = 0n, delivered = 0, settled = 0;
+    let monthly = 0n, delivered = 0, settled = 0, paid = 0n;
     const clients = new Set<string>();
     const items: PlansSummaryJson["items"] = [];
     for (const plan of plans) {
@@ -678,9 +680,10 @@ export class Plans {
       const d = st.rows.filter((r) => r.job && r.job.state >= STATE.delivered && r.job.state <= STATE.half).length;
       delivered += d;
       settled += st.rows.filter((r) => r.job?.state === STATE.settled).length;
+      paid += st.rows.filter((r) => r.job?.state === STATE.settled || r.job?.state === STATE.half).reduce((n, r) => n + BigInt(r.job!.early || "0") + BigInt(r.job!.from_pool || "0") + BigInt(r.job!.paid || "0"), 0n);
       items.push({ id: plan.id, status: st.status, customer: plan.customer, title: plan.title, priceEth: ethNum(plan.price), months: plan.months, locked: st.rows.length, delivered: d, ...(plan.firm ? { firm: plan.firm } : {}) });
     }
-    return { active: items.filter((i) => i.status === "active").length, clients: clients.size, monthlyEth: ethNum(monthly), monthlyWei: monthly.toString(), monthsDelivered: delivered, monthsSettled: settled, plans: plans.length, items: items.slice(0, 50) };
+    return { active: items.filter((i) => i.status === "active").length, clients: clients.size, monthlyEth: ethNum(monthly), monthlyWei: monthly.toString(), monthsDelivered: delivered, monthsSettled: settled, paidEth: ethNum(paid), plans: plans.length, items: items.slice(0, 50) };
   }
 
   /** Every active plan together: for the first page's figures. */

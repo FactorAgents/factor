@@ -664,7 +664,9 @@ button.toggle { width: 100%; text-align: left; background: transparent; color: i
 .plan-month .when { margin-top: 14px; font-size: var(--t-small); color: var(--dim); }
 .plan-signed { white-space: pre-wrap; word-break: break-all; }
 .monthly { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 48px; align-items: start; }
-.monthly .income { font-family: var(--serif); font-size: clamp(40px, 5vw, 64px); line-height: 1; margin-top: 14px; white-space: nowrap; }
+.monthly .income { font-family: var(--serif); font-size: clamp(36px, 3.8vw, 54px); line-height: 1; margin-top: 14px; white-space: nowrap; }
+.monthly .income small { display: inline-block; }
+.plan-figs .big { font-size: clamp(26px, 3vw, 40px); }
 .monthly .income small { font-size: 0.36em; color: var(--mid); margin-left: 10px; }
 .plan-list { display: grid; }
 .plan-list a { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 18px; align-items: baseline; padding: 14px 0; border-top: 1px solid var(--line); transition: background 0.25s ease; }

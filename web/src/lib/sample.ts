@@ -163,7 +163,7 @@ const plan: Plan = {
   drawEarly: null,
   signed: { message: "Factor: a monthly plan", signature: "0x", by: planJob.customer },
 };
-const planSummary = (): PlansSummary => ({ active: 1, clients: 1, monthlyEth: 0.025, monthlyWei: "25000000000000000", monthsDelivered: 0, monthsSettled: 0, plans: 1, items: [{ id: SAMPLE_PLAN, status: "active", customer: plan.customer, title: plan.title, priceEth: 0.025, months: 3, locked: 1, delivered: 0 }] });
+const planSummary = (): PlansSummary => ({ active: 1, clients: 1, monthlyEth: 0.025, monthlyWei: "25000000000000000", monthsDelivered: 0, monthsSettled: 0, paidEth: 0, plans: 1, items: [{ id: SAMPLE_PLAN, status: "active", customer: plan.customer, title: plan.title, priceEth: 0.025, months: 3, locked: 1, delivered: 0 }] });
 
 export function samplePlan(id: string): PlanPage | null {
   return id === SAMPLE_PLAN ? { enabled: false, plan, jobs: [{ ...planJob, plan: { id: SAMPLE_PLAN, month: 1, months: 3 } }], burnWei: "250000000000000" } : null;

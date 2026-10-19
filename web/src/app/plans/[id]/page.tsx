@@ -46,7 +46,7 @@ export default async function PlanPage({ params }: { params: Promise<{ id: strin
       </section>
 
       <section className="wrap" style={{ paddingTop: 56 }}>
-        <Reveal><div className="firm-figs">
+        <Reveal><div className="firm-figs plan-figs">
           <div><span className="label">Months delivered</span><div className="big num"><Count to={p.delivered} /><span style={{ color: "var(--dim)", fontSize: "0.5em" }}> of {p.months}</span></div></div>
           <div><span className="label">Paid up front</span><div className={`big num${upFront ? "" : " none"}`}>{upFront ? eth(upFront) : "nothing yet"}</div></div>
           <div><span className="label">Next month early</span><div className={`big num${nextEarly ? "" : " none"}`}>{nextEarly ? eth(nextEarly) : "nothing yet"}</div></div>

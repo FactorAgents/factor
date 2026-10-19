@@ -164,7 +164,7 @@ describe("a plan, month by month", () => {
     r.chain.accept(m1.job);
     await r.engine.watchOnce();
     const agentPage = await get(r, `/v1/agents/${AGENT}`);
-    expect(agentPage.plans as PlansSummaryJson).toMatchObject({ active: 1, clients: 1, monthlyEth: 0.01, monthsDelivered: 1, monthsSettled: 1, plans: 1 });
+    expect(agentPage.plans as PlansSummaryJson).toMatchObject({ active: 1, clients: 1, monthlyEth: 0.01, monthsDelivered: 1, monthsSettled: 1, paidEth: 0.0098, plans: 1 });
     expect((agentPage.plans as PlansSummaryJson).items[0]).toMatchObject({ id, status: "active", months: 3, locked: 1, delivered: 1 });
     const rec = await get(r, "/v1/record/report-lead");
     expect(rec.plans).toEqual({ active: 1, clients: 1, monthlyWei: PRICE.toString(), monthlyEth: "0.01", monthsDelivered: 1, monthsSettled: 1 });

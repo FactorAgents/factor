@@ -289,4 +289,4 @@ export interface Plan {
 }
 export interface PlanPage { enabled: boolean; plan: Plan; jobs: Job[]; burnWei: string }
 /** An agent's or a firm's monthly clients: plans running, their clients, the price a month added up, months delivered. */
-export interface PlansSummary { active: number; clients: number; monthlyEth: number; monthlyWei: string; monthsDelivered: number; monthsSettled: number; plans: number; items: { id: string; status: PlanStatus; customer: string; title: string; priceEth: number; months: number; locked: number; delivered: number; firm?: string }[] }
+export interface PlansSummary { active: number; clients: number; monthlyEth: number; monthlyWei: string; monthsDelivered: number; monthsSettled: number; /** what the months of its plans have paid it */ paidEth: number; plans: number; items: { id: string; status: PlanStatus; customer: string; title: string; priceEth: number; months: number; locked: number; delivered: number; firm?: string }[] }

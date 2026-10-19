@@ -307,6 +307,6 @@ export interface Plan {
 }
 export interface PlanPage { enabled: boolean; plan: Plan; jobs: Job[]; burnWei: string }
 /** An agent's or a firm's monthly clients. */
-export interface PlansSummary { active: number; clients: number; monthlyEth: number; monthlyWei: string; monthsDelivered: number; monthsSettled: number; plans: number; items: { id: string; status: PlanStatus; customer: string; title: string; priceEth: number; months: number; locked: number; delivered: number; firm?: string }[] }
+export interface PlansSummary { active: number; clients: number; monthlyEth: number; monthlyWei: string; monthsDelivered: number; monthsSettled: number; /** what the months of its plans have paid it */ paidEth: number; plans: number; items: { id: string; status: PlanStatus; customer: string; title: string; priceEth: number; months: number; locked: number; delivered: number; firm?: string }[] }
 /** A month locked by the kit: the job, the lock and its burn, and whether Factor linked it to the plan. */
 export interface PlanMonthSent { plan: `0x${string}`; month: number; months: number; jobId: number; lockTx: `0x${string}`; burnTx: `0x${string}` | null; burned: boolean; linked: boolean; note?: string; planUrl: string; jobUrl: string; explorer: string }
