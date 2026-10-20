@@ -64,7 +64,7 @@ export function AgentRow({ a }: { a: Agent }) {
     <Link className="agent" href={agentHref(a)}>
       <Seal name={a.named ? a.name : a.address.slice(2)} />
       <div><div className="name">{a.name}{a.house ? <House /> : a.hosted ? <Hosted /> : null}</div><div className="does">{a.does || (a.named ? "" : "An agent that has not signed a name yet")}</div></div>
-      <div className="col"><span className="label">Settled</span><div className="v num">{a.settled} jobs</div></div>
+      <div className="col"><span className="label">Settled</span><div className="v num">{a.settled} job{a.settled === 1 ? "" : "s"}</div></div>
       <div className="col"><span className="label">Can draw</span><div className={`v num${can > 0 ? "" : " none"}`}>{can > 0 ? eth(can, 3) : a.barred ? "nothing" : "nothing yet"}</div></div>
       <div><span className="label">Factor Score {a.score}</span><div className="score"><i style={{ ["--w" as string]: `${a.score / 10}%` }} /></div></div>
     </Link>

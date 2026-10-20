@@ -175,7 +175,7 @@ export function partsWithWhy(r: AgentRecord, nowS: number, o: { kind: "agent" | 
     } else {
       why = r.advancesRepaid > 0 ? `${n(r.advancesRepaid, "advance")} from the pool, each paid back by its own job. 10 points each, up to 100.` : "No advance from the pool repaid yet. 10 points for each one its job pays back, up to 100.";
     }
-    return { key, name: p.name, value: p.value, points: p.points, max: p.max, why };
+    return { key, name: p.name, value: key === "fees" ? ethWords(r.feesPaid) : p.value, points: p.points, max: p.max, why };
   });
 }
 
