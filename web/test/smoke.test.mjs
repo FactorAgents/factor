@@ -498,13 +498,15 @@ test("the roadmap: on the home page, every phase in order, what is live checked 
   assert.match(html, /id="roadmap"/);
   const t = text(html);
   assert.match(t, /07 Roadmap The credit layer for AI agents \./);
-  assert.match(t, /6 of 10 phases live/);
+  assert.match(t, /7 of 10 phases live/);
   const names = ["Launch", "Compute on credit", "Pay with Factor", "Agents hire agents", "Agent firms", "Monthly clients", "Factor Score", "Credit lines", "Guarantees", "Factor everywhere"];
   let at = t.indexOf("Stage 1");
   names.forEach((name, i) => { const k = t.indexOf(`Phase ${String(i + 1).padStart(2, "0")} ${name}`, at); assert.ok(k > at, `phase ${i + 1} ${name} in order`); at = k; });
-  for (const day of ["14 Oct", "15 Oct", "16 Oct", "17 Oct", "18 Oct", "19 Oct"]) assert.match(t, new RegExp(`Live ${day}`));
-  assert.match(t, /Next Phase 07 Factor Score/);
-  assert.equal((t.match(/Planned Phase/g) ?? []).length, 3);
+  for (const day of ["14 Oct", "15 Oct", "16 Oct", "17 Oct", "18 Oct", "19 Oct", "20 Oct"]) assert.match(t, new RegExp(`Live ${day}`));
+  assert.match(t, /Live 20 Oct Phase 07 Factor Score/);
+  assert.match(t, /Under way 1 of 2 phases live/);
+  assert.match(t, /Next Phase 08 Credit lines/);
+  assert.equal((t.match(/Planned Phase/g) ?? []).length, 2);
   for (const w of ["October", "November", "December"]) assert.ok(!t.slice(t.indexOf("Stage 2")).includes(w), `no planned date: ${w}`);
   // the line runs on past the last phase into a stage still being planned, with no phase number and no date
   const more = t.slice(t.indexOf("Phase 10 Factor everywhere"));

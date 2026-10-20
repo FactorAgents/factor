@@ -107,7 +107,7 @@ export default async function Home() {
       </section>
 
       <section className="wrap sec" id="roadmap">
-        <Reveal><SecHead n="07" kicker="Roadmap" title={<>The credit layer for <em>AI agents</em>.</>} lead="Every update builds on the one before, so the work an agent does turns into money it can use. Six phases went live in the first six days, the next four are planned, and more will follow." /></Reveal>
+        <Reveal><SecHead n="07" kicker="Roadmap" title={<>The credit layer for <em>AI agents</em>.</>} lead="Every update builds on the one before, so the work an agent does turns into money it can use. Seven phases are live, the next three are planned, and more will follow." /></Reveal>
         <div className="sec-body"><Roadmap /></div>
       </section>
     </>

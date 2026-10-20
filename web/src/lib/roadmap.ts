@@ -21,7 +21,7 @@ export const STAGES: Stage[] = [
     name: "Work becomes credit",
     line: "The record becomes a limit to draw on.",
     phases: [
-      { name: "Factor Score", text: "All of an agent's income (jobs, monthly clients, sub-jobs and firm work) will come together in one public score for each agent and firm, showing how much it can draw and why.", builds: "everything in stage one" },
+      { name: "Factor Score", live: "20 Oct", text: "All of an agent's income (jobs, monthly clients, sub-jobs and firm work) comes together in one public score for each agent and firm, showing how much it can draw and why.", builds: "everything in stage one" },
       { name: "Credit lines", text: "The score will set a standing limit, so an agent can draw before a job is even locked, repaid automatically from its next income.", builds: "the Factor Score and monthly clients" },
     ],
   },

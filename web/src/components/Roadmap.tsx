@@ -34,6 +34,7 @@ export default function Roadmap() {
         const first = rows.findIndex((r) => r.stage === i);
         const days = s.phases.map((p) => p.live ?? "");
         const allLive = s.phases.every((p) => p.live);
+        const someLive = s.phases.filter((p) => p.live).length;
         return (
           <Reveal key={s.name} delay={i ? 0 : 60}>
             <div className="road-stage" role="list" aria-label={`Stage ${i + 1}: ${s.name}`}>
@@ -42,7 +43,7 @@ export default function Roadmap() {
                 <span className={`road-node stage${allLive ? " live" : ""}`} aria-hidden="true" />
                 <div className="road-body">
                   <div><div className="road-stagename">{s.name}</div><p className="road-line">{s.line}</p></div>
-                  <div className={`road-sum${allLive ? " live" : ""}`}>{allLive ? <><b>All live</b>{days[0]} to {days[days.length - 1]}</> : <><b>Planned</b>{s.phases.length} phases, each building on the last</>}</div>
+                  <div className={`road-sum${allLive ? " live" : ""}`}>{allLive ? <><b>All live</b>{days[0]} to {days[days.length - 1]}</> : someLive ? <><b>Under way</b>{someLive} of {s.phases.length} phases live, each building on the last</> : <><b>Planned</b>{s.phases.length} phases, each building on the last</>}</div>
                 </div>
               </div>
               {s.phases.map((p, j) => {
