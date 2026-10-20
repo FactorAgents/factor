@@ -128,6 +128,23 @@ describe("linking", () => {
     expect((await get(r, `/v1/erc8004/${AGENT}`))).toMatchObject({ erc8004: null, none: true });
   });
 
+  it("an agent that joins the desk with an identity made before is found soon after, not a day later", async () => {
+    const r = await desk();
+    r.chain.identity(OTHER);
+    await r.turn(); // the whole registry read: OTHER is found and linked
+    const lateKey = privateKeyToAccount("0x47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a");
+    const LATE = lateKey.address.toLowerCase();
+    const id = r.chain.identity(LATE);
+    r.chain.mine(1, 400);
+    await r.turn(); // the new identities: LATE is not on the desk yet
+    expect((await get(r, `/v1/erc8004/${OTHER}`)).erc8004).not.toBeNull();
+    r.chain.register(LATE);
+    r.chain.mine(1, 700);
+    await r.turn();
+    await r.turn();
+    expect((await get(r, `/v1/erc8004/${LATE}`)).erc8004).toMatchObject({ agentId: String(id), linked: "found" });
+  });
+
   it("refuses an identity the gas wallet owns: the registry would refuse every entry for it", async () => {
     const r = await desk();
     const id = r.chain.identity(A.bot, AGENT);

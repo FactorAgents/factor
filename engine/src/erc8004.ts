@@ -69,6 +69,8 @@ export interface Erc8004Config {
   scanFrom: number;
   /** ERC8004_SCAN_EVERY_S: how often the identities made since the last reading are read (300) */
   scanEveryS: number;
+  /** ERC8004_SCAN_BATCH: identities in one request (400). A copy of the chain wants a few: each one read there is a request to the real node */
+  scanBatch: number;
 }
 
 export function readErc8004(env: Env, problems: string[] = []): Erc8004Config {
@@ -108,8 +110,14 @@ export function readErc8004(env: Env, problems: string[] = []): Erc8004Config {
     if (/^\d{1,6}$/.test(rawEvery) && Number(rawEvery) >= 1) scanEveryS = Number(rawEvery);
     else problems.push(`ERC8004_SCAN_EVERY_S must be a whole number of seconds: it is "${rawEvery}"`);
   }
+  let scanBatch = 400;
+  const rawBatch = env.ERC8004_SCAN_BATCH?.trim();
+  if (rawBatch) {
+    if (/^\d{1,4}$/.test(rawBatch) && Number(rawBatch) >= 1 && Number(rawBatch) <= 1000) scanBatch = Number(rawBatch);
+    else problems.push(`ERC8004_SCAN_BATCH must be a whole number from 1 to 1000: it is "${rawBatch}"`);
+  }
   const site = (env.FACTOR_SITE_URL?.trim() || "https://factoragents.fun").replace(/\/+$/, "");
-  return { enabled: sw("ERC8004"), backfill: sw("ERC8004_BACKFILL"), identity: address("ERC8004_IDENTITY", IDENTITY_REGISTRY), reputation: address("ERC8004_REPUTATION", REPUTATION_REGISTRY), gasDayWei, perPass, site, scanFrom, scanEveryS };
+  return { enabled: sw("ERC8004"), backfill: sw("ERC8004_BACKFILL"), identity: address("ERC8004_IDENTITY", IDENTITY_REGISTRY), reputation: address("ERC8004_REPUTATION", REPUTATION_REGISTRY), gasDayWei, perPass, site, scanFrom, scanEveryS, scanBatch };
 }
 
 /** The identity registry the way ERC-8004 names it: eip155:<chain>:<address>. */
@@ -344,11 +352,11 @@ export function feedbackFile(o: { chainId: number; identity: string; agentId: st
 
 /** How often the whole registry is read again (an identity's wallet or owner can change), and the new ones. */
 const FULL_EVERY_MS = 24 * 3_600_000;
-/** Identities in one request, and requests in one pass at most. */
-const BATCH = 400;
+/** Requests in one pass at most. A reading of the new identities asks for fewer at a time: most of them are not there yet. */
 const BATCHES_PER_PASS = 8;
+const NEW_BATCH = 50;
 
-interface ScanState { next: number; end: number | null; sweep: number; running: "full" | "new" | null; fullAt: number; newAt: number }
+interface ScanState { next: number; end: number | null; sweep: number; running: "full" | "new" | null; fullAt: number; newAt: number; /** agents on the desk when the last whole reading began */ agents?: number }
 
 export interface Erc8004Deps {
   db: EngineDb;
@@ -442,15 +450,18 @@ export class Erc8004 {
     const st = this.scanState();
     const now = this.d.now();
     if (!st.running) {
-      if (now - st.fullAt >= FULL_EVERY_MS) Object.assign(st, { running: "full", next: this.cfg.scanFrom, sweep: st.sweep + 1 });
+      // the whole registry again once a day, and soon after an agent joins the desk: it may have had an identity before
+      const joined = agents.size > (st.agents ?? 0) && now - st.fullAt >= Math.min(600, 2 * this.cfg.scanEveryS) * 1000;
+      if (now - st.fullAt >= FULL_EVERY_MS || joined) Object.assign(st, { running: "full", next: this.cfg.scanFrom, sweep: st.sweep + 1, agents: agents.size });
       else if (now - st.newAt >= this.cfg.scanEveryS * 1000) Object.assign(st, { running: "new", next: Math.max(st.end ?? 0, this.cfg.scanFrom) });
       else return `the registry was read ${Math.round((now - st.newAt) / 1000)} s ago`;
     }
     let finished = false;
     const add = (agent: string, id: number, via: "wallet" | "owner") =>
       db.q("INSERT INTO erc8004_found (agent, agent_id, via, sweep) VALUES (?, ?, ?, ?) ON CONFLICT(agent, agent_id) DO UPDATE SET via = excluded.via, sweep = excluded.sweep").run(agent, String(id), via, st.sweep);
+    const batch = st.running === "new" ? Math.min(NEW_BATCH, this.cfg.scanBatch) : this.cfg.scanBatch;
     for (let b = 0; b < BATCHES_PER_PASS && !finished; b++) {
-      const got = await this.identities(Array.from({ length: BATCH }, (_, i) => st.next + i));
+      const got = await this.identities(Array.from({ length: batch }, (_, i) => st.next + i));
       db.tx(() => {
         for (const r of got) {
           if (r.owner === null) {
@@ -463,7 +474,7 @@ export class Erc8004 {
           if (agents.has(r.owner) && r.owner !== r.wallet) add(r.owner, r.id, "owner");
         }
       });
-      if (!finished) st.next += BATCH;
+      if (!finished) st.next += batch;
     }
     let said = `read the registry up to identity ${finished ? st.end : st.next}`;
     if (finished) {
