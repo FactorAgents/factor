@@ -40,6 +40,8 @@ import { Subjobs } from "./subjobs.js";
 import { Firms, HOUSE_FIRM } from "./firms.js";
 import { Plans } from "./plans.js";
 import { recordSigner, type RecordSigner } from "./record.js";
+import { Erc8004 } from "./erc8004.js";
+import { sourceOf } from "./api.js";
 import { snapshotOf } from "./chain/context.js";
 
 export interface EngineOptions {
@@ -105,6 +107,8 @@ export class Engine {
   firms: Firms | null = null;
   /** monthly clients (./plans.ts): plans whose every month is an ordinary job on the desk */
   plans: Plans | null = null;
+  /** ERC-8004 (./erc8004.ts): settled jobs written to the agents' reputation in the standard's registry */
+  erc8004: Erc8004 | null = null;
   /** the key that signs agents' records for other apps (./record.ts), or null */
   readonly recordSigner: RecordSigner | null;
   private carryTimer: ReturnType<typeof setInterval> | null = null;
@@ -165,7 +169,7 @@ export class Engine {
     for (const [name, l] of this.loops) loops[name] = { lastRunAt: l.lastRunAt, lastOkAt: l.lastOkAt, runs: l.runs, failures: l.failures, waitMs: l.waitMs, backingOff: l.backingOff };
     return {
       config: this.config, state: this.state, problems: this.problems, warnings: this.warnings, lastError: this.lastError, loops, ctx: this.ctx, rpc: this.chain?.health() ?? null, now: this.now,
-      links: { pons: link(this.env.FACTOR_PONS_URL), github: link(this.env.FACTOR_GITHUB_URL), x: link(this.env.FACTOR_X_URL) }, dataDirSet: !!this.env.FACTOR_DATA_DIR?.trim(), profiles: this.profiles, gateway: this.gateway, accounts: this.accounts, house: this.house, demo: this.demo, pulse: this.pulse, deskMind: this.deskMind, launchList: this.launchList, activity: this.activity, matcher: this.matcher, pay: this.pay, subjobs: this.subjobs, recordSigner: this.recordSigner, firms: this.firms, plans: this.plans,
+      links: { pons: link(this.env.FACTOR_PONS_URL), github: link(this.env.FACTOR_GITHUB_URL), x: link(this.env.FACTOR_X_URL) }, dataDirSet: !!this.env.FACTOR_DATA_DIR?.trim(), profiles: this.profiles, gateway: this.gateway, accounts: this.accounts, house: this.house, demo: this.demo, pulse: this.pulse, deskMind: this.deskMind, launchList: this.launchList, activity: this.activity, matcher: this.matcher, pay: this.pay, subjobs: this.subjobs, recordSigner: this.recordSigner, firms: this.firms, plans: this.plans, erc8004: this.erc8004,
     };
   }
 
@@ -208,10 +212,10 @@ export class Engine {
   }
   private writesQ: Database.Statement | null = null;
 
-  /** Counts of what a page shows beside the state (a job's brief, title and work; links; sub-jobs; months of plans). */
+  /** Counts of what a page shows beside the state (a job's brief, title and work; links; sub-jobs; months of plans; ERC-8004 links and entries). */
   private extraCounts(): string {
     const out: string[] = [];
-    for (const t of ["job_titles", "job_briefs", "job_deliveries", "pay_links", "subjobs", "plan_months", "firm_members", "hosted_agents"]) {
+    for (const t of ["job_titles", "job_briefs", "job_deliveries", "pay_links", "subjobs", "plan_months", "firm_members", "hosted_agents", "erc8004_links", "erc8004_entries"]) {
       try {
         const r = this.sqlite.prepare(`SELECT COUNT(*) AS n, IFNULL(MAX(rowid), 0) AS m FROM ${t}`).get() as { n: number; m: number };
         out.push(`${r.n}:${r.m}`);
@@ -375,6 +379,17 @@ export class Engine {
       names: () => this.profiles!.all(),
       pool: () => { const snap = snapshotOf(db); return snap ? { pool: BigInt(snap.desk.pool), out: BigInt(snap.desk.out) } : null; },
     });
+    // ERC-8004: made whether or not it is on, so an agent's page still shows what was written after it is switched off
+    this.erc8004 = new Erc8004(c.erc8004, {
+      db, chain: this.chain, chainId: c.chainId, desk: c.desk, explorer: c.explorer, now: this.now, nowS,
+      writer: () => this.ctx?.facts.bot ?? null,
+      signed: async (address, message, signature) => this.profiles!.signed(address, message, signature),
+      sourceOf: (agent, id) => sourceOf(this.view(), agent, id),
+      sameHand: (a, b) => this.subjobs!.sameHand(a, b),
+      log: this.log,
+    });
+    this.ctx.erc8004 = this.erc8004;
+    if (c.erc8004.enabled) this.log(`[erc8004] on: every settled job of an agent linked to an ERC-8004 identity is written to its reputation (${c.erc8004.reputation})${c.erc8004.backfill ? ", and the jobs from before its link once" : ""}`);
     if (c.plans.enabled) this.log(`[plans] on: customers can put an agent or a firm on a monthly plan of up to ${c.plans.mostMonths} months`);
     if (c.firms.enabled) this.log(`[firms] on: agents can form firms of up to ${c.firms.mostMembers + 1}, and customers hire them through their lead`);
     if (c.subjobs.enabled) this.log(`[subjobs] on: an agent can hire other agents for parts of its job, ${c.subjobs.maxDepth} levels deep, ${c.subjobs.perParent} under one job`);

@@ -2,6 +2,7 @@
 // wallet when there is one, and the database.
 
 import type { AccountsConfig } from "../accounts.js";
+import type { Erc8004 } from "../erc8004.js";
 import type { Chain, Signer } from "./chain.js";
 import type { EngineMode, EngineParams } from "./config.js";
 import type { EngineDb } from "./db.js";
@@ -47,6 +48,7 @@ export interface Ctx {
   blockTimes: Map<bigint, number>; // block times asked of the node, kept for the life of the process
   stopping: () => boolean; // the server is shutting down: nothing new is started, and no receipt is waited for
   accounts?: AccountsConfig; // what the gas wallet pays for on accounts, and how much
+  erc8004?: Erc8004 | null; // settled jobs written to the agents' ERC-8004 reputation (../erc8004.ts)
 }
 
 // The chain as the engine last read it. Amounts are wei in text; times are unix seconds unless they say ms.

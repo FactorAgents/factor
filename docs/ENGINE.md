@@ -195,8 +195,8 @@ on nothing else.
 
 ## Switches, and the daily copy
 
-The owner can stop the gas wallet's sending, accounts, compute, the house agents or the offer to lock new jobs at
-once, with `POST /v1/admin/switch` and `ENGINE_ADMIN_KEY`, or from the start with `ENGINE_STOP`
+The owner can stop the gas wallet's sending, accounts, compute, the house agents, the offer to lock new jobs or the
+ERC-8004 entries at once, with `POST /v1/admin/switch` and `ENGINE_ADMIN_KEY`, or from the start with `ENGINE_STOP`
 (`src/switches.ts`). `docs/SECURITY.md` says what each one stops and what to do when something looks wrong.
 
 A copy of the database is written beside it once a day and the last seven are kept (`src/backup.ts`,
@@ -278,6 +278,31 @@ the fees its jobs paid in, less what is out. For a firm it is the same formula o
 (`recordOfJobs`, the desk's bookkeeping job by job), drawn on through its lead. `/v1/agents/<id>` and `/v1/record/<id>`
 carry `factorScore`; `/v1/firms` items carry `score`; a firm's record carries `score` and `factorScore`, outside its
 attestation. The score moves no money and sets no limit.
+
+## ERC-8004
+
+`src/erc8004.ts`, off until `ERC8004=on`. ERC-8004's two registries are on Robinhood Chain at the standard's addresses
+(identity `0x8004A169FB4a3325136EB29fA0ceB6D2e539a432`, reputation `0x8004BAa17C55a88189AE136b182e5fdA19dE9b63`,
+version 2.0.0). Three parts:
+
+- **Linking.** The engine reads the identity registry through Multicall3, 400 identities a request: all of it once a
+  day, the new ones every five minutes. An agent on the desk with no link gets the identity whose agentWallet is its
+  wallet, or failing that the one its wallet owns, when there is exactly one (`erc8004_found` holds what was found).
+  An agent signs to choose (`POST /v1/erc8004/link`, the words `Factor: link an ERC-8004 identity`, or `agentId: none`);
+  the identity must be its own on the chain. A link whose identity changes hands is marked lost.
+- **Writing** (action `erc8004`, last in every pass, `src/chain/act.ts`). Each job of a linked agent that settles from
+  the moment of the link: `giveFeedback(agentId, 100 | 50, 0, "factor", job | monthly | subjob | firm, "",
+  <site>/api/v1/erc8004/feedback/<job>, keccak256(file))` from the gas wallet. The file (`feedbackFile`) is kept word for
+  word in `erc8004_entries` before anything is sent and served at `/v1/erc8004/feedback/<job>`. A job is never sent again
+  once it is on its way or mined; before each one the identity is checked to be the agent's still, the registry's
+  `getLastIndex(agentId, gas wallet)` is checked against the entries in the database (more on the chain stops the
+  writing to that identity), and `ERC8004_GAS_DAY_WEI` caps a day. A refusal for good (the gas wallet owns or operates
+  the identity: "Self-feedback not allowed") sets the job aside. Demonstration jobs and jobs an agent locked for itself
+  are not written. The owner's `erc8004` switch stops it at once.
+- **Past jobs.** `ERC8004_BACKFILL=on` writes the settled jobs from before each link, once, oldest first, after the new.
+
+`/v1/erc8004`, `/v1/erc8004/<agent>`, the agent's page (`erc8004`) and its record (`erc8004`, outside the attestation)
+say what was linked and written. The tables are never taken back by a reindex.
 
 ## Settings
 

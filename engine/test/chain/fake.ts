@@ -4,8 +4,9 @@
 // in the real encoding (the watchers decode them with the real ABIs), and a wallet whose sends can be held back,
 // dropped or made to fail. Nothing here touches a node or a key.
 
-import { decodeFunctionData, encodeAbiParameters, encodeEventTopics, encodeFunctionData, keccak256, type Abi, type AbiEvent, type Hex } from "viem";
-import { factorAccountAbi, factorAccountsAbi, factorBurnPotAbi, factorDeskAbi, factorSplitterAbi, factorTokenAbi } from "../../src/abi/index.js";
+import { decodeFunctionData, encodeAbiParameters, encodeEventTopics, encodeFunctionData, encodeFunctionResult, keccak256, type Abi, type AbiEvent, type Hex } from "viem";
+import { erc8004IdentityAbi, erc8004ReputationAbi, factorAccountAbi, factorAccountsAbi, factorBurnPotAbi, factorDeskAbi, factorSplitterAbi, factorTokenAbi } from "../../src/abi/index.js";
+import { IDENTITY_REGISTRY, MULTICALL3, REPUTATION_REGISTRY } from "../../src/erc8004.js";
 import { Reverted, type CallSpec, type Chain, type ChainLog, type Fees, type Head, type LogFilter, type Pay, type RawCall, type Receipt, type RpcHealth, type SentTx, type Signer, type TxRequest } from "../../src/chain/chain.js";
 import { ETH_USD_FEED } from "../../src/chain/watch.js";
 import { FEEDS } from "../../src/house/feeds.js";
@@ -23,6 +24,10 @@ export const A = {
   // the maker of accounts for people without a wallet, and the account its copies are made from
   accounts: "0x00000000000000000000000000000000000acc07",
   original: "0x00000000000000000000000000000000000acc00",
+  // the ERC-8004 registries, at their real addresses, and Multicall3 beside them
+  identity: IDENTITY_REGISTRY,
+  reputation: REPUTATION_REGISTRY,
+  multicall: MULTICALL3,
 };
 // What the made-up accounts take as their owner's signature: a real one needs a passkey or a key, which the engine
 // never has, so here the right signature is simply this one and every other is refused as the contract would.
@@ -30,7 +35,7 @@ export const GOOD_SIGNATURE = `0x${"5e".repeat(65)}` as Hex;
 const ZERO = "0x0000000000000000000000000000000000000000";
 export const ETH = 10n ** 18n;
 export const MINTED = 1_000_000_000n * ETH;
-const ABIS: Record<string, Abi> = { splitter: factorSplitterAbi as Abi, burnPot: factorBurnPotAbi as Abi, desk: factorDeskAbi as Abi, token: factorTokenAbi as Abi, accounts: factorAccountsAbi as Abi, account: factorAccountAbi as Abi };
+const ABIS: Record<string, Abi> = { splitter: factorSplitterAbi as Abi, burnPot: factorBurnPotAbi as Abi, desk: factorDeskAbi as Abi, token: factorTokenAbi as Abi, accounts: factorAccountsAbi as Abi, account: factorAccountAbi as Abi, identity: erc8004IdentityAbi as Abi, reputation: erc8004ReputationAbi as Abi };
 
 // The desk's own numbers for a job's state, and for the kind of an advance.
 export const S = { none: 0, locked: 1, advanced: 2, delivered: 3, settled: 4, half: 5, declined: 6, refunded: 7 } as const;
@@ -79,7 +84,11 @@ export class FakeChain implements Chain {
   private stamps = new Map<bigint, number>();
   private salts = new Map<bigint, number>();
   allLogs: ChainLog[] = [];
-  code_ = new Set<string>([A.splitter, A.burnPot, A.desk, A.token, A.factory, A.escrow, A.accounts, A.original]);
+  code_ = new Set<string>([A.splitter, A.burnPot, A.desk, A.token, A.factory, A.escrow, A.accounts, A.original, A.identity, A.reputation, A.multicall]);
+  // ERC-8004, as the deployed 2.0.0 keeps it: identities numbered from 0, each with an owner, an agentWallet and one
+  // approved address; entries by identity and writer, numbered from 1
+  identities: { owner: string; wallet: string | null; approved: string | null }[] = [];
+  feedback = new Map<string, { value: bigint; decimals: number; tag1: string; tag2: string; uri: string; hash: string }[]>();
   // accounts for people without a wallet that exist, with the number their next order must carry
   made = new Map<string, { nonce: number; kind: number; a: string; b: string }>();
 
@@ -148,7 +157,7 @@ export class FakeChain implements Chain {
   rejectSends = false; // the node answers a send with an error
   loseReply = false; // the node takes a send, and the reply is lost on the way back
   gasPrice = 22_000_000n;
-  gasOf: Record<string, bigint> = { sweep: 280_000n, claimToken: 150_000n, burn: 400_000n, settle: 220_000n, refund: 100_000n, collect: 45_000n };
+  gasOf: Record<string, bigint> = { sweep: 280_000n, claimToken: 150_000n, burn: 400_000n, settle: 220_000n, refund: 100_000n, collect: 45_000n, giveFeedback: 218_000n };
   busy = false; // every request is turned away (403)
   down = false; // every request fails
   tooManyAbove = 0n; // a log query over more blocks than this is refused as too big (0: never)
@@ -329,6 +338,21 @@ export class FakeChain implements Chain {
       }
       return undefined;
     }
+    if (to === A.reputation && fn === "giveFeedback") {
+      const [agentId, value, decimals, tag1, tag2, , uri, hash] = args as [bigint, bigint, number, string, string, string, string, string];
+      const who = this.identities[Number(agentId)];
+      if (!who) throw new Reverted("ERC721NonexistentToken", [agentId]);
+      const f = from.toLowerCase();
+      if (who.owner === f || who.approved === f) throw new Reverted("Self-feedback not allowed");
+      if (commit) {
+        const key = `${agentId}:${f}`;
+        const list = this.feedback.get(key) ?? [];
+        list.push({ value, decimals: Number(decimals), tag1, tag2, uri, hash });
+        this.feedback.set(key, list);
+        this.emit("reputation", "NewFeedback", { agentId, clientAddress: from, feedbackIndex: BigInt(list.length), value, valueDecimals: Number(decimals), indexedTag1: tag1, tag1, tag2, endpoint: "", feedbackURI: uri, feedbackHash: hash }, txHash);
+      }
+      return undefined;
+    }
     if (to === A.accounts && fn === "create") {
       const key = args[0] as { kind: number; a: string; b: string };
       const account = FakeChain.accountOf(key);
@@ -406,6 +430,20 @@ export class FakeChain implements Chain {
     this.mine();
     this.agents.set(agent.toLowerCase(), { registered: true, barred: false, firstSettledAt: 0, settled: 0, settledAtHalf: 0, notDelivered: 0, unanswered: 0, customers: 0, onTime: 0, late: 0, advancesRepaid: 0, advancesNotRepaid: 0, earlyKept: 0, bond: 0n, feesPaid: 0n, advancedNow: 0n, volume: 0n });
     this.emit("desk", "Registered", { agent });
+  }
+
+  /** An ERC-8004 identity: register() from `owner`, whose agentWallet is the owner unless a test says another. */
+  identity(owner: string, wallet: string | null = owner): number {
+    this.mine();
+    const id = this.identities.length;
+    this.identities.push({ owner: owner.toLowerCase(), wallet: wallet?.toLowerCase() ?? null, approved: null });
+    this.emit("identity", "Registered", { agentId: BigInt(id), agentURI: "", owner });
+    return id;
+  }
+
+  /** The entries one writer gave an identity. */
+  entriesOf(agentId: number, writer: string): { value: bigint; decimals: number; tag1: string; tag2: string; uri: string; hash: string }[] {
+    return this.feedback.get(`${agentId}:${writer.toLowerCase()}`) ?? [];
   }
 
   bond(agent: string, amount: bigint): void {
@@ -700,6 +738,23 @@ export class FakeChain implements Chain {
     if (to === A.factory && fn === "getLaunchedToken") return { phase: this.phase, exists: true };
     if (to === A.escrow && fn === "balanceOf") return this.escrow;
     if (to === A.escrow && fn === "balanceOfToken") return this.factorCredit;
+    if (to === A.identity) {
+      const who = this.identities[Number(a[0] as bigint)];
+      if (fn === "ownerOf") { if (!who) throw new Reverted("ERC721NonexistentToken", [a[0]]); return who.owner; }
+      if (fn === "getAgentWallet") return who?.wallet ?? ZERO;
+    }
+    if (to === A.reputation && fn === "getLastIndex") return BigInt(this.entriesOf(Number(a[0] as bigint), String(a[1])).length);
+    if (to === A.multicall && fn === "aggregate3") {
+      return (a[0] as { target: string; allowFailure: boolean; callData: Hex }[]).map((c) => {
+        const d = decodeFunctionData({ abi: erc8004IdentityAbi as Abi, data: c.callData });
+        try {
+          const out = this.answer({ to: c.target, abi: erc8004IdentityAbi as Abi, functionName: d.functionName, args: d.args });
+          return { success: true, returnData: encodeFunctionResult({ abi: erc8004IdentityAbi as Abi, functionName: d.functionName, result: out } as never) };
+        } catch {
+          return { success: false, returnData: "0x" as Hex };
+        }
+      });
+    }
     throw new Reverted("reverted");
   }
 

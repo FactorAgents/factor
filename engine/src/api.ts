@@ -17,6 +17,10 @@
 //   POST /v1/firms/form|join|leave|hire   a lead signs a firm, an agent joins or leaves, a customer hires one
 //   GET  /v1/plans?agent=|customer=|firm=   monthly plans; /v1/plans/<id> one plan, its months and what comes next (plans.ts)
 //   POST /v1/plans/create|month|stop   a customer signs a plan, links a month it locked, or stops the plan
+//   GET  /v1/erc8004           ERC-8004: whether settled jobs are written, the registries, and the address they come from
+//   GET  /v1/erc8004/<agent>   an agent's ERC-8004 identity and the entries Factor wrote to its reputation (erc8004.ts)
+//   GET  /v1/erc8004/feedback/<job>   the file an entry points at, word for word: its keccak256 is the hash on the chain
+//   POST /v1/erc8004/link      an agent signs which ERC-8004 identity is its own, or that it wants none linked
 //
 // Every GET is answered from the database (the last reading of the chain, the ledger, the engine's copy of each
 // job and agent), so a burst of visitors costs the node nothing. Before the contracts are given, and whenever the
@@ -40,7 +44,8 @@ import { allStopped, isSwitch, SWITCHES, stopped, turn } from "./switches.js";
 import { DeskStore, KIND_NAME, RULES, STATE, STATE_NAME, type AdvanceRow, type AgentRecord, type AgentRow, type JobRow, type LedgerRow } from "./desk.js";
 import { briefText, oneLine, Profiles, type Profile, type Written } from "./profiles.js";
 import { canDrawOf, limitOf, scoreOf, scoreParts } from "./score.js";
-import { drawOf, factorScore, incomeOf, type FactorScoreJson, type IncomeSource, type ScoreJob } from "./factorscore.js";
+import { drawOf, factorScore, incomeOf, sourceOfJob, type FactorScoreJson, type IncomeSource, type ScoreJob } from "./factorscore.js";
+import type { Erc8004 } from "./erc8004.js";
 import type { Pulse } from "./pulse.js";
 import { ethOf, type DeskMind, type Facts, type Note } from "./deskmind.js";
 import type { LaunchList } from "./launchlist.js";
@@ -94,6 +99,17 @@ export interface EngineView {
   firms?: Firms | null;
   /** monthly clients (./plans.ts) */
   plans?: Plans | null;
+  /** settled jobs written to the agents' ERC-8004 reputation (./erc8004.ts) */
+  erc8004?: Erc8004 | null;
+}
+
+/** How a job came to its agent (./factorscore.ts), from the engine's links between jobs. */
+export function sourceOf(v: Pick<EngineView, "plans" | "firms" | "subjobs">, agent: string, id: number): IncomeSource {
+  return sourceOfJob({
+    isMonth: (j) => !!v.plans?.monthOf(j),
+    firm: (j) => { const f = v.firms?.firmOfJob(j); return f ? { part: f.part, team: v.firms!.team(f.firm) } : null; },
+    isSubjob: (j) => !!v.subjobs?.store.link(j),
+  }, agent, id);
 }
 
 // ---- the site's shape: web/src/lib/types.ts. Keep the two in step by hand. ----
@@ -249,6 +265,8 @@ export interface FactorState {
   firms: { enabled: boolean; count: number; mostMembers: number; items: FirmJson[] };
   /** monthly clients: whether a customer can put an agent or a firm on a plan, the longest plan, and the plans running */
   plans: { enabled: boolean; mostMonths: number; active: number; clients: number; monthlyEth: number };
+  /** ERC-8004: whether settled jobs are written to the agents' reputation, the identity registry, and the address entries come from */
+  erc8004: { enabled: boolean; registry: string | null; reviewer: string | null };
 }
 export interface RosterJson { name: string; does: string; needs: string; delivers: string; fromEth: number; asksAModel: boolean; /** the Desk's opening file on it */ file?: { text: string; at: string } }
 // what Factor's own agents are, said the same before the launch and after it
@@ -491,6 +509,11 @@ export class EngineApi {
     if (m) return (v) => this.agent(v, m![1]);
     m = /^\/v1\/jobs\/(\d{1,9})$/.exec(path);
     if (m) return (v) => this.job(v, Number(m![1]));
+    if (path === "/v1/erc8004") return (v) => ok(v.erc8004?.about() ?? { enabled: false });
+    m = /^\/v1\/erc8004\/feedback\/(\d{1,9})$/.exec(path);
+    if (m) return (v) => { const body = v.erc8004?.file(Number(m![1])) ?? null; return body ? ok(JSON.parse(body) as Record<string, unknown>) : notFound("no entry has been written for that job"); };
+    m = /^\/v1\/erc8004\/([0-9a-zA-Z-]{3,42})$/.exec(path);
+    if (m) return (v) => this.erc8004Of(v, m![1]!);
     m = /^\/v1\/jobs\/(\d{1,9})\/tree$/.exec(path);
     if (m) return (v) => { const t = this.tree(v, Number(m![1])); return t ? ok(t as unknown as Record<string, unknown>) : notFound("that job hired nobody and was not hired for another"); };
     return null;
@@ -533,6 +556,7 @@ export class EngineApi {
         hiring: this.hiring(v, row.address),
         plans: this.plansOf(v, { agent: row.address }),
         factorScore: this.factorScoreOf(v, r, row),
+        erc8004: v.erc8004?.json(row.address) ?? null,
       }) as unknown as Record<string, unknown>);
     }
     return null;
@@ -641,6 +665,35 @@ export class EngineApi {
     return a;
   }
 
+  // An agent signs which ERC-8004 identity is its own (./erc8004.ts).
+  private async erc8004Post(body: unknown, from: string): Promise<Answer> {
+    const v = this.view();
+    if (!v.erc8004 || v.state !== "running") return { status: 503, body: { error: "the engine is not reading the chain yet" } };
+    if (!body || typeof body !== "object" || Array.isArray(body)) return { status: 400, body: { error: "the body is not a JSON object" } };
+    if (this.tooMany(from, "erc8004", 20)) return { status: 429, body: { error: "too many requests: try again in a minute" } };
+    const a = await v.erc8004.link(body as Record<string, unknown>);
+    if (a.status === 200) this.cache.clear();
+    return a;
+  }
+
+  // An agent's ERC-8004 identity, the entries written, and the identities found for it when none is linked.
+  private erc8004Of(v: EngineView, idOrName: string): Answer {
+    const r = this.running(v);
+    if (!r || !v.erc8004) return notFound("no such agent");
+    const address = normalizeAddress(idOrName) ?? v.profiles?.byName(idOrName) ?? null;
+    const row = address ? r.store.agent(address) : null;
+    if (!row) return notFound("no such agent");
+    const e = v.erc8004;
+    const link = e.store.link(row.address);
+    return ok({
+      enabled: e.cfg.enabled, agent: row.address, erc8004: e.json(row.address),
+      // the identities the registry says are this agent's: more than one, and the agent signs which
+      found: e.store.found(row.address).map((f) => ({ agentId: f.agent_id, via: f.via })),
+      ...(link && link.agent_id === null ? { none: true } : {}),
+      registry: e.registry, reviewer: (e.about().reviewer as string | null) ?? null,
+    });
+  }
+
   // One caller's requests of one kind in a minute: true when it is one too many.
   private tooMany(from: string, kind: string, most: number): boolean {
     const now = Date.now();
@@ -737,6 +790,7 @@ export class EngineApi {
     if (path === "/v1/plans/create" || path === "/v1/plans/month" || path === "/v1/plans/stop") return this.plansPost(path, body, from);
     if (path === "/v1/accounts" || path.startsWith("/v1/accounts/")) return this.accountsPost(path, body, from);
     if (path === "/v1/agents/make" || path === "/v1/agents/pause") return this.hostedPost(path, body, from);
+    if (path === "/v1/erc8004/link") return this.erc8004Post(body, from);
     if (path !== "/v1/agents/profile" && path !== "/v1/jobs/title" && path !== "/v1/jobs/brief" && path !== "/v1/jobs/delivery" && path !== "/v1/admin/hide" && path !== "/v1/admin/switch") return null;
     const v = this.view();
     if ((!v.profiles || v.state !== "running") && path === "/v1/agents/profile" && v.launchList && body && typeof body === "object" && !Array.isArray(body)) {
@@ -874,6 +928,8 @@ export class EngineApi {
       ...((f) => (f.length ? { firms: f } : {}))((v.firms?.store.of(row.address) ?? []).map((x) => ({ slug: x.firm.slug, name: x.firm.name, house: !!x.firm.house, role: x.role }))),
       // its monthly clients: only when it has any plan
       ...((p) => (p ? { plans: p } : {}))(this.plansOf(v, { agent: row.address })),
+      // its ERC-8004 identity and the entries written to its reputation: only when one is linked
+      ...((x) => (x ? { erc8004: x } : {}))(v.erc8004?.json(row.address) ?? null),
     });
   }
 
@@ -894,14 +950,7 @@ export class EngineApi {
     const db = r.ctx.db;
     const jobs = db.q("SELECT id, state, customer, price, fee, closed_at, early, from_pool FROM desk_jobs WHERE agent = ? AND state IN (?, ?)").all(row.address, STATE.settled, STATE.half) as ScoreJob[];
     // each job once, under the first way that fits it
-    const sourceOf = (id: number): IncomeSource => {
-      if (v.plans?.monthOf(id)) return "monthly";
-      const f = v.firms?.firmOfJob(id);
-      if (f && (!f.part || v.firms!.team(f.firm).includes(row.address))) return "firm";
-      if (v.subjobs?.store.link(id)) return "subjobs";
-      return "jobs";
-    };
-    const income = incomeOf(jobs, sourceOf);
+    const income = incomeOf(jobs, (id): IncomeSource => sourceOf(v, row.address, id));
     const distinct = new Set(jobs.map((j) => j.customer)).size;
     const out = v.subjobs ? (db.q("SELECT s.price, d.state FROM subjobs s LEFT JOIN desk_jobs d ON d.id = s.job_id WHERE s.hirer = ?").all(row.address) as { price: string; state: number | null }[]) : [];
     const value = out.reduce((n, x) => n + BigInt(x.price), 0n);
@@ -1088,7 +1137,8 @@ export class EngineApi {
     const firms = { enabled: firmsOn, count: firmList.length, mostMembers: c.firms.mostMembers, items: firmList.slice(0, 24) };
     const planTotals = v.plans && v.state === "running" ? v.plans.totals() : { active: 0, clients: 0, monthlyEth: 0 };
     const plans = { enabled: !!v.plans && c.plans.enabled && v.state === "running", mostMonths: c.plans.mostMonths, ...planTotals };
-    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused, roster: this.rosterJson(v), hosted, pulse: pulseJson(v, 8), desk: this.deskJson(v), signups, activity, pay, subjobs, firms, plans };
+    const erc8004 = { enabled: !!v.erc8004 && c.erc8004.enabled && v.state === "running", registry: v.erc8004?.registry ?? null, reviewer: v.ctx?.facts.bot ? getAddress(v.ctx.facts.bot) : null };
+    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused, roster: this.rosterJson(v), hosted, pulse: pulseJson(v, 8), desk: this.deskJson(v), signups, activity, pay, subjobs, firms, plans, erc8004 };
     if (!r) {
       return { ...base, launched: false, stats: { advancedEth: 0, settledJobs: 0, jobs: 0, poolEth: 0, reserveEth: 0, outEth: 0, heldEth: 0, burnedTokens: 0, supplyLeft: SUPPLY, agents: 0, demoJobs: 0, lostEth: 0, poolFromTradingEth: 0 }, burn: null, agents: [], jobs: [], events: [], burns: [] };
     }
@@ -1185,6 +1235,7 @@ export class EngineApi {
       accounts: v.accounts ? { ...v.accounts.about(), note: c.accounts.note, ...v.accounts.store.totals(), gasDayWei: c.accounts.gasDayWei.toString() } : null,
       compute: v.gateway ? { ...v.gateway.about(), note: c.compute.note, ...v.gateway.store.totals(), todayMicro: v.gateway.store.spentToday(), dailyMicro: c.compute.dailyMicro, routerFloatUsd: v.gateway.float?.usd() ?? null } : null,
       rpc: v.rpc ? { ...v.rpc, lastError: v.rpc.lastError ? hostsOnly(v.rpc.lastError) : null } : null,
+      erc8004: v.erc8004 ? { ...v.erc8004.about(), spentTodayWei: v.erc8004.spentToday().toString(), gasDayWei: c.erc8004.gasDayWei.toString(), scan: ctx.db.getJson("erc8004:scan") } : null,
       events: ctx.db.count("chain_events"),
       ledger: ctx.db.count("ledger"),
     });

@@ -19,12 +19,16 @@
 // "factorScore" (./factorscore.ts) is the score with its parts, the income behind it by the way each job came, and what
 // the desk lets the agent draw. Its number is the attested "score": the desk's own, FactorDesk.score(agent). The rest
 // of it (the split by the way each job came, the words) is outside the attestation, like "hiring" and "plans".
+//
+// "erc8004" (./erc8004.ts) is the agent's ERC-8004 identity and the entries Factor wrote to its reputation, outside the
+// attestation too: each entry is on Robinhood Chain in the standard's own registry, where any app reads it.
 
 import { concat, formatEther, hashTypedData, keccak256, toHex, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import type { AgentRecord, AgentRow } from "./desk.js";
 import { scoreOf } from "./score.js";
 import type { FactorScoreJson } from "./factorscore.js";
+import type { Erc8004Json } from "./erc8004.js";
 import { takeHouseSeed } from "./house/house.js";
 import type { EngineDb } from "./chain/db.js";
 
@@ -113,6 +117,8 @@ export interface RecordJson {
   plans: { active: number; clients: number; monthlyWei: string; monthlyEth: string; monthsDelivered: number; monthsSettled: number };
   /** the Factor Score: the score above with its parts, the income behind it by the way each job came, and what the desk lets it draw */
   factorScore: FactorScoreJson | null;
+  /** its ERC-8004 identity and the entries Factor wrote to its reputation; null when no identity is linked */
+  erc8004: Erc8004Json | null;
   page: string;
   badge: string;
   attestation: { signer: string; signature: Hex; digest: Hex; message: RecordMessage; issuedAt: string; expiresAt: string } | null;
@@ -131,6 +137,7 @@ export async function recordOf(o: {
   hiring?: { hiredBy: { address: string; name: string; jobs: number }[]; hires: { address: string; name: string; jobs: number }[] };
   plans?: { active: number; clients: number; monthlyWei: string; monthsDelivered: number; monthsSettled: number } | null;
   factorScore?: FactorScoreJson | null;
+  erc8004?: Erc8004Json | null;
 }): Promise<RecordJson> {
   const r: AgentRecord = o.row.record;
   const { byState, distinct } = jobCounts(o.db, o.row.address);
@@ -160,6 +167,7 @@ export async function recordOf(o: {
     hiring: { hiredBy: (o.hiring?.hiredBy ?? []).map((x) => ({ address: x.address, name: x.name, jobs: x.jobs })), hires: (o.hiring?.hires ?? []).map((x) => ({ address: x.address, name: x.name, jobs: x.jobs })) },
     plans: { active: o.plans?.active ?? 0, clients: o.plans?.clients ?? 0, monthlyWei: o.plans?.monthlyWei ?? "0", monthlyEth: formatEther(BigInt(o.plans?.monthlyWei ?? "0")), monthsDelivered: o.plans?.monthsDelivered ?? 0, monthsSettled: o.plans?.monthsSettled ?? 0 },
     factorScore: o.factorScore ?? null,
+    erc8004: o.erc8004 ?? null,
     page: `${o.site}/agents/${path}`, badge: `${o.site}/api/v1/badge/${o.row.address}`,
     attestation,
   };

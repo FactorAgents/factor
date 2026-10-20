@@ -15,6 +15,7 @@ import { readPay, type PayConfig } from "../pay.js";
 import { readSubjobs, type SubjobsConfig } from "../subjobs.js";
 import { readFirms, type FirmsConfig } from "../firms.js";
 import { readPlans, type PlansConfig } from "../plans.js";
+import { readErc8004, type Erc8004Config } from "../erc8004.js";
 
 // the chain the token lives on, written down once
 export const CHAIN = { id: 4663, name: "Robinhood Chain", rpcUrl: "https://rpc.mainnet.chain.robinhood.com", explorer: "https://robinhoodchain.blockscout.com" } as const;
@@ -43,7 +44,7 @@ export interface EngineParams {
   burnRetryS: number; // ENGINE_BURN_RETRY_S
   maxGasWei: bigint; // ENGINE_MAX_GAS_GWEI: the most the engine pays per unit of gas
   unstickMaxGasWei: bigint; // ENGINE_UNSTICK_MAX_GAS_GWEI: the same for replacing a transaction that is stuck
-  gasCaps: { sweep: bigint; claim_token: bigint; burn: bigint; settle_job: bigint; refund_job: bigint; collect: bigint; return_compute: bigint; relay: bigint; retry_split: bigint; skim: bigint };
+  gasCaps: { sweep: bigint; claim_token: bigint; burn: bigint; settle_job: bigint; refund_job: bigint; collect: bigint; return_compute: bigint; relay: bigint; retry_split: bigint; skim: bigint; erc8004: bigint };
   jobsPerPass: number; // ENGINE_JOBS_PER_PASS: jobs the engine settles or refunds in one pass at most
   deskReadsPerPass: number; // ENGINE_DESK_READS_PER_PASS: jobs and agents read back from the desk in one pass at most
   gasHeadroomBps: number; // on top of the node's estimate
@@ -70,7 +71,7 @@ export const DEFAULTS: EngineParams = {
   burnRetryS: 120,
   maxGasWei: 2n * GWEI,
   unstickMaxGasWei: 20n * GWEI,
-  gasCaps: { sweep: 700_000n, claim_token: 400_000n, burn: 900_000n, settle_job: 600_000n, refund_job: 500_000n, collect: 200_000n, return_compute: 150_000n, relay: 1_500_000n, retry_split: 400_000n, skim: 100_000n },
+  gasCaps: { sweep: 700_000n, claim_token: 400_000n, burn: 900_000n, settle_job: 600_000n, refund_job: 500_000n, collect: 200_000n, return_compute: 150_000n, relay: 1_500_000n, retry_split: 400_000n, skim: 100_000n, erc8004: 500_000n },
   jobsPerPass: 5,
   deskReadsPerPass: 200,
   gasHeadroomBps: 2500,
@@ -127,6 +128,8 @@ export interface EngineConfig {
   firms: FirmsConfig;
   // Monthly clients (../plans.ts): whether customers can put an agent or a firm on a monthly plan.
   plans: PlansConfig;
+  // ERC-8004 (../erc8004.ts): whether settled jobs are written to the agents' reputation, and the past ones too.
+  erc8004: Erc8004Config;
 }
 
 // A factor.env-style file: NAME=value lines. What the environment already says wins.
@@ -295,6 +298,7 @@ export function readConfig(processEnv: Env = process.env): EngineConfig {
   const subjobs = readSubjobs(env, problems);
   const firms = readFirms(env, problems);
   const plans = readPlans(env, problems);
+  const erc8004 = readErc8004(env, problems);
   if (accounts.factory && (accounts.factory === desk || accounts.factory === splitter || accounts.factory === burnPot)) problems.push("FACTOR_ACCOUNTS is the same address as another of the contracts");
   const rawAdmin = env.ENGINE_ADMIN_KEY?.trim() ?? "";
   if (rawAdmin && rawAdmin.length < 24) problems.push("ENGINE_ADMIN_KEY must be at least 24 characters");
@@ -329,6 +333,7 @@ export function readConfig(processEnv: Env = process.env): EngineConfig {
     subjobs,
     firms,
     plans,
+    erc8004,
   };
 }
 

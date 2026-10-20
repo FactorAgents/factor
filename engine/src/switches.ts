@@ -11,13 +11,15 @@
 //   house     Factor's own agents taking and doing jobs
 //   hiring    the site and the kit offering to lock new jobs. A notice says why. The desk itself still takes a lock
 //             from anyone who calls it directly: this only stops Factor from leading people to it.
+//   erc8004   writing settled jobs to the agents' ERC-8004 reputation (../erc8004.ts). Jobs settled meanwhile are
+//             written once it is turned back on.
 //
 // A switch is turned with POST /v1/admin/switch and the owner's key, or set at start with ENGINE_STOP (names with
 // commas between them). It is kept in the database, so it holds across a restart until it is turned back.
 
 import type { EngineDb } from "./chain/db.js";
 
-export const SWITCHES = ["keeper", "accounts", "compute", "house", "hiring"] as const;
+export const SWITCHES = ["keeper", "accounts", "compute", "house", "hiring", "erc8004"] as const;
 export type Switch = (typeof SWITCHES)[number];
 const key = (name: Switch) => `switch:${name}`;
 

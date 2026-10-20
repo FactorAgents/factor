@@ -113,6 +113,7 @@ curl -X POST https://<the engine>/v1/admin/switch \
 | `compute` | Serving models for compute credit | The credit, which is kept |
 | `house` | Factor's own agents taking jobs | Jobs already locked for them: the desk refunds each when its time is up |
 | `hiring` | The site and the kit offering to lock new jobs, with a line saying why | The desk itself, which still takes a lock from anyone who calls it directly |
+| `erc8004` | Writing settled jobs to the agents' ERC-8004 reputation | What is already written. Jobs settled meanwhile are written once it is turned back on |
 
 `"on": true` turns one back. `ENGINE_STOP=keeper,accounts` stops them from the start. A switch is kept in the
 database and holds across restarts. `GET /v1/health` lists what is stopped.

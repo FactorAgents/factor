@@ -15,6 +15,8 @@
 //                   owner named (ENGINE_SKIM_TO), so that the key this process holds never guards more than it must.
 //   relay           what the owner of an account without a wallet signed (../accounts.ts): made, or carried out,
 //                   with this wallet paying the gas. First in every pass: somebody is waiting for it.
+//   erc8004         a settled job of an agent linked to an ERC-8004 identity: one entry written to the agent's
+//                   reputation in the standard's registry (../erc8004.ts). Last in every pass: nobody waits on it.
 //
 // Every attempt goes the same way (attempt(), below): the lock, a last simulation of exactly the call that would
 // be sent, the gas against its cap, the gas price against its cap, then in dry mode a record of what would have
@@ -30,6 +32,7 @@ import { factorBurnPotAbi, factorDeskAbi, factorSplitterAbi, factorTokenAbi } fr
 import { DeskStore, rereadJob } from "../desk.js";
 import { AccountStore, callOfRelay, landedRelay } from "../accounts.js";
 import { stopped } from "../switches.js";
+import type { Erc8004 } from "../erc8004.js";
 import { ComputeStore } from "../compute.js";
 import { nodeBusy, nodeRejected, reason, revertOf, type CallSpec, type Fees, type Head, type Pay, type Receipt } from "./chain.js";
 import { snapshotOf, type Ctx } from "./context.js";
@@ -37,7 +40,7 @@ import type { ActionKind, ActionRow } from "./db.js";
 import { ponsEscrowAbi } from "./pons.js";
 
 export type SendKind = Exclude<ActionKind, "unstick">;
-export const KINDS: SendKind[] = ["relay", "sweep", "retry_split", "claim_token", "burn", "settle_job", "refund_job", "collect", "return_compute", "skim"];
+export const KINDS: SendKind[] = ["relay", "sweep", "retry_split", "claim_token", "burn", "settle_job", "refund_job", "collect", "return_compute", "skim", "erc8004"];
 // In dry mode nothing changes on the chain, so a trigger stays true: what would be sent is shown again this often.
 export const DRY_REPEAT_S = 1800;
 const BPS = 10_000n;
@@ -205,6 +208,7 @@ function landed(ctx: Ctx, a: ActionRow, r: Receipt): void {
       ctx.db.unset("return_compute:pending");
     }
   }
+  if (a.kind === "erc8004" && a.tx_hash && ctx.erc8004) ctx.erc8004.landed(Number(a.ref), a.tx_hash, r);
   if (r.ok) say(ctx, a.kind, `sent and mined (${a.tx_hash})`, { fails: 0, nextAt: 0, tx: a.tx_hash });
   else say(ctx, a.kind, `the transaction reverted on the chain (${a.tx_hash})`, { tx: a.tx_hash });
 }
@@ -219,6 +223,8 @@ function unsent(ctx: Ctx, a: ActionRow, why: string): void {
     const row = store.relay(a.ref);
     if (row && row.status === "sent") store.mark(row.id, { status: "queued", tx_hash: null });
   }
+  // an entry that never reached the chain goes back in the queue, with the same file
+  if (a.kind === "erc8004" && ctx.erc8004) ctx.erc8004.store.mark(Number(a.ref), { status: "queued", tx_hash: null, error: why }, ctx.now());
   say(ctx, a.kind, why, { lastAt: 0 });
   ctx.log(`[${a.kind}] ${why} (${a.tx_hash}): it will be tried again`);
 }
@@ -670,6 +676,119 @@ async function skim(ctx: Ctx, head: Head): Promise<string> {
   }
 }
 
+// ---------- 8. settled jobs written to the agents' ERC-8004 reputation ----------
+
+// The registry says no for good to these: the writer is the identity's owner or one it approved, or the identity is gone.
+const REFUSED_FOR_GOOD = /Self-feedback not allowed|ERC721NonexistentToken/;
+
+// Each settled job of a linked agent, once (../erc8004.ts has the what and why). The same care as closing jobs: a job
+// whose entry is on its way is never sent again, one that failed waits longer each time, and in dry mode it is shown
+// once every half an hour. On top: the identity is checked to be the agent's still, the registry's count of entries
+// from this wallet is checked against Factor's notes, and the entries never cost more in a day than the owner allows.
+async function writeErc8004(ctx: Ctx, head: Head): Promise<string> {
+  const e = ctx.erc8004;
+  if (!e || !e.cfg.enabled) return say(ctx, "erc8004", "ERC8004 is off: nothing is written to ERC-8004", { fails: 0, nextAt: 0 });
+  const off = stopped(ctx.db, "erc8004");
+  if (off) return say(ctx, "erc8004", `stopped by the owner${off.note ? `: ${off.note}` : ""}`, { fails: 0, nextAt: 0 });
+  const st = actState(ctx, "erc8004");
+  if (ctx.now() < st.nextAt) return st.result;
+  const writer = ctx.facts.bot;
+  if (!writer) return say(ctx, "erc8004", "the engine holds no gas wallet key: nothing can be written", { fails: 0, nextAt: 0 });
+  // the identity registry, read a little at a time: which agents have an identity
+  const scanned = await e.scan();
+  const due = e.due(e.cfg.perPass * 4);
+  if (due.length === 0) return say(ctx, "erc8004", `nothing to write (${scanned})`, { fails: 0, nextAt: 0 });
+  let wrote = 0, shown = 0, left = 0;
+  let note = "";
+  let tx = st.tx;
+  for (const { job, link, past } of due) {
+    if (wrote + shown >= e.cfg.perPass || ctx.stopping()) {
+      left++;
+      continue;
+    }
+    const ref = String(job.id);
+    const not = e.notWritten(job);
+    if (not) {
+      const { row } = e.entry(job, link, writer, past);
+      e.store.put({ ...row, status: "skipped", error: not }, ctx.now());
+      continue;
+    }
+    const prev = ctx.db.lastAction("erc8004", ref);
+    if (prev) {
+      if (prev.status === "signed" || prev.status === "sent") {
+        left++;
+        continue;
+      }
+      const waitS = Math.min(JOB_RETRY_S * 2 ** Math.min(ctx.db.failsInARow("erc8004", ref) - 1, 12), JOB_RETRY_MAX_S);
+      if ((prev.status === "failed" && ctx.now() - prev.updated_at < waitS * 1000) || (prev.status === "dry" && ctx.now() - prev.created_at < DRY_REPEAT_S * 1000)) {
+        left++;
+        continue;
+      }
+    }
+    // the identity must still be the agent's: an identity sold or handed on takes no more of its entries
+    const holds = await e.holds(job.agent, link.agent_id!);
+    if (!holds.ok) {
+      e.store.lose(job.agent, holds.why, ctx.now());
+      ctx.log(`[erc8004] ${job.agent}: ${holds.why}. Nothing more is written for it until it links again`);
+      continue;
+    }
+    const guard = await e.guard(link.agent_id!, writer);
+    if (guard) {
+      note = guard;
+      ctx.log(`[erc8004] ${guard}`);
+      ctx.db.addAction({ kind: "erc8004", ref, mode: ctx.mode === "live" ? "live" : "dry", status: "failed", error: guard });
+      left++;
+      continue;
+    }
+    const { call, row } = e.entry(job, link, writer, past);
+    // what it could cost at most, against what the day allows: the entries never cost more than ERC8004_GAS_DAY_WEI
+    let pre: { gas: bigint; fees: Fees } | undefined;
+    try {
+      const [gas, fees] = await Promise.all([ctx.chain.estimateGas(call, writer), ctx.chain.fees()]);
+      pre = { gas, fees };
+    } catch (err) {
+      if (!revertOf(err)) throw err; // a refusal: the attempt below tries it and says why
+    }
+    if (ctx.mode === "live" && pre) {
+      const spent = e.spentToday();
+      const most = ((pre.gas * (BPS + BigInt(ctx.params.gasHeadroomBps))) / BPS) * pre.fees.maxFeePerGas;
+      if (spent + most > e.cfg.gasDayWei) {
+        note = `the entries have cost ${eth(spent)} ETH in the last 24 hours, and one more could cost ${eth(most)}: over the most allowed (ERC8004_GAS_DAY_WEI), so the rest wait`;
+        left++;
+        break;
+      }
+    }
+    // the file is written down before anything is sent: whatever happens next, the entry on the chain points at it
+    if (ctx.mode === "live" && ctx.signer) e.store.put(row, ctx.now());
+    const r = await attempt(ctx, "erc8004", ref, call, { job: job.id, agent: job.agent, agentId: link.agent_id, value: row.value, tag2: row.tag2, uri: row.uri, hash: row.hash, past }, ctx.params.maxGasWei, pre);
+    if (r.status === "done" && r.hash && r.receipt) {
+      e.landed(job.id, r.hash, r.receipt);
+      wrote++;
+      tx = r.hash;
+    } else if (r.status === "sent" && r.hash) {
+      e.store.mark(job.id, { status: "sent", tx_hash: r.hash }, ctx.now());
+      note = "one on its way";
+      left++;
+      break;
+    } else if (r.status === "dry") shown++;
+    else if (r.status === "failed") {
+      if (r.hash && r.receipt) e.landed(job.id, r.hash, r.receipt);
+      else if (REFUSED_FOR_GOOD.test(r.why)) {
+        e.store.put({ ...row, status: "refused", error: r.why }, ctx.now());
+        ctx.log(`[erc8004] job ${job.id}: the registry refuses it for good (${r.why}): set aside`);
+      } else ctx.log(`[erc8004] job ${job.id}: ${r.why}`);
+      note = `job ${job.id}: ${r.why}`;
+    } else {
+      // skipped: gas over its cap, the gas wallet busy. Nothing more goes out this pass
+      note = r.why;
+      left++;
+      break;
+    }
+  }
+  const did = ctx.mode === "live" ? `${wrote} written` : `would write ${shown}`;
+  return say(ctx, "erc8004", `${did}${left ? `, ${left} more waiting` : ""}${note ? ` (${note})` : ""}`, { lastAt: wrote + shown > 0 ? head.timestamp : st.lastAt, fails: 0, nextAt: 0, tx });
+}
+
 const STEPS: [SendKind, (ctx: Ctx, head: Head) => Promise<string>][] = [
   ["relay", relay],
   ["sweep", sweep],
@@ -681,6 +800,7 @@ const STEPS: [SendKind, (ctx: Ctx, head: Head) => Promise<string>][] = [
   ["collect", collect],
   ["return_compute", returnCompute],
   ["skim", skim],
+  ["erc8004", writeErc8004],
 ];
 
 // One pass over the actions, one after the other: there is one gas wallet, and one transaction at a time.

@@ -36,6 +36,15 @@ export const INCOME_NAME: Record<IncomeSource, { name: string; line: string }> =
   firm: { name: "Firm work", line: "jobs hired through a firm it leads, and the parts of a firm's jobs it took as a member" },
 };
 
+/** How one job came to an agent: the first way that fits it, a month of a plan, firm work, a sub-job, or a job of its own. */
+export function sourceOfJob(o: { isMonth: (id: number) => boolean; firm: (id: number) => { part: boolean; team: string[] } | null; isSubjob: (id: number) => boolean }, agent: string, id: number): IncomeSource {
+  if (o.isMonth(id)) return "monthly";
+  const f = o.firm(id);
+  if (f && (!f.part || f.team.includes(agent))) return "firm";
+  if (o.isSubjob(id)) return "subjobs";
+  return "jobs";
+}
+
 /** A job on the desk, as much of it as the score needs. Amounts in wei, as text. */
 export interface ScoreJob { id: number; state: number; customer: string; price: string; fee: string; closed_at: number; early: string; from_pool: string }
 
