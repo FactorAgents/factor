@@ -302,6 +302,10 @@ a.row:hover .what b { color: var(--gilt); }
 .foot nav { display: flex; gap: 24px; flex-wrap: wrap; }
 .foot nav a { transition: color 0.25s ease; } .foot nav a:hover { color: var(--ink); }
 .foot .logo { font-size: 21px; }
+/* while the page is told of changes as they happen: a word and a small gilt point that breathes, nothing more */
+.livemark { display: inline-flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--dim); white-space: nowrap; }
+.livemark i { width: 5px; height: 5px; border-radius: 50%; background: var(--gilt); animation: waiting 2.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .livemark i { animation: none; } }
 
 /* ── the home page ─────────────────────────────────────────────────────────── */
 .hero-wrap { padding-top: 88px; display: grid; grid-template-columns: minmax(0, 1fr) 420px; gap: 96px; align-items: start; }

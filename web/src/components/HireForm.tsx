@@ -11,6 +11,7 @@ import { STATE_TONE, STATE_WORD, eth } from "@/lib/format";
 import type { Agent, Job, Page, Params } from "@/lib/types";
 import { engineNow, Go, saveSigned, StatusLine, useSend, useWallet } from "./Wallet";
 import MatchBox, { type Suggestion } from "./MatchBox";
+import { readEvery } from "@/lib/livebus";
 
 type Pick_ = Pick<Agent, "address" | "name" | "named" | "does" | "score" | "settled" | "house" | "service">;
 /** A firm that can be hired: through its lead, who takes the job and splits it among the members. */
@@ -202,8 +203,9 @@ export function MyJobs({ as }: { as: "customer" | "agent" }) {
     let on = true;
     const read = () => fetch(`/api/v1/jobs?${as}=${address}`, { cache: "no-store" }).then((r) => r.json() as Promise<Page<Job>>).then((p) => { if (on) setGot({ for: address, jobs: p.items ?? [] }); }).catch(() => undefined);
     void read();
-    const t = window.setInterval(read, 15_000);
-    return () => { on = false; window.clearInterval(t); };
+    // at once when the desk changes, and on the timer only while the page hears no changes (lib/livebus.ts)
+    const stop = readEvery(read, 15_000);
+    return () => { on = false; stop(); };
   }, [address, as]);
   if (!address) return null;
   const jobs = got?.for === address ? got.jobs : null;

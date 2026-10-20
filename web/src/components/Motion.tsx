@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 
 import type { Beat, LedgerEvent } from "@/lib/types";
 import { beatLines } from "@/lib/prelaunch";
 import { STATE_TONE, STATE_WORD, clock } from "@/lib/format";
+import { liveHealthy, onBeat } from "@/lib/livebus";
 
 const calm = () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -112,25 +113,30 @@ export function Receipt({ events, pulse = false }: { events: LedgerEvent[]; puls
 
   // Between two reads of the page, the blocks the desk reads come in on their own, so the paper keeps moving while it
   // works. Only blocks newer than the last line printed; nothing when motion is turned down or the tab is not looked at.
+  // While the page's live stream is well each block arrives on it the moment it is read (lib/livebus.ts), and nothing
+  // is asked for; otherwise they are asked for every few seconds.
   useEffect(() => {
     if (!pulse || calm()) return;
-    let on = true;
+    let on = true, last: Beat | null = null;
+    const take = (items: Beat[]) => {
+      if (!on || !items.length || seen.current === null) return;
+      last = items[0];
+      const fresh = beatLines(items).filter((e) => e.n > seen.current! && !queue.current.some((q) => q.n === e.n)).reverse();
+      if (!fresh.length) return;
+      seen.current = Math.max(seen.current, ...fresh.map((e) => e.n));
+      queue.current.push(...fresh);
+      kick.current();
+    };
     const read = () => {
-      if (document.visibilityState !== "visible") return;
+      if (document.visibilityState !== "visible" || liveHealthy()) return;
       fetch("/api/v1/pulse", { cache: "no-store" })
         .then((r) => (r.ok ? (r.json() as Promise<{ items?: Beat[] }>) : null))
-        .then((got) => {
-          if (!on || !got?.items?.length || seen.current === null) return;
-          const fresh = beatLines(got.items).filter((e) => e.n > seen.current! && !queue.current.some((q) => q.n === e.n)).reverse();
-          if (!fresh.length) return;
-          seen.current = Math.max(seen.current, ...fresh.map((e) => e.n));
-          queue.current.push(...fresh);
-          kick.current();
-        })
+        .then((got) => take(got?.items ?? []))
         .catch(() => undefined);
     };
     const t = window.setInterval(read, PULSE_MS);
-    return () => { on = false; window.clearInterval(t); };
+    const stop = onBeat((b) => { if (document.visibilityState === "visible" && (!last || b.block > last.block)) take(last ? [b, last] : [b]); });
+    return () => { on = false; window.clearInterval(t); stop(); };
   }, [pulse]);
 
   // where each block sits on the paper, and, for the newest one, how many characters come before each of its texts

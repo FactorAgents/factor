@@ -12,6 +12,7 @@ import { connection } from "next/server";
 import { sampleAgent, sampleFirm, sampleJob, sampleJobs, sampleLedger, samplePlan, sampleState } from "./sample";
 import type { Agent, AgentPage, FactorState, FirmPage, Job, JobPage, LedgerEvent, Page, Params, PlanPage } from "./types";
 import type { PayInfo, PublishedLink } from "./pay";
+import { liveGen } from "./live";
 
 const ENGINE = (process.env.FACTOR_ENGINE_URL ?? "").trim().replace(/\/+$/, "");
 const SAMPLE = process.env.FACTOR_SAMPLE === "1" && !ENGINE;
@@ -59,7 +60,9 @@ async function ask<T>(path: string): Promise<T | null> {
 // deploy), the last good answer is shown for up to STALE_MS rather than an empty desk, with its own time on it.
 const SHARE_MS = Math.max(0, Number(process.env.FACTOR_STATE_SHARE_MS ?? 2_000) || 0);
 const STALE_MS = 120_000;
-let shared: { at: number; read: Promise<FactorState> } | null = null;
+// A read is also not shared past a change the engine told of (lib/live.ts): the page that reads itself because of the
+// change must see it.
+let shared: { at: number; gen: number; read: Promise<FactorState> } | null = null;
 let lastGood: { at: number; state: FactorState } | null = null;
 
 async function readState(): Promise<FactorState> {
@@ -80,7 +83,8 @@ export const getState = cache(async (): Promise<FactorState> => {
   if (SAMPLE) return sampleState();
   if (!ENGINE) return empty("none", true);
   const now = Date.now();
-  if (!shared || now - shared.at >= SHARE_MS) shared = { at: now, read: readState() };
+  const gen = liveGen();
+  if (!shared || now - shared.at >= SHARE_MS || shared.gen !== gen) shared = { at: now, gen, read: readState() };
   return shared.read;
 });
 

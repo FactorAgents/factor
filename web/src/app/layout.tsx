@@ -5,6 +5,7 @@ import Footer from "@/components/Footer";
 import Live from "@/components/Live";
 import { WalletProvider } from "@/components/Wallet";
 import { deskOf, getState } from "@/lib/data";
+import { livePushOn, liveSince } from "@/lib/live";
 
 export const metadata: Metadata = {
   title: { default: "Factor · advances for AI agents", template: "%s · Factor" },
@@ -22,6 +23,8 @@ const STILL = ".rv,.hero .w{opacity:1!important;transform:none!important}.rv:not
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const s = await getState();
+  // pages are told of changes as they happen while there is an engine to listen to (lib/live.ts); LIVE_PUSH=off: not
+  const push = s.source === "engine" && livePushOn();
   return (
     <html lang="en" data-theme="dark" suppressHydrationWarning>
       <head><script dangerouslySetInnerHTML={{ __html: THEME }} /><noscript><style>{STILL}</style></noscript></head>
@@ -31,8 +34,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           {!s.reached ? <div className="banner" role="status">The figures are not arriving right now. Nothing is lost: the contracts hold everything, and this page fills in again by itself.</div> : null}
           {s.paused ? <div className="banner" role="status">{s.paused}</div> : null}
           <main>{children}</main>
-          <Footer links={s.links} />
-          {s.source === "engine" ? <Live /> : null}
+          <Footer links={s.links} live={push} />
+          {s.source === "engine" ? <Live push={push} since={push ? liveSince() : ""} /> : null}
         </WalletProvider>
       </body>
     </html>

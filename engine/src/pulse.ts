@@ -40,6 +40,8 @@ export class Pulse {
   private readonly timeoutMs: number;
   private readonly now: () => number;
   private readonly fetchFn: typeof fetch;
+  /** told of every new block as it is kept (./live.ts) */
+  onBeat: ((b: Beat) => void) | null = null;
 
   constructor(private urls: string[], o: PulseOptions = {}) {
     this.everyMs = Math.max(2_000, o.everyMs ?? 6_000);
@@ -105,6 +107,7 @@ export class Pulse {
       if (this.today && this.today.day !== day) this.done = this.today;
       this.today = this.today && this.today.day === day ? { ...this.today, lastBlock: block, reads: this.today.reads + 1, gwei: this.gwei } : { day, firstBlock: block, lastBlock: block, reads: 1, gwei: this.gwei };
       this.beats = [beat, ...this.beats].slice(0, this.keep);
+      try { this.onBeat?.(beat); } catch { /* whoever listens cannot stop the pulse */ }
       return beat;
     } finally {
       this.busy = false;

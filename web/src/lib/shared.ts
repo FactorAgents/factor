@@ -7,6 +7,7 @@
 // already has that answer gets a 304 with nothing in it.
 import { createHash } from "node:crypto";
 import { brotliCompressSync, constants, gzipSync } from "node:zlib";
+import { liveGen } from "./live";
 
 const SHARE_MS = Math.max(0, Number(process.env.FACTOR_STATE_SHARE_MS ?? 2_000) || 0);
 const STALE_MS = 120_000;
@@ -24,7 +25,9 @@ function pack(body: string): { br: Buffer; gzip: Buffer } | undefined {
   return { br: brotliCompressSync(raw, { params: { [constants.BROTLI_PARAM_QUALITY]: 5 } }), gzip: gzipSync(raw, { level: 6 }) };
 }
 
-const live = new Map<string, { at: number; read: Promise<Answer> }>();
+// `gen`: the count of changes the engine told of when the read was made (lib/live.ts). A read from before a change is
+// not shared after it.
+const live = new Map<string, { at: number; gen: number; read: Promise<Answer> }>();
 const good = new Map<string, { at: number; body: string; etag: string }>();
 
 const tagOf = (body: string): string => `W/"${createHash("sha1").update(body).digest("base64url").slice(0, 16)}"`;
@@ -32,8 +35,9 @@ const tagOf = (body: string): string => `W/"${createHash("sha1").update(body).di
 /** The engine's answer to `key`, from `ask` at most once per SHARE_MS. `ask` throws when the engine cannot be reached. */
 export function sharedRead(key: string, ask: () => Promise<{ status: number; body: string }>): Promise<Answer> {
   const now = Date.now();
+  const gen = liveGen();
   const hit = live.get(key);
-  if (hit && now - hit.at < SHARE_MS) return hit.read;
+  if (hit && now - hit.at < SHARE_MS && hit.gen === gen) return hit.read;
   if (live.size >= MOST) live.clear();
   const read = (async (): Promise<Answer> => {
     try {
@@ -54,7 +58,7 @@ export function sharedRead(key: string, ask: () => Promise<{ status: number; bod
       throw e;
     }
   })();
-  live.set(key, { at: now, read });
+  live.set(key, { at: now, gen, read });
   // a failed read is not kept: the next caller tries again
   read.catch(() => { if (live.get(key)?.read === read) live.delete(key); });
   return read;

@@ -7,6 +7,7 @@ import { hostedMessage, proofOf, Refusal } from "@/lib/desk";
 import { eth } from "@/lib/format";
 import { signText } from "@/lib/wallet";
 import { engineNow, Go, saveSigned, SignedInAs, StatusLine, useSend, useWallet } from "./Wallet";
+import { readEvery } from "@/lib/livebus";
 
 const NAME = /^[a-z0-9](?:[a-z0-9-]{1,22})[a-z0-9]$/;
 interface Mine { name: string; does: string; priceEth: number; payout: string; paused: boolean; address: string | null; ready: boolean; waiting?: boolean }
@@ -25,8 +26,9 @@ export default function CreateAgent({ hosted, explorer }: { hosted: { enabled: b
     let on = true;
     const read = () => fetch(`/api/v1/agents/made/${address}`, { cache: "no-store" }).then((r) => (r.ok ? (r.json() as Promise<{ items: Mine[] }>) : null)).then((got) => { if (on && got) setMine({ for: address, items: got.items }); }).catch(() => undefined);
     void read();
-    const t = window.setInterval(read, 8000);
-    return () => { on = false; window.clearInterval(t); };
+    // at once when the desk changes, and on the timer only while the page hears no changes (lib/livebus.ts)
+    const stop = readEvery(read, 8000);
+    return () => { on = false; stop(); };
   }, [address, hosted?.enabled, tick]);
 
   if (!hosted?.enabled) return <div className="acts"><span className="label">Make an agent</span><p className="small" style={{ marginTop: 14 }}>This opens with the launch. Until then nothing is live, and no agent can be made.</p></div>;

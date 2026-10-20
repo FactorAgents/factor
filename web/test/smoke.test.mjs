@@ -8,6 +8,7 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
+import { createServer } from "node:http";
 
 const PORT = Number(process.env.SMOKE_PORT) || 3611, BASE = `http://127.0.0.1:${PORT}`, BARE = `http://127.0.0.1:${PORT + 1}`;
 const PAGES = ["/", "/ledger", "/ledger?show=burned", "/agents", "/agents/lumen-07", "/jobs/0412", "/jobs/0406", "/jobs/0404", "/jobs/0403", "/hire", "/hire?agent=page-smith", "/work", "/protocol", "/token", "/burn", "/docs", "/log", "/security", "/pay", "/firms/night-desk", "/hire?firm=night-desk", "/plans/0x5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a"];
@@ -16,7 +17,19 @@ const NAV = ["/ledger", "/agents", "/hire", "/work", "/protocol", "/token", "/bu
 // (forbidden.local.json, pairs of pattern and flags) adds to them on the machine it is on.
 const LOCAL = new URL("./forbidden.local.json", import.meta.url);
 const FORBIDDEN = [/—/, /\binvest/i, /\breturns?\b/i, /\bprofit/i, /\byield/i, /guarantee/i, ...(existsSync(LOCAL) ? JSON.parse(readFileSync(LOCAL, "utf8")).map(([p, f]) => new RegExp(p, f)) : [])];
-let server, bare;
+let server, bare, pushed, unpushed;
+// A stand-in for the engine's live stream (engine/src/live.ts): it says hello to each stream it is asked for, and
+// sends what a test tells it to. Everything else it answers 404, so the pages on it show an engine with no figures.
+const engine = { streams: new Set(), opened: 0 };
+const fakeEngine = createServer((req, res) => {
+  if (req.url !== "/v1/live") { res.writeHead(404, { "content-type": "application/json" }); res.end("{}"); return; }
+  engine.opened++;
+  res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache, no-transform" });
+  res.write(`event: hello\ndata: {"seq":0}\n\n`);
+  engine.streams.add(res);
+  res.on("close", () => engine.streams.delete(res));
+});
+const engineSays = (event, data) => { for (const r of engine.streams) r.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`); };
 const text = (html) => html.replace(/<script[\s\S]*?<\/script>/g, " ").replace(/<style[\s\S]*?<\/style>/g, " ").replace(/<[^>]+>/g, " ").replace(/&amp;/g, "&").replace(/&#x27;/g, "'").replace(/\s+/g, " ");
 const get = async (path, base = BASE) => { const r = await fetch(base + path); return { status: r.status, html: await r.text(), headers: r.headers }; };
 // next itself, in a process group of its own, so that stopping it leaves nothing running
@@ -28,9 +41,11 @@ const start = (port, env) => new Promise((resolve, reject) => {
 const stop = (child) => { try { process.kill(-child.pid, "SIGKILL"); } catch { child.kill("SIGKILL"); } child.stdout.destroy(); child.stderr.destroy(); };
 
 before(async () => {
-  [server, bare] = await Promise.all([start(PORT, { FACTOR_SAMPLE: "1" }), start(PORT + 1, {})]);
+  await new Promise((r) => fakeEngine.listen(0, "127.0.0.1", r));
+  const ENGINE = `http://127.0.0.1:${fakeEngine.address().port}`;
+  [server, bare, pushed, unpushed] = await Promise.all([start(PORT, { FACTOR_SAMPLE: "1" }), start(PORT + 1, {}), start(PORT + 2, { FACTOR_ENGINE_URL: ENGINE }), start(PORT + 3, { FACTOR_ENGINE_URL: ENGINE, LIVE_PUSH: "off" })]);
 });
-after(() => { stop(server); stop(bare); });
+after(() => { stop(server); stop(bare); stop(pushed); stop(unpushed); for (const r of engine.streams) r.destroy(); fakeEngine.close(); });
 
 test("every page answers, with one main heading and the header that leads to the others", async () => {
   for (const path of PAGES) {
@@ -464,4 +479,56 @@ test("the roadmap: on the home page, every phase in order, what is live checked 
   assert.equal((t.match(/Builds on/g) ?? []).length, 4);
   // the footer leads to it on every page, as the header does
   assert.match(html, /<footer[\s\S]*href="\/roadmap"/);
+});
+
+// Reads a stream until `want` is in what came, or `ms` passed. Returns what came.
+async function readUntil(reader, want, ms = 8_000) {
+  let got = "";
+  const end = Date.now() + ms;
+  while (!want.test(got) && Date.now() < end) {
+    const r = await Promise.race([reader.read(), new Promise((res) => setTimeout(() => res({ timeout: true }), Math.max(1, end - Date.now())))]);
+    if (r.timeout || r.done) break;
+    got += r.value;
+  }
+  return got;
+}
+
+test("pages are told of changes as they happen: one stream to the engine per server, passed on to every open page", async () => {
+  const PUSHED = `http://127.0.0.1:${PORT + 2}`;
+  const opened = engine.opened;
+  const open = async () => {
+    const ac = new AbortController();
+    const r = await fetch(`${PUSHED}/api/live`, { signal: ac.signal });
+    assert.equal(r.status, 200);
+    assert.match(r.headers.get("content-type") ?? "", /^text\/event-stream/);
+    assert.match(r.headers.get("cache-control") ?? "", /no-transform/);
+    assert.equal(r.headers.get("x-accel-buffering"), "no");
+    return { ac, reader: r.body.pipeThrough(new TextDecoderStream()).getReader() };
+  };
+  const a = await open(), b = await open();
+  assert.match(await readUntil(a.reader, /event: up\n/), /event: hello\ndata: \{"up":(true|false),"since":"[0-9a-f]+:\d+"\}/);
+  await readUntil(b.reader, /event: up\n|"up":true/);
+  // two pages open, and the engine was asked for one stream
+  assert.equal(engine.opened - opened, 1);
+  engineSays("state", { seq: 1, kind: "state", at: new Date().toISOString() });
+  const [ga, gb] = await Promise.all([readUntil(a.reader, /event: change/), readUntil(b.reader, /event: change/)]);
+  assert.match(ga, /event: change\ndata: \{"since":"[0-9a-f]+:\d+"\}/);
+  assert.match(gb, /event: change/);
+  engineSays("pulse", { seq: 2, kind: "pulse", at: "2026-10-20T07:18:51.374Z", block: 93272637, gwei: 0.02 });
+  assert.match(await readUntil(a.reader, /event: pulse/), /event: pulse\ndata: \{"block":93272637,"gwei":0.02,"at":"2026-10-20T07:18:51.374Z"\}/);
+  a.ac.abort(); b.ac.abort();
+  // a page on it says so in the footer only once its stream is open in the browser: nothing in the page as served
+  const { status, html } = await get("/", PUSHED);
+  assert.equal(status, 200);
+  assert.doesNotMatch(html, /class="livemark"/);
+});
+
+test("LIVE_PUSH=off, or no engine, and there is no stream: pages read themselves on their timers as before", async () => {
+  const opened = engine.opened;
+  const off = await fetch(`http://127.0.0.1:${PORT + 3}/api/live`);
+  assert.equal(off.status, 404);
+  assert.equal((await fetch(`${BARE}/api/live`)).status, 404);
+  assert.equal((await fetch(`${BASE}/api/live`)).status, 404);
+  assert.equal(engine.opened, opened, "the engine was not asked for a stream");
+  assert.equal((await get("/", `http://127.0.0.1:${PORT + 3}`)).status, 200);
 });

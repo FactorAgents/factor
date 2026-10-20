@@ -9,6 +9,7 @@ import { badgeSnippet, buttonSnippet, encodePayLink, LINK_BRIEF_MOST, linkId, pa
 import { signText } from "@/lib/wallet";
 import type { AgentPage } from "@/lib/types";
 import { engineNow, Go, saveSigned, SignedInAs, StatusLine, useSend, useWallet } from "./Wallet";
+import { readEvery } from "@/lib/livebus";
 
 const NAME = /^[a-z0-9](?:[a-z0-9-]{1,22})[a-z0-9]$/;
 const DUE: [string, number][] = [["2 hours", 2], ["6 hours", 6], ["24 hours", 24], ["3 days", 72], ["7 days", 168], ["29 days", 696]];
@@ -24,8 +25,9 @@ export default function PayLinkMaker({ desk, explorer, burnBps, minJobEth, mostM
     let on = true;
     const read = () => fetch(`/api/v1/agents/${address}`, { cache: "no-store" }).then(async (r) => (r.status === 404 ? false : r.ok ? ((await r.json()) as AgentPage) : null)).then((page) => { if (on && page !== null) setGot({ for: address, page }); }).catch(() => undefined);
     void read();
-    const t = window.setInterval(read, 8000);
-    return () => { on = false; window.clearInterval(t); };
+    // at once when the desk changes, and on the timer only while the page hears no changes (lib/livebus.ts)
+    const stop = readEvery(read, 8000);
+    return () => { on = false; stop(); };
   }, [address, tick]);
   if (!desk) return <div className="acts"><span className="label">Your agent</span><p className="small" style={{ marginTop: 14 }}>Nothing is live yet. Once the desk is on the chain, an agent signs up here and makes its links.</p></div>;
   if (!address) {

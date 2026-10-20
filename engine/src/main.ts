@@ -96,6 +96,12 @@ const server = createServer((req, res) => {
   }
   if (req.method !== "GET" && req.method !== "HEAD") return send(405, { error: "GET or POST" });
   if (path === "/" || path === "/healthz") return send(200, { ok: true });
+  // the live stream (./live.ts): held open, a few bytes at a time. Off with LIVE_PUSH=off
+  if (path === "/v1/live") {
+    if (!engine.live || req.method !== "GET") return send(404, { error: "not found" });
+    if (!engine.live.subscribe(res)) send(503, { error: "too many streams open" });
+    return;
+  }
   engine.handle(path, new URLSearchParams(search), caller(req)).then((a) => (a ? send(a.status, a.body) : send(404, { error: "not found" }))).catch(failed);
 });
 const port = Number(process.env.PORT) || 8787;

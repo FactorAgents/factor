@@ -10,6 +10,7 @@ import type { AgentPage, Compute, Credit, Params } from "@/lib/types";
 import AccountPanel from "./Account";
 import { MyJobs } from "./HireForm";
 import { engineNow, Go, saveSigned, SignedInAs, StatusLine, useSend, useWallet, type Done } from "./Wallet";
+import { readEvery } from "@/lib/livebus";
 
 const NAME = /^[a-z0-9](?:[a-z0-9-]{1,22})[a-z0-9]$/;
 
@@ -23,8 +24,9 @@ export default function AgentConsole({ desk, explorer, params, compute, early = 
     let on = true;
     const read = () => fetch(`/api/v1/agents/${address}`, { cache: "no-store" }).then(async (r) => (r.status === 404 ? false : r.ok ? ((await r.json()) as AgentPage) : null)).then((page) => { if (on && page !== null) setGot({ for: address, page }); }).catch(() => undefined);
     void read();
-    const t = window.setInterval(read, 8000);
-    return () => { on = false; window.clearInterval(t); };
+    // at once when the desk changes, and on the timer only while the page hears no changes (lib/livebus.ts)
+    const stop = readEvery(read, 8000);
+    return () => { on = false; stop(); };
   }, [address, tick]);
   const again = () => setTick((n) => n + 1);
   // said here, by the console: the form that registered the wallet is gone once the wallet is an agent

@@ -29,6 +29,7 @@ import { EngineDb } from "./chain/db.js";
 import { watchPass, type WatchResult } from "./chain/watch.js";
 import { EngineApi, link, type Answer, type EngineView } from "./api.js";
 import { Pulse, pulseOn } from "./pulse.js";
+import { Live, livePushOn } from "./live.js";
 import { DeskMind, anthropicWriter, deskOn } from "./deskmind.js";
 import { LaunchList } from "./launchlist.js";
 import { HouseActivity, activityOn, anthropicAsk } from "./activity.js";
@@ -86,6 +87,8 @@ export class Engine {
   demo: Demo | null = null;
   /** the newest blocks of the chain as the engine reads them, for the site's receipt (./pulse.ts) */
   pulse: Pulse | null = null;
+  /** tells the site the moment what it shows has changed (./live.ts); null with LIVE_PUSH=off */
+  live: Live | null = null;
   /** the Desk, Factor's own mind (./deskmind.ts) */
   deskMind: DeskMind | null = null;
   /** agents signed up before the launch (./launchlist.ts) */
@@ -189,17 +192,49 @@ export class Engine {
   }
 
   // The answer to a signed write (an agent's name, a job's title), or null when the path is not one.
+  // A write that was taken is a change the site should show at once (./live.ts): asking a model to match a job, or
+  // checking an order before it is sent, changes nothing.
   post(path: string, body: unknown, from: string, adminKey?: string): Promise<Answer | null> {
-    return this.api.post(path, body, from, adminKey);
+    return this.api.post(path, body, from, adminKey).then((a) => {
+      if (a && a.status >= 200 && a.status < 300 && path !== "/v1/match" && path !== "/v1/accounts/check") this.live?.poke();
+      return a;
+    });
+  }
+
+  /** How many rows the database has had written since it opened: the live stream's cheap test for "maybe changed". */
+  private writes(): number {
+    this.writesQ ??= this.sqlite.prepare("SELECT total_changes() AS n");
+    return (this.writesQ.get() as { n: number }).n;
+  }
+  private writesQ: Database.Statement | null = null;
+
+  /** Counts of what a page shows beside the state (a job's brief, title and work; links; sub-jobs; months of plans). */
+  private extraCounts(): string {
+    const out: string[] = [];
+    for (const t of ["job_titles", "job_briefs", "job_deliveries", "pay_links", "subjobs", "plan_months", "firm_members", "hosted_agents"]) {
+      try {
+        const r = this.sqlite.prepare(`SELECT COUNT(*) AS n, IFNULL(MAX(rowid), 0) AS m FROM ${t}`).get() as { n: number; m: number };
+        out.push(`${r.n}:${r.m}`);
+      } catch {
+        out.push("-"); // not made yet: that part is not on
+      }
+    }
+    return out.join(",");
   }
 
   // Start whatever the mode asks for. Never throws: the check against the node runs on its own.
   start(): void {
     const c = this.config;
+    // the live stream: on unless LIVE_PUSH=off. Never in a test that runs the engine by hand (it builds its own).
+    if (!this.live && livePushOn(this.env) && !this.opts.manual) {
+      this.live = new Live({ state: () => this.api.state(this.view()), writes: () => this.writes(), extra: () => this.extraCounts(), changed: () => this.api.forget(), now: this.now });
+      this.live.start();
+    }
     // the pulse reads the chain whatever the mode is, and before the launch above all: a read and nothing else.
     // Never in tests, which hand the engine a chain of their own, run it by hand, or run under vitest.
     if (!this.pulse && pulseOn(this.env) && !this.opts.chain && !this.opts.manual && !process.env.VITEST && c.rpcUrls.length) {
       this.pulse = new Pulse(c.rpcUrls, { everyMs: Number(this.env.ENGINE_PULSE_MS) || undefined, now: this.now });
+      this.pulse.onBeat = (b) => this.live?.beat(b);
       this.pulse.start();
     }
     // Before the launch Factor's own agents do small real jobs every few minutes, for the home page's receipt.
@@ -575,6 +610,7 @@ export class Engine {
   // Stop the loops and wait for whatever pass is under way: a transaction being followed to its receipt is
   // followed to the end, so nothing is left half written.
   async stop(): Promise<void> {
+    this.live?.stop();
     this.pulse?.stop();
     this.activity?.stop();
     if (this.carryTimer) clearInterval(this.carryTimer);

@@ -9,6 +9,7 @@
 //   GET  /v1/ledger            the ledger, newest first: ?limit=50&before=<n>&show=locked|advanced|settled|refunded|burned
 //   GET  /v1/burns             every buy back and burn: ?limit=50&before=<burn number>
 //   GET  /v1/health            for the owner: cursors, actions, the gas wallet, the nodes, the last error
+//   GET  /v1/live              a stream that says the moment any of the above changed, for the site's server (live.ts)
 //   POST /v1/agents/profile    an agent's name and what it does, signed by its wallet (profiles.ts)
 //   POST /v1/jobs/title        what a job is about, signed by the customer who locked it
 //   POST /v1/subjobs/plan      a job's agent signs a hire for part of it; /v1/subjobs/link links the lock (subjobs.ts)
@@ -397,6 +398,11 @@ export class EngineApi {
   private posts = new Map<string, { n: number; from: number }>();
 
   constructor(private view: () => EngineView) {}
+
+  /** Forgets every answer kept: something changed, and the next read must see it (./live.ts). */
+  forget(): void {
+    this.cache.clear();
+  }
 
   // The answer for a path, or null when the path is not one of the engine's. `query` is what followed the ? in the
   // address; a value in it that makes no sense is ignored, never an error.
