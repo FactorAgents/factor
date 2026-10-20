@@ -17,6 +17,8 @@ import { firmHireMessage as engineFirmHire, firmMessage as engineFirm, joinMessa
 import { planMessage, stopPlanMessage, monthlyPlanId } from "../src/index.js";
 import { planIdOf as enginePlanIdOf, planMessage as enginePlan, stopMessage as engineStop } from "../../../engine/src/plans.js";
 import { recoverMessageAddress } from "viem";
+import { erc8004LinkMessage, erc8004Registry } from "../src/index.js";
+import { linkMessage as engineLink, registryOf as engineRegistry } from "../../../engine/src/erc8004.js";
 import { AGENTS, DESK, JOB, KEY, state, stub, type Stub } from "./stub.js";
 
 let s: Stub;
@@ -342,9 +344,9 @@ describe("the assistant's caps", () => {
 
 describe("the tools", () => {
   it("have a name, a description and an input each, and say which of them send something", () => {
-    expect(TOOLS.map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_hire", "factor_accept", "factor_reject", "factor_set_title", "factor_register", "factor_set_profile", "factor_bond", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_ask_model", "factor_draw", "factor_deliver", "factor_decline", "factor_sign_up", "factor_create_pay_link", "factor_pay_link_info", "factor_pay_link", "factor_pay_x402", "factor_hire_for_job", "factor_job_tree", "factor_reject_sub_jobs", "factor_record", "factor_firms", "factor_firm_record", "factor_hire_firm", "factor_plan", "factor_subscribe", "factor_pay_month", "factor_stop_plan", "factor_draw_next_month"]);
+    expect(TOOLS.map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_hire", "factor_accept", "factor_reject", "factor_set_title", "factor_register", "factor_set_profile", "factor_bond", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_ask_model", "factor_draw", "factor_deliver", "factor_decline", "factor_sign_up", "factor_create_pay_link", "factor_pay_link_info", "factor_pay_link", "factor_pay_x402", "factor_hire_for_job", "factor_job_tree", "factor_reject_sub_jobs", "factor_record", "factor_erc8004", "factor_link_erc8004", "factor_firms", "factor_firm_record", "factor_hire_firm", "factor_plan", "factor_subscribe", "factor_pay_month", "factor_stop_plan", "factor_draw_next_month"]);
     for (const t of TOOLS) expect(t.description.length, t.name).toBeGreaterThan(40);
-    expect(TOOLS.filter((t) => t.readOnly).map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_pay_link_info", "factor_job_tree", "factor_record", "factor_firms", "factor_firm_record", "factor_plan"]);
+    expect(TOOLS.filter((t) => t.readOnly).map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_pay_link_info", "factor_job_tree", "factor_record", "factor_erc8004", "factor_firms", "factor_firm_record", "factor_plan"]);
     // the ones that spend or cannot be undone say so in capitals, where an assistant will not miss it
     for (const name of ["factor_hire", "factor_reject", "factor_bond", "factor_pay_link", "factor_pay_x402", "factor_hire_for_job", "factor_reject_sub_jobs", "factor_hire_firm", "factor_subscribe", "factor_pay_month"]) expect(TOOLS.find((t) => t.name === name)!.description).toMatch(/SPENDS ETH|SETTLES AT HALF/);
   });
@@ -695,3 +697,32 @@ describe("monthly clients", () => {
     s.site.plan = null;
   });
 });
+
+describe("ERC-8004", () => {
+  it("links an identity with the agent's own signature, over the engine's words to the letter, and refuses a number that is not one", async () => {
+    expect(erc8004Registry(4663)).toBe(engineRegistry(4663, "0x8004a169fb4a3325136eb29fa0ceb6d2e539a432"));
+    const words = { agent: AGENTS[0]!.address, agentId: "42", registry: erc8004Registry(4663), at: 1_760_000_000 };
+    expect(erc8004LinkMessage(words)).toBe(engineLink(words));
+    expect(erc8004LinkMessage({ ...words, agentId: null })).toBe(engineLink({ ...words, agentId: null }));
+    const f = await connect({ privateKey: KEY });
+    expect(await f.linkErc8004(42)).toEqual({ agentId: "42", via: "wallet" });
+    const sent = s.posts.at(-1)!;
+    expect(sent.path).toBe("/erc8004/link");
+    const b = sent.body as { agent: string; agentId: string; at: number; signature: `0x${string}` };
+    expect((await recoverMessageAddress({ message: engineLink({ agent: b.agent, agentId: b.agentId, registry: erc8004Registry(4663), at: b.at }), signature: b.signature })).toLowerCase()).toBe(f.address);
+    expect((await f.linkErc8004(null)).agentId).toBeNull();
+    expect((await refusal(f.linkErc8004("forty-two"))).code).toBe("bad_identity");
+    expect((await refusal((await connect()).linkErc8004(1))).code).toBe("read_only");
+  });
+
+  it("its tool says what the registry has for an agent, linked or not", async () => {
+    const f = await connect();
+    s.site.erc8004 = { enabled: true, agent: AGENTS[0]!.address, erc8004: null, found: [{ agentId: "5", via: "wallet" }, { agentId: "9", via: "owner" }], registry: erc8004Registry(4663), reviewer: null };
+    expect((await runTool(f, "factor_erc8004", { agent: "lumen-07" }, null)).text).toMatch(/No identity is linked yet\. The ERC-8004 registry has #5 \(by its agentWallet\), #9 \(by its owner\)/);
+    s.site.erc8004 = { ...(s.site.erc8004 as object), found: [], none: true };
+    expect((await runTool(f, "factor_erc8004", { agent: "lumen-07" }, null)).text).toMatch(/wants no ERC-8004 identity linked/);
+    s.site.erc8004 = null;
+    expect((await runTool(f, "factor_erc8004", { agent: "nobody-here" }, null)).text).toMatch(/There is no agent "nobody-here"/);
+  });
+});
+

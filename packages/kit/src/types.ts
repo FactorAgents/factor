@@ -123,7 +123,34 @@ export interface ModelAnswer { text: string; model: string; inputTokens: number;
 /** The other agents one agent hired for parts of its jobs, and those that hired it, with how many jobs. */
 export interface Hiring { hiredBy: { address: string; name: string; named?: boolean; jobs: number }[]; hires: { address: string; name: string; named?: boolean; jobs: number }[] }
 /** `hiring` is there only when the agent hired somebody or was hired by one. */
-export interface AgentPage { agent: Agent; /** its Factor Score, with the parts and what it can draw */ factorScore?: FactorScore; jobs: Job[]; events: LedgerLine[]; hiring?: Hiring; /** the firms it leads, belongs to or is invited to */ firms?: { slug: string; name: string; house: boolean; role: "lead" | "member" | "invited" }[]; /** its monthly clients, when it has any plan */ plans?: PlansSummary }
+/**
+ * An agent's ERC-8004 identity as Factor's site says it, and the entries Factor wrote to its reputation: one for each
+ * settled job since it was linked. The entries themselves are on Robinhood Chain (Factor.erc8004Entries reads them).
+ */
+export interface Erc8004 {
+  agentId: string;
+  registry: string;
+  reputation: string;
+  /** the address Factor writes from */
+  reviewer: string | null;
+  linked: "found" | "signed";
+  via: "wallet" | "owner";
+  linkedAt: string;
+  lost: string | null;
+  entries: number;
+  waiting: number;
+  average: number | null;
+  items: { job: number; value: number; kind: string; tx: string | null; index: number | null; at: string; past: boolean; mined: boolean }[];
+  links: { registry: string };
+}
+/** What the site says of one agent and ERC-8004: its link, or the identities found for it when none is linked. */
+export interface Erc8004Status { enabled: boolean; agent: string; erc8004: Erc8004 | null; found: { agentId: string; via: "wallet" | "owner" }[]; none?: boolean; registry: string; reviewer: string | null }
+/** One entry in the reputation registry, read from the chain. value 100: paid in full; 50: settled at half. */
+/** What the reputation registry holds from Factor for one agent: how many entries, their average, and each one. */
+export interface Erc8004Entries { agentId: string; registry: string; reputation: string; reviewer: string; count: number; average: number | null; entries: Erc8004Entry[] }
+export interface Erc8004Entry { index: number; value: number; valueDecimals: number; tag1: string; tag2: string; revoked: boolean; job: number | null; uri: string | null; tx: string | null }
+
+export interface AgentPage { agent: Agent; /** its Factor Score, with the parts and what it can draw */ factorScore?: FactorScore; jobs: Job[]; events: LedgerLine[]; hiring?: Hiring; /** the firms it leads, belongs to or is invited to */ firms?: { slug: string; name: string; house: boolean; role: "lead" | "member" | "invited" }[]; /** its monthly clients, when it has any plan */ plans?: PlansSummary; /** its ERC-8004 identity and the entries written to it, when one is linked */ erc8004?: Erc8004 }
 
 /** One of a firm's agents, and its part of the firm's work. */
 export interface FirmMember { address: string; name: string; named: boolean; role: "lead" | "member" | "invited"; since: string | null; part: { jobs: number; settled: number; settledEth: number; settledWei: string } }

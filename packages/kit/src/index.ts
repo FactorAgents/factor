@@ -21,10 +21,11 @@ import { factorAccountAbi } from "./abi/FactorAccount.js";
 import { factorAccountsAbi } from "./abi/FactorAccounts.js";
 import { factorDeskAbi } from "./abi/FactorDesk.js";
 import { CHAIN_ID, DEFAULT_API, DEFAULT_RPC } from "./defaults.js";
-import type { AccountInfo, Agent, AgentPage, ComputeCredit, ComputeKey, Deal, Firm, FirmHire, FirmPage, FirmRecord, Job, JobPage, JobState, JobTree, LedgerLine, ModelAnswer, Page, PayLinkInfo, Plan, PlanMonthSent, PlanPage, RouterModel, Sent, State, SubJob } from "./types.js";
+import type { AccountInfo, Agent, AgentPage, ComputeCredit, ComputeKey, Deal, Erc8004Entries, Erc8004Status, Firm, FirmHire, FirmPage, FirmRecord, Job, JobPage, JobState, JobTree, LedgerLine, ModelAnswer, Page, PayLinkInfo, Plan, PlanMonthSent, PlanPage, RouterModel, Sent, State, SubJob } from "./types.js";
 import { MONTH_S, PLAN_TITLE_MOST, planMessage, stopPlanMessage, type PlanText } from "./plans.js";
 import { FIRM_SLUG, firmHireMessage, firmMessage, joinMessage, leaveMessage, slugOf } from "./firms.js";
 import { hireMessage, type HirePlan } from "./subjobs.js";
+import { ERC8004_TAG, erc8004LinkMessage, erc8004Registry, IDENTITY_REGISTRY, identityAbi, REPUTATION_REGISTRY, reputationAbi } from "./erc8004.js";
 import { explain, Refusal, WORDS } from "./words.js";
 
 import { encodePayLink, LINK_BRIEF_MOST, readPayLink, tokenOf, verifyRecord, x402PaymentHeader, X402_NETWORK, X402_SCHEME, type AgentRecord, type PayLink, type X402Requirements, payLinkMessage } from "./pay.js";
@@ -36,6 +37,7 @@ export type { AgentRecord, PayLink, RecordMessage, X402Requirements } from "./pa
 export { hireMessage, planIdOf } from "./subjobs.js";
 export { firmHireMessage, firmMessage, joinMessage, leaveMessage, slugOf } from "./firms.js";
 export { MONTH_S, monthlyPlanId, planMessage, stopPlanMessage } from "./plans.js";
+export { ERC8004_TAG, erc8004LinkMessage, erc8004Registry, IDENTITY_REGISTRY, REPUTATION_REGISTRY } from "./erc8004.js";
 export type { PlanText } from "./plans.js";
 export type { HirePlan } from "./subjobs.js";
 
@@ -1057,6 +1059,102 @@ export class Factor {
 
   private site(): string {
     return this.api.replace(/\/api\/v1$/, "").replace(/\/v1$/, "");
+  }
+
+  // ---------- ERC-8004 ----------
+
+  /**
+   * An agent's ERC-8004 identity as Factor knows it: the identity it is linked to with the entries Factor wrote to its
+   * reputation, or the identities found for it in the registry when none is linked. Left out: this wallet's own.
+   */
+  async erc8004(agent?: string): Promise<Erc8004Status | null> {
+    const who = agent ?? this.mine();
+    if (!/^[0-9a-zA-Z-]{3,42}$/.test(who)) throw new Refusal("Give the agent's name or address.", "bad_agent");
+    return read<Erc8004Status>(this.api, `/erc8004/${who}`);
+  }
+
+  /**
+   * Give this wallet an ERC-8004 identity: register() on the standard's identity registry on Robinhood Chain, which
+   * makes this wallet its owner and its agentWallet. One transaction; Factor then finds it and links it. `agentURI`:
+   * the address of the agent's registration file, when it has one.
+   */
+  async registerErc8004(agentURI = ""): Promise<Sent & { agentId: string }> {
+    this.mine();
+    const data = encodeFunctionData({ abi: identityAbi, functionName: "register", args: [agentURI] });
+    let sent: { hash: Hex; explorer: string; receipt: { logs: unknown[] } };
+    if (this.via) sent = await this.order([{ to: IDENTITY_REGISTRY.toLowerCase(), value: 0n, data }]);
+    else {
+      if (!this.wallet || !this.account) throw new Refusal("This Factor was connected without a key: it can only read.", "read_only");
+      let hash: Hex;
+      try {
+        const { request } = await this.pub.simulateContract({ address: IDENTITY_REGISTRY, abi: identityAbi, functionName: "register", args: [agentURI], account: this.account });
+        hash = await this.wallet.writeContract(request as never);
+      } catch (e) {
+        throw e instanceof Refusal ? e : new Refusal(explain(e), "registry_refused");
+      }
+      const receipt = await this.pub.waitForTransactionReceipt({ hash, timeout: 180_000 });
+      if (receipt.status !== "success") throw new Refusal(`The transaction ${hash} was mined and the registry refused it. Nothing changed.`, "reverted");
+      sent = { hash, explorer: `${this.explorer}/tx/${hash}`, receipt };
+    }
+    for (const log of sent.receipt.logs as { address: string; topics: Hex[]; data: Hex }[]) {
+      if (log.address.toLowerCase() !== IDENTITY_REGISTRY.toLowerCase()) continue;
+      try {
+        const d = decodeEventLog({ abi: identityAbi, topics: log.topics as [Hex, ...Hex[]], data: log.data });
+        if (d.eventName === "Registered") return { hash: sent.hash, explorer: sent.explorer, agentId: (d.args as { agentId: bigint }).agentId.toString() };
+      } catch {
+        // another event
+      }
+    }
+    throw new Refusal(`The identity was made (${sent.hash}), and its number was not found in the transaction's logs.`, "no_identity");
+  }
+
+  /**
+   * Link this agent to its ERC-8004 identity: one signature, no gas. The identity must be this agent's on the chain:
+   * its agentWallet is this wallet, or this wallet owns it. From then on Factor writes every job this agent settles to
+   * that identity's reputation. `null`: no identity is linked, and none is linked by itself again.
+   */
+  async linkErc8004(agentId: number | bigint | string | null): Promise<{ agentId: string | null; via?: "wallet" | "owner" }> {
+    const agent = this.mine();
+    const id = agentId === null ? null : String(agentId).replace(/^#/, "");
+    if (id !== null && !/^\d{1,30}$/.test(id)) throw new Refusal("An identity's number is a whole number, like 42.", "bad_identity");
+    const at = await this.clock();
+    const signature = await this.sign(erc8004LinkMessage({ agent, agentId: id === null ? null : BigInt(id).toString(), registry: erc8004Registry(this.chainId), at }));
+    for (let tries = 0; ; tries++) {
+      const r = await fetch(`${this.api}/erc8004/link`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ agent, agentId: id, at, signature }), signal: AbortSignal.timeout(30_000) });
+      const b = (await r.json().catch(() => ({}))) as { error?: string; agentId?: string | null; via?: "wallet" | "owner" };
+      if (r.ok) return { agentId: b.agentId ?? null, ...(b.via ? { via: b.via } : {}) };
+      // a wallet that registered on the desk a moment ago: the site has not read it yet
+      if (r.status === 404 && /has not registered/.test(b.error ?? "") && tries < 20) { await sleep(1500); continue; }
+      throw new Refusal(sentence(b.error ?? `Factor's site answered ${r.status}`), r.status === 503 ? "erc8004_off" : "refused");
+    }
+  }
+
+  /**
+   * The entries Factor wrote to an agent's ERC-8004 reputation, read from the reputation registry on Robinhood Chain
+   * itself: each one's value (100 paid in full, 50 settled at half), tags and whether it was revoked, and, from Factor's
+   * site, which job it was. `reviewer`: the address to read entries from, when an app keeps Factor's address itself.
+   */
+  async erc8004Entries(agent?: string, o: { reviewer?: string } = {}): Promise<Erc8004Entries> {
+    const st = await this.erc8004(agent);
+    if (!st) throw new Refusal(`There is no agent "${agent ?? this.address}" on Factor.`, "no_agent");
+    const e = st.erc8004;
+    if (!e) throw new Refusal(`${agent ?? "This agent"} has no ERC-8004 identity linked on Factor.`, "no_identity");
+    const reviewer = (o.reviewer ?? e.reviewer ?? st.reviewer)?.toLowerCase();
+    if (!reviewer || !/^0x[0-9a-f]{40}$/.test(reviewer)) throw new Refusal("Factor names no address its entries come from yet.", "no_reviewer");
+    const id = BigInt(e.agentId);
+    const [all, summary] = await Promise.all([
+      this.pub.readContract({ address: REPUTATION_REGISTRY, abi: reputationAbi, functionName: "readAllFeedback", args: [id, [reviewer as Hex], ERC8004_TAG, "", true] }),
+      this.pub.readContract({ address: REPUTATION_REGISTRY, abi: reputationAbi, functionName: "getSummary", args: [id, [reviewer as Hex], ERC8004_TAG, ""] }),
+    ]);
+    const [, indexes, values, decimals, tag1s, tag2s, revoked] = all as readonly [readonly Hex[], readonly bigint[], readonly bigint[], readonly number[], readonly string[], readonly string[], readonly boolean[]];
+    const byIndex = new Map(e.items.filter((x) => x.index !== null).map((x) => [x.index!, x]));
+    const site = this.site();
+    const entries = indexes.map((ix, i) => {
+      const item = byIndex.get(Number(ix));
+      return { index: Number(ix), value: Number(values[i]), valueDecimals: Number(decimals[i]), tag1: tag1s[i]!, tag2: tag2s[i]!, revoked: revoked[i]!, job: item?.job ?? null, uri: item ? `${site}/api/v1/erc8004/feedback/${item.job}` : null, tx: item?.tx ?? null };
+    });
+    const [count, value, places] = summary as readonly [bigint, bigint, number];
+    return { agentId: e.agentId, registry: e.registry, reputation: REPUTATION_REGISTRY, reviewer, count: Number(count), average: count ? Number(value) / 10 ** Number(places) : null, entries };
   }
 
   // ---------- anyone ----------

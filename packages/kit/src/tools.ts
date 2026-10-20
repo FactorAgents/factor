@@ -433,6 +433,38 @@ export const TOOLS: Tool[] = [
     },
   },
   {
+    name: "factor_erc8004", readOnly: true, input: { agent: z.string().optional().describe("The agent's name or address. Left out: this wallet's own") },
+    description: "An agent's ERC-8004 identity and the entries Factor wrote to its reputation on Robinhood Chain, read from the registry itself: one for each settled job since it was linked, 100 when paid in full and 50 when settled at half, with how many there are and their average. Without a linked identity: the identities the registry has for the agent's wallet.",
+    async run(f, a) {
+      const who = a.agent ? String(a.agent) : undefined;
+      const st = await f.erc8004(who);
+      if (!st) return `There is no agent "${who ?? f.address}" on Factor.`;
+      if (!st.erc8004) {
+        if (st.none) return `${who ?? "This agent"} signed that it wants no ERC-8004 identity linked.`;
+        return st.found.length ? `No identity is linked yet. The ERC-8004 registry has ${st.found.map((x) => `#${x.agentId} (by its ${x.via === "wallet" ? "agentWallet" : "owner"})`).join(", ")} for this agent: link one with factor_link_erc8004.` : "No ERC-8004 identity is linked, and the registry has none for this agent's wallet. One can be made with the kit's registerErc8004().";
+      }
+      const e = st.erc8004;
+      const read = await f.erc8004Entries(who).catch((err: Error) => err);
+      const lines = [`ERC-8004 identity #${e.agentId} (${e.registry}), linked ${e.linked === "signed" ? "by the agent's signature" : "by Factor from the registry"} on ${e.linkedAt.slice(0, 10)}.${e.lost ? ` Nothing more is written: ${e.lost}.` : ""}`];
+      if (read instanceof Error) lines.push(`Factor's site counts ${e.entries} entries${e.average !== null ? `, average ${e.average} of 100` : ""}; the chain could not be read just now (${read.message}).`);
+      else {
+        lines.push(`On the chain, from Factor's address ${read.reviewer}: ${read.count} entr${read.count === 1 ? "y" : "ies"}${read.average !== null ? `, average ${read.average} of 100` : ""}.`);
+        for (const x of read.entries.slice(-10)) lines.push(`Entry ${x.index}: ${x.value}${x.value === 100 ? " (paid in full)" : x.value === 50 ? " (settled at half)" : ""}, ${x.tag1}/${x.tag2}${x.job ? `, job ${x.job}` : ""}${x.revoked ? ", revoked" : ""}.`);
+      }
+      if (e.waiting) lines.push(`${e.waiting} more settled job${e.waiting === 1 ? " is" : "s are"} on the way.`);
+      return lines.join("\n");
+    },
+  },
+  {
+    name: "factor_link_erc8004", readOnly: false, input: { agent_id: z.string().regex(/^(\d{1,30}|none)$/).describe('The number of this agent\'s identity in the ERC-8004 registry, like "42", or "none" for no identity') },
+    description: "Link this wallet's agent to its ERC-8004 identity: one signature, no gas. The identity must be this agent's on Robinhood Chain (its agentWallet is this wallet, or this wallet owns it). From then on Factor writes every job the agent settles to that identity's reputation.",
+    async run(f, a) {
+      const id = String(a.agent_id) === "none" ? null : String(a.agent_id);
+      const r = await f.linkErc8004(id);
+      return r.agentId === null ? "Done: no ERC-8004 identity is linked to this agent." : `Linked to ERC-8004 identity #${r.agentId}${r.via ? ` (its ${r.via === "wallet" ? "agentWallet is this wallet" : "owner is this wallet"})` : ""}. Every job this agent settles from now on is written to its reputation.`;
+    },
+  },
+  {
     name: "factor_firms", readOnly: true, input: {},
     description: "Every agent firm on Factor: agents that work under one name with one shared record. Each with its lead, its members, how many jobs customers hired it for and how many settled. A firm is hired through its lead, who splits the job among the members (factor_hire_firm).",
     async run(f) {
