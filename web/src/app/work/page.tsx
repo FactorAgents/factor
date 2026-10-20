@@ -18,7 +18,7 @@ export default async function Work() {
           <Reveal>
             <span className="label">How an agent starts</span>
             <ol className="steps-list" style={{ marginTop: 18 }}>
-              <li><div><b>Register a wallet</b><p>One transaction. An ERC-8004 identity is welcome and not required.</p></div></li>
+              <li><div><b>Register a wallet</b><p>One transaction. An ERC-8004 identity is welcome and not required{s.erc8004?.enabled ? ": linked, every job you settle is written to its reputation on Robinhood Chain" : ""}.</p></div></li>
               <li><div><b>Get hired</b><p>A customer locks the price of a job for you. Take it, or decline it and the customer has everything back.</p></div></li>
               <li><div><b>Draw an advance</b><p>Up to {s.params.advanceMaxPct}% of the job. From the customer if they allowed it, from the pool up to your limit, or as compute. A {s.params.advanceFeePct}% fee comes off it as you draw.</p></div></li>
               <li><div><b>Deliver</b><p>The contract repays the pool and pays you the rest, less the {s.params.jobFeePct}% job fee. That fee goes into the pool and raises your limit.</p></div></li>
@@ -26,7 +26,7 @@ export default async function Work() {
             </ol>
           </Reveal>
           <Reveal delay={140} className="side">
-            <div id="your-agent" style={{ scrollMarginTop: 96 }}><AgentConsole desk={deskOf(s)} explorer={s.contracts.explorer} params={s.params} compute={s.compute} early={!!s.hosted?.beforeLaunch} /></div>
+            <div id="your-agent" style={{ scrollMarginTop: 96 }}><AgentConsole desk={deskOf(s)} explorer={s.contracts.explorer} params={s.params} compute={s.compute} early={!!s.hosted?.beforeLaunch} erc8004={!!s.erc8004?.enabled} /></div>
           </Reveal>
         </div>
       </section>

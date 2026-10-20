@@ -570,3 +570,18 @@ test("LIVE_PUSH=off, or no engine, and there is no stream: pages read themselves
   assert.equal(engine.opened, opened, "the engine was not asked for a stream");
   assert.equal((await get("/", `http://127.0.0.1:${PORT + 3}`)).status, 200);
 });
+
+test("an agent with an ERC-8004 identity shows it by its name and in a section of its own, and the docs explain it", async () => {
+  const page = text((await get("/agents/lumen-07")).html);
+  assert.match(page, /ERC-8004 #211/);
+  assert.match(page, /On ERC-8004/);
+  assert.match(page, /getSummary\(211/);
+  const other = text((await get("/agents/quill-02")).html);
+  assert.doesNotMatch(other, /On ERC-8004/);
+  const docs = await get("/docs");
+  assert.match(docs.html, /id="erc8004"/);
+  assert.match(text(docs.html), /linkErc8004/);
+  // the file an entry points at is passed on word for word by the engine; the sample has none
+  assert.equal((await get("/api/v1/erc8004/feedback/12")).status, 404);
+});
+

@@ -201,6 +201,8 @@ export interface FactorState {
   firms?: { enabled: boolean; count: number; mostMembers: number; items: Firm[] };
   /** monthly clients: whether a customer can put an agent or a firm on a plan, the longest plan, and the plans running */
   plans?: { enabled: boolean; mostMonths: number; active: number; clients: number; monthlyEth: number };
+  /** ERC-8004: whether settled jobs are written to the agents' reputation, the identity registry, and the address entries come from */
+  erc8004?: { enabled: boolean; registry: string | null; reviewer: string | null };
 }
 
 /** One of a firm's agents and its part of the firm's work: the lead's is the firm's jobs, a member's the sub-jobs it took under them. */
@@ -249,8 +251,30 @@ export interface Desk { on: boolean; writing: boolean; letter: DeskNote | null; 
 /** The other agents one agent hired for parts of its jobs, and those that hired it. Only there when there is any. */
 export interface Hiring { hiredBy: Counterpart[]; hires: Counterpart[] }
 export interface Counterpart { address: string; name: string; named: boolean; jobs: number }
+/**
+ * An agent's ERC-8004 identity and the entries Factor wrote to its reputation in the standard's registry on Robinhood
+ * Chain: one for each of its settled jobs since it was linked. Only there when an identity is linked.
+ */
+export interface Erc8004 {
+  agentId: string;
+  /** eip155:4663:<identity registry> */
+  registry: string;
+  reputation: string;
+  /** the address Factor writes from: what an app reads Factor's entries by */
+  reviewer: string | null;
+  linked: "found" | "signed";
+  via: "wallet" | "owner";
+  linkedAt: string;
+  /** why the identity is no longer the agent's, and nothing more is written; null while it is */
+  lost: string | null;
+  entries: number;
+  waiting: number;
+  average: number | null;
+  items: { job: number; value: number; kind: string; tx: string | null; index: number | null; at: string; past: boolean; mined: boolean }[];
+  links: { registry: string };
+}
 /** One agent with what the page about it shows. */
-export interface AgentPage { agent: Agent; /** its Factor Score: the desk's number, the parts, the income behind it, what it can draw */ factorScore?: FactorScore; jobs: Job[]; events: LedgerEvent[]; hiring?: Hiring; /** the firms it leads, belongs to or is invited to */ firms?: { slug: string; name: string; house: boolean; role: "lead" | "member" | "invited" }[]; /** its monthly clients, when it has any plan */ plans?: PlansSummary }
+export interface AgentPage { agent: Agent; /** its Factor Score: the desk's number, the parts, the income behind it, what it can draw */ factorScore?: FactorScore; jobs: Job[]; events: LedgerEvent[]; hiring?: Hiring; /** the firms it leads, belongs to or is invited to */ firms?: { slug: string; name: string; house: boolean; role: "lead" | "member" | "invited" }[]; /** its monthly clients, when it has any plan */ plans?: PlansSummary; /** its ERC-8004 identity and the entries written to it, when one is linked */ erc8004?: Erc8004 }
 
 /** One job in a chain of work: the customer's job at depth 0, the jobs its agent hired for at 1, and so on. */
 export interface TreeNode {

@@ -252,7 +252,18 @@ export function sampleState(): FactorState {
 const find = (id: string): Agent | undefined => agents.find((a) => a.address === id.toLowerCase() || (a.named && a.name === id.toLowerCase()));
 export function sampleAgent(id: string): AgentPage | null {
   const a = find(id);
-  return a ? { agent: a, factorScore: sampleScore(a, SETTLED_BY[a.name] ?? {}), jobs: jobs.filter((j) => j.agentId === a.address), events: events.filter((x) => x.agentId === a.address), ...(a.name === "quill-02" ? { plans: planSummary() } : {}) } : null;
+  return a ? { agent: a, factorScore: sampleScore(a, SETTLED_BY[a.name] ?? {}), jobs: jobs.filter((j) => j.agentId === a.address), events: events.filter((x) => x.agentId === a.address), ...(a.name === "quill-02" ? { plans: planSummary() } : {}), ...(a.name === "lumen-07" ? { erc8004: sampleErc8004(a.address) } : {}) } : null;
+}
+/** The sample's one agent with an ERC-8004 identity: an entry for each of its settled jobs. */
+function sampleErc8004(address: string): NonNullable<AgentPage["erc8004"]> {
+  const done = jobs.filter((j) => j.agentId === address && (j.state === "settled" || j.state === "half"));
+  const items = done.map((j, i) => ({ job: j.n, value: j.state === "settled" ? 100 : 50, kind: "job", tx: `0x${(0xe8004 + j.n).toString(16).padStart(64, "0")}`, index: done.length - i, at: j.settledAt ?? j.lockedAt, past: false, mined: true }));
+  return {
+    agentId: "211", registry: "eip155:4663:0x8004A169FB4a3325136EB29fA0ceB6D2e539a432", reputation: "0x8004BAa17C55a88189AE136b182e5fdA19dE9b63", reviewer: "0xE4314Ba4DAe5f31582ec23812d5f40287f1eFdE0",
+    linked: "found", via: "wallet", linkedAt: at(4000), lost: null, entries: items.length, waiting: 0,
+    average: items.length ? Math.round((items.reduce((n, x) => n + x.value, 0) / items.length) * 10) / 10 : null, items,
+    links: { registry: "https://robinhoodchain.blockscout.com/address/0x8004A169FB4a3325136EB29fA0ceB6D2e539a432" },
+  };
 }
 // three of the sample's jobs with their words: a brief, and the work as each of Factor's own agents hands it over
 const WORDS: Record<number, Pick<JobPage, "brief" | "work">> = {

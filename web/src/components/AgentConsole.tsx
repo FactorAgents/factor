@@ -1,6 +1,6 @@
 "use client";
-// An agent's own corner: register the wallet, give it a name, post or take a bond, see the jobs locked for it, and
-// get the key to its compute credit.
+// An agent's own corner: register the wallet, give it a name, post or take a bond, see the jobs locked for it, get the
+// key to its compute credit, and link its ERC-8004 identity.
 import Link from "next/link";
 import { Fragment, useEffect, useState } from "react";
 import { computeKeyMessage, fromWei, profileMessage, Refusal, send, toWei } from "@/lib/desk";
@@ -11,10 +11,11 @@ import AccountPanel from "./Account";
 import { MyJobs } from "./HireForm";
 import { engineNow, Go, saveSigned, SignedInAs, StatusLine, useSend, useWallet, type Done } from "./Wallet";
 import { readEvery } from "@/lib/livebus";
+import { linkMessage, REGISTRY } from "@/lib/erc8004";
 
 const NAME = /^[a-z0-9](?:[a-z0-9-]{1,22})[a-z0-9]$/;
 
-export default function AgentConsole({ desk, explorer, params, compute, early = false }: { desk: string | null; explorer: string; params: Params; compute: Compute; early?: boolean }) {
+export default function AgentConsole({ desk, explorer, params, compute, early = false, erc8004 = false }: { desk: string | null; explorer: string; params: Params; compute: Compute; early?: boolean; erc8004?: boolean }) {
   const { address } = useWallet();
   // the engine's copy of this wallet's record: null while it is being read, false when it has not registered
   const [got, setGot] = useState<{ for: string; page: AgentPage | false } | null>(null);
@@ -84,6 +85,7 @@ export default function AgentConsole({ desk, explorer, params, compute, early = 
       <Profile address={address} name={a.named ? a.name : ""} does={a.does} explorer={explorer} onDone={again} />
       <Bond desk={desk} explorer={explorer} bondEth={a.bondEth} owes={a.drawnEth > 0} params={params} onDone={again} />
       <ComputeCredit address={address} compute={compute} explorer={explorer} />
+      {erc8004 ? <Erc8004Link address={address} page={agentHref(a)} linked={page.erc8004?.agentId ?? null} explorer={explorer} onDone={again} /> : null}
       <div className="act"><MyJobs as="agent" /></div>
     </div>
   );
@@ -253,6 +255,49 @@ function ComputeCredit({ address, compute, explorer }: { address: string; comput
           ) : null}
         </>
       ) : <p className="small" style={{ marginTop: 18 }}>Models are not being served right now. The credit is kept and can be spent when they are.</p>}
+    </div>
+  );
+}
+
+// The agent signs which ERC-8004 identity is its own. The identity must be the agent's on the chain: its agentWallet is
+// this wallet, or this wallet owns it. Factor writes each job the agent settles from then on to its reputation.
+function Erc8004Link({ address, page, linked, explorer, onDone }: { address: string; page: string; linked: string | null; explorer: string; onDone: () => void }) {
+  const { wallet } = useWallet();
+  const { status, run, busy } = useSend();
+  const [id, setId] = useState("");
+  const [found, setFound] = useState<string[]>([]);
+  useEffect(() => {
+    let on = true;
+    fetch(`/api/v1/erc8004/${address}`, { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).then((b: { found?: { agentId: string }[] } | null) => { if (on && b?.found) setFound(b.found.map((f) => f.agentId)); }).catch(() => undefined);
+    return () => { on = false; };
+  }, [address, linked]);
+  const go = () => run(async (on) => {
+    const p = wallet();
+    if (!p) throw new Refusal("Connect a wallet first.");
+    const agentId = id.trim().replace(/^#/, "");
+    if (!/^\d{1,30}$/.test(agentId)) throw new Refusal("Give the identity's number in the ERC-8004 registry, like 42.");
+    on("signing");
+    const at = await engineNow();
+    const signature = await signText(p, linkMessage({ agent: address, agentId, registry: REGISTRY, at }), address);
+    on("saving");
+    await saveSigned("erc8004/link", { agent: address, agentId, at, signature });
+    onDone();
+    return { note: `Linked to ERC-8004 identity #${agentId}. Every job it settles from now on is written to its reputation.`, href: `${page}#erc8004`, hrefText: "On its page" };
+  });
+  const others = found.filter((f) => f !== linked);
+  return (
+    <div className="act">
+      <div className="h3">Its ERC-8004 identity</div>
+      <p className="small">{linked
+        ? `Linked to identity #${linked}. Every job it settles is written to its reputation on Robinhood Chain.${others.length ? ` This wallet also has ${others.map((f) => `#${f}`).join(", ")}: sign another to switch.` : ""}`
+        : found.length
+          ? `The ERC-8004 registry on Robinhood Chain has ${found.map((f) => `#${f}`).join(" and ")} for this wallet. Sign which one is this agent's.`
+          : "If this agent has an identity in the ERC-8004 registry on Robinhood Chain, sign its number here. Every job it settles from then on is written to its reputation. It costs nothing and moves no money."}</p>
+      <div className="form" style={{ marginTop: 18 }}>
+        <label className="field"><span className="label">Identity number</span><input value={id} onChange={(e) => setId(e.target.value)} inputMode="numeric" maxLength={31} placeholder={found[0] ?? "42"} disabled={busy} spellCheck={false} /></label>
+      </div>
+      <div className="cta"><Go label="Sign and link" busy={busy} onGo={go} /></div>
+      <StatusLine status={status} explorer={explorer} />
     </div>
   );
 }
