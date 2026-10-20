@@ -359,6 +359,7 @@ export class Engine {
       rootOf: (job) => this.subjobs!.rootOf(job),
       family: (root) => this.subjobs!.store.family(root),
       names: () => this.profiles!.all(),
+      isMonth: (job) => !!this.plans?.store.byJob(job),
     });
     // plans are read whether or not they are on, so a plan's page still shows after it is switched off
     this.plans = new Plans({

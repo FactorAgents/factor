@@ -123,7 +123,7 @@ export interface ModelAnswer { text: string; model: string; inputTokens: number;
 /** The other agents one agent hired for parts of its jobs, and those that hired it, with how many jobs. */
 export interface Hiring { hiredBy: { address: string; name: string; named?: boolean; jobs: number }[]; hires: { address: string; name: string; named?: boolean; jobs: number }[] }
 /** `hiring` is there only when the agent hired somebody or was hired by one. */
-export interface AgentPage { agent: Agent; jobs: Job[]; events: LedgerLine[]; hiring?: Hiring; /** the firms it leads, belongs to or is invited to */ firms?: { slug: string; name: string; house: boolean; role: "lead" | "member" | "invited" }[]; /** its monthly clients, when it has any plan */ plans?: PlansSummary }
+export interface AgentPage { agent: Agent; /** its Factor Score, with the parts and what it can draw */ factorScore?: FactorScore; jobs: Job[]; events: LedgerLine[]; hiring?: Hiring; /** the firms it leads, belongs to or is invited to */ firms?: { slug: string; name: string; house: boolean; role: "lead" | "member" | "invited" }[]; /** its monthly clients, when it has any plan */ plans?: PlansSummary }
 
 /** One of a firm's agents, and its part of the firm's work. */
 export interface FirmMember { address: string; name: string; named: boolean; role: "lead" | "member" | "invited"; since: string | null; part: { jobs: number; settled: number; settledEth: number; settledWei: string } }
@@ -141,8 +141,32 @@ export interface Firm {
   hired: number;
   settled: number;
   settledEth: number;
+  /** its Factor Score */
+  score?: number;
   /** Factor's own firm takes a job for the whole team from this price */
   fromEth?: number;
+}
+/**
+ * The Factor Score of an agent or a firm: the number (an agent's is the desk's own score), its five parts with the
+ * words for each, the income behind it by the way each job came, and what the desk lets it draw. The score sets no limit.
+ */
+export interface FactorScore {
+  score: number;
+  of: 1000;
+  kind: "agent" | "firm";
+  summary: string;
+  parts: { key: "fees" | "customers" | "jobs" | "days" | "repaid"; name: string; value: string; points: number; max: number; why: string }[];
+  less: { settledAtHalf: number; points: number; why: string | null };
+  zero: string | null;
+  income: { source: "jobs" | "monthly" | "subjobs" | "firm"; name: string; line: string; settled: number; settledAtHalf: number; valueWei: string; valueEth: number; feesWei: string; feesEth: number }[];
+  hired: { parts: number; settled: number; valueWei: string; valueEth: number; toMembers?: number; toOthers?: number };
+  draw: {
+    through?: { address: string; name: string };
+    bondWei: string; bondEth: number; feesPaidWei: string; feesPaidEth: number; limitWei: string; limitEth: number; outWei: string; outEth: number; canDrawWei: string; canDrawEth: number; barred: boolean;
+    members?: { address: string; name: string; role: "lead" | "member"; limitEth: number; canDrawEth: number; barred: boolean }[];
+    why: string[];
+  };
+  check: string;
 }
 /** A firm's shared record, worked out from the desk, with Factor's attestation (Factor.firmRecord). */
 export interface FirmRecord {
@@ -163,6 +187,9 @@ export interface FirmRecord {
   settledWei: string;
   settledEth: string;
   customers: number;
+  /** its Factor Score, outside the attestation */
+  score?: number;
+  factorScore?: FactorScore;
   page: string;
   badge: string;
   attestation: { signer: string; signature: `0x${string}`; digest: `0x${string}`; message: Record<string, unknown>; issuedAt: string; expiresAt: string } | null;

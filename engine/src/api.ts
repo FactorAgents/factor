@@ -40,6 +40,7 @@ import { allStopped, isSwitch, SWITCHES, stopped, turn } from "./switches.js";
 import { DeskStore, KIND_NAME, RULES, STATE, STATE_NAME, type AdvanceRow, type AgentRecord, type AgentRow, type JobRow, type LedgerRow } from "./desk.js";
 import { briefText, oneLine, Profiles, type Profile, type Written } from "./profiles.js";
 import { canDrawOf, limitOf, scoreOf, scoreParts } from "./score.js";
+import { drawOf, factorScore, incomeOf, type FactorScoreJson, type IncomeSource, type ScoreJob } from "./factorscore.js";
 import type { Pulse } from "./pulse.js";
 import { ethOf, type DeskMind, type Facts, type Note } from "./deskmind.js";
 import type { LaunchList } from "./launchlist.js";
@@ -531,6 +532,7 @@ export class EngineApi {
         nowS: this.chainNow(v, r.snap), site: v.config.pay.site, pay: v.pay.store.totals(row.address), signer: v.recordSigner ?? null,
         hiring: this.hiring(v, row.address),
         plans: this.plansOf(v, { agent: row.address }),
+        factorScore: this.factorScoreOf(v, r, row),
       }) as unknown as Record<string, unknown>);
     }
     return null;
@@ -862,6 +864,8 @@ export class EngineApi {
     const names = this.names(v);
     return ok({
       agent: agentJson(row, names, this.chainNow(v, r.snap)),
+      // the Factor Score: the desk's number with the income behind it, by the way each job came, and what it can draw
+      factorScore: this.factorScoreOf(v, r, row),
       jobs: this.jobsJson(v, r.store, r.store.jobs(PAGE, undefined, row.address)),
       events: r.store.ledger(30, { agent: row.address }).map((l) => eventJson(l, names)),
       // whom it hired for parts of its jobs and who hired it: only when there is any, so a page never shows empty counts
@@ -879,6 +883,34 @@ export class EngineApi {
     const profiles = v.profiles?.all() ?? new Map<string, Profile>();
     const named = (x: { address: string; jobs: number }) => { const p = profiles.get(x.address); return { address: x.address, name: p?.name ?? shortAddress(x.address), named: !!p, jobs: x.jobs }; };
     return { hiredBy: rel.hiredBy.map(named), hires: rel.hires.map(named) };
+  }
+
+  /**
+   * An agent's Factor Score (./factorscore.ts): the desk's own number for it, the income behind it split by the way
+   * each job came (a month of a plan, firm work, a part of another agent's job, or a job of its own), the parts of its
+   * jobs it hired out, and what the desk lets it draw.
+   */
+  private factorScoreOf(v: EngineView, r: { ctx: Ctx; snap: Snapshot; store: DeskStore }, row: AgentRow): FactorScoreJson {
+    const db = r.ctx.db;
+    const jobs = db.q("SELECT id, state, customer, price, fee, closed_at, early, from_pool FROM desk_jobs WHERE agent = ? AND state IN (?, ?)").all(row.address, STATE.settled, STATE.half) as ScoreJob[];
+    // each job once, under the first way that fits it
+    const sourceOf = (id: number): IncomeSource => {
+      if (v.plans?.monthOf(id)) return "monthly";
+      const f = v.firms?.firmOfJob(id);
+      if (f && (!f.part || v.firms!.team(f.firm).includes(row.address))) return "firm";
+      if (v.subjobs?.store.link(id)) return "subjobs";
+      return "jobs";
+    };
+    const income = incomeOf(jobs, sourceOf);
+    const distinct = new Set(jobs.map((j) => j.customer)).size;
+    const out = v.subjobs ? (db.q("SELECT s.price, d.state FROM subjobs s LEFT JOIN desk_jobs d ON d.id = s.job_id WHERE s.hirer = ?").all(row.address) as { price: string; state: number | null }[]) : [];
+    const value = out.reduce((n, x) => n + BigInt(x.price), 0n);
+    return factorScore({
+      kind: "agent", record: row.record, nowS: this.chainNow(v, r.snap), distinctCustomers: distinct, income,
+      hired: { parts: out.length, settled: out.filter((x) => x.state === STATE.settled || x.state === STATE.half).length, valueWei: value.toString(), valueEth: eth(value) },
+      draw: drawOf(row.record, income),
+      check: `score(${row.address}) on the desk, ${r.ctx.addr.desk}`,
+    });
   }
 
   /** The chain of work a job is part of, with titles and each deal's burn, or null when there is none. */

@@ -20,6 +20,8 @@
 // The record is what the desk says of the jobs filed under the firm and of every sub-job under them: how many were
 // hired, how many settled, the value of the settled work, the distinct customers, and each member's part of it. None
 // of it is set by hand. Who belongs to the firm is the engine's (signed words); what was done is the desk's.
+// A firm's Factor Score is the desk's score formula over the jobs customers hired it for (./factorscore.ts), and what
+// it can draw is its lead's limit with the pool, since its jobs are locked for the lead.
 //
 // Rules, all the engine's:
 //   - a slug is 3 to 32 small letters, digits and single dashes; a name one plain line; neither may pass for Factor
@@ -35,7 +37,9 @@
 import { formatEther, hashTypedData, type Hex } from "viem";
 import { normalizeAddress } from "./chain/address.js";
 import type { EngineDb } from "./chain/db.js";
-import { STATE } from "./desk.js";
+import { DeskStore, STATE } from "./desk.js";
+import { drawOf, factorScore, incomeOf, recordOfJobs, type DrawJson, type FactorScoreJson, type ScoreJob } from "./factorscore.js";
+import { scoreOf } from "./score.js";
 import type { LockFacts } from "./pay.js";
 import { briefText, HOUSE_NAMES, oneLine, RESERVED } from "./profiles.js";
 import type { RecordSigner } from "./record.js";
@@ -223,6 +227,8 @@ export interface FirmJson {
   hired: number;
   settled: number;
   settledEth: number;
+  /** its Factor Score: the desk's score formula over the jobs customers hired it for */
+  score: number;
   /** a house firm takes a job for the whole team from this price */
   fromEth?: number;
 }
@@ -247,6 +253,9 @@ export interface FirmRecordJson {
   settledWei: string;
   settledEth: string;
   customers: number;
+  /** the firm's Factor Score, outside the attestation: worked out from the jobs above by the desk's formula */
+  score: number;
+  factorScore: FactorScoreJson;
   page: string;
   badge: string;
   attestation: { signer: string; signature: Hex; digest: Hex; message: FirmRecordMessage; issuedAt: string; expiresAt: string } | null;
@@ -306,6 +315,8 @@ export interface FirmDeps {
   family: (root: number) => { job_id: number; parent_id: number; depth: number; hirer: string; agent: string }[];
   /** names agents signed, by address */
   names: () => Map<string, { name: string }>;
+  /** whether a job is a month of a monthly plan (./plans.ts) */
+  isMonth?: (job: number) => boolean;
 }
 
 export class Firms {
@@ -609,12 +620,47 @@ export class Firms {
     return {
       slug: firm.slug, name: firm.name, does: firm.does, house: !!firm.house, lead: this.named(firm.lead), members, since: iso(Math.floor(firm.created_at / 1000)),
       hired: roots.length, settled: settled.length, settledEth: ethNum(settled.reduce((n, r) => n + BigInt(r.row!.price), 0n)),
+      score: scoreOf(recordOfJobs(this.scoreJobs(firm)), this.d.nowS()),
       ...(firm.house ? { fromEth: ethNum(HOUSE_FIRM.fromWei) } : {}),
     };
   }
 
   list(): FirmJson[] {
     return this.store.all().map((f) => this.json(f)).sort((a, b) => Number(b.house) - Number(a.house) || b.settled - a.settled || b.hired - a.hired || (a.since < b.since ? -1 : 1));
+  }
+
+  /** The jobs customers hired the firm for, as the score reads them from the desk's copy. */
+  scoreJobs(firm: FirmRow): ScoreJob[] {
+    return this.d.db.q("SELECT d.id, d.state, d.customer, d.price, d.fee, d.closed_at, d.early, d.from_pool FROM firm_jobs f JOIN desk_jobs d ON d.id = f.job_id WHERE f.firm_id = ?").all(firm.id) as ScoreJob[];
+  }
+
+  /**
+   * A firm's Factor Score (./factorscore.ts): the desk's formula over the jobs customers hired it for, their income by
+   * the way they came (jobs, months of plans), the parts split out of them, and what can be drawn: its lead's limit.
+   */
+  factorScore(firm: FirmRow, o: { desk: string }): FactorScoreJson {
+    const jobs = this.scoreJobs(firm);
+    const record = recordOfJobs(jobs);
+    const income = incomeOf(jobs, (id) => (this.d.isMonth?.(id) ? "monthly" : "jobs"), ["jobs", "monthly"]);
+    const { subs } = this.work(firm);
+    const team = this.team(firm);
+    const done = (s: number | undefined) => s === STATE.settled || s === STATE.half;
+    const value = subs.reduce((n, s) => n + BigInt(s.row?.price ?? "0"), 0n);
+    // what can be drawn on the firm's jobs is the lead's own limit; each member draws on its own parts
+    const desk = new DeskStore(this.d.db);
+    const lead = desk.agent(firm.lead)?.record;
+    const members: NonNullable<DrawJson["members"]> = team.map((address) => {
+      const r = desk.agent(address)?.record;
+      const draw = r ? drawOf(r, []) : null;
+      return { address, name: this.named(address).name, role: address === firm.lead ? ("lead" as const) : ("member" as const), limitEth: draw?.limitEth ?? 0, canDrawEth: draw?.canDrawEth ?? 0, barred: !!r?.barred };
+    });
+    const leadRecord = lead ?? recordOfJobs([]);
+    const draw = drawOf(leadRecord, [], { firm: { lead: { address: firm.lead, name: this.named(firm.lead).name }, members } });
+    return factorScore({
+      kind: "firm", record, nowS: this.d.nowS(), distinctCustomers: new Set(jobs.filter((x) => done(x.state)).map((x) => x.customer)).size, income,
+      hired: { parts: subs.length, settled: subs.filter((s) => done(s.row?.state)).length, valueWei: value.toString(), valueEth: ethNum(value), toMembers: subs.filter((s) => team.includes(s.link.agent)).length, toOthers: subs.filter((s) => !team.includes(s.link.agent)).length },
+      draw, check: `worked out by Factor from the jobs hired through the firm, each on the desk ${o.desk}`,
+    });
   }
 
   /** The record of a firm, for any app: worked out from the desk, with Factor's attestation when there is a key. */
@@ -643,6 +689,7 @@ export class Firms {
       jobs: { hired: roots.length, open: by(STATE.locked) + by(STATE.advanced), delivered: by(STATE.delivered), settled: by(STATE.settled), settledAtHalf: by(STATE.half), declined: by(STATE.declined), refunded: by(STATE.refunded) },
       subJobs: { count: subs.length, settled: subs.filter((s) => done(s.row?.state)).length, toMembers: subs.filter((s) => team.includes(s.link.agent)).length, toOthers: subs.filter((s) => !team.includes(s.link.agent)).length },
       settledWei: settledWei.toString(), settledEth: formatEther(settledWei), customers,
+      score: j.score, factorScore: this.factorScore(firm, { desk: o.desk }),
       page: `${o.site}/firms/${firm.slug}`, badge: `${o.site}/api/v1/firms/${firm.slug}/badge`,
       attestation,
     };

@@ -6,6 +6,7 @@
 // The words signed are the same, to the letter, as the engine checks (engine/src/pay.ts) and the site builds
 // (web/src/lib/pay.ts).
 import { formatEther, keccak256, recoverTypedDataAddress, toHex, type Hex } from "viem";
+import type { FactorScore } from "./types.js";
 
 export interface PayLink {
   v: 1;
@@ -170,6 +171,8 @@ export interface AgentRecord {
   hiring?: { hiredBy: { address: string; name: string; jobs: number }[]; hires: { address: string; name: string; jobs: number }[] };
   /** its monthly clients: plans running now, their customers, the price a month of them added up, months delivered and settled */
   plans?: { active: number; clients: number; monthlyWei: string; monthlyEth: string; monthsDelivered: number; monthsSettled: number };
+  /** the Factor Score: the attested score with its parts, the income behind it, and what the desk lets it draw */
+  factorScore?: FactorScore | null;
   page: string;
   badge: string;
   attestation: { signer: string; signature: Hex; digest: Hex; message: RecordMessage; issuedAt: string; expiresAt: string } | null;

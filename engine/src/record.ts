@@ -15,11 +15,16 @@
 // (./subjobs.ts), not a figure of the desk's: it is outside the attestation. Each job behind it is on the desk, with
 // the hirer as its customer. "plans" (its monthly clients, ./plans.ts) is the same kind of link, outside it too: each
 // month behind it is a job on the desk, locked by the plan's customer.
+//
+// "factorScore" (./factorscore.ts) is the score with its parts, the income behind it by the way each job came, and what
+// the desk lets the agent draw. Its number is the attested "score": the desk's own, FactorDesk.score(agent). The rest
+// of it (the split by the way each job came, the words) is outside the attestation, like "hiring" and "plans".
 
 import { concat, formatEther, hashTypedData, keccak256, toHex, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import type { AgentRecord, AgentRow } from "./desk.js";
 import { scoreOf } from "./score.js";
+import type { FactorScoreJson } from "./factorscore.js";
 import { takeHouseSeed } from "./house/house.js";
 import type { EngineDb } from "./chain/db.js";
 
@@ -106,6 +111,8 @@ export interface RecordJson {
   hiring: { hiredBy: { address: string; name: string; jobs: number }[]; hires: { address: string; name: string; jobs: number }[] };
   /** monthly clients (./plans.ts): plans running now, their customers, the price a month of them added up, and the months delivered and settled */
   plans: { active: number; clients: number; monthlyWei: string; monthlyEth: string; monthsDelivered: number; monthsSettled: number };
+  /** the Factor Score: the score above with its parts, the income behind it by the way each job came, and what the desk lets it draw */
+  factorScore: FactorScoreJson | null;
   page: string;
   badge: string;
   attestation: { signer: string; signature: Hex; digest: Hex; message: RecordMessage; issuedAt: string; expiresAt: string } | null;
@@ -123,6 +130,7 @@ export async function recordOf(o: {
   pay: { deals: number; burnedWei: bigint }; signer: RecordSigner | null;
   hiring?: { hiredBy: { address: string; name: string; jobs: number }[]; hires: { address: string; name: string; jobs: number }[] };
   plans?: { active: number; clients: number; monthlyWei: string; monthsDelivered: number; monthsSettled: number } | null;
+  factorScore?: FactorScoreJson | null;
 }): Promise<RecordJson> {
   const r: AgentRecord = o.row.record;
   const { byState, distinct } = jobCounts(o.db, o.row.address);
@@ -151,6 +159,7 @@ export async function recordOf(o: {
     payWithFactor: { deals: o.pay.deals, burnedWei: o.pay.burnedWei.toString(), burnedEth: formatEther(o.pay.burnedWei) },
     hiring: { hiredBy: (o.hiring?.hiredBy ?? []).map((x) => ({ address: x.address, name: x.name, jobs: x.jobs })), hires: (o.hiring?.hires ?? []).map((x) => ({ address: x.address, name: x.name, jobs: x.jobs })) },
     plans: { active: o.plans?.active ?? 0, clients: o.plans?.clients ?? 0, monthlyWei: o.plans?.monthlyWei ?? "0", monthlyEth: formatEther(BigInt(o.plans?.monthlyWei ?? "0")), monthsDelivered: o.plans?.monthsDelivered ?? 0, monthsSettled: o.plans?.monthsSettled ?? 0 },
+    factorScore: o.factorScore ?? null,
     page: `${o.site}/agents/${path}`, badge: `${o.site}/api/v1/badge/${o.row.address}`,
     attestation,
   };
