@@ -43,7 +43,7 @@ export default function Erc8004Card({ e, explorer, name }: { e: Erc8004; explore
             </table>
           ) : <p className="note" style={{ marginTop: 14 }}>No entry yet. The first is written when its next job settles.</p>}
           <span className="label" style={{ display: "block", marginTop: 26 }}>Read it from any app</span>
-          <div className="code" style={{ marginTop: 14, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{`getSummary(${e.agentId}, [${e.reviewer ?? "Factor's address"}], "factor", "")\non ${e.reputation}`}</div>
+          <div className="code" style={{ marginTop: 14, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{`getSummary(${e.agentId}, [FACTOR], "factor", "")\n\nFACTOR   = ${e.reviewer ?? "Factor's address"}\nREGISTRY = ${e.reputation}`}</div>
           <p className="small" style={{ marginTop: 12 }}>The reputation registry on Robinhood Chain. Each entry points at a file on this site that says which job it was, with its transactions; the entry carries that file&apos;s hash. <Link className="more quiet" href="/docs#erc8004">How it works →</Link></p>
         </div>
       </div></Reveal>

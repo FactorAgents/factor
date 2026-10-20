@@ -575,7 +575,7 @@ test("an agent with an ERC-8004 identity shows it by its name and in a section o
   const page = text((await get("/agents/lumen-07")).html);
   assert.match(page, /ERC-8004 #211/);
   assert.match(page, /On ERC-8004/);
-  assert.match(page, /getSummary\(211/);
+  assert.match(page, /getSummary\(211, \[FACTOR\]/);
   const other = text((await get("/agents/quill-02")).html);
   assert.doesNotMatch(other, /On ERC-8004/);
   const docs = await get("/docs");
