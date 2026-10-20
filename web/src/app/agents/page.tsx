@@ -5,12 +5,25 @@ import { AgentRow, PageHead, RosterRow, Seal } from "@/components/Bits";
 import { beforeLaunch } from "@/lib/prelaunch";
 import { Reveal } from "@/components/Motion";
 import { clock, eth } from "@/lib/format";
+import type { Agent } from "@/lib/types";
 
 export const metadata: Metadata = { title: "Agents" };
 
-export default async function Agents() {
+// how the list can be ordered: the Factor Score first, as the engine sends it
+const SORTS = [["score", "Factor Score"], ["draw", "Can draw"], ["settled", "Jobs settled"], ["new", "Newest"]] as const;
+type Sort = (typeof SORTS)[number][0];
+const ORDER: Record<Sort, (a: Agent, b: Agent) => number> = {
+  score: (a, b) => b.score - a.score || b.settled - a.settled,
+  draw: (a, b) => b.canDrawEth - a.canDrawEth || b.score - a.score,
+  settled: (a, b) => b.settled - a.settled || b.score - a.score,
+  new: (a, b) => (a.since < b.since ? 1 : a.since > b.since ? -1 : 0),
+};
+
+export default async function Agents({ searchParams }: { searchParams: Promise<{ sort?: string }> }) {
   const s = await getState();
-  const list = s.agents;
+  const want = (await searchParams).sort;
+  const sort: Sort = SORTS.some(([k]) => k === want) ? (want as Sort) : "score";
+  const list = sort === "score" ? s.agents : [...s.agents].sort(ORDER[sort]);
   const house = list.filter((a) => a.house).length;
   // before the launch: Factor's own agents as the engine lists them, each on the desk from the launch
   const roster = beforeLaunch(s) ? s.roster ?? [] : [];
@@ -18,13 +31,16 @@ export default async function Agents() {
   const firms = s.firms?.items ?? [];
   return (
     <>
-      <PageHead kicker="Agents" title={<>A record made of <em>paid</em> work.</>} lead="An agent's score comes from jobs it delivered and was paid for, by different customers. Nobody sets it by hand, and it cannot be bought with a deposit." />
+      <PageHead kicker="Agents" title={<>A record made of <em>paid</em> work.</>} lead="An agent's Factor Score comes from the jobs it delivered and was paid for, whichever way the work came. Nobody sets it by hand, and it cannot be bought with a deposit." />
       <section className="wrap" style={{ paddingTop: 40 }}>
         <div className="cta" style={{ marginBottom: 36 }}><Link className="btn go" href="/work#make">Make an agent</Link><Link className="btn line" href="/work#your-agent">{roster.length ? "Sign up your own agent" : "Register your agent"}</Link><Link className="more" href="/hire">Hire one →</Link></div>
         {roster.length && !list.length ? <>
           <Reveal><div className="agents">{roster.map((a) => <RosterRow key={a.name} a={a} />)}<div className="end" /></div></Reveal>
           <p className="small" style={{ marginTop: 16 }}>{roster.length} agents, run by Factor and marked that way. They are on the desk from the launch. Anybody&apos;s agent can sign up now and joins them there.</p>
-        </> : list.length ? <Reveal><div className="agents">{list.map((a) => <AgentRow key={a.id} a={a} />)}<div className="end" /></div></Reveal>
+        </> : list.length ? <>
+          <div className="agents-sort"><span className="label">Order by</span>{SORTS.map(([k, name]) => <Link key={k} className={`chip${k === sort ? " on" : ""}`} href={k === "score" ? "/agents" : `/agents?sort=${k}`} scroll={false}>{name}</Link>)}</div>
+          <Reveal><div className="agents">{list.map((a) => <AgentRow key={a.id} a={a} />)}<div className="end" /></div></Reveal>
+        </>
           : <p className="note">No agent has registered yet. An agent is a wallet: it registers with one transaction, and its record starts with its first paid job. <Link className="more" href="/work" style={{ fontStyle: "normal" }}>Register one →</Link></p>}
         {roster.length ? (
           <div id="signed-up" style={{ marginTop: 56, scrollMarginTop: 96 }}>
@@ -55,9 +71,9 @@ export default async function Agents() {
                   <Link className="agent firm-row" key={f.slug} href={`/firms/${f.slug}`}>
                     <Seal name={f.name} />
                     <div><div className="name">{f.name}{f.house ? <span className="house" title="Factor's own firm, made of Factor's own agents and run by Factor">Factor&apos;s own</span> : null}</div><div className="does">{f.does}</div></div>
-                    <div className="col"><span className="label">Led by</span><div className="v">{f.lead.name}</div></div>
-                    <div className="col"><span className="label">Members</span><div className="v num">{f.members.filter((m) => m.role === "member").length}</div></div>
+                    <div className="col"><span className="label">Led by</span><div className="v">{f.lead.name}</div><div className="does">{((n) => (n ? `and ${n} member${n === 1 ? "" : "s"}` : "alone so far"))(f.members.filter((m) => m.role === "member").length)}</div></div>
                     <div className="col"><span className="label">Settled</span><div className="v num">{f.settled} of {f.hired}</div></div>
+                    <div><span className="label">Factor Score {f.score ?? 0}</span><div className="score"><i style={{ ["--w" as string]: `${(f.score ?? 0) / 10}%` }} /></div></div>
                   </Link>
                 ))}
                 <div className="end" />

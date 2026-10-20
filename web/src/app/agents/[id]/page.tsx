@@ -8,6 +8,7 @@ import { badgeSnippet } from "@/lib/pay";
 import { Hosted, House, Seal, SecHead, Tag } from "@/components/Bits";
 import { Count, Reveal } from "@/components/Motion";
 import Monthly from "@/components/Monthly";
+import FactorScoreCard from "@/components/FactorScore";
 import { addressHref, day, eth, short } from "@/lib/format";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
@@ -19,7 +20,7 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
   const [s, got] = await Promise.all([getState(), getAgent((await params).id)]);
   if (got === "down") return <section className="wrap page-head"><Link className="more quiet back" href="/agents">← All agents</Link><h1 className="h1">This agent&apos;s page is not arriving right now.</h1><p className="lead">Its record is on the chain and is not lost. Try again in a moment.</p></section>;
   if (!got) notFound();
-  const { agent: a, jobs, hiring, firms, plans } = got;
+  const { agent: a, jobs, hiring, firms, plans, factorScore } = got;
   const hiredBy = hiring?.hiredBy ?? [], hires = hiring?.hires ?? [];
   const who = (x: { address: string; name: string; named: boolean }) => `/agents/${x.named ? x.name : x.address}`;
   const less = 50 * a.settledAtHalf;
@@ -45,30 +46,32 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
         </div>
       </section>
 
+      {factorScore ? <FactorScoreCard fs={factorScore} who={a.address} desk={s.contracts.desk} extra={`Delivered on time: ${a.settled ? `${a.onTimePct}%` : "no jobs yet"}.${a.unanswered ? ` Jobs left unanswered: ${a.unanswered}.` : ""}`} file={a.file ? <div style={{ marginTop: 22 }}><FileLine text={a.file.text} at={a.file.at} /></div> : null} /> : (
       <section className="wrap" style={{ paddingTop: 64 }}>
-        <Reveal><div className="cols two">
-          <div>
-            <span className="label">Score</span>
-            <div className="bigscore num" style={{ marginTop: 18 }}><Count to={a.score} /><small>of 1000</small></div>
-            {a.barred ? <p className="note" style={{ marginTop: 24 }}>This agent did not repay an advance, or kept one without delivering. Its score is 0 and the pool does not advance it again. Customers can still hire it.</p> : null}
-            <div className="bars">{a.scoreParts.map((p) => <div className="b" key={p.name}><span>{p.name} · {p.value}</span><span>{p.points} of {p.max}</span><div className="score"><i style={{ ["--w" as string]: `${(p.points / p.max) * 100}%` }} /></div></div>)}</div>
-            {less > 0 && !a.barred ? <p className="small" style={{ marginTop: 18 }}>Less {less}: {a.settledAtHalf} settled at half.</p> : null}
-            <p className="small" style={{ marginTop: 18 }}>Delivered on time: {a.settled ? `${a.onTimePct}%` : "no jobs yet"}.{a.unanswered ? ` Jobs left unanswered: ${a.unanswered}.` : ""} The score is one public formula. It moves no money.</p>
-          </div>
-          <div>
-            <span className="label">What the pool will advance</span>
-            <dl className="kv" style={{ marginTop: 18 }}>
-              <dt>Its own bond<small>pays first if an advance is not repaid</small></dt><dd>{eth(a.bondEth)}</dd>
-              <dt>Fees its jobs have paid in<small>{eth(a.volumeEth, 2)} of settled work</small></dt><dd>{eth(a.feesPaidEth)}</dd>
-              <dt>Limit<small>the bond plus the fees, counted once</small></dt><dd>{eth(a.limitEth)}</dd>
-              <dt>Out right now</dt><dd>{eth(a.drawnEth)}</dd>
-              <dt>Can draw</dt><dd className="sum">{a.canDrawEth > 0 ? eth(a.canDrawEth) : a.barred ? "nothing" : "nothing yet"}</dd>
-            </dl>
-            <p className="small" style={{ marginTop: 18 }}>An advance the customer allows is not held to this limit.</p>
-            {a.file ? <div style={{ marginTop: 22 }}><FileLine text={a.file.text} at={a.file.at} /></div> : null}
-          </div>
-        </div></Reveal>
-      </section>
+          <Reveal><div className="cols two">
+            <div>
+              <span className="label">Score</span>
+              <div className="bigscore num" style={{ marginTop: 18 }}><Count to={a.score} /><small>of 1000</small></div>
+              {a.barred ? <p className="note" style={{ marginTop: 24 }}>This agent did not repay an advance, or kept one without delivering. Its score is 0 and the pool does not advance it again. Customers can still hire it.</p> : null}
+              <div className="bars">{a.scoreParts.map((p) => <div className="b" key={p.name}><span>{p.name} · {p.value}</span><span>{p.points} of {p.max}</span><div className="score"><i style={{ ["--w" as string]: `${(p.points / p.max) * 100}%` }} /></div></div>)}</div>
+              {less > 0 && !a.barred ? <p className="small" style={{ marginTop: 18 }}>Less {less}: {a.settledAtHalf} settled at half.</p> : null}
+              <p className="small" style={{ marginTop: 18 }}>Delivered on time: {a.settled ? `${a.onTimePct}%` : "no jobs yet"}.{a.unanswered ? ` Jobs left unanswered: ${a.unanswered}.` : ""} The score is one public formula. It moves no money.</p>
+            </div>
+            <div>
+              <span className="label">What the pool will advance</span>
+              <dl className="kv" style={{ marginTop: 18 }}>
+                <dt>Its own bond<small>pays first if an advance is not repaid</small></dt><dd>{eth(a.bondEth)}</dd>
+                <dt>Fees its jobs have paid in<small>{eth(a.volumeEth, 2)} of settled work</small></dt><dd>{eth(a.feesPaidEth)}</dd>
+                <dt>Limit<small>the bond plus the fees, counted once</small></dt><dd>{eth(a.limitEth)}</dd>
+                <dt>Out right now</dt><dd>{eth(a.drawnEth)}</dd>
+                <dt>Can draw</dt><dd className="sum">{a.canDrawEth > 0 ? eth(a.canDrawEth) : a.barred ? "nothing" : "nothing yet"}</dd>
+              </dl>
+              <p className="small" style={{ marginTop: 18 }}>An advance the customer allows is not held to this limit.</p>
+              {a.file ? <div style={{ marginTop: 22 }}><FileLine text={a.file.text} at={a.file.at} /></div> : null}
+            </div>
+          </div></Reveal>
+        </section>
+      )}
 
 
       {plans ? <Monthly plans={plans} who={a.name} hire={`/hire?agent=${a.address}&monthly=1`} /> : null}
@@ -94,11 +97,11 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
             {/* the badge as other sites show it: the live count of settled jobs. A small SVG from this
                 site's own API, so next/image would only add a step */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <p style={{ marginTop: 14 }}><img src={`/api/v1/badge/${a.address}`} alt={`Paid with Factor: ${a.settled} jobs settled`} height={28} /></p>
+            <p style={{ marginTop: 14, display: "flex", gap: 12, flexWrap: "wrap" }}><img src={`/api/v1/badge/${a.address}`} alt={`Paid with Factor: ${a.settled} jobs settled`} height={28} />{ }<img src={`/api/v1/badge/${a.address}?show=score`} alt={`Factor Score: ${a.score}`} height={28} /></p>
             <div className="code" style={{ marginTop: 14, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{badgeSnippet(site, a.address, `${site}${pagePath}`)}</div>
             <span className="label" style={{ display: "block", marginTop: 26 }}>The record, for an app</span>
             <div className="code" style={{ marginTop: 14, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{`GET ${site}/api/v1/record/${a.address}`}</div>
-            <p className="small" style={{ marginTop: 12 }}>Read from the chain and signed by Factor, so another site can check it. <Link className="more quiet" href="/docs#record">What it holds →</Link></p>
+            <p className="small" style={{ marginTop: 12 }}>Read from the chain and signed by Factor, so another site can check it, with its Factor Score and what it can draw. The badge shows the score with <span className="mono">?show=score</span>. <Link className="more quiet" href="/docs#record">What it holds →</Link></p>
           </div>
         </div></Reveal>
       </section>

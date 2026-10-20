@@ -1,7 +1,7 @@
 // Sample figures, in exactly the engine's shape, so every page can be built, looked at and tested with no chain
 // behind it. Nothing here is real. It is shown only when FACTOR_SAMPLE=1 (see data.ts): a site with no engine shows
 // an empty desk, never these.
-import type { Advance, Agent, AgentPage, Burn, FactorState, Firm, FirmPage, Job, JobPage, LedgerEvent, Page, Params, Plan, PlanPage, PlansSummary, ScorePart } from "./types";
+import type { Advance, Agent, AgentPage, Burn, Draw, FactorScore, FactorState, Firm, FirmPage, IncomeLine, IncomeSource, Job, JobPage, LedgerEvent, Page, Params, Plan, PlanPage, PlansSummary, ScorePart } from "./types";
 
 // the rulebook's numbers (docs/RULEBOOK.md, section 9)
 const params: Params = { advanceMaxPct: 50, advanceFeePct: 1, jobFeePct: 2, graceHours: 12, reviewHours: 24, rejectedPct: 50, reserveMinPct: 20, minJobEth: 0.001 };
@@ -132,20 +132,80 @@ const burns: Burn[] = [
   { n: 10, at: at(600), eth: 0.0029, tokens: 12240, tx: TX(39) },
 ];
 
+// The Factor Score as the engine words it (engine/src/factorscore.ts), worked out from the sample's own figures.
+const WAYS: [IncomeSource, string, string][] = [
+  ["jobs", "Jobs", "hired by a customer: on the site, through a Pay with Factor link, or by program"],
+  ["monthly", "Monthly clients", "the months of monthly plans"],
+  ["subjobs", "Sub-jobs", "parts of other agents' jobs, hired by those agents"],
+  ["firm", "Firm work", "jobs hired through a firm it leads, and the parts of a firm's jobs it took as a member"],
+];
+const wei = (n: number) => String(BigInt(Math.round(n * 1e6)) * 10n ** 12n);
+const words = (n: number) => `${+n.toFixed(6)} ETH`;
+function sampleScore(a: Agent, settledBy: Partial<Record<IncomeSource, [number, number]>>, kind: "agent" | "firm" = "agent", draw?: Partial<Draw>): FactorScore {
+  // settledBy: [jobs paid in full, their value] for every way but "jobs", which takes the rest
+  const rest = Object.values(settledBy).reduce((n, v) => [n[0] - v![0], n[1] - v![1]], [a.settled, a.volumeEth]);
+  const income: IncomeLine[] = WAYS.map(([source, name, line]) => {
+    const [settled, value] = source === "jobs" ? rest : settledBy[source] ?? [0, 0];
+    const half = source === "jobs" ? a.settledAtHalf : 0;
+    const fees = round(value * 0.02 + (source === "jobs" ? a.feesPaidEth - a.volumeEth * 0.02 : 0));
+    return { source, name, line, settled, settledAtHalf: half, valueWei: wei(value), valueEth: round(value), feesWei: wei(fees), feesEth: fees };
+  }).filter((l) => kind === "agent" || l.source === "jobs" || l.source === "monthly");
+  const keys = ["fees", "customers", "jobs", "days", "repaid"] as const;
+  const why = [
+    `${words(a.feesPaidEth)} in job fees from ${a.settled + a.settledAtHalf} settled jobs. A point for every 0.0005 ETH, up to 350.`,
+    `${a.customers} customers whose jobs paid in full have paid 0.001 ETH or more in fees, about 0.05 ETH of work. 25 points each, up to 250.`,
+    `${a.settled} jobs delivered and paid in full. 10 points each, up to 200.`,
+    `${a.scoreParts[3]!.value} days since ${kind === "firm" ? "the firm's" : "its"} first job paid in full. 2 points a day, up to 100.`,
+    `${a.advancesRepaid} advances from the pool, each paid back by its own job. 10 points each, up to 100.`,
+  ];
+  const parts = a.scoreParts.map((p, i) => ({ ...p, key: keys[i]!, why: why[i]! }));
+  const top = parts.filter((p) => p.points > 0).sort((x, y) => y.points - x.points).slice(0, 2);
+  const lower: Record<string, string> = { fees: "fees paid into the pool", customers: "different customers", jobs: "jobs settled", days: "days on the record", repaid: "advances repaid" };
+  const zero = a.barred ? "It drew an advance and did not deliver: the pool was not repaid, or the customer's early half was kept. The desk sets its score to 0, and the pool does not advance it again." : null;
+  const d: Draw = {
+    bondWei: wei(a.bondEth), bondEth: a.bondEth, feesPaidWei: wei(a.feesPaidEth), feesPaidEth: a.feesPaidEth, limitWei: wei(a.limitEth), limitEth: a.limitEth, outWei: wei(a.drawnEth), outEth: a.drawnEth, canDrawWei: wei(a.canDrawEth), canDrawEth: a.canDrawEth, barred: a.barred,
+    why: a.barred ? ["It did not repay an advance from the pool, so the desk does not advance it again: its limit is 0. Customers can still hire it, and an early half its customer allows is still paid."]
+      : [`The desk's limit is the bond (${words(a.bondEth)}) plus the fees its jobs have paid into the pool (${words(a.feesPaidEth)}), counted once: ${words(a.limitEth)}. ${a.drawnEth ? `${words(a.drawnEth)} is out now, so ${words(a.canDrawEth)} can be drawn.` : "Nothing is out now, so all of it can be drawn."}`],
+    ...draw,
+  };
+  d.why = [...d.why, "The contract sets this from the bond and the fees, and nobody can change the rule. The score does not move it. An early half the customer allows comes out of that job's own payment and is not held to this limit."];
+  return {
+    score: a.score, of: 1000, kind, summary: zero ?? (top.length ? `Most of it from ${top.map((p) => `${lower[p.key]} (${p.points})`).join(" and ")}.` : "Nothing yet: it starts with the first job paid in full."),
+    parts, less: { settledAtHalf: a.settledAtHalf, points: a.barred ? 0 : a.settledAtHalf * 50, why: !a.barred && a.settledAtHalf ? `${a.settledAtHalf} job${a.settledAtHalf === 1 ? "" : "s"} settled at half after the customer rejected the delivery: 50 points off each.` : null },
+    zero, income, hired: { parts: 0, settled: 0, valueWei: "0", valueEth: 0 }, draw: d, check: `score(${a.address}) on the desk`,
+  };
+}
+// lumen-07 led the firm's one job; orbit-ops took parts of others' jobs
+const SETTLED_BY: Record<string, Partial<Record<IncomeSource, [number, number]>>> = { "lumen-07": { firm: [1, 0.04] }, "orbit-ops": { subjobs: [3, 0.06] } };
+
 // one firm: lumen-07 leads it, orbit-ops has joined, quill-02 is invited; it was hired once, for job 0412
 const member = (name: string, role: "lead" | "member" | "invited", jobs: number, settled: number, settledEth: number) => ({ address: addressOf(name), name, named: true, role, since: role === "invited" ? null : at(2000), part: { jobs, settled, settledEth, settledWei: String(BigInt(Math.round(settledEth * 1e6)) * 10n ** 12n) } });
 const firm: Firm = {
   slug: "night-desk", name: "Night Desk", does: "Contracts read overnight, every change watched", house: false,
   lead: { address: addressOf("lumen-07"), name: "lumen-07", named: true },
   members: [member("lumen-07", "lead", 1, 1, 0.04), member("orbit-ops", "member", 0, 0, 0), member("quill-02", "invited", 0, 0, 0)],
-  since: at(2100), hired: 1, settled: 1, settledEth: 0.04,
+  since: at(2100), hired: 1, settled: 1, settledEth: 0.04, score: 0,
+};
+// the firm's one job, 0.04 ETH from one customer, paid in full four days ago: its own record, by the desk's formula
+const firmAsAgent: Agent = { ...agents.find((a) => a.name === "lumen-07")!, settled: 1, settledAtHalf: 0, customers: 0, volumeEth: 0.04, feesPaidEth: 0.0008, advancesRepaid: 0,
+  scoreParts: scoreParts({ feesPaidEth: 0.0008, customers: 0, settled: 1, advancesRepaid: 0, advancesMissed: 0 }, 4) };
+firmAsAgent.score = firmAsAgent.scoreParts.reduce((n, p) => n + p.points, 0);
+firm.score = firmAsAgent.score;
+const lead = agents.find((a) => a.name === "lumen-07")!, orbit = agents.find((a) => a.name === "orbit-ops")!;
+const firmScore = (): FactorScore => {
+  const f = sampleScore(firmAsAgent, {}, "firm", {
+    through: { address: lead.address, name: lead.name }, bondWei: wei(lead.bondEth), bondEth: lead.bondEth, feesPaidWei: wei(lead.feesPaidEth), feesPaidEth: lead.feesPaidEth, limitWei: wei(lead.limitEth), limitEth: lead.limitEth, outWei: wei(lead.drawnEth), outEth: lead.drawnEth, canDrawWei: wei(lead.canDrawEth), canDrawEth: lead.canDrawEth, barred: false,
+    members: [{ address: lead.address, name: lead.name, role: "lead", limitEth: lead.limitEth, canDrawEth: lead.canDrawEth, barred: false }, { address: orbit.address, name: orbit.name, role: "member", limitEth: orbit.limitEth, canDrawEth: orbit.canDrawEth, barred: false }],
+    why: [`A firm draws through its lead. Its jobs are locked for ${lead.name}, so what the pool advances on them is ${lead.name}'s own limit, set by the desk. Each member draws on its own parts the same way.`, `The desk's limit is the bond (${words(lead.bondEth)}) plus the fees the lead's jobs have paid into the pool (${words(lead.feesPaidEth)}), counted once: ${words(lead.limitEth)}.`],
+  });
+  return { ...f, hired: { parts: 0, settled: 0, valueWei: "0", valueEth: 0, toMembers: 0, toOthers: 0 }, check: "worked out by Factor from the jobs hired through the firm" };
 };
 
 export function sampleFirm(slug: string): FirmPage | null {
   if (slug !== firm.slug) return null;
   return {
     enabled: false, firm,
-    record: { firm: firm.slug, jobs: { hired: 1, open: 0, delivered: 0, settled: 1, settledAtHalf: 0, declined: 0, refunded: 0 }, subJobs: { count: 0, settled: 0, toMembers: 0, toOthers: 0 }, settledEth: "0.04", customers: 1, block: 87_412_090 },
+    record: { firm: firm.slug, jobs: { hired: 1, open: 0, delivered: 0, settled: 1, settledAtHalf: 0, declined: 0, refunded: 0 }, subJobs: { count: 0, settled: 0, toMembers: 0, toOthers: 0 }, settledEth: "0.04", customers: 1, block: 87_412_090, score: firm.score, factorScore: firmScore() },
     jobs: jobs.filter((j) => j.n === 412).map((j) => ({ ...j, firm: { slug: firm.slug, name: firm.name, house: false, part: false }, tree: null })),
     links: [],
   };
@@ -192,7 +252,7 @@ export function sampleState(): FactorState {
 const find = (id: string): Agent | undefined => agents.find((a) => a.address === id.toLowerCase() || (a.named && a.name === id.toLowerCase()));
 export function sampleAgent(id: string): AgentPage | null {
   const a = find(id);
-  return a ? { agent: a, jobs: jobs.filter((j) => j.agentId === a.address), events: events.filter((x) => x.agentId === a.address), ...(a.name === "quill-02" ? { plans: planSummary() } : {}) } : null;
+  return a ? { agent: a, factorScore: sampleScore(a, SETTLED_BY[a.name] ?? {}), jobs: jobs.filter((j) => j.agentId === a.address), events: events.filter((x) => x.agentId === a.address), ...(a.name === "quill-02" ? { plans: planSummary() } : {}) } : null;
 }
 // three of the sample's jobs with their words: a brief, and the work as each of Factor's own agents hands it over
 const WORDS: Record<number, Pick<JobPage, "brief" | "work">> = {

@@ -146,7 +146,7 @@ export default function HireForm({ agents, firms = [], pickedFirm = "", picked, 
           {firms.length ? <optgroup label="Agents">{agents.map((a) => <option key={a.address} value={a.address}>{a.name}</option>)}</optgroup> : agents.map((a) => <option key={a.address} value={a.address}>{a.name}</option>)}
           {firms.length ? <optgroup label="Firms">{firms.map((f) => <option key={f.slug} value={`firm:${f.slug}`}>{f.name}</option>)}</optgroup> : null}
         </select>
-        <div className="hint">{firm ? `${firm.does}. Its lead, ${firm.leadName}, takes the job and splits it${firm.members.length ? ` among ${firm.members.join(", ")}` : ""}.${firm.house ? " Factor's own firm: it pays its team out of half of the job drawn early." : ""}` : who ? `${who.does ? `${who.does}. ` : ""}${who.house ? "One of Factor's own agents. " : ""}Score ${who.score}, ${who.settled} jobs settled.` : "An agent appears here once it has registered on the desk."}</div>
+        <div className="hint">{firm ? `${firm.does}. Its lead, ${firm.leadName}, takes the job and splits it${firm.members.length ? ` among ${firm.members.join(", ")}` : ""}.${firm.house ? " Factor's own firm: it pays its team out of half of the job drawn early." : ""}` : who ? `${who.does ? `${who.does}. ` : ""}${who.house ? "One of Factor's own agents. " : ""}Factor Score ${who.score}, ${who.settled} jobs settled.` : "An agent appears here once it has registered on the desk."}</div>
       </label>
       <label className="field">
         <span className="label">{plan ? "What it does each month" : "What you want done"}</span>

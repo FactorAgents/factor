@@ -375,6 +375,41 @@ test("the docs say how an agent hires agents for part of a job, what the chain h
   assert.match(t, /factor_hire_for_job/);
 });
 
+test("the Factor Score: on an agent's page with its parts, the income behind it and what the desk lets it draw; on a firm's page; in the list, ordered by it; in the docs", async () => {
+  const t = text((await get("/agents/lumen-07")).html);
+  assert.match(t, /Factor Score All its paid work, in one number ?\./);
+  assert.match(t, /624\s*of 1000 Most of it from jobs settled \(200\) and different customers \(250\)|624\s*of 1000 Most of it from different customers \(250\) and jobs settled \(200\)/);
+  assert.match(t, /Jobs settled · 41 200 of 200 41 jobs delivered and paid in full\. 10 points each, up to 200\./);
+  assert.match(t, /It is the desk.s own score: score\( ?0x/);
+  // what it can draw is the desk's, and the score never moves it
+  assert.match(t, /Limit with the pool the bond plus the fees, counted once 0\.0484 ETH/);
+  assert.match(t, /nobody can change the rule\. The score does not move it\./);
+  // where it comes from: each way, the firm's job among them, and the total adds up to the fees above
+  assert.match(t, /Where it comes from/);
+  assert.match(t, /Firm work jobs hired through a firm it leads.* 1 0 0\.0400 ETH 0\.0008 ETH/);
+  assert.match(t, /All of it 41 0 1\.4200 ETH 0\.0284 ETH Each job counts once\. Monthly clients and sub-jobs count here too, the moment there are any\./);
+  assert.match((await get("/agents/lumen-07")).html, /\/api\/v1\/badge\/0x[0-9a-f]{40}\?show=score/);
+  // a firm's: the same formula over its jobs, drawn on through its lead
+  const f = text((await get("/firms/night-desk")).html);
+  assert.match(f, /Factor Score · the firm \d+\s*of 1000/);
+  assert.match(f, /What can be drawn · through lumen-07/);
+  assert.match(f, /A firm draws through its lead\./);
+  assert.match(f, /Jobs hired through the firm/);
+  // the list: every agent's Factor Score, and the order can change
+  const list = text((await get("/agents")).html);
+  assert.match(list, /Order by Factor Score Can draw Jobs settled Newest/);
+  assert.match(list, /Factor Score 624/);
+  assert.match(list, /Night Desk .* Factor Score \d+/);
+  assert.ok(list.indexOf("lumen-07") < list.indexOf("An agent that has not signed a name yet"), "the highest score first");
+  const newest = text((await get("/agents?sort=new")).html);
+  assert.ok(newest.indexOf("An agent that has not signed a name yet") < newest.indexOf("lumen-07"), "the newest first");
+  assert.match(newest, /Order by Factor Score Can draw Jobs settled Newest/);
+  // the docs say how it is made
+  const d = text((await get("/docs")).html);
+  assert.match(d, /12 Factor Score/);
+  assert.match(d, /What it can draw is not the score.s to say\./);
+});
+
 test("an address that does not exist says so", async () => {
   for (const path of ["/nope", "/agents/nobody", "/jobs/9999", "/firms/no-such-firm", "/firms/Not_A_Slug", `/plans/0x${"00".repeat(32)}`, "/plans/not-a-plan"]) assert.equal((await get(path)).status, 404, path);
 });
@@ -444,7 +479,8 @@ test("monthly clients: a plan's page with its months, an agent's monthly income,
   const a = text((await get("/agents/quill-02")).html);
   assert.match(a, /Monthly clients Recurring income, on the record ?\./);
   assert.match(a, /A month, from plans running now 0\.0250 ETH a month Plans running 1 Monthly clients 1 Months delivered 0 settled 0/);
-  assert.doesNotMatch(text((await get("/agents/lumen-07")).html), /Monthly clients/);
+  // an agent with no plan shows no monthly section (its Factor Score only names the way)
+  assert.doesNotMatch(text((await get("/agents/lumen-07")).html), /Monthly clients (Recurring income|Monthly clients)|Plans running/);
   // the door passes the plans' reads, and their writes go to the engine only
   assert.equal((await fetch(`${BASE}/api/v1/plans/0x${"5a".repeat(32)}`)).status, 200);
   assert.equal((await fetch(`${BASE}/api/v1/plans?agent=quill-02`)).status, 200);

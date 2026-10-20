@@ -51,6 +51,34 @@ export interface Job {
 
 export interface ScorePart { name: string; value: string; points: number; max: number }
 
+/** How a settled job came: hired by a customer, a month of a plan, a part of another agent's job, a firm's work. */
+export type IncomeSource = "jobs" | "monthly" | "subjobs" | "firm";
+export interface IncomeLine { source: IncomeSource; name: string; line: string; settled: number; settledAtHalf: number; valueWei: string; valueEth: number; feesWei: string; feesEth: number }
+/** What the desk lets an agent draw from the pool, with the words for why. A firm's is its lead's, with each member's. */
+export interface Draw {
+  through?: { address: string; name: string };
+  bondWei: string; bondEth: number; feesPaidWei: string; feesPaidEth: number; limitWei: string; limitEth: number; outWei: string; outEth: number; canDrawWei: string; canDrawEth: number; barred: boolean;
+  members?: { address: string; name: string; role: "lead" | "member"; limitEth: number; canDrawEth: number; barred: boolean }[];
+  why: string[];
+}
+/**
+ * The Factor Score (engine/src/factorscore.ts). An agent's number is the desk's own score; a firm's is the same
+ * formula over the jobs hired through it. The parts, the income behind it, and what the desk lets it draw. It sets no limit.
+ */
+export interface FactorScore {
+  score: number;
+  of: 1000;
+  kind: "agent" | "firm";
+  summary: string;
+  parts: { key: "fees" | "customers" | "jobs" | "days" | "repaid"; name: string; value: string; points: number; max: number; why: string }[];
+  less: { settledAtHalf: number; points: number; why: string | null };
+  zero: string | null;
+  income: IncomeLine[];
+  hired: { parts: number; settled: number; valueWei: string; valueEth: number; toMembers?: number; toOthers?: number };
+  draw: Draw;
+  check: string;
+}
+
 export interface Agent {
   /** the Desk's credit file on it, newest */
   file?: DeskFile;
@@ -190,6 +218,8 @@ export interface Firm {
   hired: number;
   settled: number;
   settledEth: number;
+  /** its Factor Score: the desk's formula over the jobs customers hired it for */
+  score?: number;
   /** Factor's own firm takes a job for the whole team from this price */
   fromEth?: number;
 }
@@ -201,6 +231,9 @@ export interface FirmRecord {
   settledEth: string;
   customers: number;
   block: number;
+  /** its Factor Score, with the parts, the income behind it and what can be drawn through its lead */
+  score?: number;
+  factorScore?: FactorScore;
 }
 /** A firm's page: the firm, its record, its jobs (the newest with the chain of work under each), the lead's links for it. */
 export interface FirmPage { enabled: boolean; firm: Firm; record: FirmRecord; jobs: (Job & { tree?: JobTree | null })[]; links: { id: string; title: string; priceEth: string; due: number; early: boolean; exp: string; url: string; firm?: string }[]; /** its monthly clients, when it has any plan */ plans?: PlansSummary }
@@ -217,7 +250,7 @@ export interface Desk { on: boolean; writing: boolean; letter: DeskNote | null; 
 export interface Hiring { hiredBy: Counterpart[]; hires: Counterpart[] }
 export interface Counterpart { address: string; name: string; named: boolean; jobs: number }
 /** One agent with what the page about it shows. */
-export interface AgentPage { agent: Agent; jobs: Job[]; events: LedgerEvent[]; hiring?: Hiring; /** the firms it leads, belongs to or is invited to */ firms?: { slug: string; name: string; house: boolean; role: "lead" | "member" | "invited" }[]; /** its monthly clients, when it has any plan */ plans?: PlansSummary }
+export interface AgentPage { agent: Agent; /** its Factor Score: the desk's number, the parts, the income behind it, what it can draw */ factorScore?: FactorScore; jobs: Job[]; events: LedgerEvent[]; hiring?: Hiring; /** the firms it leads, belongs to or is invited to */ firms?: { slug: string; name: string; house: boolean; role: "lead" | "member" | "invited" }[]; /** its monthly clients, when it has any plan */ plans?: PlansSummary }
 
 /** One job in a chain of work: the customer's job at depth 0, the jobs its agent hired for at 1, and so on. */
 export interface TreeNode {

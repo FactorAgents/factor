@@ -7,6 +7,7 @@ import Chain, { namesFrom } from "@/components/Chain";
 import { FirmActions } from "@/components/FirmForm";
 import { Count, Reveal } from "@/components/Motion";
 import Monthly from "@/components/Monthly";
+import FactorScoreCard from "@/components/FactorScore";
 import { day, eth } from "@/lib/format";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
@@ -56,6 +57,8 @@ export default async function FirmPage({ params }: { params: Promise<{ slug: str
         <p className="small" style={{ marginTop: 18 }}>One record for the whole firm, read from the desk: the jobs customers hired it for and every part its lead split out of them, {r.subJobs.toMembers} to members{r.subJobs.toOthers ? ` and ${r.subJobs.toOthers} to agents outside the firm` : ""}. {r.customers ? `${r.customers} customer${r.customers === 1 ? "" : "s"} so far.` : "No customer yet."}</p>
       </section>
 
+      {r.factorScore ? <FactorScoreCard fs={r.factorScore} who={f.slug} desk={s.contracts.desk} /> : null}
+
       {plans ? <Monthly plans={plans} who={f.name} hire={`/hire?firm=${f.slug}&monthly=1`} /> : null}
 
       <section className="wrap sec" id="members">
@@ -102,13 +105,13 @@ export default async function FirmPage({ params }: { params: Promise<{ slug: str
             <span className="label">The badge</span>
             {/* a small SVG from this site's own API: next/image would only add a step */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <p style={{ marginTop: 14 }}><img src={`/api/v1/firms/${f.slug}/badge`} alt={`A Factor firm: ${r.jobs.settled} jobs settled`} height={28} /></p>
+            <p style={{ marginTop: 14, display: "flex", gap: 12, flexWrap: "wrap" }}><img src={`/api/v1/firms/${f.slug}/badge`} alt={`A Factor firm: ${r.jobs.settled} jobs settled`} height={28} />{ }<img src={`/api/v1/firms/${f.slug}/badge?show=score`} alt={`Factor Score: ${r.score ?? 0}`} height={28} /></p>
             <div className="code" style={{ marginTop: 14, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{`<a href="${site}/firms/${f.slug}"><img src="${site}/api/v1/firms/${f.slug}/badge" alt="A Factor firm" height="28"></a>`}</div>
           </div>
           <div className="prose" style={{ paddingTop: 0 }}>
             <span className="label">The record, for an app</span>
             <div className="code" style={{ marginTop: 14, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{`GET ${site}/api/v1/firms/${f.slug}/record`}</div>
-            <p className="small" style={{ marginTop: 12 }}>The jobs, the parts split out, the settled work, the customers and each member&apos;s part, as of block {r.block.toLocaleString("en-US")}. <Link className="more quiet" href="/docs#firms">What it holds →</Link></p>
+            <p className="small" style={{ marginTop: 12 }}>The jobs, the parts split out, the settled work, the customers, each member&apos;s part and the firm&apos;s Factor Score, as of block {r.block.toLocaleString("en-US")}. <Link className="more quiet" href="/docs#firms">What it holds →</Link></p>
           </div>
         </div></Reveal>
       </section>

@@ -1,5 +1,6 @@
 // "Paid with Factor": a small picture any site can show beside an agent, with the agent's live count of settled
 // jobs, and its monthly clients when it has any. It is an image and nothing else: no script, nothing about who looks at it is kept.
+// With ?show=score it shows the agent's Factor Score instead: the desk's own score, out of 1000.
 //
 //   <a href="https://factoragents.fun/agents/your-agent"><img src="https://factoragents.fun/api/v1/badge/0x..." alt="Paid with Factor" height="28"></a>
 import { NextResponse } from "next/server";
@@ -10,8 +11,7 @@ const esc = (t: string) => t.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&
 // a rough width for the badge's own font: wide enough for the text, no wider
 const width = (t: string) => Math.ceil(t.length * 6.6 + 20);
 
-function badge(right: string, ok: boolean): string {
-  const left = "Paid with Factor";
+function badge(right: string, ok: boolean, left = "Paid with Factor"): string {
   const lw = width(left) + 14, rw = width(right);
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${lw + rw}" height="28" viewBox="0 0 ${lw + rw} 28" role="img" aria-label="${esc(`${left}: ${right}`)}"><title>${esc(`${left}: ${right}`)}</title>`
     + `<rect width="${lw}" height="28" rx="4" fill="#0e0f11"/><rect x="${lw - 4}" width="${rw + 4}" height="28" rx="4" fill="${ok ? "#cdb27f" : "#5b5f66"}"/><rect x="${lw - 4}" width="4" height="28" fill="${ok ? "#cdb27f" : "#5b5f66"}"/>`
@@ -21,8 +21,9 @@ function badge(right: string, ok: boolean): string {
 
 const svg = (body: string, maxAge: number) => new NextResponse(body, { status: 200, headers: { "content-type": "image/svg+xml; charset=utf-8", "cache-control": `public, max-age=${maxAge}`, "access-control-allow-origin": "*", "cross-origin-resource-policy": "cross-origin", "x-content-type-options": "nosniff", "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'" } });
 
-export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
+export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const id = (await ctx.params).id.replace(/\.svg$/, "");
+  const score = new URL(req.url).searchParams.get("show") === "score";
   const engine = engineUrl();
   if (!/^[0-9a-zA-Z-]{3,42}$/.test(id) || !engine) return svg(badge("not on Factor", false), 300);
   try {
@@ -31,7 +32,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       return { status: r.status, body: await r.text() };
     });
     if (a.status !== 200) return svg(badge("not on Factor", false), 300);
-    const rec = JSON.parse(a.body) as { jobs: { settled: number }; barred: boolean; plans?: { clients: number } };
+    const rec = JSON.parse(a.body) as { jobs: { settled: number }; barred: boolean; score: number; plans?: { clients: number } };
+    if (score) return svg(badge(`${rec.score} of 1000`, !rec.barred, "Factor Score"), 300);
     const n = rec.jobs.settled;
     // monthly clients, when it has any running: recurring work, on the same record
     const c = rec.plans?.clients ?? 0;
