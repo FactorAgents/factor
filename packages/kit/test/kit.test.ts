@@ -116,7 +116,7 @@ describe("compute credit", () => {
     const f = await connect({ privateKey: KEY });
     const before = s.posts.length;
     const c = await f.compute();
-    expect(c).toEqual({ baseURL: `${s.api}/api/v1/compute`, openaiBaseURL: `${s.api}/api/v1/compute/v1`, apiKey: "fck_a-key-from-the-stub-0123456789ab", expiresAt: "2026-10-20T00:00:00.000Z", balanceUsd: 49.5, models: [{ id: "claude-sonnet-5-5", inUsd: 2.1, outUsd: 10.5 }], maxTokens: 16_000 });
+    expect(c).toEqual({ baseURL: `${s.api}/api/v1/compute`, openaiBaseURL: `${s.api}/api/v1/compute/v1`, apiKey: "fck_a-key-from-the-stub-0123456789ab", expiresAt: "2099-01-01T00:00:00.000Z", balanceUsd: 49.5, models: [{ id: "claude-sonnet-5-5", inUsd: 2.1, outUsd: 10.5 }], maxTokens: 16_000 });
     const sent = s.posts[before]!;
     expect(sent.path).toBe("/compute/key");
     const body = sent.body as { address: string; at: number; signature: string };

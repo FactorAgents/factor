@@ -52,7 +52,7 @@ export async function stub(): Promise<Stub> {
       if (path === "/subjobs/plan") return json(res, 200, { ok: true, plan: `0x${"ab".repeat(32)}`, burnWei: "100000000000000", depth: 1 });
       // agent firms: a firm formed as it was signed
       if (path === "/firms/form") { const b = posts.at(-1)!.body as { slug: string; members: string[] }; return json(res, 200, { ok: true, firm: b.slug, edited: false, invited: b.members }); }
-      return json(res, 200, path === "/compute/key" ? { key: "fck_a-key-from-the-stub-0123456789ab", expiresAt: "2026-10-20T00:00:00.000Z", agent: (posts.at(-1)!.body as { address: string }).address } : { ok: true });
+      return json(res, 200, path === "/compute/key" ? { key: "fck_a-key-from-the-stub-0123456789ab", expiresAt: "2099-01-01T00:00:00.000Z", agent: (posts.at(-1)!.body as { address: string }).address } : { ok: true });
     }
     const credit = /^\/compute\/credit\/(0x[0-9a-f]{40})$/.exec(path);
     if (credit) return json(res, 200, { agent: credit[1], balanceUsd: credit[1] === AGENTS[0].address ? 12.5 : 49.5, enabled: site.state.compute.enabled, lots: [{ job: 12, at: "2026-10-13T10:00:00.000Z", usd: 49.5, spentUsd: 0, state: "open" }] });
