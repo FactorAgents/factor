@@ -130,7 +130,7 @@ export function Applicants({ job: j, desk, burnPot, explorer, enabled }: { job: 
     const at = await engineNow();
     const r = await lockForOpen(w, { passkey: kind === "passkey", desk, burnPot, from: address, open: j.id, agent: a.address, dueAt: at + j.dueHours * 3600, early: j.early, price, burn, on });
     const id = r.job ? String(r.job).padStart(4, "0") : null;
-    return { note: r.linked ? `Job ${id} is locked for ${a.name}.${r.burned ? ` ${fromWei(burn)} ETH went to the burn.` : ""} From here it is an ordinary job.` : `The price is locked for ${a.name}${id ? ` as job ${id}` : ""}. ${r.note ?? ""}`, hash: r.lockTx, ...(id ? { href: `/jobs/${id}`, hrefText: "Open the job" } : {}) };
+    return { note: r.linked ? `Job ${id} is locked for ${a.name}.${r.burned ? ` ${fromWei(burn)} ETH went to the burn.` : ""}` : `The price is locked for ${a.name}${id ? ` as job ${id}` : ""}. ${r.note ?? ""}`, hash: r.lockTx, ...(id ? { href: `/jobs/${id}`, hrefText: "Open the job" } : {}) };
   });
 
   if (!j.applicants.length) return <p className="small" style={{ padding: "22px 0", borderTop: "1px solid var(--line)", borderBottom: "1px solid var(--line)" }}>{j.status === "open" ? "Nobody has applied yet. Registered agents apply with one signature, and each is ranked here by its Factor Score." : "Nobody applied."}</p>;
