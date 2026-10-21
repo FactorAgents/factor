@@ -39,6 +39,7 @@ import { Pay } from "./pay.js";
 import { Subjobs } from "./subjobs.js";
 import { Firms, HOUSE_FIRM } from "./firms.js";
 import { Plans } from "./plans.js";
+import { OpenJobs } from "./openjobs.js";
 import { recordSigner, type RecordSigner } from "./record.js";
 import { Erc8004 } from "./erc8004.js";
 import { sourceOf } from "./api.js";
@@ -109,6 +110,8 @@ export class Engine {
   plans: Plans | null = null;
   /** ERC-8004 (./erc8004.ts): settled jobs written to the agents' reputation in the standard's registry */
   erc8004: Erc8004 | null = null;
+  /** open jobs (./openjobs.ts): a customer posts a job, agents apply, and the price is locked for the one picked */
+  openjobs: OpenJobs | null = null;
   /** the key that signs agents' records for other apps (./record.ts), or null */
   readonly recordSigner: RecordSigner | null;
   private carryTimer: ReturnType<typeof setInterval> | null = null;
@@ -169,7 +172,7 @@ export class Engine {
     for (const [name, l] of this.loops) loops[name] = { lastRunAt: l.lastRunAt, lastOkAt: l.lastOkAt, runs: l.runs, failures: l.failures, waitMs: l.waitMs, backingOff: l.backingOff };
     return {
       config: this.config, state: this.state, problems: this.problems, warnings: this.warnings, lastError: this.lastError, loops, ctx: this.ctx, rpc: this.chain?.health() ?? null, now: this.now,
-      links: { pons: link(this.env.FACTOR_PONS_URL), github: link(this.env.FACTOR_GITHUB_URL), x: link(this.env.FACTOR_X_URL) }, dataDirSet: !!this.env.FACTOR_DATA_DIR?.trim(), profiles: this.profiles, gateway: this.gateway, accounts: this.accounts, house: this.house, demo: this.demo, pulse: this.pulse, deskMind: this.deskMind, launchList: this.launchList, activity: this.activity, matcher: this.matcher, pay: this.pay, subjobs: this.subjobs, recordSigner: this.recordSigner, firms: this.firms, plans: this.plans, erc8004: this.erc8004,
+      links: { pons: link(this.env.FACTOR_PONS_URL), github: link(this.env.FACTOR_GITHUB_URL), x: link(this.env.FACTOR_X_URL) }, dataDirSet: !!this.env.FACTOR_DATA_DIR?.trim(), profiles: this.profiles, gateway: this.gateway, accounts: this.accounts, house: this.house, demo: this.demo, pulse: this.pulse, deskMind: this.deskMind, launchList: this.launchList, activity: this.activity, matcher: this.matcher, pay: this.pay, subjobs: this.subjobs, recordSigner: this.recordSigner, firms: this.firms, plans: this.plans, erc8004: this.erc8004, openjobs: this.openjobs,
     };
   }
 
@@ -215,7 +218,7 @@ export class Engine {
   /** Counts of what a page shows beside the state (a job's brief, title and work; links; sub-jobs; months of plans; ERC-8004 links and entries). */
   private extraCounts(): string {
     const out: string[] = [];
-    for (const t of ["job_titles", "job_briefs", "job_deliveries", "pay_links", "subjobs", "plan_months", "firm_members", "hosted_agents", "erc8004_links", "erc8004_entries"]) {
+    for (const t of ["job_titles", "job_briefs", "job_deliveries", "pay_links", "subjobs", "plan_months", "firm_members", "hosted_agents", "erc8004_links", "erc8004_entries", "open_jobs", "open_job_applications"]) {
       try {
         const r = this.sqlite.prepare(`SELECT COUNT(*) AS n, IFNULL(MAX(rowid), 0) AS m FROM ${t}`).get() as { n: number; m: number };
         out.push(`${r.n}:${r.m}`);
@@ -348,7 +351,7 @@ export class Engine {
       paused: () => { const h = stopped(db, "hiring"); return h ? h.note || "New jobs are paused for now." : null; },
       burnFor: (price) => this.pay!.burnFor(price),
       burnIn: (customer, hash) => this.pay!.burnIn(customer, hash),
-      dealBurnUsed: (hash) => !!this.pay!.store.byBurnTx(hash),
+      dealBurnUsed: (hash) => !!this.pay!.store.byBurnTx(hash) || !!this.openjobs?.store.byBurnTx(hash),
       house: () => new Set([...c.houseAgents, ...(this.house?.addresses() ?? [])]),
       hosted: () => this.house?.hostedAddresses() ?? new Map(),
       teamAllows: (parent, hirer, agent) => c.firms.enabled && !!this.firms?.teamAllows(parent, hirer, agent),
@@ -372,13 +375,30 @@ export class Engine {
       paused: () => { const h = stopped(db, "hiring"); return h ? h.note || "New jobs are paused for now." : null; },
       burnFor: (price) => this.pay!.burnFor(price),
       burnIn: (customer, hash) => this.pay!.burnIn(customer, hash),
-      burnUsed: (hash) => !!this.pay!.store.byBurnTx(hash) || !!this.subjobs!.store.byBurnTx(hash),
+      burnUsed: (hash) => !!this.pay!.store.byBurnTx(hash) || !!this.subjobs!.store.byBurnTx(hash) || !!this.openjobs?.store.byBurnTx(hash),
       checkLink: (token, at) => this.pay!.check(token, at),
       firms: () => (c.firms.enabled ? this.firms : null),
       sameHand: (a, b) => this.subjobs!.sameHand(a, b),
       names: () => this.profiles!.all(),
       pool: () => { const snap = snapshotOf(db); return snap ? { pool: BigInt(snap.desk.pool), out: BigInt(snap.desk.out) } : null; },
     });
+    const factorOwn = (a: string) => houseSet().has(a) || a === this.house?.demoCustomer || this.subjobs!.controllers(a).has("factor:house");
+    // open jobs are read whether or not they are on, so a listing's page still shows after it is switched off
+    this.openjobs = new OpenJobs({
+      cfg: c.openJobs, db, chain: this.chain, desk: c.desk, nowS,
+      signed: async (address, message, signature) => this.profiles!.signed(address, message, signature),
+      paused: () => { const h = stopped(db, "hiring"); return h ? h.note || "New jobs are paused for now." : null; },
+      // the same hand as far as Factor can see it, and Factor itself on both sides (its own agents and its own customer)
+      sameHand: (a, b) => this.subjobs!.sameHand(a, b) || (factorOwn(a) && factorOwn(b)),
+      names: () => this.profiles!.all(),
+      house: () => houseSet(),
+      hosted: () => this.house?.hostedAddresses() ?? new Map(),
+      burnFor: (price) => this.pay!.burnFor(price),
+      burnIn: (customer, hash) => this.pay!.burnIn(customer, hash),
+      burnUsed: (hash) => !!this.pay!.store.byBurnTx(hash) || !!this.subjobs!.store.byBurnTx(hash) || !!this.plans!.store.byBurnTx(hash),
+      linkedElsewhere: (job) => (this.subjobs!.store.link(job) ? "a sub-job of another job" : this.plans!.store.byJob(job) ? "a month of a monthly plan" : null),
+    });
+    if (c.openJobs.enabled) this.log(`[openjobs] on: customers can post open jobs, up to ${c.openJobs.maxApplicants} agents apply to each, ranked by Factor Score`);
     // ERC-8004: made whether or not it is on, so an agent's page still shows what was written after it is switched off
     this.erc8004 = new Erc8004(c.erc8004, {
       db, chain: this.chain, chainId: c.chainId, desk: c.desk, explorer: c.explorer, now: this.now, nowS,
@@ -587,6 +607,8 @@ export class Engine {
   async watchOnce(): Promise<WatchResult> {
     if (!this.ctx) throw new Error("the engine is not running");
     const pass = await watchPass(this.ctx);
+    // an open job whose rule is the best Factor Score is picked as soon as its moment has come (./openjobs.ts)
+    try { this.openjobs?.pickDue(); } catch (e) { this.log(`[openjobs] picking failed: ${e instanceof Error ? e.message : String(e)}`); }
     if (this.config.rehearsalClock) {
       const offset = pass.head.timestamp * 1000 - Date.now();
       if (Math.abs(offset - this.clockOffset) > 2000) this.clockOffset = offset;

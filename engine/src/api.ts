@@ -21,6 +21,8 @@
 //   GET  /v1/erc8004/<agent>   an agent's ERC-8004 identity and the entries Factor wrote to its reputation (erc8004.ts)
 //   GET  /v1/erc8004/feedback/<job>   the file an entry points at, word for word: its keccak256 is the hash on the chain
 //   POST /v1/erc8004/link      an agent signs which ERC-8004 identity is its own, or that it wants none linked
+//   GET  /v1/openjobs?show=open|all&customer=&agent=   open jobs; /v1/openjobs/<id> one, its applicants by Factor Score (openjobs.ts)
+//   POST /v1/openjobs/post|apply|hire|close   a customer posts a job, an agent applies, the lock is linked, or it is taken down
 //
 // Every GET is answered from the database (the last reading of the chain, the ledger, the engine's copy of each
 // job and agent), so a burst of visitors costs the node nothing. Before the contracts are given, and whenever the
@@ -57,6 +59,7 @@ import { recordOf, type RecordSigner } from "./record.js";
 import { treeOf, type Subjobs, type TreeJson } from "./subjobs.js";
 import type { FirmJson, Firms } from "./firms.js";
 import type { Plans, PlansSummaryJson } from "./plans.js";
+import type { OpenJobs } from "./openjobs.js";
 
 export interface Answer {
   status: number;
@@ -101,6 +104,8 @@ export interface EngineView {
   plans?: Plans | null;
   /** settled jobs written to the agents' ERC-8004 reputation (./erc8004.ts) */
   erc8004?: Erc8004 | null;
+  /** open jobs (./openjobs.ts) */
+  openjobs?: OpenJobs | null;
 }
 
 /** How a job came to its agent (./factorscore.ts), from the engine's links between jobs. */
@@ -169,6 +174,8 @@ export interface JobJson {
   firm?: { slug: string; name: string; house: boolean; part: boolean };
   /** a month of a monthly plan: which plan, and which month of how many */
   plan?: { id: string; month: number; months: number };
+  /** locked from an open job: the listing, how many agents applied, and who picked the agent */
+  open?: { id: string; applicants: number; by: "factor" | "customer" };
 }
 /** The other agents one agent hired for parts of its jobs, and those that hired it: one line each, with how many jobs. */
 export interface HiringJson { hiredBy: { address: string; name: string; named: boolean; jobs: number }[]; hires: { address: string; name: string; named: boolean; jobs: number }[] }
@@ -267,6 +274,8 @@ export interface FactorState {
   plans: { enabled: boolean; mostMonths: number; active: number; clients: number; monthlyEth: number };
   /** ERC-8004: whether settled jobs are written to the agents' reputation, the identity registry, and the address entries come from */
   erc8004: { enabled: boolean; registry: string | null; reviewer: string | null };
+  /** open jobs: whether a customer can post one, how many agents may apply to each, and the listings open now */
+  openJobs: { enabled: boolean; maxApplicants: number; open: number; applicants: number; hired: number };
 }
 export interface RosterJson { name: string; does: string; needs: string; delivers: string; fromEth: number; asksAModel: boolean; /** the Desk's opening file on it */ file?: { text: string; at: string } }
 // what Factor's own agents are, said the same before the launch and after it
@@ -345,7 +354,7 @@ export function agentJson(row: AgentRow, names: Names, nowS: number): AgentJson 
 
 const advanceJson = (a: AdvanceRow): AdvanceJson => ({ kind: KIND_NAME[a.kind] ?? "pool", eth: eth(a.amount), feeEth: eth(a.fee), at: iso(a.at) });
 
-export function jobJson(j: JobRow, advances: AdvanceRow[], title: string | undefined, demo = false, deal?: { via: string; burn_wei: string }, parent?: { parent_id: number; depth: number }, firm?: JobJson["firm"], plan?: JobJson["plan"]): JobJson {
+export function jobJson(j: JobRow, advances: AdvanceRow[], title: string | undefined, demo = false, deal?: { via: string; burn_wei: string }, parent?: { parent_id: number; depth: number }, firm?: JobJson["firm"], plan?: JobJson["plan"], open?: JobJson["open"]): JobJson {
   const state = (STATE_NAME[j.state] ?? "locked") as JobJson["state"];
   const closed = j.state >= STATE.settled;
   // one line for the bill: everything drawn, under the kind most of it came by
@@ -377,6 +386,7 @@ export function jobJson(j: JobRow, advances: AdvanceRow[], title: string | undef
     ...(parent ? { parent: { n: parent.parent_id, id: pad(parent.parent_id), depth: parent.depth } } : {}),
     ...(firm ? { firm } : {}),
     ...(plan ? { plan } : {}),
+    ...(open ? { open } : {}),
   };
 }
 
@@ -470,6 +480,22 @@ export class EngineApi {
       const hit = this.cache.get(key);
       if (hit && ttl > 0 && Date.now() - hit.at < ttl) return hit.answer;
       const answer = this.plansGet(v, path, query);
+      if (answer && ttl > 0) {
+        if (this.cache.size > 2000) this.cache.clear();
+        this.cache.set(key, { at: Date.now(), answer });
+      }
+      return answer;
+    }
+    // open jobs: the board and one listing, kept a few seconds like the rest; a pick that has come due is made first
+    if (path === "/v1/openjobs" || path.startsWith("/v1/openjobs/")) {
+      if (from && this.tooMany(from, "openjobs-get", 600)) return { status: 429, body: { error: "too many requests: try again in a minute" } };
+      const v = this.view();
+      const ttl = v.config.params.apiCacheMs;
+      const key = `${path}?${["show", "agent", "customer", "limit"].map((k) => `${k}=${(query.get(k) ?? "").slice(0, 64)}`).join("&")}`;
+      if (v.openjobs && v.state === "running" && v.openjobs.pickDue() > 0) this.cache.clear();
+      const hit = this.cache.get(key);
+      if (hit && ttl > 0 && Date.now() - hit.at < ttl) return hit.answer;
+      const answer = this.openJobsGet(v, path, query);
       if (answer && ttl > 0) {
         if (this.cache.size > 2000) this.cache.clear();
         this.cache.set(key, { at: Date.now(), answer });
@@ -639,6 +665,43 @@ export class EngineApi {
     return ok({ enabled: v.config.plans.enabled, plan: json, jobs: this.jobsJson(v, r.store, rows), burnWei: v.pay?.burnFor(BigInt(plan.price)).toString() ?? "0" });
   }
 
+  // Open jobs: the board (open listings, or all; a customer's; those an agent applied to) and one listing with every
+  // applicant ranked by Factor Score, the words each signed, and the desk job it became (./openjobs.ts).
+  private openJobsGet(v: EngineView, path: string, query: URLSearchParams): Answer | null {
+    const o = v.openjobs;
+    const r = this.running(v);
+    if (path === "/v1/openjobs") {
+      if (!o || !r) return ok({ enabled: false, items: [] });
+      const customer = normalizeAddress(query.get("customer")) ?? undefined;
+      const agent = normalizeAddress(query.get("agent")) ?? (query.get("agent") ? v.profiles?.byName(query.get("agent")!) ?? undefined : undefined);
+      const limit = Math.min(Math.max(Number(query.get("limit")) || 100, 1), 200);
+      return ok({ enabled: v.config.openJobs.enabled, maxApplicants: v.config.openJobs.maxApplicants, items: o.list({ show: query.get("show") === "all" ? "all" : "open", customer, agent, limit }) });
+    }
+    const m = /^\/v1\/openjobs\/(0x[0-9a-f]{64})$/.exec(path);
+    if (!m) return null;
+    if (!o || !r) return notFound("no such open job");
+    const row = o.store.get(m[1]!);
+    if (!row || row.hidden) return notFound("no such open job");
+    const json = o.json(row, { t: this.chainNow(v, r.snap), full: true });
+    const jobRow = row.job_id !== null ? r.store.job(row.job_id) : null;
+    return ok({ enabled: v.config.openJobs.enabled, open: json, ...(jobRow ? { job: this.jobsJson(v, r.store, [jobRow])[0] } : {}) });
+  }
+
+  // A customer posts an open job, an agent applies, the customer's lock is linked, or the customer takes it down.
+  private async openJobsPost(path: string, body: unknown, from: string): Promise<Answer> {
+    const v = this.view();
+    if (!v.openjobs || v.state !== "running") return { status: 503, body: { error: "the engine is not reading the chain yet" } };
+    if (!v.config.openJobs.enabled) return { status: 503, body: { error: "open jobs are switched off for now" } };
+    if (!body || typeof body !== "object" || Array.isArray(body)) return { status: 400, body: { error: "the body is not a JSON object" } };
+    if (this.tooMany(from, "openjobs", 30)) return { status: 429, body: { error: "too many requests: try again in a minute" } };
+    const b = body as Record<string, unknown>;
+    const o = v.openjobs;
+    o.pickDue();
+    const a = path === "/v1/openjobs/post" ? await o.post(b, b.via === "kit" ? "kit" : "site") : path === "/v1/openjobs/apply" ? await o.apply(b) : path === "/v1/openjobs/hire" ? await o.hire(b) : await o.close(b);
+    if (a.status === 200) this.cache.clear();
+    return a;
+  }
+
   // A customer signs a plan, links a month it locked, or stops a plan.
   private async plansPost(path: string, body: unknown, from: string): Promise<Answer> {
     const v = this.view();
@@ -788,6 +851,7 @@ export class EngineApi {
     if (path === "/v1/subjobs/plan" || path === "/v1/subjobs/link") return this.subjobsPost(path, body, from);
     if (path === "/v1/firms/form" || path === "/v1/firms/join" || path === "/v1/firms/leave" || path === "/v1/firms/hire") return this.firmsPost(path, body, from);
     if (path === "/v1/plans/create" || path === "/v1/plans/month" || path === "/v1/plans/stop") return this.plansPost(path, body, from);
+    if (path === "/v1/openjobs/post" || path === "/v1/openjobs/apply" || path === "/v1/openjobs/hire" || path === "/v1/openjobs/close") return this.openJobsPost(path, body, from);
     if (path === "/v1/accounts" || path.startsWith("/v1/accounts/")) return this.accountsPost(path, body, from);
     if (path === "/v1/agents/make" || path === "/v1/agents/pause") return this.hostedPost(path, body, from);
     if (path === "/v1/erc8004/link") return this.erc8004Post(body, from);
@@ -818,7 +882,7 @@ export class EngineApi {
       return ok({ ok: true, stopped: allStopped(v.ctx.db) });
     }
     if (path === "/v1/admin/hide") {
-      const done = b.what === "plan" && typeof b.key === "string" ? !!v.plans?.store.hide(b.key, b.hidden !== false) : b.what === "firm" && typeof b.key === "string" ? !!v.firms?.store.hide(b.key, b.hidden !== false) : (b.what === "agent" || b.what === "job") && (typeof b.key === "string" || typeof b.key === "number") ? v.profiles.hide(b.what, String(b.key), b.hidden !== false) : false;
+      const done = b.what === "plan" && typeof b.key === "string" ? !!v.plans?.store.hide(b.key, b.hidden !== false) : b.what === "openjob" && typeof b.key === "string" ? !!v.openjobs?.store.hide(b.key, b.hidden !== false) : b.what === "firm" && typeof b.key === "string" ? !!v.firms?.store.hide(b.key, b.hidden !== false) : (b.what === "agent" || b.what === "job") && (typeof b.key === "string" || typeof b.key === "number") ? v.profiles.hide(b.what, String(b.key), b.hidden !== false) : false;
       this.cache.clear();
       return done ? ok({ ok: true }) : notFound("nothing by that key");
     }
@@ -872,7 +936,7 @@ export class EngineApi {
     const titles = v.profiles?.titles(ids) ?? new Map<number, string>();
     const demo = this.demoJobs(v);
     const deals = v.pay?.store.deals(ids) ?? new Map();
-    return rows.map((j) => jobJson(j, advances.get(j.id) ?? [], titles.get(j.id), demo.has(j.id), deals.get(j.id), v.subjobs?.store.link(j.id) ?? undefined, this.firmOf(v, j.id), this.planOf(v, j.id)));
+    return rows.map((j) => jobJson(j, advances.get(j.id) ?? [], titles.get(j.id), demo.has(j.id), deals.get(j.id), v.subjobs?.store.link(j.id) ?? undefined, this.firmOf(v, j.id), this.planOf(v, j.id), v.openjobs?.of(j.id) ?? undefined));
   }
 
   /** The monthly plan a job is a month of. */
@@ -1138,7 +1202,9 @@ export class EngineApi {
     const planTotals = v.plans && v.state === "running" ? v.plans.totals() : { active: 0, clients: 0, monthlyEth: 0 };
     const plans = { enabled: !!v.plans && c.plans.enabled && v.state === "running", mostMonths: c.plans.mostMonths, ...planTotals };
     const erc8004 = { enabled: !!v.erc8004 && c.erc8004.enabled && v.state === "running", registry: v.erc8004?.registry ?? null, reviewer: v.ctx?.facts.bot ? getAddress(v.ctx.facts.bot) : null };
-    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused, roster: this.rosterJson(v), hosted, pulse: pulseJson(v, 8), desk: this.deskJson(v), signups, activity, pay, subjobs, firms, plans, erc8004 };
+    const openTotals = v.openjobs && v.state === "running" ? v.openjobs.totals() : { open: 0, applicants: 0, hired: 0 };
+    const openJobs = { enabled: !!v.openjobs && c.openJobs.enabled && v.state === "running", maxApplicants: c.openJobs.maxApplicants, ...openTotals };
+    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused, roster: this.rosterJson(v), hosted, pulse: pulseJson(v, 8), desk: this.deskJson(v), signups, activity, pay, subjobs, firms, plans, erc8004, openJobs };
     if (!r) {
       return { ...base, launched: false, stats: { advancedEth: 0, settledJobs: 0, jobs: 0, poolEth: 0, reserveEth: 0, outEth: 0, heldEth: 0, burnedTokens: 0, supplyLeft: SUPPLY, agents: 0, demoJobs: 0, lostEth: 0, poolFromTradingEth: 0 }, burn: null, agents: [], jobs: [], events: [], burns: [] };
     }
