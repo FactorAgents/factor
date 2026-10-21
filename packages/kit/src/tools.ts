@@ -32,6 +32,7 @@ export function limitsFrom(env: Record<string, string | undefined>): Limits {
 }
 
 const eth = (wei: bigint): string => formatEther(wei);
+const OPEN_ID = z.string().regex(/^0x[0-9a-f]{64}$/).describe("The open job's number: 0x and 64 hex characters");
 const PLAN_ID = z.string().regex(/^0x[0-9a-f]{64}$/).describe("The plan's number: 0x and 64 hex characters");
 const today = (): string => new Date().toISOString().slice(0, 10);
 
@@ -574,6 +575,86 @@ export const TOOLS: Tool[] = [
     async run(f, a) {
       const r = await f.drawNextMonth(String(a.plan), typeof a.amount === "string" ? a.amount : undefined);
       return `Drew ${eth(r.amountWei)} ETH from the pool on month ${r.month} (job ${r.jobId}). Transaction ${r.explorer}.`;
+    },
+  },
+  {
+    name: "factor_open_jobs", readOnly: true,
+    input: {
+      show: z.enum(["open", "all"]).optional().describe("open: taking applications or waiting on their customer (the default). all: every listing"),
+      mine: z.enum(["customer", "agent"]).optional().describe("customer: the jobs this wallet posted. agent: the jobs this wallet applied for"),
+    },
+    description: "The open jobs on Factor's board: jobs customers posted for any agent to apply to, each with its price, how long the agent has once it is locked, when applications close, how the agent is picked, and the applicants ranked by Factor Score. An agent looking for work starts here and applies with factor_apply_to_job.",
+    async run(f, a) {
+      const who = a.mine === "customer" ? { customer: need(f) } : a.mine === "agent" ? { agent: need(f) } : {};
+      const items = await f.openJobs({ ...(a.show === "all" ? { show: "all" as const } : {}), ...who });
+      if (!items.length) return a.mine ? "None." : "No open job is on the board right now.";
+      return items.slice(0, 25).map((j) => `${j.id}: "${j.title}", ${j.priceEth} ETH, due ${j.dueHours} hours after it is locked${j.early ? ", half may be drawn early" : ""}. ${j.status}: ${j.note} ${j.count} applied${j.applicants.length ? ` (first: ${j.applicants.slice(0, 3).map((x) => `${x.name} ${x.score}`).join(", ")})` : ""}.${j.applying ? " Taking applications." : ""}`).join("\n");
+    },
+  },
+  {
+    name: "factor_open_job", readOnly: true, input: { open: OPEN_ID },
+    description: "One open job: what the customer wants (title and brief), the price, the terms, how the agent is picked, where it stands, every applicant ranked by Factor Score with its line, and the job it became once locked.",
+    async run(f, a) {
+      const page = await f.openJob(String(a.open));
+      if (!page) return `There is no open job ${String(a.open)} on Factor.`;
+      const j = page.open;
+      return [
+        `"${j.title}": ${j.priceEth} ETH, due ${j.dueHours} hours after it is locked${j.early ? ", up to half may be drawn early" : ""}. Posted by ${j.customer}. Applications close ${j.closesAt.slice(0, 16).replace("T", " ")} UTC; ${j.pick.by === "best" ? `Factor picks the best Factor Score${j.pick.after ? ` once ${j.pick.after} have applied or` : ""} at the close` : "the customer picks"}.`,
+        `${j.status}: ${j.note}`,
+        ...(j.brief ? [`Brief: ${j.brief.slice(0, 1500)}`] : []),
+        ...j.applicants.map((x) => `${x.rank}. ${x.name} (${x.address}): Factor Score ${x.score}, ${x.settled} jobs settled${x.picked ? ", PICKED" : ""}${x.pitch ? `. "${x.pitch}"` : ""}`),
+        ...(j.job ? [`Locked as job ${j.job.n}.`] : []),
+      ].join("\n");
+    },
+  },
+  {
+    name: "factor_post_job", readOnly: false,
+    input: {
+      title: z.string().min(3).max(80).describe("One line on what you need done, without links"),
+      price: amount.describe("What the job pays, in ETH, like \"0.004\""),
+      brief: z.string().max(12000).optional().describe("What the agent should do, at any length up to 12,000 characters. Anyone can read it"),
+      due_in_hours: z.number().int().min(1).max(720).optional().describe("Hours the agent has once the job is locked. 24 when not given"),
+      allow_early: z.boolean().optional().describe("true lets the picked agent start with up to half; that part is NOT refunded if it does not deliver. false when not given"),
+      closes_in_hours: z.number().min(1).max(336).optional().describe("Hours until applications close. 24 when not given"),
+      pick: z.enum(["customer", "best"]).optional().describe("customer: you pick an applicant (factor_pick_agent). best: Factor picks the best Factor Score at the close, and you lock for it. customer when not given"),
+      pick_after: z.number().int().min(1).max(100).optional().describe("With pick best: Factor picks as soon as this many agents have applied"),
+    },
+    description: "Post an open job for agents to apply to. A signature, not a transaction: nothing is locked and nothing leaves the wallet until an agent is picked with factor_pick_agent, which then locks the price (plus 1% that buys and burns $FACTOR) as an ordinary job. Confirm the job and the price with the user first unless they already gave them.",
+    async run(f, a, spending) {
+      need(f);
+      spending?.check(toWei(String(a.price)), true);
+      const r = await f.postJob({ title: String(a.title), price: String(a.price), ...(typeof a.brief === "string" ? { brief: a.brief } : {}), dueInHours: a.due_in_hours as number | undefined, allowEarly: a.allow_early === true, closesInHours: a.closes_in_hours as number | undefined, ...(a.pick === "best" ? { pick: "best" as const } : {}), ...(typeof a.pick_after === "number" ? { pickAfter: a.pick_after } : {}) });
+      return `Posted open job ${r.id}${r.created ? "" : " (it was posted already)"}: ${r.url}. Agents apply there; nothing is locked until one is picked.`;
+    },
+  },
+  {
+    name: "factor_apply_to_job", readOnly: false, input: { open: OPEN_ID, pitch: z.string().max(280).optional().describe("One line on why this agent, up to 280 characters, without links. Anyone can read it") },
+    description: "Apply for an open job as this wallet's agent. A signature, not a transaction: it costs nothing. Only an agent registered on Factor's desk applies, once per job, never for a job its own customer side posted. Applicants are ranked by Factor Score; the customer (or Factor, by the best score) picks one and locks the price for it, and the job then shows up as an ordinary job for this agent.",
+    async run(f, a) {
+      const r = await f.applyToJob(String(a.open), { ...(typeof a.pitch === "string" ? { pitch: a.pitch } : {}) });
+      return `Applied. This agent is ranked ${r.rank} of ${r.of} by Factor Score; the job is ${r.listing}${r.picked ? `, and Factor picked ${r.picked}` : ""}.`;
+    },
+  },
+  {
+    name: "factor_pick_agent", readOnly: false, input: { open: OPEN_ID, agent: z.string().optional().describe("The applicant's name or address. Left out: the agent Factor picked, or the one ranked first") },
+    description: "Pick an applicant for an open job this wallet posted. THIS SPENDS ETH: the price is locked on Robinhood Chain for the agent (plus 1% that buys and burns $FACTOR), held by the contract until it delivers and back to this wallet if it does not. From then on it is an ordinary job: accept or reject the delivery with factor_accept or factor_reject. Confirm the agent with the user first unless they already chose.",
+    async run(f, a, spending) {
+      need(f);
+      const page = await f.openJob(String(a.open));
+      if (!page) return `There is no open job ${String(a.open)} on Factor.`;
+      const price = BigInt(page.open.priceWei);
+      spending?.check(price, true);
+      const r = await f.pickAgent(String(a.open), { ...(typeof a.agent === "string" ? { agent: a.agent } : {}) });
+      spending?.add(price);
+      return `Job ${r.jobId} is locked for ${r.agent}: ${eth(price)} ETH${r.burned ? ", with its 1% to the burn" : ""}. ${r.linked ? "Factor linked it to the open job." : `Factor could not link it to the open job: ${r.note ?? "no answer"} The money is locked for the agent as an ordinary job.`} ${r.jobUrl} Transaction ${r.explorer}.`;
+    },
+  },
+  {
+    name: "factor_close_job", readOnly: false, input: { open: OPEN_ID },
+    description: "Take an open job this wallet posted off the board before anybody is hired. A signature, not a transaction: nothing was locked.",
+    async run(f, a) {
+      await f.closeJob(String(a.open));
+      return "The open job is taken down. Nobody can apply for it, and nothing was locked.";
     },
   },
 ];

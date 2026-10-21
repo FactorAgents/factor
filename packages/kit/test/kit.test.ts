@@ -19,6 +19,8 @@ import { planIdOf as enginePlanIdOf, planMessage as enginePlan, stopMessage as e
 import { recoverMessageAddress } from "viem";
 import { erc8004LinkMessage, erc8004Registry } from "../src/index.js";
 import { linkMessage as engineLink, registryOf as engineRegistry } from "../../../engine/src/erc8004.js";
+import { applyMessage, closeJobMessage, openJobId, postJobMessage } from "../src/index.js";
+import { applyMessage as engineApply, closeMessage as engineClose, openJobIdOf as engineOpenJobId, postMessage as enginePost } from "../../../engine/src/openjobs.js";
 import { AGENTS, DESK, JOB, KEY, state, stub, type Stub } from "./stub.js";
 
 let s: Stub;
@@ -344,11 +346,11 @@ describe("the assistant's caps", () => {
 
 describe("the tools", () => {
   it("have a name, a description and an input each, and say which of them send something", () => {
-    expect(TOOLS.map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_hire", "factor_accept", "factor_reject", "factor_set_title", "factor_register", "factor_set_profile", "factor_bond", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_ask_model", "factor_draw", "factor_deliver", "factor_decline", "factor_sign_up", "factor_create_pay_link", "factor_pay_link_info", "factor_pay_link", "factor_pay_x402", "factor_hire_for_job", "factor_job_tree", "factor_reject_sub_jobs", "factor_record", "factor_erc8004", "factor_link_erc8004", "factor_firms", "factor_firm_record", "factor_hire_firm", "factor_plan", "factor_subscribe", "factor_pay_month", "factor_stop_plan", "factor_draw_next_month"]);
+    expect(TOOLS.map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_hire", "factor_accept", "factor_reject", "factor_set_title", "factor_register", "factor_set_profile", "factor_bond", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_ask_model", "factor_draw", "factor_deliver", "factor_decline", "factor_sign_up", "factor_create_pay_link", "factor_pay_link_info", "factor_pay_link", "factor_pay_x402", "factor_hire_for_job", "factor_job_tree", "factor_reject_sub_jobs", "factor_record", "factor_erc8004", "factor_link_erc8004", "factor_firms", "factor_firm_record", "factor_hire_firm", "factor_plan", "factor_subscribe", "factor_pay_month", "factor_stop_plan", "factor_draw_next_month", "factor_open_jobs", "factor_open_job", "factor_post_job", "factor_apply_to_job", "factor_pick_agent", "factor_close_job"]);
     for (const t of TOOLS) expect(t.description.length, t.name).toBeGreaterThan(40);
-    expect(TOOLS.filter((t) => t.readOnly).map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_pay_link_info", "factor_job_tree", "factor_record", "factor_erc8004", "factor_firms", "factor_firm_record", "factor_plan"]);
+    expect(TOOLS.filter((t) => t.readOnly).map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_pay_link_info", "factor_job_tree", "factor_record", "factor_erc8004", "factor_firms", "factor_firm_record", "factor_plan", "factor_open_jobs", "factor_open_job"]);
     // the ones that spend or cannot be undone say so in capitals, where an assistant will not miss it
-    for (const name of ["factor_hire", "factor_reject", "factor_bond", "factor_pay_link", "factor_pay_x402", "factor_hire_for_job", "factor_reject_sub_jobs", "factor_hire_firm", "factor_subscribe", "factor_pay_month"]) expect(TOOLS.find((t) => t.name === name)!.description).toMatch(/SPENDS ETH|SETTLES AT HALF/);
+    for (const name of ["factor_hire", "factor_reject", "factor_bond", "factor_pay_link", "factor_pay_x402", "factor_hire_for_job", "factor_reject_sub_jobs", "factor_hire_firm", "factor_subscribe", "factor_pay_month", "factor_pick_agent"]) expect(TOOLS.find((t) => t.name === name)!.description).toMatch(/SPENDS ETH|SETTLES AT HALF/);
   });
 
   it("answer in words", async () => {
@@ -726,3 +728,103 @@ describe("ERC-8004", () => {
   });
 });
 
+
+describe("open jobs", () => {
+  const ID = `0x${"ef".repeat(32)}`;
+  const C1 = "0x00000000000000000000000000000000000000c1";
+  const listing = (over: Record<string, unknown> = {}) => ({
+    id: ID, status: "open", note: "Taking applications until 2026-10-22 08:00 UTC. The customer picks an applicant by locking the price for it.", customer: C1, title: "Check the figures in our note", brief: "",
+    priceEth: 0.004, priceWei: "4000000000000000", burnWei: "40000000000000", dueHours: 48, early: true, postedAt: "2026-10-21T08:00:00.000Z", closesAt: "2026-10-22T08:00:00.000Z", pick: { by: "customer" },
+    applying: true, count: 2, most: 20,
+    applicants: [
+      { rank: 1, address: AGENTS[0]!.address, name: "lumen-07", named: true, house: false, score: 624, settled: 4, customers: 2, onTimePct: 100, barred: false, pitch: "Four jobs settled, all on time", appliedAt: "2026-10-21T08:10:00.000Z" },
+      { rank: 2, address: AGENTS[1]!.address, name: "page-smith", named: true, house: true, score: 580, settled: 4, customers: 2, onTimePct: 100, barred: false, pitch: "", appliedAt: "2026-10-21T08:05:00.000Z" },
+    ],
+    ...over,
+  });
+
+  it("signs to the letter the words the engine checks", () => {
+    const p = { customer: C1, price: "4000000000000000", dueHours: 48, early: true, title: "Check the figures", brief: "Line one\nLine two", closesAt: 1_800_000_000, pick: { by: "best" as const, after: 3 }, at: 1_799_990_000 };
+    expect(postJobMessage(p)).toBe(enginePost(p));
+    expect(postJobMessage({ ...p, pick: { by: "customer" }, early: false, brief: "" })).toBe(enginePost({ ...p, pick: { by: "customer" }, early: false, brief: "" }));
+    expect(openJobId(p)).toBe(engineOpenJobId(p));
+    expect(applyMessage({ open: ID, agent: C1, pitch: "", at: 1 })).toBe(engineApply({ open: ID, agent: C1, pitch: "", at: 1 }));
+    expect(applyMessage({ open: ID, agent: C1, pitch: "On time, every time", at: 1 })).toBe(engineApply({ open: ID, agent: C1, pitch: "On time, every time", at: 1 }));
+    expect(closeJobMessage({ open: ID, customer: C1, at: 1 })).toBe(engineClose({ open: ID, customer: C1, at: 1 }));
+  });
+
+  it("posts only while open jobs are on, signed by the customer's own key, with nothing locked", async () => {
+    const f = await connect({ privateKey: KEY });
+    s.site.state = state();
+    expect((await refusal(f.postJob({ title: "Check the figures", price: "0.004" }))).code).toBe("openjobs_off");
+    s.site.state = state({ openJobs: { enabled: true, maxApplicants: 20, open: 0, applicants: 0, hired: 0 } } as never);
+    expect((await refusal(f.postJob({ title: "Check the figures", price: "0.0001" }))).code).toBe("bad_amount");
+    expect((await refusal(f.postJob({ title: "Check the figures", price: "0.004", closesInHours: 400 }))).code).toBe("bad_close");
+    expect((await refusal(f.postJob({ title: "Check the figures", price: "0.004", pickAfter: 3 }))).code).toBe("bad_pick");
+    expect((await refusal(f.postJob({ title: "see https://example.com", price: "0.004" }))).code).toBe("bad_text");
+    const calls = s.node.calls.length;
+    const r = await f.postJob({ title: "Check the figures", price: "0.004", dueInHours: 48, allowEarly: true, closesInHours: 6, pick: "best", pickAfter: 3 });
+    expect(r).toMatchObject({ id: ID, created: true, burnWei: 40_000_000_000_000n });
+    expect(r.url).toMatch(/\/open-jobs\/0x(ef){32}$/);
+    // a signature, and no transaction: nothing was sent to the node
+    expect(s.node.calls.slice(calls).filter((m) => m === "eth_sendRawTransaction" || m === "eth_sendTransaction")).toEqual([]);
+    const b = s.posts.at(-1)!.body as { customer: string; price: string; dueHours: number; early: boolean; title: string; brief: string; closesAt: number; pick: string; pickAfter: number; at: number; signature: `0x${string}`; via: string };
+    expect(b).toMatchObject({ price: "4000000000000000", dueHours: 48, early: true, pick: "best", pickAfter: 3, via: "kit" });
+    expect(b.closesAt - b.at).toBe(6 * 3600);
+    const words = enginePost({ customer: b.customer, price: b.price, dueHours: b.dueHours, early: b.early, title: b.title, brief: b.brief, closesAt: b.closesAt, pick: { by: "best", after: b.pickAfter }, at: b.at });
+    expect((await recoverMessageAddress({ message: words, signature: b.signature })).toLowerCase()).toBe(b.customer);
+    s.site.state = state();
+  });
+
+  it("applies with the agent's own signature and a line of its own, and refuses what it cannot apply for", async () => {
+    const f = await connect({ privateKey: KEY });
+    s.site.openJob = { enabled: true, open: listing() };
+    const r = await f.applyToJob(ID, { pitch: "Four jobs settled, all on time" });
+    expect(r).toEqual({ open: ID, rank: 1, of: 1, listing: "open" });
+    const b = s.posts.at(-1)!.body as { open: string; agent: string; pitch: string; at: number; signature: `0x${string}` };
+    expect(b.agent).toBe(f.address);
+    expect((await recoverMessageAddress({ message: engineApply(b), signature: b.signature })).toLowerCase()).toBe(f.address);
+    expect((await refusal(f.applyToJob(ID, { pitch: "my site is https://example.com" }))).code).toBe("bad_text");
+    s.site.openJob = { enabled: true, open: listing({ customer: f.address }) };
+    expect((await refusal(f.applyToJob(ID))).code).toBe("self_hire");
+    s.site.openJob = { enabled: true, open: listing({ applying: false, why: "applications for this job have closed" }) };
+    expect((await refusal(f.applyToJob(ID))).message).toBe("Applications for this job have closed.");
+    expect((await refusal((await connect()).applyToJob(ID))).code).toBe("read_only");
+    s.site.openJob = null;
+    expect((await refusal(f.applyToJob(ID))).code).toBe("no_open_job");
+  });
+
+  it("picks only for the customer's own listing, an applicant, the one Factor picked, under the cap", async () => {
+    const f = await connect({ privateKey: KEY });
+    s.site.openJob = { enabled: true, open: listing() };
+    expect((await refusal(f.pickAgent(ID))).code).toBe("not_your_job");
+    s.site.openJob = { enabled: true, open: listing({ customer: f.address }) };
+    expect((await refusal(f.pickAgent(ID, { agent: "nobody-here" }))).code).toBe("not_an_applicant");
+    expect((await refusal(f.pickAgent(ID, { maxEth: "0.004" }))).code).toBe("over_cap");
+    s.site.openJob = { enabled: true, open: listing({ customer: f.address, status: "picked", picked: { address: AGENTS[1]!.address, name: "page-smith", named: true, by: "factor", at: "2026-10-22T08:00:00.000Z" } }) };
+    expect((await refusal(f.pickAgent(ID, { agent: "lumen-07" }))).code).toBe("factor_picked");
+    s.site.openJob = { enabled: true, open: listing({ customer: f.address, job: { n: 7, id: "0007", lockTx: "0xabc", burnEth: 0 } }) };
+    expect((await refusal(f.pickAgent(ID))).code).toBe("hired");
+    s.site.openJob = { enabled: true, open: listing({ customer: f.address, applicants: [], count: 0 }) };
+    expect((await refusal(f.pickAgent(ID))).code).toBe("no_applicants");
+    s.site.openJob = null;
+  });
+
+  it("the tools read the board and one listing in words, and close one with a signature", async () => {
+    const f = await connect({ privateKey: KEY });
+    s.site.openJobs = [listing()];
+    s.site.openJob = { enabled: true, open: listing() };
+    const board = (await runTool(f, "factor_open_jobs", {}, null)).text;
+    expect(board).toMatch(/"Check the figures in our note", 0.004 ETH, due 48 hours after it is locked, half may be drawn early\. open: /);
+    expect(board).toMatch(/2 applied \(first: lumen-07 624, page-smith 580\)\. Taking applications\./);
+    const one = (await runTool(f, "factor_open_job", { open: ID }, null)).text;
+    expect(one).toMatch(/1\. lumen-07 \(0x0+a1\): Factor Score 624, 4 jobs settled\. "Four jobs settled, all on time"/);
+    expect(one).toMatch(/2\. page-smith/);
+    expect((await runTool(f, "factor_close_job", { open: ID }, null)).text).toMatch(/taken down/);
+    const b = s.posts.at(-1)!.body as { open: string; at: number; signature: `0x${string}` };
+    expect(s.posts.at(-1)!.path).toBe("/openjobs/close");
+    expect((await recoverMessageAddress({ message: engineClose({ open: b.open, customer: f.address!, at: b.at }), signature: b.signature })).toLowerCase()).toBe(f.address);
+    s.site.openJobs = [];
+    s.site.openJob = null;
+  });
+});

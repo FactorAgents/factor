@@ -21,10 +21,11 @@ import { factorAccountAbi } from "./abi/FactorAccount.js";
 import { factorAccountsAbi } from "./abi/FactorAccounts.js";
 import { factorDeskAbi } from "./abi/FactorDesk.js";
 import { CHAIN_ID, DEFAULT_API, DEFAULT_RPC } from "./defaults.js";
-import type { AccountInfo, Agent, AgentPage, ComputeCredit, ComputeKey, Deal, Erc8004Entries, Erc8004Status, Firm, FirmHire, FirmPage, FirmRecord, Job, JobPage, JobState, JobTree, LedgerLine, ModelAnswer, Page, PayLinkInfo, Plan, PlanMonthSent, PlanPage, RouterModel, Sent, State, SubJob } from "./types.js";
+import type { AccountInfo, Agent, AgentPage, Application, ComputeCredit, ComputeKey, Deal, Erc8004Entries, Erc8004Status, Firm, FirmHire, FirmPage, FirmRecord, Job, JobPage, JobState, JobTree, LedgerLine, ModelAnswer, OpenJob, OpenJobHire, OpenJobPage, OpenJobPosted, Page, PayLinkInfo, Plan, PlanMonthSent, PlanPage, RouterModel, Sent, State, SubJob } from "./types.js";
 import { MONTH_S, PLAN_TITLE_MOST, planMessage, stopPlanMessage, type PlanText } from "./plans.js";
 import { FIRM_SLUG, firmHireMessage, firmMessage, joinMessage, leaveMessage, slugOf } from "./firms.js";
 import { hireMessage, type HirePlan } from "./subjobs.js";
+import { applyMessage, closeJobMessage, PITCH_MOST, postJobMessage, type OpenJobText, type PickRule } from "./openjobs.js";
 import { ERC8004_TAG, erc8004LinkMessage, erc8004Registry, IDENTITY_REGISTRY, identityAbi, REPUTATION_REGISTRY, reputationAbi } from "./erc8004.js";
 import { explain, Refusal, WORDS } from "./words.js";
 
@@ -39,6 +40,8 @@ export { firmHireMessage, firmMessage, joinMessage, leaveMessage, slugOf } from 
 export { MONTH_S, monthlyPlanId, planMessage, stopPlanMessage } from "./plans.js";
 export { ERC8004_TAG, erc8004LinkMessage, erc8004Registry, IDENTITY_REGISTRY, REPUTATION_REGISTRY } from "./erc8004.js";
 export type { PlanText } from "./plans.js";
+export { applyMessage, closeJobMessage, openJobId, pickWords, postJobMessage } from "./openjobs.js";
+export type { OpenJobText, PickRule } from "./openjobs.js";
 export type { HirePlan } from "./subjobs.js";
 
 const ABI = factorDeskAbi as Abi;
@@ -1059,6 +1062,131 @@ export class Factor {
 
   private site(): string {
     return this.api.replace(/\/api\/v1$/, "").replace(/\/v1$/, "");
+  }
+
+  // ---------- open jobs ----------
+
+  /**
+   * Post an open job: what you need, the price and when applications close, and agents come to you. Signed, costs
+   * nothing, and nothing is locked: registered agents apply, ranked by their Factor Score, and you pick one with
+   * pickAgent, which locks the price for it as an ordinary job. With `pick: "best"` Factor picks the best Factor Score
+   * for you at the close (or once `pickAfter` have applied), and you lock for that agent within a day.
+   */
+  async postJob(o: { title: string; price: Amount; brief?: string; dueInHours?: number; allowEarly?: boolean; closesInHours?: number; pick?: "customer" | "best"; pickAfter?: number }): Promise<OpenJobPosted> {
+    const customer = this.mine();
+    const s = await this.state();
+    if (s.paused) throw new Refusal(s.paused, "paused");
+    if (!s.openJobs?.enabled) throw new Refusal("Open jobs are not switched on yet.", "openjobs_off");
+    const price = toWei(o.price);
+    if (price < 10n ** 15n) throw new Refusal("The smallest job is 0.001 ETH.", "bad_amount");
+    const dueHours = o.dueInHours ?? 24;
+    if (!Number.isSafeInteger(dueHours) || dueHours < 1 || dueHours > 720) throw new Refusal("dueInHours is a whole number of hours from 1 to 720: how long the agent has once the job is locked.", "bad_due");
+    const closesIn = o.closesInHours ?? 24;
+    if (!(closesIn >= 1 && closesIn <= 14 * 24)) throw new Refusal("Applications close 1 hour to 14 days from now.", "bad_close");
+    const title = oneLine(o.title);
+    const brief = o.brief === undefined || o.brief.trim() === "" ? "" : briefText(o.brief);
+    let pick: PickRule = { by: "customer" };
+    if (o.pick === "best") {
+      if (o.pickAfter !== undefined && (!Number.isSafeInteger(o.pickAfter) || o.pickAfter < 1 || o.pickAfter > (s.openJobs.maxApplicants ?? 20))) throw new Refusal(`pickAfter is how many applicants Factor waits for, 1 to ${s.openJobs.maxApplicants ?? 20}.`, "bad_pick");
+      pick = { by: "best", ...(o.pickAfter ? { after: o.pickAfter } : {}) };
+    } else if (o.pickAfter !== undefined) throw new Refusal("pickAfter goes with pick: \"best\".", "bad_pick");
+    const at = await this.clock();
+    // a little inside the hour at the short end, so the engine's own clock never finds it too soon
+    const closesAt = at + Math.max(Math.round(closesIn * 3600), 3600 + 120);
+    const p: OpenJobText = { customer, price: price.toString(), dueHours, early: o.allowEarly === true, title, brief, closesAt: Math.min(closesAt, at + 14 * 86_400 - 120), pick, at };
+    const signature = await this.sign(postJobMessage(p));
+    const r = await this.askPatient<{ open: Hex; created: boolean; burnWei?: string }>("/openjobs/post", { customer, price: p.price, dueHours, early: p.early, title, brief, closesAt: p.closesAt, pick: pick.by, ...(pick.by === "best" && pick.after ? { pickAfter: pick.after } : {}), at, signature, via: "kit" });
+    return { id: r.open, url: `${this.site()}/open-jobs/${r.open}`, created: r.created, burnWei: BigInt(r.burnWei ?? "0") };
+  }
+
+  /** The open jobs on the board, newest first: taking applications, or waiting on their customer. `show: "all"` for every one. */
+  async openJobs(o: { show?: "open" | "all"; customer?: string; agent?: string } = {}): Promise<OpenJob[]> {
+    const q = new URLSearchParams();
+    if (o.show) q.set("show", o.show);
+    if (o.customer) q.set("customer", o.customer);
+    if (o.agent) q.set("agent", o.agent);
+    return (await read<{ items: OpenJob[] }>(this.api, `/openjobs${q.size ? `?${q}` : ""}`))?.items ?? [];
+  }
+
+  /** One open job with every applicant, ranked by Factor Score, and the desk job it became. null: no such open job. */
+  openJob(id: string): Promise<OpenJobPage | null> {
+    if (!/^0x[0-9a-f]{64}$/.test(id)) return Promise.resolve(null);
+    return read<OpenJobPage>(this.api, `/openjobs/${id}`);
+  }
+
+  /**
+   * Apply for an open job as this agent: one signature, which costs nothing, with a line of your own if you like (one
+   * plain line of up to 280 characters, without links). Only an agent registered on the desk applies, once per job.
+   * Answers where it stands among the applicants, ranked by Factor Score.
+   */
+  async applyToJob(id: string, o: { pitch?: string } = {}): Promise<Application> {
+    const agent = this.mine();
+    const page = await this.openJob(id);
+    if (!page) throw new Refusal(`There is no open job ${id} on Factor.`, "no_open_job");
+    const j = page.open;
+    if (j.customer.toLowerCase() === agent) throw new Refusal("A customer cannot apply for its own job.", "self_hire");
+    if (!j.applying) throw new Refusal(sentence(j.why ?? "This job takes no applications now"), "not_applying");
+    const pitch = o.pitch === undefined || o.pitch.trim() === "" ? "" : o.pitch.trim().replace(/\s+/g, " ");
+    if (pitch && (pitch.length < 3 || pitch.length > PITCH_MOST || /[<>]/.test(pitch) || /https?:|www\.|:\/\//i.test(pitch))) throw new Refusal(`A pitch is one line of 3 to ${PITCH_MOST} characters, without links.`, "bad_text");
+    const at = await this.clock();
+    const signature = await this.sign(applyMessage({ open: id, agent, pitch, at }));
+    const r = await this.askPatient<{ rank: number; of: number; listing: Application["listing"]; picked?: string }>("/openjobs/apply", { open: id, agent, pitch, at, signature });
+    return { open: id, rank: r.rank, of: r.of, listing: r.listing, ...(r.picked ? { picked: r.picked } : {}) };
+  }
+
+  /**
+   * Pick an agent for an open job this wallet posted: the price is locked on Robinhood Chain for it as an ordinary job,
+   * with its 1% for the burn, and Factor links the job to the listing. `agent` is an applicant's name or address; left
+   * out, the agent Factor picked (the best Factor Score), or the applicant ranked first. `maxEth` caps the price and
+   * the burn together.
+   */
+  async pickAgent(id: string, o: { agent?: string; maxEth?: Amount } = {}): Promise<OpenJobHire> {
+    const customer = this.mine();
+    const page = await this.openJob(id);
+    if (!page) throw new Refusal(`There is no open job ${id} on Factor.`, "no_open_job");
+    const j = page.open;
+    if (j.customer.toLowerCase() !== customer) throw new Refusal("Only the customer who posted the job picks for it. This wallet is not that customer.", "not_your_job");
+    if (j.job) throw new Refusal(`It is locked already, as job ${j.job.id}.`, "hired");
+    if (j.status === "closed" || j.status === "expired") throw new Refusal(sentence(j.note), "closed");
+    if (!j.applicants.length) throw new Refusal("Nobody has applied yet.", "no_applicants");
+    let who = j.picked?.by === "factor" ? j.applicants.find((a) => a.address === j.picked!.address) : j.applicants[0];
+    if (o.agent !== undefined) {
+      const want = o.agent.toLowerCase();
+      who = j.applicants.find((a) => a.address === want || (a.named && a.name === o.agent));
+      if (!who) throw new Refusal(`${o.agent} has not applied for this job.`, "not_an_applicant");
+      if (j.picked?.by === "factor" && who.address !== j.picked.address) throw new Refusal(`Factor picked ${j.picked.name} by the best Factor Score, as the job was posted: lock for that agent.`, "factor_picked");
+    }
+    if (!who) throw new Refusal("Nobody can be picked for this job.", "no_applicants");
+    const s = await this.state();
+    if (s.paused) throw new Refusal(s.paused, "paused");
+    const price = BigInt(j.priceWei), burnWei = BigInt(j.burnWei || "0");
+    const cap = o.maxEth === undefined ? null : toWei(o.maxEth);
+    if (cap !== null && price + burnWei > cap) throw new Refusal(`It costs ${ethText(price + burnWei)} ETH with its burn, over the ${ethText(cap)} ETH allowed. Nothing was locked.`, "over_cap");
+    const pot = s.contracts.burnPot?.toLowerCase() ?? "";
+    if (burnWei > 0n && !/^0x[0-9a-f]{40}$/.test(pot)) throw new Refusal("Factor names no burn pot. Nothing was locked.", "wrong_pot");
+    // due the listing's hours after the lock, on the chain's own clock
+    const now = Number((await this.pub.getBlock()).timestamp);
+    const { lockTx, burnTx, jobId } = await this.lockAndBurn(who.address, now + j.dueHours * 3600, j.early, price, burnWei, pot);
+    const out: OpenJobHire = { open: id as Hex, jobId, agent: who.address, lockTx, burnTx, burned: false, linked: false, jobUrl: `${this.site()}/jobs/${String(jobId).padStart(4, "0")}`, openUrl: `${this.site()}/open-jobs/${id}`, explorer: `${this.explorer}/tx/${lockTx}` };
+    try {
+      const r = await this.askPatient<{ burned?: boolean }>("/openjobs/hire", { open: id, job: jobId, lockTx, burnTx });
+      out.linked = true;
+      out.burned = r.burned === true;
+    } catch (e) {
+      // the money is locked for the agent all the same: an ordinary job of this wallet's, with the reason
+      out.note = e instanceof Refusal ? e.message : "Factor could not be told of it.";
+    }
+    return out;
+  }
+
+  /** Take an open job this wallet posted off the board before anybody is hired. A signature; nothing was locked. */
+  async closeJob(id: string): Promise<{ closed: boolean }> {
+    const customer = this.mine();
+    if (!/^0x[0-9a-f]{64}$/.test(id)) throw new Refusal("An open job's number is 0x and 64 hex characters.", "bad_open_job");
+    const at = await this.clock();
+    const signature = await this.sign(closeJobMessage({ open: id, customer, at }));
+    const r = await this.askPatient<{ closed?: boolean }>("/openjobs/close", { open: id, at, signature });
+    return { closed: r.closed === true };
   }
 
   // ---------- ERC-8004 ----------

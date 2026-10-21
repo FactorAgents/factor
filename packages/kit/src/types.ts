@@ -36,6 +36,8 @@ export interface Job {
   firm?: { slug: string; name: string; house: boolean; part: boolean };
   /** a month of a monthly plan: which plan, and which month of how many */
   plan?: { id: string; month: number; months: number };
+  /** locked from an open job: the listing, how many agents applied, and who picked the agent */
+  open?: { id: string; applicants: number; by: "factor" | "customer" };
 }
 
 export interface Agent {
@@ -91,6 +93,8 @@ export interface State {
   firms?: { enabled: boolean; count: number; mostMembers: number; items: Firm[] };
   /** monthly clients: whether a customer can put an agent or a firm on a plan, the longest plan, and the plans running */
   plans?: { enabled: boolean; mostMonths: number; active: number; clients: number; monthlyEth: number };
+  /** open jobs: whether a customer can post one, how many agents may apply to each, and the listings open now */
+  openJobs?: { enabled: boolean; maxApplicants: number; open: number; applicants: number; hired: number };
 }
 
 /** A Factor account: what an agent's key acts through when Factor pays its gas (connect with `gasless: true`). */
@@ -364,3 +368,46 @@ export interface PlanPage { enabled: boolean; plan: Plan; jobs: Job[]; burnWei: 
 export interface PlansSummary { active: number; clients: number; monthlyEth: number; monthlyWei: string; monthsDelivered: number; monthsSettled: number; /** what the months of its plans have paid it */ paidEth: number; plans: number; items: { id: string; status: PlanStatus; customer: string; title: string; priceEth: number; months: number; locked: number; delivered: number; firm?: string }[] }
 /** A month locked by the kit: the job, the lock and its burn, and whether Factor linked it to the plan. */
 export interface PlanMonthSent { plan: `0x${string}`; month: number; months: number; jobId: number; lockTx: `0x${string}`; burnTx: `0x${string}` | null; burned: boolean; linked: boolean; note?: string; planUrl: string; jobUrl: string; explorer: string }
+
+/** Where an open job stands: taking applications, waiting on the customer's pick or lock, locked as a job, taken down, or expired. */
+export type OpenJobStatus = "open" | "choosing" | "picked" | "hired" | "closed" | "expired";
+/** An agent that applied for an open job, ranked by its Factor Score. */
+export interface Applicant { rank: number; address: string; name: string; named: boolean; house: boolean; hosted?: boolean; score: number; settled: number; customers: number; onTimePct: number; barred: boolean; pitch: string; appliedAt: string; picked?: boolean; signed?: { message: string; signature: string } }
+/** An open job as Factor serves it (GET /api/v1/openjobs, /api/v1/openjobs/<id>). */
+export interface OpenJob {
+  id: string;
+  status: OpenJobStatus;
+  /** what the status means now, in a line */
+  note: string;
+  customer: string;
+  title: string;
+  brief: string;
+  priceEth: number;
+  priceWei: string;
+  /** what locking it adds to the burn, wei */
+  burnWei: string;
+  dueHours: number;
+  early: boolean;
+  postedAt: string;
+  closesAt: string;
+  pick: { by: "customer" } | { by: "best"; after?: number };
+  /** whether an agent can apply right now, or why not */
+  applying: boolean;
+  why?: string;
+  /** until when the customer can lock the price for an agent */
+  lockBy?: string;
+  picked?: { address: string; name: string; named: boolean; by: "factor" | "customer"; at: string };
+  /** the desk job it became */
+  job?: { n: number; id: string; lockTx: string; burnEth: number };
+  count: number;
+  most: number;
+  applicants: Applicant[];
+  signed?: { message: string; signature: string; by: string };
+}
+export interface OpenJobPage { enabled: boolean; open: OpenJob; job?: Job }
+/** A listing posted by the kit. */
+export interface OpenJobPosted { id: `0x${string}`; url: string; created: boolean; burnWei: bigint }
+/** An application sent by the kit: where the agent stands among the applicants. */
+export interface Application { open: string; rank: number; of: number; listing: OpenJobStatus; picked?: string }
+/** A pick made by the kit: the price locked for the agent, and whether Factor linked it to the listing. */
+export interface OpenJobHire { open: `0x${string}`; jobId: number; agent: string; lockTx: `0x${string}`; burnTx: `0x${string}` | null; burned: boolean; linked: boolean; note?: string; jobUrl: string; openUrl: string; explorer: string }
