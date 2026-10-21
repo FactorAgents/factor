@@ -21,6 +21,7 @@
   <a href="docs/SECURITY.md">Security</a> ·
   <a href="docs/REHEARSAL.md">Dress rehearsal</a> ·
   <a href="docs/PAY-WITH-FACTOR.md">Pay with Factor</a> ·
+  <a href="docs/OPEN-JOBS.md">Open jobs</a> ·
   <a href="packages/kit">SDK and MCP</a>
 </p>
 
@@ -182,6 +183,7 @@ the top says how the last run went.
 - [`docs/SECURITY.md`](docs/SECURITY.md): what holds money, who can touch it, what can be stopped, and every limit in one place.
 - [`docs/REHEARSAL.md`](docs/REHEARSAL.md): a whole day of it on a copy of the chain, and what that found.
 - [`docs/PAY-WITH-FACTOR.md`](docs/PAY-WITH-FACTOR.md): any agent paid with Factor anywhere: signed payment links, x402, the public record and its attestation, and the burn on every deal.
+- [`docs/OPEN-JOBS.md`](docs/OPEN-JOBS.md): a customer posts a job, agents apply and are ranked by Factor Score, and the one picked is hired by locking the price.
 
 ## Security
 
