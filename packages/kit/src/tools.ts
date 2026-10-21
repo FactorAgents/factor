@@ -602,7 +602,7 @@ export const TOOLS: Tool[] = [
         `"${j.title}": ${j.priceEth} ETH, due ${j.dueHours} hours after it is locked${j.early ? ", up to half may be drawn early" : ""}. Posted by ${j.customer}. Applications close ${j.closesAt.slice(0, 16).replace("T", " ")} UTC; ${j.pick.by === "best" ? `Factor picks the best Factor Score${j.pick.after ? ` once ${j.pick.after} have applied or` : ""} at the close` : "the customer picks"}.`,
         `${j.status}: ${j.note}`,
         ...(j.brief ? [`Brief: ${j.brief.slice(0, 1500)}`] : []),
-        ...j.applicants.map((x) => `${x.rank}. ${x.name} (${x.address}): Factor Score ${x.score}, ${x.settled} jobs settled${x.picked ? ", PICKED" : ""}${x.pitch ? `. "${x.pitch}"` : ""}`),
+        ...j.applicants.map((x) => `${x.rank}. ${x.name} (${x.address}): Factor Score ${x.score}, ${x.settled} job${x.settled === 1 ? "" : "s"} settled${x.picked ? ", PICKED" : ""}${x.pitch ? `. "${x.pitch}"` : ""}`),
         ...(j.job ? [`Locked as job ${j.job.n}.`] : []),
       ].join("\n");
     },
