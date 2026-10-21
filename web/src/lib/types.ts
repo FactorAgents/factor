@@ -47,6 +47,8 @@ export interface Job {
   firm?: { slug: string; name: string; house: boolean; part: boolean };
   /** a month of a monthly plan: which plan, and which month of how many */
   plan?: { id: string; month: number; months: number };
+  /** locked from an open job: the listing, how many agents applied, and who picked the agent */
+  open?: { id: string; applicants: number; by: "factor" | "customer" };
 }
 
 export interface ScorePart { name: string; value: string; points: number; max: number }
@@ -203,6 +205,8 @@ export interface FactorState {
   plans?: { enabled: boolean; mostMonths: number; active: number; clients: number; monthlyEth: number };
   /** ERC-8004: whether settled jobs are written to the agents' reputation, the identity registry, and the address entries come from */
   erc8004?: { enabled: boolean; registry: string | null; reviewer: string | null };
+  /** open jobs: whether a customer can post one, how many agents may apply to each, and the listings open now */
+  openJobs?: { enabled: boolean; maxApplicants: number; open: number; applicants: number; hired: number };
 }
 
 /** One of a firm's agents and its part of the firm's work: the lead's is the firm's jobs, a member's the sub-jobs it took under them. */
@@ -347,3 +351,37 @@ export interface Plan {
 export interface PlanPage { enabled: boolean; plan: Plan; jobs: Job[]; burnWei: string }
 /** An agent's or a firm's monthly clients: plans running, their clients, the price a month added up, months delivered. */
 export interface PlansSummary { active: number; clients: number; monthlyEth: number; monthlyWei: string; monthsDelivered: number; monthsSettled: number; /** what the months of its plans have paid it */ paidEth: number; plans: number; items: { id: string; status: PlanStatus; customer: string; title: string; priceEth: number; months: number; locked: number; delivered: number; firm?: string }[] }
+
+// ---------- open jobs (engine/src/openjobs.ts) ----------
+
+export type OpenJobStatus = "open" | "choosing" | "picked" | "hired" | "closed" | "expired";
+/** An agent that applied for an open job, ranked by its Factor Score. */
+export interface Applicant { rank: number; address: string; name: string; named: boolean; house: boolean; hosted?: boolean; score: number; settled: number; customers: number; onTimePct: number; barred: boolean; pitch: string; appliedAt: string; picked?: boolean; signed?: { message: string; signature: string } }
+/** A job a customer posted for any agent to apply to. Only a listing until the price is locked for the agent picked. */
+export interface OpenJob {
+  id: string;
+  status: OpenJobStatus;
+  note: string;
+  customer: string;
+  title: string;
+  brief: string;
+  priceEth: number;
+  priceWei: string;
+  burnWei: string;
+  dueHours: number;
+  early: boolean;
+  postedAt: string;
+  closesAt: string;
+  pick: { by: "customer" } | { by: "best"; after?: number };
+  applying: boolean;
+  why?: string;
+  lockBy?: string;
+  picked?: { address: string; name: string; named: boolean; by: "factor" | "customer"; at: string };
+  job?: { n: number; id: string; lockTx: string; burnEth: number };
+  count: number;
+  most: number;
+  applicants: Applicant[];
+  signed?: { message: string; signature: string; by: string };
+}
+export interface OpenJobPage { enabled: boolean; open: OpenJob; job?: Job }
+export interface OpenJobList { enabled: boolean; maxApplicants?: number; items: OpenJob[] }

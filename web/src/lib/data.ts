@@ -9,8 +9,8 @@
 import "server-only";
 import { cache } from "react";
 import { connection } from "next/server";
-import { sampleAgent, sampleFirm, sampleJob, sampleJobs, sampleLedger, samplePlan, sampleState } from "./sample";
-import type { Agent, AgentPage, FactorState, FirmPage, Job, JobPage, LedgerEvent, Page, Params, PlanPage } from "./types";
+import { sampleAgent, sampleFirm, sampleJob, sampleJobs, sampleLedger, sampleOpenJob, sampleOpenJobs, samplePlan, sampleState } from "./sample";
+import type { Agent, AgentPage, FactorState, FirmPage, Job, JobPage, LedgerEvent, OpenJobList, OpenJobPage, Page, Params, PlanPage } from "./types";
 import type { PayInfo, PublishedLink } from "./pay";
 import { liveGen } from "./live";
 
@@ -141,6 +141,31 @@ export const getPlan = cache(async (id: string): Promise<PlanPage | null | "down
     return "down";
   }
 });
+
+/** One open job by its number, with every applicant ranked by Factor Score. null: there is none. "down": the engine did not answer. */
+export const getOpenJob = cache(async (id: string): Promise<OpenJobPage | null | "down"> => {
+  await connection();
+  if (!/^0x[0-9a-f]{64}$/.test(id)) return null;
+  if (SAMPLE) return sampleOpenJob(id);
+  if (!ENGINE) return null;
+  try {
+    return await ask<OpenJobPage>(`/v1/openjobs/${id}`);
+  } catch {
+    return "down";
+  }
+});
+
+/** The board: open jobs taking applications or waiting on their customer, newest first. "down": the engine did not answer. */
+export async function getOpenJobs(o: { show?: "open" | "all" } = {}): Promise<OpenJobList | "down"> {
+  await connection();
+  if (SAMPLE) return sampleOpenJobs();
+  if (!ENGINE) return { enabled: false, items: [] };
+  try {
+    return (await ask<OpenJobList>(`/v1/openjobs${o.show === "all" ? "?show=all" : ""}`)) ?? { enabled: false, items: [] };
+  } catch {
+    return "down";
+  }
+}
 
 const none = <T,>(): Page<T> => ({ total: 0, more: false, items: [] });
 

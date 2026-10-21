@@ -11,8 +11,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { createServer } from "node:http";
 
 const PORT = Number(process.env.SMOKE_PORT) || 3611, BASE = `http://127.0.0.1:${PORT}`, BARE = `http://127.0.0.1:${PORT + 1}`;
-const PAGES = ["/", "/ledger", "/ledger?show=burned", "/agents", "/agents/lumen-07", "/jobs/0412", "/jobs/0406", "/jobs/0404", "/jobs/0403", "/hire", "/hire?agent=page-smith", "/work", "/protocol", "/token", "/burn", "/docs", "/log", "/security", "/pay", "/firms/night-desk", "/hire?firm=night-desk", "/plans/0x5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a"];
-const NAV = ["/ledger", "/agents", "/hire", "/work", "/protocol", "/token", "/burn", "/docs", "/roadmap"];
+const PAGES = ["/", "/ledger", "/ledger?show=burned", "/agents", "/agents/lumen-07", "/jobs/0412", "/jobs/0406", "/jobs/0404", "/jobs/0403", "/hire", "/hire?agent=page-smith", "/work", "/protocol", "/token", "/burn", "/docs", "/log", "/security", "/pay", "/firms/night-desk", "/hire?firm=night-desk", "/plans/0x5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a", "/open-jobs", "/open-jobs/0x0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b"];
+const NAV = ["/ledger", "/agents", "/open-jobs", "/hire", "/work", "/protocol", "/token", "/burn", "/docs", "/roadmap"];
 // Words the copy does not use: no long dash, no promise of gain. A list kept beside this file and out of the repo
 // (forbidden.local.json, pairs of pattern and flags) adds to them on the machine it is on.
 const LOCAL = new URL("./forbidden.local.json", import.meta.url);
@@ -585,3 +585,32 @@ test("an agent with an ERC-8004 identity shows it by its name and in a section o
   assert.equal((await get("/api/v1/erc8004/feedback/12")).status, 404);
 });
 
+
+test("open jobs: the board, a listing with its applicants ranked by Factor Score, and nothing to send on the sample", async () => {
+  const board = text((await get("/open-jobs")).html);
+  assert.match(board, /Post the job\. The agents come to you ?\./);
+  assert.match(board, /Check every figure in our quarterly note/);
+  assert.match(board, /A one-page site for a bakery/);
+  assert.match(board, /best Factor Score takes it/);
+  assert.match(board, /Open jobs are off for now|Nothing is live yet/);
+  assert.doesNotMatch((await get("/open-jobs")).html, />CONNECT</);
+  const { html } = await get("/open-jobs/0x0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b");
+  const t = text(html);
+  assert.match(t, /Ranked by Factor Score/);
+  // ranked by the score, highest first: lumen-07 (624) above orbit-ops and quill-02
+  const order = ["lumen-07", "orbit-ops", "quill-02"].map((n) => t.indexOf(`${n}`, t.indexOf("Ranked by Factor Score")));
+  assert.ok(order[0] > 0 && order[0] < order[1] && order[1] < order[2], `ranked ${order}`);
+  assert.match(t, /Forty-one jobs settled, all but one on time/);
+  assert.match(t, /What the customer signed/);
+  assert.equal((await get("/open-jobs/0x0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d")).status, 404);
+  assert.equal((await get("/open-jobs/not-a-listing")).status, 404);
+  // the site's own door passes the board and a listing, and only the writes a wallet signs
+  assert.equal((await fetch(`${BASE}/api/v1/openjobs`)).status, 200);
+  assert.equal((await fetch(`${BASE}/api/v1/openjobs/0x0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b`)).status, 200);
+  assert.equal((await fetch(`${BASE}/api/v1/openjobs/pick`, { method: "POST", body: "{}" })).status, 404);
+  // with no engine: an empty board that says so, never a sample listing
+  const bare = text((await get("/open-jobs", BARE)).html);
+  assert.match(bare, /No open job right now/);
+  assert.doesNotMatch(bare, /quarterly note/);
+  assert.equal((await get("/open-jobs/0x0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b", BARE)).status, 404);
+});

@@ -1,7 +1,7 @@
 // Sample figures, in exactly the engine's shape, so every page can be built, looked at and tested with no chain
 // behind it. Nothing here is real. It is shown only when FACTOR_SAMPLE=1 (see data.ts): a site with no engine shows
 // an empty desk, never these.
-import type { Advance, Agent, AgentPage, Burn, Draw, FactorScore, FactorState, Firm, FirmPage, IncomeLine, IncomeSource, Job, JobPage, LedgerEvent, Page, Params, Plan, PlanPage, PlansSummary, ScorePart } from "./types";
+import type { Advance, Agent, AgentPage, Applicant, Burn, Draw, FactorScore, FactorState, Firm, FirmPage, IncomeLine, IncomeSource, Job, JobPage, LedgerEvent, OpenJob, OpenJobList, OpenJobPage, Page, Params, Plan, PlanPage, PlansSummary, ScorePart } from "./types";
 
 // the rulebook's numbers (docs/RULEBOOK.md, section 9)
 const params: Params = { advanceMaxPct: 50, advanceFeePct: 1, jobFeePct: 2, graceHours: 12, reviewHours: 24, rejectedPct: 50, reserveMinPct: 20, minJobEth: 0.001 };
@@ -229,6 +229,38 @@ export function samplePlan(id: string): PlanPage | null {
   return id === SAMPLE_PLAN ? { enabled: false, plan, jobs: [{ ...planJob, plan: { id: SAMPLE_PLAN, month: 1, months: 3 } }], burnWei: "250000000000000" } : null;
 }
 
+// two open jobs on the board: one the customer picks for, three agents applied, ranked by their score; and one where
+// the best Factor Score takes it, at the close
+export const SAMPLE_OPEN = `0x${"0b".repeat(32)}`;
+const SAMPLE_OPEN_BEST = `0x${"0c".repeat(32)}`;
+const applicant = (name: string, rank: number, pitch: string, min: number): Applicant => {
+  const a = agents.find((x) => x.name === name)!;
+  return { rank, address: a.address, name: a.name, named: true, house: a.house, score: a.score, settled: a.settled, customers: a.customers, onTimePct: a.onTimePct, barred: a.barred, pitch, appliedAt: at(min) };
+};
+const ranked = (list: Applicant[]): Applicant[] => [...list].sort((x, y) => y.score - x.score || y.settled - x.settled).map((x, i) => ({ ...x, rank: i + 1 }));
+const openJobs: OpenJob[] = [
+  {
+    id: SAMPLE_OPEN, status: "open", note: `Taking applications until ${new Date(NOW + 5 * 3_600_000).toISOString().slice(0, 16).replace("T", " ")} UTC. The customer picks an applicant by locking the price for it.`,
+    customer: A(40), title: "Check every figure in our quarterly note", brief: "Our quarterly note has about forty figures in it. Check each against the source named beside it and list the ones that do not match, one line each.",
+    priceEth: 0.004, priceWei: "4000000000000000", burnWei: "40000000000000", dueHours: 48, early: true, postedAt: at(55), closesAt: new Date(NOW + 5 * 3_600_000).toISOString(), pick: { by: "customer" },
+    applying: true, count: 3, most: 20,
+    applicants: ranked([applicant("orbit-ops", 0, "I watch figures for a living: every one checked against its source.", 40), applicant("lumen-07", 0, "Forty-one jobs settled, all but one on time.", 31), applicant("quill-02", 0, "", 12)]),
+  },
+  {
+    id: SAMPLE_OPEN_BEST, status: "open", note: `Taking applications until ${new Date(NOW + 20 * 3_600_000).toISOString().slice(0, 16).replace("T", " ")} UTC, or until 3 have applied. Then Factor picks the applicant with the best Factor Score.`,
+    customer: A(41), title: "A one-page site for a bakery", brief: "", priceEth: 0.006, priceWei: "6000000000000000", burnWei: "60000000000000", dueHours: 24, early: false, postedAt: at(20), closesAt: new Date(NOW + 20 * 3_600_000).toISOString(), pick: { by: "best", after: 3 },
+    applying: true, count: 1, most: 20,
+    applicants: ranked([applicant("page-smith", 0, "One page, from a short brief.", 9)]),
+  },
+];
+export function sampleOpenJobs(): OpenJobList {
+  return { enabled: false, maxApplicants: 20, items: openJobs };
+}
+export function sampleOpenJob(id: string): OpenJobPage | null {
+  const o = openJobs.find((x) => x.id === id);
+  return o ? { enabled: false, open: { ...o, signed: { message: "Factor: post an open job", signature: "0x", by: o.customer } } } : null;
+}
+
 export function sampleState(): FactorState {
   const settled = jobs.filter((j) => j.state === "settled").length;
   return {
@@ -246,6 +278,8 @@ export function sampleState(): FactorState {
     firms: { enabled: false, count: 1, mostMembers: 8, items: [firm] },
     // the sample has no engine: its plan is shown, and nothing can be signed or locked from it
     plans: { enabled: false, mostMonths: 12, active: 1, clients: 1, monthlyEth: 0.025 },
+    // the sample has no engine: its open jobs are shown, and nothing can be posted or applied for from it
+    openJobs: { enabled: false, maxApplicants: 20, open: openJobs.length, applicants: openJobs.reduce((n, o) => n + o.count, 0), hired: 0 },
   };
 }
 

@@ -9,13 +9,14 @@ import { agentHref, eth, usd } from "@/lib/format";
 import type { AgentPage, Compute, Credit, Params } from "@/lib/types";
 import AccountPanel from "./Account";
 import { MyJobs } from "./HireForm";
+import { OpenJobsToApply } from "./OpenJobs";
 import { engineNow, Go, saveSigned, SignedInAs, StatusLine, useSend, useWallet, type Done } from "./Wallet";
 import { readEvery } from "@/lib/livebus";
 import { linkMessage, REGISTRY } from "@/lib/erc8004";
 
 const NAME = /^[a-z0-9](?:[a-z0-9-]{1,22})[a-z0-9]$/;
 
-export default function AgentConsole({ desk, explorer, params, compute, early = false, erc8004 = false }: { desk: string | null; explorer: string; params: Params; compute: Compute; early?: boolean; erc8004?: boolean }) {
+export default function AgentConsole({ desk, explorer, params, compute, early = false, erc8004 = false, openJobs = false }: { desk: string | null; explorer: string; params: Params; compute: Compute; early?: boolean; erc8004?: boolean; /** open jobs are on: the agent applies from here */ openJobs?: boolean }) {
   const { address } = useWallet();
   // the engine's copy of this wallet's record: null while it is being read, false when it has not registered
   const [got, setGot] = useState<{ for: string; page: AgentPage | false } | null>(null);
@@ -82,6 +83,7 @@ export default function AgentConsole({ desk, explorer, params, compute, early = 
           <dt>Can draw</dt><dd className="sum">{a.canDrawEth > 0 ? eth(a.canDrawEth) : a.barred ? "nothing" : "nothing yet"}</dd>
         </dl>
       </div>
+      {openJobs ? <OpenJobsToApply address={address} explorer={explorer} /> : null}
       <Profile address={address} name={a.named ? a.name : ""} does={a.does} explorer={explorer} onDone={again} />
       <Bond desk={desk} explorer={explorer} bondEth={a.bondEth} owes={a.drawnEth > 0} params={params} onDone={again} />
       <ComputeCredit address={address} compute={compute} explorer={explorer} />
