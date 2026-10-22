@@ -657,6 +657,54 @@ export const TOOLS: Tool[] = [
       return "The open job is taken down. Nobody can apply for it, and nothing was locked.";
     },
   },
+  {
+    name: "factor_auto_apply", readOnly: true, input: { agent: z.string().optional().describe("The agent's name or address. Left out: this wallet's own") },
+    description: "An agent's auto-apply: the rules its owner signed (the work it takes, its lowest price, jobs at once, hours, the half up front, its line), what it did on its own (found, applied, picked, delivering, delivered), and the open jobs it may apply to on its own right now.",
+    async run(f, a) {
+      const st = await f.autoApply(typeof a.agent === "string" ? a.agent : undefined);
+      if (!st) return "There is no such agent on Factor's desk.";
+      const r = st.rules;
+      return [
+        `${st.name}: auto-apply is ${!st.enabled ? "switched off on Factor for now" : r?.on ? "on" : "off for this agent"}. ${st.runBy === "factor" ? "Factor runs it: it applies, works and delivers on its own." : "It runs itself: its own program applies to the jobs Factor finds for it (watchOpenJobs in the kit, or factor_auto_apply_now)."}`,
+        ...(r ? [`Rules: takes ${[...r.takes, ...r.words.map((w) => `"${w}"`)].join(", ") || "nothing"}; from ${eth(BigInt(r.floorWei))} ETH a job; up to ${r.atOnce} at a time; hours ${r.hours ? `${r.hours.from}:00 to ${r.hours.to}:00 UTC` : "always"}; ${r.early ? "draws the half up front when the customer allows it" : "never draws early"}${r.pitch ? `; its line: "${r.pitch}"` : ""}.`] : ["No rules are set yet: set them with factor_set_auto_apply."]),
+        st.fits.length ? `It may apply on its own now to: ${st.fits.join(", ")}.` : "No open job fits it right now.",
+        ...st.log.slice(0, 12).map((l) => `${l.at.slice(0, 16).replace("T", " ")} ${l.kind}: ${l.note} ("${l.title}")`),
+      ].join("\n");
+    },
+  },
+  {
+    name: "factor_set_auto_apply", readOnly: false,
+    input: {
+      on: z.boolean().describe("true: it applies on its own. false: it stops"),
+      takes: z.array(z.enum(["Landing pages", "Writing", "Summaries", "Proofreading", "Figures and tables", "Research", "Code", "Translation"])).optional().describe("The kinds of work it takes"),
+      words: z.array(z.string().min(2).max(40)).max(12).optional().describe("Words of its own that a fitting job has in its title or brief, like \"bakery\""),
+      from_eth: amount.optional().describe("The lowest price it takes, in ETH. 0.001 when not given"),
+      at_once: z.number().int().min(1).max(10).optional().describe("The most jobs it has at once. 1 when not given"),
+      hours_from: z.number().int().min(0).max(23).optional().describe("With hours_to: it applies only from this hour (UTC). Always when not given"),
+      hours_to: z.number().int().min(0).max(23).optional(),
+      early: z.boolean().optional().describe("true: it draws the half a customer allows up front. false when not given"),
+      pitch: z.string().max(280).optional().describe("The line it applies with, without links"),
+    },
+    description: "Set this wallet's agent's auto-apply rules, with one signature (it costs nothing): the work it takes, its lowest price, how many jobs at once, its hours, whether it draws the half up front, and the line it applies with. Factor then finds the open jobs that fit. Confirm the rules with the user first unless they gave them.",
+    async run(f, a) {
+      const r = await f.setAutoApply({ on: a.on === true, takes: (a.takes as string[] | undefined) ?? [], words: (a.words as string[] | undefined) ?? [], ...(typeof a.from_eth === "string" ? { from: a.from_eth } : {}), atOnce: a.at_once as number | undefined, ...(typeof a.hours_from === "number" && typeof a.hours_to === "number" ? { hours: { from: a.hours_from, to: a.hours_to } } : {}), early: a.early === true, ...(typeof a.pitch === "string" ? { pitch: a.pitch } : {}) });
+      return `Auto-apply is ${r.on ? "on" : "off"}: it takes ${[...r.takes, ...r.words.map((w) => `"${w}"`)].join(", ") || "nothing"}, from ${eth(BigInt(r.floorWei))} ETH a job, up to ${r.atOnce} at a time.`;
+    },
+  },
+  {
+    name: "factor_auto_apply_now", readOnly: false, input: {},
+    description: "Apply now, as this wallet's agent and under its auto-apply rules, to every open job Factor found that fits them: one signature each, marked as made on its own. Nothing is spent. Picked jobs then show up as ordinary jobs for this agent.",
+    async run(f) {
+      const st = await f.autoApply();
+      if (!st?.rules?.on) return "Auto-apply is off for this agent: set its rules with factor_set_auto_apply.";
+      if (!st.fits.length) return "No open job fits its rules right now.";
+      const out: string[] = [];
+      for (const id of st.fits) {
+        try { const r = await f.applyToJob(id, { pitch: st.rules.pitch, auto: true }); out.push(`${id}: applied, ranked ${r.rank} of ${r.of}.`); } catch (e) { out.push(`${id}: ${e instanceof Error ? e.message : String(e)}`); }
+      }
+      return out.join("\n");
+    },
+  },
 ];
 
 function need(f: Factor): string {

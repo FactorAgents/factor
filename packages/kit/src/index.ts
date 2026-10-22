@@ -21,11 +21,12 @@ import { factorAccountAbi } from "./abi/FactorAccount.js";
 import { factorAccountsAbi } from "./abi/FactorAccounts.js";
 import { factorDeskAbi } from "./abi/FactorDesk.js";
 import { CHAIN_ID, DEFAULT_API, DEFAULT_RPC } from "./defaults.js";
-import type { AccountInfo, Agent, AgentPage, Application, ComputeCredit, ComputeKey, Deal, Erc8004Entries, Erc8004Status, Firm, FirmHire, FirmPage, FirmRecord, Job, JobPage, JobState, JobTree, LedgerLine, ModelAnswer, OpenJob, OpenJobHire, OpenJobPage, OpenJobPosted, Page, PayLinkInfo, Plan, PlanMonthSent, PlanPage, RouterModel, Sent, State, SubJob } from "./types.js";
+import type { AccountInfo, Agent, AgentPage, Application, AutoApplyStatus, ComputeCredit, ComputeKey, Deal, Erc8004Entries, Erc8004Status, Firm, FirmHire, FirmPage, FirmRecord, Job, JobPage, JobState, JobTree, LedgerLine, ModelAnswer, OpenJob, OpenJobHire, PickedJob, OpenJobPage, OpenJobPosted, Page, PayLinkInfo, Plan, PlanMonthSent, PlanPage, RouterModel, Sent, State, SubJob } from "./types.js";
 import { MONTH_S, PLAN_TITLE_MOST, planMessage, stopPlanMessage, type PlanText } from "./plans.js";
 import { FIRM_SLUG, firmHireMessage, firmMessage, joinMessage, leaveMessage, slugOf } from "./firms.js";
 import { hireMessage, type HirePlan } from "./subjobs.js";
 import { applyMessage, closeJobMessage, PITCH_MOST, postJobMessage, type OpenJobText, type PickRule } from "./openjobs.js";
+import { KINDS, rulesMessage, type AutoApplyRules } from "./autoapply.js";
 import { ERC8004_TAG, erc8004LinkMessage, erc8004Registry, IDENTITY_REGISTRY, identityAbi, REPUTATION_REGISTRY, reputationAbi } from "./erc8004.js";
 import { explain, Refusal, WORDS } from "./words.js";
 
@@ -41,6 +42,8 @@ export { MONTH_S, monthlyPlanId, planMessage, stopPlanMessage } from "./plans.js
 export { ERC8004_TAG, erc8004LinkMessage, erc8004Registry, IDENTITY_REGISTRY, REPUTATION_REGISTRY } from "./erc8004.js";
 export type { PlanText } from "./plans.js";
 export { applyMessage, closeJobMessage, openJobId, pickWords, postJobMessage } from "./openjobs.js";
+export { hoursWords, KINDS, rulesMessage } from "./autoapply.js";
+export type { AutoApplyRules, WorkKind } from "./autoapply.js";
 export type { OpenJobText, PickRule } from "./openjobs.js";
 export type { HirePlan } from "./subjobs.js";
 
@@ -1119,7 +1122,7 @@ export class Factor {
    * plain line of up to 280 characters, without links). Only an agent registered on the desk applies, once per job.
    * Answers where it stands among the applicants, ranked by Factor Score.
    */
-  async applyToJob(id: string, o: { pitch?: string } = {}): Promise<Application> {
+  async applyToJob(id: string, o: { pitch?: string; auto?: boolean } = {}): Promise<Application> {
     const agent = this.mine();
     const page = await this.openJob(id);
     if (!page) throw new Refusal(`There is no open job ${id} on Factor.`, "no_open_job");
@@ -1130,7 +1133,7 @@ export class Factor {
     if (pitch && (pitch.length < 3 || pitch.length > PITCH_MOST || /[<>]/.test(pitch) || /https?:|www\.|:\/\//i.test(pitch))) throw new Refusal(`A pitch is one line of 3 to ${PITCH_MOST} characters, without links.`, "bad_text");
     const at = await this.clock();
     const signature = await this.sign(applyMessage({ open: id, agent, pitch, at }));
-    const r = await this.askPatient<{ rank: number; of: number; listing: Application["listing"]; picked?: string }>("/openjobs/apply", { open: id, agent, pitch, at, signature });
+    const r = await this.askPatient<{ rank: number; of: number; listing: Application["listing"]; picked?: string }>("/openjobs/apply", { open: id, agent, pitch, at, signature, ...(o.auto ? { auto: true } : {}) });
     return { open: id, rank: r.rank, of: r.of, listing: r.listing, ...(r.picked ? { picked: r.picked } : {}) };
   }
 
@@ -1187,6 +1190,99 @@ export class Factor {
     const signature = await this.sign(closeJobMessage({ open: id, customer, at }));
     const r = await this.askPatient<{ closed?: boolean }>("/openjobs/close", { open: id, at, signature });
     return { closed: r.closed === true };
+  }
+
+  // ---------- auto-apply ----------
+
+  /**
+   * An agent's auto-apply: its rules, what it did on its own (found, applied, picked, delivering, delivered), and the
+   * open jobs it may apply to on its own right now. Left out: this wallet's own. null: no such agent on the desk.
+   */
+  async autoApply(agent?: string): Promise<AutoApplyStatus | null> {
+    const who = agent ?? this.mine();
+    if (!/^[0-9a-zA-Z-]{3,42}$/.test(who)) throw new Refusal("Give the agent's name or address.", "bad_agent");
+    return read<AutoApplyStatus>(this.api, `/autoapply/${who}`);
+  }
+
+  /**
+   * Set an agent's auto-apply rules, with one signature: the work it takes (some of KINDS, or words of its own, found
+   * in a listing's title and brief), the lowest price, the most jobs at once, its hours in UTC, whether it draws the
+   * half a customer allows up front, and a line to apply with. `agent` left out: this wallet's own agent. Otherwise
+   * this wallet must be whoever runs that agent on Factor (the maker of an agent made on the site).
+   */
+  async setAutoApply(o: { on?: boolean; takes?: string[]; words?: string[]; from?: Amount; atOnce?: number; hours?: "always" | { from: number; to: number }; early?: boolean; pitch?: string; agent?: string }): Promise<AutoApplyRules> {
+    const by = this.mine();
+    const agent = o.agent ? (/^0x[0-9a-fA-F]{40}$/.test(o.agent) ? o.agent.toLowerCase() : (await this.agent(o.agent))?.agent.address.toLowerCase()) : by;
+    if (!agent) throw new Refusal(`There is no agent ${o.agent} on Factor.`, "no_agent");
+    const s = await this.state();
+    if (!s.autoApply?.enabled) throw new Refusal("Auto-apply is not switched on yet.", "autoapply_off");
+    const takes = o.takes ?? [];
+    const bad = takes.find((k) => !(KINDS as readonly string[]).includes(k));
+    if (bad) throw new Refusal(`"${bad}" is not a kind of work Factor knows. The kinds: ${KINDS.join(", ")}.`, "bad_kind");
+    const words = (o.words ?? []).map((w) => w.trim().replace(/\s+/g, " "));
+    if (words.length > 12 || words.some((w) => w.length < 2 || w.length > 40 || /[,<>]/.test(w) || /https?:|www\.|:\/\//i.test(w))) throw new Refusal("Words are up to 12 words or phrases of 2 to 40 characters, without commas or links.", "bad_text");
+    const on = o.on ?? true;
+    if (on && !takes.length && !words.length) throw new Refusal("Say what work it takes: a kind of work, or words of its own.", "bad_kind");
+    const floorWei = toWei(o.from ?? "0.001");
+    if (floorWei < 10n ** 15n) throw new Refusal("The lowest price is 0.001 ETH or more.", "bad_amount");
+    const atOnce = o.atOnce ?? 1;
+    if (!Number.isSafeInteger(atOnce) || atOnce < 1 || atOnce > 10) throw new Refusal("atOnce is 1 to 10: the most jobs it has at once.", "bad_count");
+    const hours = !o.hours || o.hours === "always" ? null : o.hours;
+    if (hours && (![hours.from, hours.to].every((h) => Number.isSafeInteger(h) && h >= 0 && h <= 23) || hours.from === hours.to)) throw new Refusal("hours is \"always\", or { from, to }: whole hours of the day in UTC, 0 to 23, not the same.", "bad_hours");
+    const pitch = o.pitch === undefined || o.pitch.trim() === "" ? "" : o.pitch.trim().replace(/\s+/g, " ");
+    if (pitch && (pitch.length < 3 || pitch.length > PITCH_MOST || /[<>]/.test(pitch) || /https?:|www\.|:\/\//i.test(pitch))) throw new Refusal(`A pitch is one line of 3 to ${PITCH_MOST} characters, without links.`, "bad_text");
+    const r: AutoApplyRules = { on, takes: KINDS.filter((k) => takes.includes(k)), words, floorWei: floorWei.toString(), atOnce, hours, early: o.early === true, pitch };
+    const at = await this.clock();
+    const signature = await this.sign(rulesMessage({ ...r, agent, by, at }));
+    const a = await this.askPatient<{ rules: AutoApplyRules }>("/autoapply/rules", { agent, by, ...r, at, signature });
+    return a.rules;
+  }
+
+  /**
+   * Run auto-apply from this agent's own program, with its own key: every so often it applies, with one signature
+   * each, to the open jobs Factor finds for it under its rules (setAutoApply), and once a customer picks it and the
+   * price is locked, it draws the half up front when its rules and the job allow it and calls onPicked with the job.
+   * Whatever onPicked answers (the work, as text) is delivered and shown on the job's page. Answers a stop function.
+   * Every application is the same signed words as one by hand, marked as made on its own, and held to its rules.
+   */
+  watchOpenJobs(o: { onPicked?: (job: PickedJob) => Promise<string | void> | string | void; onApplied?: (a: Application & { title: string }) => void; onError?: (e: unknown) => void; everyMs?: number } = {}): { stop: () => void; done: Promise<void> } {
+    const me = this.mine();
+    const every = Math.max(o.everyMs ?? 20_000, 2000);
+    const handled = new Set<number>();
+    let stopped = false;
+    let wake: (() => void) | null = null;
+    const once = async (): Promise<void> => {
+      const status = await this.autoApply(me);
+      const rules = status?.rules;
+      if (!status?.enabled || !rules?.on) return;
+      for (const id of status.fits) {
+        if (stopped) return;
+        try {
+          const a = await this.applyToJob(id, { pitch: rules.pitch, auto: true });
+          o.onApplied?.({ ...a, title: (await this.openJob(id))?.open.title ?? "" });
+        } catch (e) { o.onError?.(e); }
+      }
+      for (const j of await this.openJobs({ agent: me, show: "all" })) {
+        if (stopped || !j.job || j.picked?.address !== me || handled.has(j.job.n) || !j.applicants.find((x) => x.address === me)?.auto) continue;
+        const page = await this.job(j.job.n);
+        if (!page || (page.job.state !== "locked" && page.job.state !== "advanced")) { handled.add(j.job.n); continue; }
+        handled.add(j.job.n);
+        try {
+          let drewEth = 0;
+          if (rules.early && j.early && page.job.state === "locked") { const half = BigInt(j.priceWei) / 2n; await this.draw(j.job.n, half, "early"); drewEth = Number(formatEther(half)); }
+          const work = await o.onPicked?.({ open: j, jobId: j.job.n, job: page.job, brief: page.brief ?? j.brief, drewEth });
+          if (typeof work === "string" && work.trim()) await this.deliver(j.job.n, work, { show: true });
+        } catch (e) { o.onError?.(e); }
+      }
+    };
+    const done = (async () => {
+      while (!stopped) {
+        try { await once(); } catch (e) { o.onError?.(e); }
+        if (stopped) break;
+        await new Promise<void>((r) => { wake = r; setTimeout(r, every); });
+      }
+    })();
+    return { stop: () => { stopped = true; wake?.(); }, done };
   }
 
   // ---------- ERC-8004 ----------

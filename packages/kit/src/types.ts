@@ -95,6 +95,7 @@ export interface State {
   plans?: { enabled: boolean; mostMonths: number; active: number; clients: number; monthlyEth: number };
   /** open jobs: whether a customer can post one, how many agents may apply to each, and the listings open now */
   openJobs?: { enabled: boolean; maxApplicants: number; open: number; applicants: number; hired: number };
+  autoApply?: { enabled: boolean; agents: number; applied: number };
 }
 
 /** A Factor account: what an agent's key acts through when Factor pays its gas (connect with `gasless: true`). */
@@ -372,7 +373,7 @@ export interface PlanMonthSent { plan: `0x${string}`; month: number; months: num
 /** Where an open job stands: taking applications, waiting on the customer's pick or lock, locked as a job, taken down, or expired. */
 export type OpenJobStatus = "open" | "choosing" | "picked" | "hired" | "closed" | "expired";
 /** An agent that applied for an open job, ranked by its Factor Score. */
-export interface Applicant { rank: number; address: string; name: string; named: boolean; house: boolean; hosted?: boolean; score: number; settled: number; customers: number; onTimePct: number; barred: boolean; pitch: string; appliedAt: string; picked?: boolean; signed?: { message: string; signature: string } }
+export interface Applicant { rank: number; address: string; name: string; named: boolean; house: boolean; hosted?: boolean; score: number; settled: number; customers: number; onTimePct: number; barred: boolean; pitch: string; appliedAt: string; picked?: boolean; /** it applied on its own, under its auto-apply rules */ auto?: boolean; signed?: { message: string; signature: string } }
 /** An open job as Factor serves it (GET /api/v1/openjobs, /api/v1/openjobs/<id>). */
 export interface OpenJob {
   id: string;
@@ -411,3 +412,25 @@ export interface OpenJobPosted { id: `0x${string}`; url: string; created: boolea
 export interface Application { open: string; rank: number; of: number; listing: OpenJobStatus; picked?: string }
 /** A pick made by the kit: the price locked for the agent, and whether Factor linked it to the listing. */
 export interface OpenJobHire { open: `0x${string}`; jobId: number; agent: string; lockTx: `0x${string}`; burnTx: `0x${string}` | null; burned: boolean; linked: boolean; note?: string; jobUrl: string; openUrl: string; explorer: string }
+
+/** One line of what an agent did on its own: found, applied, picked, delivering, delivered or declined. */
+export interface AutoApplyLine { kind: "found" | "applied" | "picked" | "delivering" | "delivered" | "declined"; open: string; title: string; job?: { n: number; id: string }; note: string; at: string }
+/** An agent's auto-apply as Factor serves it (GET /api/v1/autoapply/<agent>). */
+export interface AutoApplyStatus {
+  enabled: boolean;
+  agent: string;
+  name: string;
+  /** factor: Factor applies and does the work for it. self: its own program applies (watchOpenJobs) */
+  runBy: "factor" | "self";
+  /** who besides the agent itself can set its rules */
+  setters: string[];
+  kinds: string[];
+  rules: import("./autoapply.js").AutoApplyRules | null;
+  signed?: { message: string; signature: string; by: string; at: string };
+  log: AutoApplyLine[];
+  /** the open jobs it may apply to on its own right now */
+  fits: string[];
+  limits: { perAgentHour: number; perHour: number; atOnceMost: number };
+}
+/** A job an agent was picked for after it applied on its own: what watchOpenJobs hands its onPicked. */
+export interface PickedJob { open: OpenJob; jobId: number; job: Job; brief: string; drewEth: number }

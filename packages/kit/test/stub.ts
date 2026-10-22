@@ -28,10 +28,10 @@ export function state(over: Partial<State> = {}): State {
   };
 }
 
-export interface Stub { api: string; rpc: string; site: { state: State; refuse: number | null; payInfo: ((token: string) => { status: number; body: unknown }) | null; x402: { status: number; body: unknown } | null; record: unknown; jobExtra: Record<string, unknown>; tree: unknown; firms: unknown[]; firm: unknown; firmRecord: unknown; plan: unknown; plans: unknown[]; erc8004: unknown; openJob: unknown; openJobs: unknown[] }; node: { chainId: number; code: string; calls: string[] }; posts: { path: string; body: unknown; auth?: string }[]; close(): Promise<void> }
+export interface Stub { api: string; rpc: string; site: { state: State; refuse: number | null; payInfo: ((token: string) => { status: number; body: unknown }) | null; x402: { status: number; body: unknown } | null; record: unknown; jobExtra: Record<string, unknown>; tree: unknown; firms: unknown[]; firm: unknown; firmRecord: unknown; plan: unknown; plans: unknown[]; erc8004: unknown; openJob: unknown; openJobs: unknown[]; autoApply: unknown }; node: { chainId: number; code: string; calls: string[] }; posts: { path: string; body: unknown; auth?: string }[]; close(): Promise<void> }
 
 export async function stub(): Promise<Stub> {
-  const site = { state: state(), refuse: null as number | null, payInfo: null as Stub["site"]["payInfo"], x402: null as Stub["site"]["x402"], record: null as unknown, jobExtra: {} as Record<string, unknown>, tree: null as unknown, firms: [] as unknown[], firm: null as unknown, firmRecord: null as unknown, plan: null as unknown, plans: [] as unknown[], erc8004: null as unknown, openJob: null as unknown, openJobs: [] as unknown[] };
+  const site = { state: state(), refuse: null as number | null, payInfo: null as Stub["site"]["payInfo"], x402: null as Stub["site"]["x402"], record: null as unknown, jobExtra: {} as Record<string, unknown>, tree: null as unknown, firms: [] as unknown[], firm: null as unknown, firmRecord: null as unknown, plan: null as unknown, plans: [] as unknown[], erc8004: null as unknown, openJob: null as unknown, openJobs: [] as unknown[], autoApply: null as unknown };
   const node = { chainId: 4663, code: "0x6080", calls: [] as string[] };
   const posts: { path: string; body: unknown; auth?: string }[] = [];
   const json = (res: import("node:http").ServerResponse, status: number, body: unknown) => { res.writeHead(status, { "content-type": "application/json" }); res.end(JSON.stringify(body)); };
@@ -55,6 +55,8 @@ export async function stub(): Promise<Stub> {
       // open jobs: a listing taken as it was signed, and an application ranked first of one
       if (path === "/openjobs/post") return json(res, 200, { ok: true, open: `0x${"ef".repeat(32)}`, created: true, burnWei: "40000000000000" });
       if (path === "/openjobs/apply") return json(res, 200, { ok: true, open: (posts.at(-1)!.body as { open: string }).open, rank: 1, of: 1, listing: "open" });
+      // auto-apply: the rules taken as they were signed
+      if (path === "/autoapply/rules") { const b = posts.at(-1)!.body as Record<string, unknown>; return json(res, 200, { ok: true, agent: b.agent, rules: { on: b.on, takes: b.takes, words: b.words, floorWei: b.floorWei, atOnce: b.atOnce, hours: b.hours, early: b.early, pitch: b.pitch } }); }
       if (path === "/erc8004/link") { const b = posts.at(-1)!.body as { agentId: string | null }; return json(res, 200, { ok: true, agentId: b.agentId, ...(b.agentId ? { via: "wallet" } : {}) }); }
       if (path === "/firms/form") { const b = posts.at(-1)!.body as { slug: string; members: string[] }; return json(res, 200, { ok: true, firm: b.slug, edited: false, invited: b.members }); }
       return json(res, 200, path === "/compute/key" ? { key: "fck_a-key-from-the-stub-0123456789ab", expiresAt: "2099-01-01T00:00:00.000Z", agent: (posts.at(-1)!.body as { address: string }).address } : { ok: true });
@@ -75,6 +77,7 @@ export async function stub(): Promise<Stub> {
     if (path === "/firms") return json(res, 200, { enabled: true, items: site.firms });
     if (path.startsWith("/erc8004/")) return site.erc8004 ? json(res, 200, site.erc8004) : json(res, 404, { error: "no such agent" });
     if (path === "/plans") return json(res, 200, { enabled: true, items: site.plans });
+    if (path.startsWith("/autoapply/")) return site.autoApply ? json(res, 200, site.autoApply) : json(res, 404, { error: "no such agent" });
     if (path === "/openjobs") return json(res, 200, { enabled: true, maxApplicants: 20, items: site.openJobs });
     if (/^\/openjobs\/0x[0-9a-f]{64}$/.test(path)) return site.openJob ? json(res, 200, site.openJob) : json(res, 404, { error: "no such open job" });
     if (/^\/plans\/0x[0-9a-f]{64}$/.test(path)) return site.plan ? json(res, 200, site.plan) : json(res, 404, { error: "no such plan" });

@@ -19,7 +19,8 @@ import { planIdOf as enginePlanIdOf, planMessage as enginePlan, stopMessage as e
 import { recoverMessageAddress } from "viem";
 import { erc8004LinkMessage, erc8004Registry } from "../src/index.js";
 import { linkMessage as engineLink, registryOf as engineRegistry } from "../../../engine/src/erc8004.js";
-import { applyMessage, closeJobMessage, openJobId, postJobMessage } from "../src/index.js";
+import { applyMessage, closeJobMessage, openJobId, postJobMessage, rulesMessage } from "../src/index.js";
+import { rulesMessage as engineRules } from "../../../engine/src/autoapply.js";
 import { applyMessage as engineApply, closeMessage as engineClose, openJobIdOf as engineOpenJobId, postMessage as enginePost } from "../../../engine/src/openjobs.js";
 import { AGENTS, DESK, JOB, KEY, state, stub, type Stub } from "./stub.js";
 
@@ -346,9 +347,9 @@ describe("the assistant's caps", () => {
 
 describe("the tools", () => {
   it("have a name, a description and an input each, and say which of them send something", () => {
-    expect(TOOLS.map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_hire", "factor_accept", "factor_reject", "factor_set_title", "factor_register", "factor_set_profile", "factor_bond", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_ask_model", "factor_draw", "factor_deliver", "factor_decline", "factor_sign_up", "factor_create_pay_link", "factor_pay_link_info", "factor_pay_link", "factor_pay_x402", "factor_hire_for_job", "factor_job_tree", "factor_reject_sub_jobs", "factor_record", "factor_erc8004", "factor_link_erc8004", "factor_firms", "factor_firm_record", "factor_hire_firm", "factor_plan", "factor_subscribe", "factor_pay_month", "factor_stop_plan", "factor_draw_next_month", "factor_open_jobs", "factor_open_job", "factor_post_job", "factor_apply_to_job", "factor_pick_agent", "factor_close_job"]);
+    expect(TOOLS.map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_hire", "factor_accept", "factor_reject", "factor_set_title", "factor_register", "factor_set_profile", "factor_bond", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_ask_model", "factor_draw", "factor_deliver", "factor_decline", "factor_sign_up", "factor_create_pay_link", "factor_pay_link_info", "factor_pay_link", "factor_pay_x402", "factor_hire_for_job", "factor_job_tree", "factor_reject_sub_jobs", "factor_record", "factor_erc8004", "factor_link_erc8004", "factor_firms", "factor_firm_record", "factor_hire_firm", "factor_plan", "factor_subscribe", "factor_pay_month", "factor_stop_plan", "factor_draw_next_month", "factor_open_jobs", "factor_open_job", "factor_post_job", "factor_apply_to_job", "factor_pick_agent", "factor_close_job", "factor_auto_apply", "factor_set_auto_apply", "factor_auto_apply_now"]);
     for (const t of TOOLS) expect(t.description.length, t.name).toBeGreaterThan(40);
-    expect(TOOLS.filter((t) => t.readOnly).map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_pay_link_info", "factor_job_tree", "factor_record", "factor_erc8004", "factor_firms", "factor_firm_record", "factor_plan", "factor_open_jobs", "factor_open_job"]);
+    expect(TOOLS.filter((t) => t.readOnly).map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_pay_link_info", "factor_job_tree", "factor_record", "factor_erc8004", "factor_firms", "factor_firm_record", "factor_plan", "factor_open_jobs", "factor_open_job", "factor_auto_apply"]);
     // the ones that spend or cannot be undone say so in capitals, where an assistant will not miss it
     for (const name of ["factor_hire", "factor_reject", "factor_bond", "factor_pay_link", "factor_pay_x402", "factor_hire_for_job", "factor_reject_sub_jobs", "factor_hire_firm", "factor_subscribe", "factor_pay_month", "factor_pick_agent"]) expect(TOOLS.find((t) => t.name === name)!.description).toMatch(/SPENDS ETH|SETTLES AT HALF/);
   });
@@ -825,6 +826,63 @@ describe("open jobs", () => {
     expect(s.posts.at(-1)!.path).toBe("/openjobs/close");
     expect((await recoverMessageAddress({ message: engineClose({ open: b.open, customer: f.address!, at: b.at }), signature: b.signature })).toLowerCase()).toBe(f.address);
     s.site.openJobs = [];
+    s.site.openJob = null;
+  });
+});
+
+describe("auto-apply", () => {
+  let s: Stub;
+  beforeAll(async () => { s = await stub(); });
+  afterAll(async () => { await s.close(); });
+  const connect = (o: Partial<FactorOptions> = {}) => Factor.connect({ api: s.api, rpcUrl: s.rpc, ...o });
+  const ID = `0x${"ef".repeat(32)}`;
+  const RULES = { on: true, takes: ["Landing pages"], words: ["bakery"], floorWei: "3000000000000000", atOnce: 2, hours: null, early: true, pitch: "One page from your brief" };
+  const status = (over: Record<string, unknown> = {}) => ({ enabled: true, agent: "", name: "page-smith", runBy: "self", setters: [], kinds: [], rules: RULES, log: [{ kind: "applied", open: ID, title: "A one-page site for our bakery", note: "Applied with one signature, ranked 1 of 1 by Factor Score", at: "2026-10-22T08:00:00.000Z" }], fits: [ID], limits: { perAgentHour: 6, perHour: 60, atOnceMost: 10 }, ...over });
+
+  it("signs to the letter the words the engine checks", () => {
+    const r = { ...RULES, agent: "0x00000000000000000000000000000000000000a2", by: "0x00000000000000000000000000000000000000c1", at: 1_800_000_000 };
+    expect(rulesMessage(r)).toBe(engineRules(r));
+    expect(rulesMessage({ ...r, on: false, takes: [], words: [], hours: { from: 22, to: 6 }, early: false, pitch: "", atOnce: 1 })).toBe(engineRules({ ...r, on: false, takes: [], words: [], hours: { from: 22, to: 6 }, early: false, pitch: "", atOnce: 1 }));
+  });
+
+  it("sets the rules with the agent's own signature while auto-apply is on, and refuses rules that make no sense", async () => {
+    const f = await connect({ privateKey: KEY });
+    s.site.state = state();
+    expect((await refusal(f.setAutoApply({ takes: ["Landing pages"] }))).code).toBe("autoapply_off");
+    s.site.state = state({ autoApply: { enabled: true, agents: 0, applied: 0 } } as never);
+    expect((await refusal(f.setAutoApply({ takes: ["Anything"] }))).code).toBe("bad_kind");
+    expect((await refusal(f.setAutoApply({}))).code).toBe("bad_kind");
+    expect((await refusal(f.setAutoApply({ takes: ["Code"], from: "0.0001" }))).code).toBe("bad_amount");
+    expect((await refusal(f.setAutoApply({ takes: ["Code"], atOnce: 11 }))).code).toBe("bad_count");
+    expect((await refusal(f.setAutoApply({ takes: ["Code"], hours: { from: 3, to: 3 } }))).code).toBe("bad_hours");
+    expect((await refusal(f.setAutoApply({ words: ["see https://example.com"] }))).code).toBe("bad_text");
+    const r = await f.setAutoApply({ takes: ["Landing pages"], words: ["bakery"], from: "0.003", atOnce: 2, early: true, pitch: "One page from your brief" });
+    expect(r).toMatchObject({ on: true, takes: ["Landing pages"], floorWei: "3000000000000000", atOnce: 2, early: true });
+    const b = s.posts.at(-1)!.body as typeof RULES & { agent: string; by: string; at: number; signature: `0x${string}` };
+    expect(s.posts.at(-1)!.path).toBe("/autoapply/rules");
+    expect(b.agent).toBe(f.address);
+    expect((await recoverMessageAddress({ message: engineRules(b), signature: b.signature })).toLowerCase()).toBe(f.address);
+    s.site.state = state();
+  });
+
+  it("applies on its own to what Factor found, marked as automatic, from a watch that stops", async () => {
+    const f = await connect({ privateKey: KEY });
+    s.site.autoApply = status({ agent: f.address });
+    s.site.openJob = { enabled: true, open: { id: ID, status: "open", note: "", customer: "0x00000000000000000000000000000000000000c1", title: "A one-page site for our bakery", brief: "", priceEth: 0.004, priceWei: "4000000000000000", burnWei: "0", dueHours: 24, early: true, postedAt: "", closesAt: "", pick: { by: "customer" }, applying: true, count: 0, most: 20, applicants: [] } };
+    const applied: string[] = [];
+    const w = f.watchOpenJobs({ onApplied: (a) => applied.push(`${a.open} ${a.title}`), everyMs: 60_000 });
+    for (let i = 0; i < 50 && !applied.length; i++) await new Promise((r) => setTimeout(r, 20));
+    w.stop();
+    await w.done;
+    expect(applied).toEqual([`${ID} A one-page site for our bakery`]);
+    const b = s.posts.filter((p) => p.path === "/openjobs/apply").at(-1)!.body as { pitch: string; auto: boolean };
+    expect(b).toMatchObject({ pitch: "One page from your brief", auto: true });
+    const said = (await runTool(f, "factor_auto_apply", {}, null)).text;
+    expect(said).toMatch(/auto-apply is on\. It runs itself/);
+    expect(said).toMatch(/Rules: takes Landing pages, "bakery"; from 0\.003 ETH a job; up to 2 at a time; hours always; draws the half up front/);
+    expect(said).toMatch(/applied: Applied with one signature/);
+    expect((await runTool(f, "factor_auto_apply_now", {}, null)).text).toMatch(/applied, ranked 1 of 1/);
+    s.site.autoApply = null;
     s.site.openJob = null;
   });
 });
