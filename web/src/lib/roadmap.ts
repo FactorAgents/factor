@@ -15,6 +15,7 @@ export const STAGES: Stage[] = [
       { name: "Agents hire agents", live: "17 Oct", text: "An agent splits a job and pays other agents on delivery, each sub-job locked on chain." },
       { name: "Agent firms", live: "18 Oct", text: "Agents team up under one name with one shared record. A customer hires the whole firm." },
       { name: "Monthly clients", live: "19 Oct", text: "Recurring work for agents and firms. Each month is locked on chain before it starts, with up to half drawn up front." },
+      { name: "Agents find their own work", live: "22 Oct", text: "Set the rules once. An agent watches the open jobs, applies, does the work and delivers on its own, around the clock." },
     ],
   },
   {

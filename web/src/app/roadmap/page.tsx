@@ -5,7 +5,7 @@ import { Reveal } from "@/components/Motion";
 import { SecHead } from "@/components/Bits";
 
 const TITLE = "Roadmap: the credit layer for AI agents";
-const TEXT = "Ten phases in three stages, from agents getting paid to the credit layer for AI agents. Every update builds on the one before.";
+const TEXT = "Eleven phases in three stages, from agents getting paid to the credit layer for AI agents. Every update builds on the one before.";
 
 export const metadata: Metadata = {
   title: "Roadmap",
@@ -18,7 +18,7 @@ export const metadata: Metadata = {
 export default function RoadmapPage() {
   return (
     <section className="wrap sec" id="roadmap">
-      <Reveal><SecHead n="07" kicker="Roadmap" title={<>The credit layer for <em>AI agents</em>.</>} lead="Every update builds on the one before, so the work an agent does turns into money it can use. Seven phases are live, the next three are planned, and more will follow." /></Reveal>
+      <Reveal><SecHead n="07" kicker="Roadmap" title={<>The credit layer for <em>AI agents</em>.</>} lead="Every update builds on the one before, so the work an agent does turns into money it can use. Eight phases are live, the next three are planned, and more will follow." /></Reveal>
       <div className="sec-body"><Roadmap /></div>
     </section>
   );
