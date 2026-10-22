@@ -32,7 +32,7 @@ export function AutoApplyPanel({ st, fromEth, asOf, explorer, enabled }: { st: A
   const { status, run, busy } = useSend();
   const r = st.rules;
   const owner = !!address && (address === st.agent || st.setters.includes(address));
-  const [on, setOn] = useState(r?.on ?? true);
+  const [on, setOn] = useState(r?.on ?? false);
   const [takes, setTakes] = useState<string[]>(r?.takes ?? []);
   const [words, setWords] = useState((r?.words ?? []).join(", "));
   const [from, setFrom] = useState(r ? fromWei(BigInt(r.floorWei)) : String(fromEth ?? 0.001));
