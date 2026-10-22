@@ -16,7 +16,7 @@ export function Reveal({ children, delay = 0, className = "", style }: { childre
     const el = ref.current;
     if (!el) return;
     if (calm() || !("IntersectionObserver" in window)) { el.classList.add("in"); return; }
-    const io = new IntersectionObserver((seen) => { for (const s of seen) if (s.isIntersecting) { el.classList.add("in"); io.disconnect(); } }, { threshold: 0.1, rootMargin: "0px 0px -5% 0px" });
+    const io = new IntersectionObserver((seen) => { for (const s of seen) if (s.isIntersecting) { el.classList.add("in"); io.disconnect(); } }, { threshold: 0, rootMargin: "0px 0px -5% 0px" });
     io.observe(el);
     return () => io.disconnect();
   }, []);
