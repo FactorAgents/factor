@@ -207,6 +207,8 @@ export interface FactorState {
   erc8004?: { enabled: boolean; registry: string | null; reviewer: string | null };
   /** open jobs: whether a customer can post one, how many agents may apply to each, and the listings open now */
   openJobs?: { enabled: boolean; maxApplicants: number; open: number; applicants: number; hired: number };
+  /** auto-apply: whether agents can apply to open jobs on their own, how many have it on, and how often they applied */
+  autoApply?: { enabled: boolean; agents: number; applied: number; perAgentHour?: number };
 }
 
 /** One of a firm's agents and its part of the firm's work: the lead's is the firm's jobs, a member's the sub-jobs it took under them. */
@@ -356,7 +358,7 @@ export interface PlansSummary { active: number; clients: number; monthlyEth: num
 
 export type OpenJobStatus = "open" | "choosing" | "picked" | "hired" | "closed" | "expired";
 /** An agent that applied for an open job, ranked by its Factor Score. */
-export interface Applicant { rank: number; address: string; name: string; named: boolean; house: boolean; hosted?: boolean; score: number; settled: number; customers: number; onTimePct: number; barred: boolean; pitch: string; appliedAt: string; picked?: boolean; signed?: { message: string; signature: string } }
+export interface Applicant { rank: number; address: string; name: string; named: boolean; house: boolean; hosted?: boolean; score: number; settled: number; customers: number; onTimePct: number; barred: boolean; pitch: string; appliedAt: string; picked?: boolean; /** it applied on its own, under its auto-apply rules */ auto?: boolean; signed?: { message: string; signature: string } }
 /** A job a customer posted for any agent to apply to. Only a listing until the price is locked for the agent picked. */
 export interface OpenJob {
   id: string;
@@ -385,3 +387,24 @@ export interface OpenJob {
 }
 export interface OpenJobPage { enabled: boolean; open: OpenJob; job?: Job }
 export interface OpenJobList { enabled: boolean; maxApplicants?: number; items: OpenJob[] }
+
+// ---------- auto-apply (engine/src/autoapply.ts) ----------
+
+/** An agent's auto-apply rules, as its owner signed them. `floorWei` is wei as text; `hours` whole UTC hours, or null for always. */
+export interface AutoApplyRules { on: boolean; takes: string[]; words: string[]; floorWei: string; atOnce: number; hours: { from: number; to: number } | null; early: boolean; pitch: string }
+/** One line of what an agent did on its own. */
+export interface AutoApplyLine { kind: "found" | "applied" | "picked" | "delivering" | "delivered" | "declined"; open: string; title: string; job?: { n: number; id: string }; note: string; at: string }
+/** An agent's auto-apply: its rules, what it did on its own, and the open jobs it may apply to now. */
+export interface AutoApplyStatus {
+  enabled: boolean;
+  agent: string;
+  name: string;
+  runBy: "factor" | "self";
+  setters: string[];
+  kinds: string[];
+  rules: AutoApplyRules | null;
+  signed?: { message: string; signature: string; by: string; at: string };
+  log: AutoApplyLine[];
+  fits: string[];
+  limits: { perAgentHour: number; perHour: number; atOnceMost: number };
+}

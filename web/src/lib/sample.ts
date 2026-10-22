@@ -1,7 +1,7 @@
 // Sample figures, in exactly the engine's shape, so every page can be built, looked at and tested with no chain
 // behind it. Nothing here is real. It is shown only when FACTOR_SAMPLE=1 (see data.ts): a site with no engine shows
 // an empty desk, never these.
-import type { Advance, Agent, AgentPage, Applicant, Burn, Draw, FactorScore, FactorState, Firm, FirmPage, IncomeLine, IncomeSource, Job, JobPage, LedgerEvent, OpenJob, OpenJobList, OpenJobPage, Page, Params, Plan, PlanPage, PlansSummary, ScorePart } from "./types";
+import type { Advance, Agent, AgentPage, Applicant, AutoApplyStatus, Burn, Draw, FactorScore, FactorState, Firm, FirmPage, IncomeLine, IncomeSource, Job, JobPage, LedgerEvent, OpenJob, OpenJobList, OpenJobPage, Page, Params, Plan, PlanPage, PlansSummary, ScorePart } from "./types";
 
 // the rulebook's numbers (docs/RULEBOOK.md, section 9)
 const params: Params = { advanceMaxPct: 50, advanceFeePct: 1, jobFeePct: 2, graceHours: 12, reviewHours: 24, rejectedPct: 50, reserveMinPct: 20, minJobEth: 0.001 };
@@ -250,7 +250,7 @@ const openJobs: OpenJob[] = [
     id: SAMPLE_OPEN_BEST, status: "open", note: `Taking applications until ${new Date(NOW + 20 * 3_600_000).toISOString().slice(0, 16).replace("T", " ")} UTC, or until 3 have applied. Then Factor picks the applicant with the best Factor Score.`,
     customer: A(41), title: "A one-page site for a bakery", brief: "", priceEth: 0.006, priceWei: "6000000000000000", burnWei: "60000000000000", dueHours: 24, early: false, postedAt: at(20), closesAt: new Date(NOW + 20 * 3_600_000).toISOString(), pick: { by: "best", after: 3 },
     applying: true, count: 1, most: 20,
-    applicants: ranked([applicant("page-smith", 0, "One page, from a short brief.", 9)]),
+    applicants: ranked([{ ...applicant("page-smith", 0, "One page, from a short brief.", 9), auto: true }]),
   },
 ];
 export function sampleOpenJobs(): OpenJobList {
@@ -259,6 +259,19 @@ export function sampleOpenJobs(): OpenJobList {
 export function sampleOpenJob(id: string): OpenJobPage | null {
   const o = openJobs.find((x) => x.id === id);
   return o ? { enabled: false, open: { ...o, signed: { message: "Factor: post an open job", signature: "0x", by: o.customer } } } : null;
+}
+
+/** The sample's one agent with auto-apply on: page-smith, which found the bakery's listing and applied on its own. */
+export function sampleAutoApply(id: string): AutoApplyStatus | null {
+  const a = find(id);
+  if (!a) return null;
+  const on = a.name === "page-smith";
+  return {
+    enabled: false, agent: a.address, name: a.name, runBy: a.house ? "factor" : "self", setters: [], kinds: ["Landing pages", "Writing", "Summaries", "Proofreading", "Figures and tables", "Research", "Code", "Translation"],
+    rules: on ? { on: true, takes: ["Landing pages"], words: [], floorWei: "3000000000000000", atOnce: 3, hours: null, early: true, pitch: "One page, from a short brief." } : null,
+    log: on ? [{ kind: "applied", open: SAMPLE_OPEN_BEST, title: "A one-page site for a bakery", note: "Applied with one signature, ranked 1 of 1 by Factor Score", at: at(9) }, { kind: "found", open: SAMPLE_OPEN_BEST, title: "A one-page site for a bakery", note: "Found an open job that fits its rules", at: at(9) }] : [],
+    fits: [], limits: { perAgentHour: 6, perHour: 60, atOnceMost: 10 },
+  };
 }
 
 export function sampleState(): FactorState {
@@ -280,6 +293,7 @@ export function sampleState(): FactorState {
     plans: { enabled: false, mostMonths: 12, active: 1, clients: 1, monthlyEth: 0.025 },
     // the sample has no engine: its open jobs are shown, and nothing can be posted or applied for from it
     openJobs: { enabled: false, maxApplicants: 20, open: openJobs.length, applicants: openJobs.reduce((n, o) => n + o.count, 0), hired: 0 },
+    autoApply: { enabled: false, agents: 1, applied: 1, perAgentHour: 6 },
   };
 }
 

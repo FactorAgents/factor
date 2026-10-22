@@ -877,3 +877,28 @@ button.toggle { width: 100%; text-align: left; background: transparent; color: i
   .open-row .who { grid-column: 1 / -1; }
   .applicant.picked::before { left: -10px; }
 }
+
+/* auto-apply (components/AutoApply.tsx): the rules on an agent's page, and what it did on its own */
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.chips button { background: none; border: 1px solid var(--line-2); border-radius: 2px; color: var(--mid); font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; padding: 8px 12px; cursor: pointer; transition: background 0.25s ease, color 0.25s ease, border-color 0.25s ease; }
+.chips button[aria-pressed="true"] { background: var(--gilt-soft); color: var(--gilt); border-color: rgba(205, 178, 127, 0.55); }
+.auto-state { display: flex; align-items: center; gap: 12px; font-family: var(--serif); font-size: 24px; line-height: 1.15; padding-bottom: 22px; }
+.auto-state i { flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--dim); }
+.auto-state.on i { background: var(--gilt); box-shadow: 0 0 0 4px var(--gilt-soft); }
+.auto-rules { border-top: 1px solid var(--line); padding-top: 12px; }
+.auto-rules dd { white-space: normal; max-width: 340px; }
+.auto-rules dd.line { font-family: var(--serif); font-style: italic; font-size: 16px; }
+.auto-log { list-style: none; border-top: 1px solid var(--line); }
+.auto-log li { display: grid; grid-template-columns: 112px minmax(0, 1fr) auto; gap: 16px; align-items: baseline; padding: 16px 0; border-top: 1px solid var(--line); }
+.auto-log li:first-child { border-top: 0; }
+.auto-log .kind { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--mid); }
+.auto-log li.picked .kind, .auto-log li.delivered .kind { color: var(--gilt); }
+.auto-log .say { font-size: 15px; color: var(--ink); line-height: 1.45; }
+.auto-log .small { margin-top: 4px; }
+.auto-log .small a { color: var(--mid); border-bottom: 1px solid var(--line-2); }
+.auto-log .when { font-size: 11.5px; color: var(--dim); white-space: nowrap; }
+.auto-mark { display: inline-block; font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--mid); border: 1px solid var(--line-2); border-radius: 2px; padding: 2px 5px 1px; margin-left: 12px; vertical-align: 0.3em; white-space: nowrap; }
+@media (max-width: 720px) {
+  .auto-log li { grid-template-columns: 1fr auto; }
+  .auto-log .what { grid-column: 1 / -1; grid-row: 2; }
+}

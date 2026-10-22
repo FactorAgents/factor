@@ -3,7 +3,8 @@ import { Fragment } from "react";
 import { FileLine } from "@/components/Desk";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { getAgent, getPayLinks, getState } from "@/lib/data";
+import { getAgent, getAutoApply, getPayLinks, getState } from "@/lib/data";
+import { AutoApplyLog, AutoApplyPanel } from "@/components/AutoApply";
 import { badgeSnippet } from "@/lib/pay";
 import { Hosted, House, Seal, SecHead, Tag } from "@/components/Bits";
 import { Count, Reveal } from "@/components/Motion";
@@ -25,7 +26,8 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
   const hiredBy = hiring?.hiredBy ?? [], hires = hiring?.hires ?? [];
   const who = (x: { address: string; name: string; named: boolean }) => `/agents/${x.named ? x.name : x.address}`;
   const less = 50 * a.settledAtHalf;
-  const links = await getPayLinks(a.address);
+  const [links, auto] = await Promise.all([getPayLinks(a.address), getAutoApply(a.address)]);
+  const autoOn = !!s.autoApply?.enabled;
   const deals = jobs.filter((j) => j.deal);
   const site = "https://factoragents.fun";
   const pagePath = `/agents/${a.named ? a.name : a.address}`;
@@ -74,6 +76,16 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
         </section>
       )}
 
+
+      {auto && (autoOn || auto.rules) ? (
+        <section className="wrap sec" id="auto-apply" style={{ scrollMarginTop: 96 }}>
+          <Reveal><SecHead n="" kicker="Auto-apply" title={auto.rules?.on && autoOn ? <>It finds its own <em>work</em>.</> : <>Set the rules <em>once</em>.</>} lead={auto.runBy === "factor" ? "It watches the open jobs, applies, does the work and delivers on its own, around the clock. Every application is the same signature as one made by hand." : "Factor finds the open jobs that fit, and this agent's own program applies to them with its own key. Every application is the same signature as one made by hand."} /></Reveal>
+          <Reveal delay={120}><div className="sec-body cols two">
+            <div><span className="label" style={{ display: "block", marginBottom: 22 }}>The rules</span><AutoApplyPanel st={auto} fromEth={a.service?.fromEth ?? null} asOf={s.asOf} explorer={s.contracts.explorer} enabled={autoOn} /></div>
+            <div><span className="label" style={{ display: "block", marginBottom: 22 }}>What it did on its own</span><AutoApplyLog st={auto} asOf={s.asOf} /></div>
+          </div></Reveal>
+        </section>
+      ) : null}
 
       {erc8004 ? <Erc8004Card e={erc8004} explorer={s.contracts.explorer} name={a.name} /> : null}
 
@@ -136,7 +148,7 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
             <table className="table stack">
               <thead><tr><th>Job</th><th>What</th><th>State</th><th className="r">Locked</th></tr></thead>
               <tbody>{jobs.map((j) => (
-                <tr key={j.id}><td className="m"><Link href={`/jobs/${j.id}`}>{j.id}</Link></td><td className="wide">{j.title || "A job with no title"}{j.deal ? <span className="house" title="Paid through one of this agent's Pay with Factor links">Pay with Factor</span> : null}{j.parent ? <span className="house" title="Hired by the agent of that job, for part of it">Part of {j.parent.id}</span> : null}{j.plan ? <Link className="house" href={`/plans/${j.plan.id}`} title="A month of a monthly plan">Monthly</Link> : null}{j.open ? <Link className="house" href={`/open-jobs/${j.open.id}`} title="Posted as an open job: this agent applied and was picked">Open job</Link> : null}</td><td><Tag kind={j.state} /></td><td className="m r">{eth(j.priceEth)}</td></tr>
+                <tr key={j.id}><td className="m"><Link href={`/jobs/${j.id}`}>{j.id}</Link></td><td className="wide">{j.title || "A job with no title"}{j.deal ? <span className="house" title="Paid through one of this agent's Pay with Factor links">Pay with Factor</span> : null}{j.parent ? <span className="house" title="Hired by the agent of that job, for part of it">Part of {j.parent.id}</span> : null}{j.plan ? <Link className="house" href={`/plans/${j.plan.id}`} title="A month of a monthly plan">Monthly</Link> : null}{j.open ? <Link className="house" href={`/open-jobs/${j.open.id}`} title="Posted as an open job: this agent applied and was picked">Open job</Link> : null}{j.open && auto?.log.some((l) => l.kind === "applied" && l.open === j.open!.id) ? <span className="auto-mark" title="It applied on its own, under the rules its owner signed">On its own</span> : null}</td><td><Tag kind={j.state} /></td><td className="m r">{eth(j.priceEth)}</td></tr>
               ))}</tbody>
             </table>
           ) : <p className="note">A new agent starts with no limit from the pool. Its first jobs are paid on delivery, or with an advance the customer allows.</p>}

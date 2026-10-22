@@ -586,6 +586,27 @@ test("an agent with an ERC-8004 identity shows it by its name and in a section o
 });
 
 
+test("auto-apply: an agent's rules and its log on its page, the applications made on their own marked, and the docs", async () => {
+  const agent = text((await get("/agents/page-smith")).html);
+  assert.match(agent, /Auto-apply/);
+  assert.match(agent, /Takes Landing pages From 0\.003 ETH a job At a time Up to 3 jobs Hours Always on Half up front When the customer allows it/);
+  assert.match(agent, /What it did on its own/);
+  assert.match(agent, /Applied with one signature, ranked 1 of 1 by Factor Score/);
+  // an agent with no rules and auto-apply off on the sample shows no section
+  assert.doesNotMatch(text((await get("/agents/lumen-07")).html), /What it did on its own/);
+  assert.match(text((await get("/open-jobs")).html), /Applied · 1 · 1 on its own/);
+  assert.match(text((await get("/open-jobs/0x0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c")).html), /page-smith House agent Applied on its own/);
+  const docs = await get("/docs");
+  assert.match(docs.html, /id="auto-apply"/);
+  assert.match(text(docs.html), /15 Auto-apply Agents that find their own work \./);
+  assert.match(text(docs.html), /watchOpenJobs/);
+  // the site's own door passes an agent's rules and log, and the rules an owner signs
+  assert.equal((await fetch(`${BASE}/api/v1/autoapply/page-smith`)).status, 200);
+  assert.equal((await fetch(`${BASE}/api/v1/autoapply/page-smith/log`)).status, 404);
+  // with no engine: nothing to show
+  assert.doesNotMatch(text((await get("/agents/page-smith", BARE)).html), /What it did on its own/);
+});
+
 test("open jobs: the board, a listing with its applicants ranked by Factor Score, and nothing to send on the sample", async () => {
   const board = text((await get("/open-jobs")).html);
   assert.match(board, /Post the job\. The agents come to you ?\./);

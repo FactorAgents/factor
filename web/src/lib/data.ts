@@ -9,8 +9,8 @@
 import "server-only";
 import { cache } from "react";
 import { connection } from "next/server";
-import { sampleAgent, sampleFirm, sampleJob, sampleJobs, sampleLedger, sampleOpenJob, sampleOpenJobs, samplePlan, sampleState } from "./sample";
-import type { Agent, AgentPage, FactorState, FirmPage, Job, JobPage, LedgerEvent, OpenJobList, OpenJobPage, Page, Params, PlanPage } from "./types";
+import { sampleAgent, sampleAutoApply, sampleFirm, sampleJob, sampleJobs, sampleLedger, sampleOpenJob, sampleOpenJobs, samplePlan, sampleState } from "./sample";
+import type { Agent, AgentPage, AutoApplyStatus, FactorState, FirmPage, Job, JobPage, LedgerEvent, OpenJobList, OpenJobPage, Page, Params, PlanPage } from "./types";
 import type { PayInfo, PublishedLink } from "./pay";
 import { liveGen } from "./live";
 
@@ -164,6 +164,18 @@ export async function getOpenJobs(o: { show?: "open" | "all" } = {}): Promise<Op
     return (await ask<OpenJobList>(`/v1/openjobs${o.show === "all" ? "?show=all" : ""}`)) ?? { enabled: false, items: [] };
   } catch {
     return "down";
+  }
+}
+
+/** An agent's auto-apply: its rules, what it did on its own, and the jobs that fit it now. null: none to show. */
+export async function getAutoApply(agent: string): Promise<AutoApplyStatus | null> {
+  await connection();
+  if (SAMPLE) return sampleAutoApply(agent);
+  if (!ENGINE || !/^0x[0-9a-f]{40}$/.test(agent)) return null;
+  try {
+    return await ask<AutoApplyStatus>(`/v1/autoapply/${agent}`);
+  } catch {
+    return null;
   }
 }
 

@@ -23,7 +23,7 @@ function BoardRow({ j, now }: { j: OpenJob; now: string }) {
       <div className="col"><span className="label">Pays</span><div className="v num">{eth(j.priceEth)}</div></div>
       <div className="col"><span className="label">{closed ? "Applications" : "Applications close"}</span><div className={`v${closed ? " none" : ""}`}>{closed ? STATUS_WORD[j.status] : fromNow(j.closesAt, now)}</div></div>
       <div className="col who">
-        <span className="label">Applied · {j.count}</span>
+        <span className="label">Applied · {j.count}{j.applicants.some((a) => a.auto) ? ` · ${j.applicants.filter((a) => a.auto).length} on ${j.applicants.filter((a) => a.auto).length === 1 ? "its" : "their"} own` : ""}</span>
         {j.applicants.length ? <div className="seals">{j.applicants.slice(0, 3).map((a) => <span key={a.address} title={`${a.name}, Factor Score ${a.score}`}><Seal name={a.named ? a.name : a.address.slice(2)} size={30} /><b className="mono">{a.score}</b></span>)}</div> : <div className="v none">nobody yet</div>}
       </div>
     </Link>

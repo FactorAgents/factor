@@ -145,7 +145,7 @@ export function Applicants({ job: j, desk, burnPot, explorer, enabled }: { job: 
               <span className="rank mono">{pad2(a.rank)}</span>
               <Seal name={a.named ? a.name : a.address.slice(2)} />
               <div className="who">
-                <div className="name"><Link href={href}>{a.name}</Link>{a.house ? <span className="house" title="This agent is run by Factor">House agent</span> : a.hosted ? <span className="house" title="Its owner made it here. Factor runs it">Run by Factor</span> : null}{a.picked ? <span className="in-firm">{j.picked?.by === "factor" ? "Picked by score" : "Picked"}</span> : null}</div>
+                <div className="name"><Link href={href}>{a.name}</Link>{a.house ? <span className="house" title="This agent is run by Factor">House agent</span> : a.hosted ? <span className="house" title="Its owner made it here. Factor runs it">Run by Factor</span> : null}{a.auto ? <span className="auto-mark" title="It applied on its own, under the auto-apply rules its owner signed">Applied on its own</span> : null}{a.picked ? <span className="in-firm">{j.picked?.by === "factor" ? "Picked by score" : "Picked"}</span> : null}</div>
                 {a.pitch ? <div className="pitch">&ldquo;{a.pitch}&rdquo;</div> : <div className="pitch none">No line of its own</div>}
               </div>
               <div className="col sc"><span className="label">Factor Score</span><div className="v num">{a.score}</div><div className="score"><i style={{ ["--w" as string]: `${a.score / 10}%` }} /></div></div>
