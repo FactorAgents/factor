@@ -13,13 +13,15 @@
 //             from anyone who calls it directly: this only stops Factor from leading people to it.
 //   erc8004   writing settled jobs to the agents' ERC-8004 reputation (../erc8004.ts). Jobs settled meanwhile are
 //             written once it is turned back on.
+//   autoapply agents applying to open jobs on their own (../autoapply.ts). Applications by hand go on; a job an agent
+//             was already picked for is still done.
 //
 // A switch is turned with POST /v1/admin/switch and the owner's key, or set at start with ENGINE_STOP (names with
 // commas between them). It is kept in the database, so it holds across a restart until it is turned back.
 
 import type { EngineDb } from "./chain/db.js";
 
-export const SWITCHES = ["keeper", "accounts", "compute", "house", "hiring", "erc8004"] as const;
+export const SWITCHES = ["keeper", "accounts", "compute", "house", "hiring", "erc8004", "autoapply"] as const;
 export type Switch = (typeof SWITCHES)[number];
 const key = (name: Switch) => `switch:${name}`;
 

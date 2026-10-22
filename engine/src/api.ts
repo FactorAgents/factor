@@ -23,6 +23,8 @@
 //   POST /v1/erc8004/link      an agent signs which ERC-8004 identity is its own, or that it wants none linked
 //   GET  /v1/openjobs?show=open|all&customer=&agent=   open jobs; /v1/openjobs/<id> one, its applicants by Factor Score (openjobs.ts)
 //   POST /v1/openjobs/post|apply|hire|close   a customer posts a job, an agent applies, the lock is linked, or it is taken down
+//   GET  /v1/autoapply/<agent>  an agent's auto-apply rules, its log, and the open jobs it may apply to now (autoapply.ts)
+//   POST /v1/autoapply/rules    an agent's owner signs its auto-apply rules
 //
 // Every GET is answered from the database (the last reading of the chain, the ledger, the engine's copy of each
 // job and agent), so a burst of visitors costs the node nothing. Before the contracts are given, and whenever the
@@ -60,6 +62,7 @@ import { treeOf, type Subjobs, type TreeJson } from "./subjobs.js";
 import type { FirmJson, Firms } from "./firms.js";
 import type { Plans, PlansSummaryJson } from "./plans.js";
 import type { OpenJobs } from "./openjobs.js";
+import type { AutoApply } from "./autoapply.js";
 
 export interface Answer {
   status: number;
@@ -106,6 +109,8 @@ export interface EngineView {
   erc8004?: Erc8004 | null;
   /** open jobs (./openjobs.ts) */
   openjobs?: OpenJobs | null;
+  /** auto-apply (./autoapply.ts) */
+  autoapply?: AutoApply | null;
 }
 
 /** How a job came to its agent (./factorscore.ts), from the engine's links between jobs. */
@@ -276,6 +281,8 @@ export interface FactorState {
   erc8004: { enabled: boolean; registry: string | null; reviewer: string | null };
   /** open jobs: whether a customer can post one, how many agents may apply to each, and the listings open now */
   openJobs: { enabled: boolean; maxApplicants: number; open: number; applicants: number; hired: number };
+  /** auto-apply: whether agents can apply to open jobs on their own, how many have it on, and how often they applied */
+  autoApply: { enabled: boolean; agents: number; applied: number };
 }
 export interface RosterJson { name: string; does: string; needs: string; delivers: string; fromEth: number; asksAModel: boolean; /** the Desk's opening file on it */ file?: { text: string; at: string } }
 // what Factor's own agents are, said the same before the launch and after it
@@ -502,6 +509,20 @@ export class EngineApi {
       }
       return answer;
     }
+    // an agent's auto-apply rules and log, kept a few seconds like the rest
+    if (path.startsWith("/v1/autoapply/")) {
+      if (from && this.tooMany(from, "openjobs-get", 600)) return { status: 429, body: { error: "too many requests: try again in a minute" } };
+      const v = this.view();
+      const ttl = v.config.params.apiCacheMs;
+      const hit = this.cache.get(path);
+      if (hit && ttl > 0 && Date.now() - hit.at < ttl) return hit.answer;
+      const answer = this.autoApplyGet(v, path);
+      if (answer && ttl > 0) {
+        if (this.cache.size > 2000) this.cache.clear();
+        this.cache.set(path, { at: Date.now(), answer });
+      }
+      return answer;
+    }
     const route = this.route(path, query);
     if (!route) return null;
     const v = this.view();
@@ -687,6 +708,29 @@ export class EngineApi {
     return ok({ enabled: v.config.openJobs.enabled, open: json, ...(jobRow ? { job: this.jobsJson(v, r.store, [jobRow])[0] } : {}) });
   }
 
+  // An agent's auto-apply: its rules, the words signed for them, what it did on its own, and what it may apply to now.
+  private autoApplyGet(v: EngineView, path: string): Answer | null {
+    const m = /^\/v1\/autoapply\/([0-9a-zA-Z-]{3,42})$/.exec(path);
+    if (!m) return null;
+    const r = this.running(v);
+    if (!v.autoapply || !r) return { status: 503, body: { error: "the engine is not reading the chain yet" } };
+    const address = normalizeAddress(m[1]) ?? v.profiles?.byName(m[1]!) ?? null;
+    if (!address || !r.store.agent(address)) return notFound("no such agent: it has not registered on the desk");
+    const factor = new Set([...v.config.houseAgents, ...(v.house?.addresses() ?? []), ...(v.house?.hostedAddresses().keys() ?? [])]);
+    return ok(v.autoapply.json(address, { runBy: factor.has(address) ? "factor" : "self" }) as unknown as Record<string, unknown>);
+  }
+
+  // An agent's owner signs its auto-apply rules.
+  private async autoApplyPost(body: unknown, from: string): Promise<Answer> {
+    const v = this.view();
+    if (!v.autoapply || v.state !== "running") return { status: 503, body: { error: "the engine is not reading the chain yet" } };
+    if (!body || typeof body !== "object" || Array.isArray(body)) return { status: 400, body: { error: "the body is not a JSON object" } };
+    if (this.tooMany(from, "autoapply", 20)) return { status: 429, body: { error: "too many requests: try again in a minute" } };
+    const a = await v.autoapply.setRules(body as Record<string, unknown>);
+    if (a.status === 200) this.cache.clear();
+    return a;
+  }
+
   // A customer posts an open job, an agent applies, the customer's lock is linked, or the customer takes it down.
   private async openJobsPost(path: string, body: unknown, from: string): Promise<Answer> {
     const v = this.view();
@@ -852,6 +896,7 @@ export class EngineApi {
     if (path === "/v1/firms/form" || path === "/v1/firms/join" || path === "/v1/firms/leave" || path === "/v1/firms/hire") return this.firmsPost(path, body, from);
     if (path === "/v1/plans/create" || path === "/v1/plans/month" || path === "/v1/plans/stop") return this.plansPost(path, body, from);
     if (path === "/v1/openjobs/post" || path === "/v1/openjobs/apply" || path === "/v1/openjobs/hire" || path === "/v1/openjobs/close") return this.openJobsPost(path, body, from);
+    if (path === "/v1/autoapply/rules") return this.autoApplyPost(body, from);
     if (path === "/v1/accounts" || path.startsWith("/v1/accounts/")) return this.accountsPost(path, body, from);
     if (path === "/v1/agents/make" || path === "/v1/agents/pause") return this.hostedPost(path, body, from);
     if (path === "/v1/erc8004/link") return this.erc8004Post(body, from);
@@ -1204,7 +1249,8 @@ export class EngineApi {
     const erc8004 = { enabled: !!v.erc8004 && c.erc8004.enabled && v.state === "running", registry: v.erc8004?.registry ?? null, reviewer: v.ctx?.facts.bot ? getAddress(v.ctx.facts.bot) : null };
     const openTotals = v.openjobs && v.state === "running" ? v.openjobs.totals() : { open: 0, applicants: 0, hired: 0 };
     const openJobs = { enabled: !!v.openjobs && c.openJobs.enabled && v.state === "running", maxApplicants: c.openJobs.maxApplicants, ...openTotals };
-    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused, roster: this.rosterJson(v), hosted, pulse: pulseJson(v, 8), desk: this.deskJson(v), signups, activity, pay, subjobs, firms, plans, erc8004, openJobs };
+    const autoApply = { enabled: !!v.autoapply && v.autoapply.working() && openJobs.enabled, ...(v.autoapply && v.state === "running" ? v.autoapply.totals() : { agents: 0, applied: 0 }) };
+    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused, roster: this.rosterJson(v), hosted, pulse: pulseJson(v, 8), desk: this.deskJson(v), signups, activity, pay, subjobs, firms, plans, erc8004, openJobs, autoApply };
     if (!r) {
       return { ...base, launched: false, stats: { advancedEth: 0, settledJobs: 0, jobs: 0, poolEth: 0, reserveEth: 0, outEth: 0, heldEth: 0, burnedTokens: 0, supplyLeft: SUPPLY, agents: 0, demoJobs: 0, lostEth: 0, poolFromTradingEth: 0 }, burn: null, agents: [], jobs: [], events: [], burns: [] };
     }

@@ -233,6 +233,8 @@ export interface ApplicantJson {
   appliedAt: string;
   /** the agent Factor picked, or the one the customer locked the job for */
   picked?: boolean;
+  /** it applied on its own, under the auto-apply rules its owner signed (./autoapply.ts) */
+  auto?: boolean;
   /** the words the agent signed, and the signature: on one listing's own answer */
   signed?: { message: string; signature: string };
 }
@@ -307,6 +309,8 @@ export interface OpenJobDeps {
   burnUsed: (hash: string) => boolean;
   /** a job already linked as something else: a sub-job or a month of a plan */
   linkedElsewhere: (job: number) => string | null;
+  /** auto-apply (./autoapply.ts): whether an application said to be automatic may be taken, and who applied that way */
+  auto?: () => { allow(agent: string, row: OpenJobRow): string | null; applied(open: string, agent: string, rank: number, of: number): void; appliedTo(open: string): Set<string> } | null;
 }
 
 export class OpenJobs {
@@ -461,7 +465,10 @@ export class OpenJobs {
     return null;
   }
 
-  /** An agent signs that it applies. Asked again with the same signature, it answers the same. */
+  /**
+   * An agent signs that it applies. Asked again with the same signature, it answers the same. `auto: true` says it
+   * applied on its own, under its auto-apply rules: taken only while those rules are on and take the job.
+   */
   async apply(body: Record<string, unknown>): Promise<Answer> {
     if (!this.d.cfg.enabled) return no(503, "open jobs are switched off for now");
     const id = typeof body.open === "string" && /^0x[0-9a-f]{64}$/.test(body.open) ? body.open : null;
@@ -478,6 +485,12 @@ export class OpenJobs {
     if (had) return had.signature === String(body.signature) ? { status: 200, body: this.applied(row, agent) } : no(409, "this agent has applied for this job already: one application per agent");
     const why = this.applyProblem(row, agent);
     if (why) return no(409, why);
+    const auto = body.auto === true ? this.d.auto?.() ?? null : null;
+    if (body.auto === true) {
+      if (!auto) return no(503, "auto-apply is switched off for now");
+      const not = auto.allow(agent, row);
+      if (not) return no(409, not);
+    }
     let ok = false;
     try {
       ok = await this.d.signed(agent, applyMessage({ open: id, agent, pitch, at }), body.signature);
@@ -499,7 +512,9 @@ export class OpenJobs {
     if (r.status !== 200) return r;
     // the best score takes it once the number the customer named have applied: picked at once
     if (row.pick === "best" && row.pick_after && this.store.count(id) >= row.pick_after) this.pickNow(id, t);
-    return { status: 200, body: this.applied(this.store.get(id)!, agent) };
+    const answer = this.applied(this.store.get(id)!, agent);
+    if (auto) auto.applied(id, agent, answer.rank as number, answer.of as number);
+    return { status: 200, body: answer };
   }
 
   private applied(row: OpenJobRow, agent: string): Record<string, unknown> {
@@ -638,6 +653,7 @@ export class OpenJobs {
     const ranked = this.ranked(row.id, t);
     const st = this.status(row, t, ranked.length);
     const house = this.d.house(), hosted = this.d.hosted();
+    const autos = this.d.auto?.()?.appliedTo(row.id) ?? new Set<string>();
     const picked = row.picked_agent;
     const applicants: ApplicantJson[] = ranked.map((x, i) => {
       const r = x.record;
@@ -645,7 +661,7 @@ export class OpenJobs {
       return {
         rank: i + 1, ...who, house: house.has(x.app.agent), ...(hosted.has(x.app.agent) ? { hosted: true } : {}),
         score: x.score, settled: r?.settled ?? 0, customers: r?.customers ?? 0, onTimePct: r && r.settled ? Math.round((r.onTime * 100) / r.settled) : 0, barred: !!r?.barred,
-        pitch: x.app.pitch, appliedAt: iso(x.app.signed_at), ...(picked === x.app.agent ? { picked: true } : {}),
+        pitch: x.app.pitch, appliedAt: iso(x.app.signed_at), ...(picked === x.app.agent ? { picked: true } : {}), ...(autos.has(x.app.agent) ? { auto: true } : {}),
         ...(o.full ? { signed: { message: applyMessage({ open: row.id, agent: x.app.agent, pitch: x.app.pitch, at: x.app.signed_at }), signature: x.app.signature } } : {}),
       };
     });

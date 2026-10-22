@@ -32,6 +32,7 @@ import { FirmRunner, type JobFacts } from "./firm.js";
 import { HOUSE_FIRM, type Firms } from "../firms.js";
 import type { Subjobs } from "../subjobs.js";
 import { SERVICES, type Asked, type Done, type Service } from "./services.js";
+import type { Runner } from "../autoapply.js";
 
 type Env = Record<string, string | undefined>;
 
@@ -154,6 +155,9 @@ export interface HouseDeps {
   nowS?: () => number;
   /** why a job should be declined when it is a month of a monthly plan its customer stopped before it was started (../plans.ts) */
   planStopped?: (jobId: number) => string | null;
+  /** auto-apply (../autoapply.ts): whether the agent draws the half up front on a job it applied to on its own, and the word that it is delivering */
+  earlyHalf?: (jobId: number, agent: string) => boolean;
+  delivering?: (jobId: number, agent: string, drew: bigint, title: string) => void;
 }
 
 export class House {
@@ -242,6 +246,24 @@ export class House {
   /** Who made the agent at an address, when it is one made on the site. */
   ownerOf(address: string): string | null {
     return this.agents.find((x) => x.address === address)?.hosted?.owner ?? null;
+  }
+
+  /**
+   * The agents Factor runs and can sign for, once each is on the desk: what auto-apply needs to apply for one of them
+   * (../autoapply.ts). An agent made on the site is paused by its maker; one that asks a model is left out while the
+   * day's spending on models is used up.
+   */
+  runners(): Map<string, Runner> {
+    const out = new Map<string, Runner>();
+    if (!this.cfg.enabled || !this.d.live() || stopped(this.d.db, "house") || stopped(this.d.db, "keeper")) return out;
+    const spent = this.spentToday() >= this.cfg.dailyMicro;
+    for (const a of this.agents) {
+      const sign = a.signer.signMessage;
+      if (!a.setUp || !a.address || !sign || (a.service.ask && spent)) continue;
+      const paused = a.hosted ? !!(this.d.db.q("SELECT paused FROM hosted_agents WHERE id = ?").get(a.hosted.id) as { paused: number } | undefined)?.paused : false;
+      out.set(a.address, { address: a.address, name: a.service.name, floorWei: a.service.floorWei, refuses: (brief) => a.service.refuses(brief), paused, sign: (m) => sign(m) });
+    }
+    return out;
   }
 
   /** The house agents' addresses on the desk, as far as they are known yet. */
@@ -438,10 +460,14 @@ export class House {
       if (job.state >= 3) return this.save(job.id, a, { state: job.state === 3 || job.state === 4 || job.state === 5 ? "delivered" : "gave_up" });
       // A demonstration job whose customer allowed an early advance: the agent draws half of it and delivers in one
       // order, so the advance is never out on a job that is not delivered (an advance kept that way bars an agent).
-      const early = this.demoCustomer !== null && job.customer === this.demoCustomer && !!job.allow_early && job.state === 1;
+      // The same for a job it applied to on its own, when its owner's rules say it takes the half up front.
+      const early = !!job.allow_early && job.state === 1 && ((this.demoCustomer !== null && job.customer === this.demoCustomer) || !!this.d.earlyHalf?.(job.id, a.address!));
       const calls = [...(early ? [deskCall(this.d.desk, "draw", [BigInt(job.id), BigInt(job.price) / 2n, 0])] : []), deskCall(this.d.desk, "deliver", [BigInt(job.id), proofOf(row.work)])];
       const relay = await this.orderFor(a, job, calls);
-      if (relay) this.save(job.id, a, { state: "delivering", relay });
+      if (relay) {
+        this.save(job.id, a, { state: "delivering", relay });
+        this.d.delivering?.(job.id, a.address!, early ? BigInt(job.price) / 2n : 0n, this.d.profiles.titles([job.id]).get(job.id) ?? "");
+      }
       return;
     }
     if (row.state === "to_decline") {
