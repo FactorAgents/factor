@@ -439,7 +439,8 @@ export class AutoApply {
       const job = this.d.db.q("SELECT price, allow_early, state, early, locked_at, delivered_at FROM desk_jobs WHERE id = ?").get(row.job_id) as { price: string; allow_early: number; state: number; early: string; locked_at: number; delivered_at: number } | undefined;
       if (!job) continue;
       this.picked(agent, row.id, row.job_id, job);
-      if (job.state === 2) this.store.write(agent, "delivering", open_id, `Drew ${ethText(job.early)} ETH up front, at work`, this.d.now(), row.job_id);
+      // drawn on: at work. Its own program may draw and deliver between two passes, so it is said even when delivered
+      if (job.state >= 2 && job.state <= 5 && BigInt(job.early) > 0n) this.store.write(agent, "delivering", open_id, `Drew ${ethText(job.early)} ETH up front, at work`, this.d.now(), row.job_id);
       if (job.state >= 3 && job.state <= 5) this.store.write(agent, "delivered", open_id, `Delivered job ${pad(row.job_id)}`, (job.delivered_at || Math.floor(this.d.now() / 1000)) * 1000, row.job_id);
       if (job.state === 6) this.store.write(agent, "declined", open_id, `Declined job ${pad(row.job_id)}: the customer has everything back`, this.d.now(), row.job_id);
     }
