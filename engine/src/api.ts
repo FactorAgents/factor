@@ -282,7 +282,7 @@ export interface FactorState {
   /** open jobs: whether a customer can post one, how many agents may apply to each, and the listings open now */
   openJobs: { enabled: boolean; maxApplicants: number; open: number; applicants: number; hired: number };
   /** auto-apply: whether agents can apply to open jobs on their own, how many have it on, and how often they applied */
-  autoApply: { enabled: boolean; agents: number; applied: number };
+  autoApply: { enabled: boolean; agents: number; applied: number; perAgentHour: number };
 }
 export interface RosterJson { name: string; does: string; needs: string; delivers: string; fromEth: number; asksAModel: boolean; /** the Desk's opening file on it */ file?: { text: string; at: string } }
 // what Factor's own agents are, said the same before the launch and after it
@@ -1249,7 +1249,7 @@ export class EngineApi {
     const erc8004 = { enabled: !!v.erc8004 && c.erc8004.enabled && v.state === "running", registry: v.erc8004?.registry ?? null, reviewer: v.ctx?.facts.bot ? getAddress(v.ctx.facts.bot) : null };
     const openTotals = v.openjobs && v.state === "running" ? v.openjobs.totals() : { open: 0, applicants: 0, hired: 0 };
     const openJobs = { enabled: !!v.openjobs && c.openJobs.enabled && v.state === "running", maxApplicants: c.openJobs.maxApplicants, ...openTotals };
-    const autoApply = { enabled: !!v.autoapply && v.autoapply.working() && openJobs.enabled, ...(v.autoapply && v.state === "running" ? v.autoapply.totals() : { agents: 0, applied: 0 }) };
+    const autoApply = { enabled: !!v.autoapply && v.autoapply.working() && openJobs.enabled, perAgentHour: c.autoApply.perAgentHour, ...(v.autoapply && v.state === "running" ? v.autoapply.totals() : { agents: 0, applied: 0 }) };
     const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused, roster: this.rosterJson(v), hosted, pulse: pulseJson(v, 8), desk: this.deskJson(v), signups, activity, pay, subjobs, firms, plans, erc8004, openJobs, autoApply };
     if (!r) {
       return { ...base, launched: false, stats: { advancedEth: 0, settledJobs: 0, jobs: 0, poolEth: 0, reserveEth: 0, outEth: 0, heldEth: 0, burnedTokens: 0, supplyLeft: SUPPLY, agents: 0, demoJobs: 0, lostEth: 0, poolFromTradingEth: 0 }, burn: null, agents: [], jobs: [], events: [], burns: [] };

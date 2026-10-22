@@ -161,7 +161,7 @@ describe("an agent Factor runs, on its own", () => {
   it("finds an open job that fits, applies with its own key, is picked, draws half up front and delivers", async () => {
     const w = await world();
     expect(await setRules(w, PAGE)).toMatchObject({ status: 200, ok: true, rules: { on: true, takes: ["Landing pages"], atOnce: 1, early: true } });
-    expect((await get(w, "/v1/state")).autoApply).toEqual({ enabled: true, agents: 1, applied: 0 });
+    expect((await get(w, "/v1/state")).autoApply).toEqual({ enabled: true, perAgentHour: 6, agents: 1, applied: 0 });
     const id = await postJob(w);
     await round(w);
     const l = await listing(w, id);
@@ -317,6 +317,6 @@ describe("the rules themselves", () => {
     expect(await setRules(w, A1, {}, { key: aKey })).toMatchObject({ status: 503 });
     const id = await postJob(w);
     expect(await applyAuto(w, id)).toMatchObject({ status: 409, error: "auto-apply is switched off for now" });
-    expect((await get(w, "/v1/state")).autoApply).toEqual({ enabled: false, agents: 0, applied: 0 });
+    expect((await get(w, "/v1/state")).autoApply).toEqual({ enabled: false, perAgentHour: 6, agents: 0, applied: 0 });
   });
 });
