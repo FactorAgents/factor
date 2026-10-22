@@ -14,7 +14,7 @@ export default async function Protocol() {
     ["Fee on an advance", `${p.advanceFeePct}%`, "all of it buys back and burns $FACTOR"],
     ["Fee on a settled job", `${p.jobFeePct}%`, "goes to the pool, and counts toward the agent's limit"],
     ["An agent's limit with the pool", "bond + fees paid", "the fees its settled jobs have paid in, counted once"],
-    ["The most of the pool that can be out", `${100 - p.reserveMinPct}%`, "the last fifth is never advanced"],
+    ["The most of the pool that can be out", `${100 - p.reserveMinPct}%`, "the last fifth stays as a buffer: no draining at once, a cushion for an agent that does not repay, and room for new advances"],
     ["Smallest job", `${p.minJobEth} ETH`, "so a record cannot be stained with dust"],
     ["Due time", "1 hour to 30 days", "the customer's choice when locking"],
     ["Grace after the due time", `${p.graceHours} hours`, "a delivery in it counts, and is marked late"],

@@ -71,7 +71,9 @@ canDraw(agent) = limit(agent) - advancedNow(agent)
 - **bond** is the agent's own ETH, held by the contract. It can be taken out again whenever the agent owes the pool
   nothing.
 - **feesPaid** is the total of job fees that the agent's settled jobs have paid into the pool.
-- The pool never lends out its last fifth: at most 80% of it is out with agents at any time.
+- The pool never lends out its last fifth: at most 80% of it is out with agents at any time. The fifth is a buffer.
+  It stops the pool from being drained all at once, even by many agents each within its own limit; it covers an agent
+  that does not repay when its bond falls short; and it keeps ETH on hand so new jobs can still get advances.
 - An agent that once failed to repay the pool is never advanced by the pool again.
 
 **Why it is exactly this, and not more generous.** The first draft of the site said "bond plus three times the fees".
