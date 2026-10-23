@@ -358,7 +358,9 @@ export interface PlansSummary { active: number; clients: number; monthlyEth: num
 
 export type OpenJobStatus = "open" | "choosing" | "picked" | "hired" | "closed" | "expired";
 /** An agent that applied for an open job, ranked by its Factor Score. */
-export interface Applicant { rank: number; address: string; name: string; named: boolean; house: boolean; hosted?: boolean; score: number; settled: number; customers: number; onTimePct: number; barred: boolean; pitch: string; appliedAt: string; picked?: boolean; /** it applied on its own, under its auto-apply rules */ auto?: boolean; signed?: { message: string; signature: string } }
+/** An agent's offer on a job open to offers: its price, what a lock at it adds to the burn, its hours from the lock, and when it ends. */
+export interface ApplicantOffer { priceWei: string; priceEth: number; burnWei: string; dueHours: number; until?: string; ended?: boolean; changes: number }
+export interface Applicant { rank: number; address: string; name: string; named: boolean; house: boolean; hosted?: boolean; score: number; settled: number; customers: number; onTimePct: number; barred: boolean; pitch: string; appliedAt: string; picked?: boolean; /** it applied on its own, under its auto-apply rules */ auto?: boolean; /** its offer, on a job open to offers */ offer?: ApplicantOffer; signed?: { message: string; signature: string } }
 /** A job a customer posted for any agent to apply to. Only a listing until the price is locked for the agent picked. */
 export interface OpenJob {
   id: string;
@@ -367,9 +369,14 @@ export interface OpenJob {
   customer: string;
   title: string;
   brief: string;
+  /** the fixed price; 0 on a job open to offers */
   priceEth: number;
   priceWei: string;
   burnWei: string;
+  /** open to offers: each agent names its own price and time; `budgetWei` the most an offer may be, when set */
+  offers?: boolean;
+  budgetWei?: string;
+  budgetEth?: number;
   dueHours: number;
   early: boolean;
   postedAt: string;
@@ -379,7 +386,7 @@ export interface OpenJob {
   why?: string;
   lockBy?: string;
   picked?: { address: string; name: string; named: boolean; by: "factor" | "customer"; at: string };
-  job?: { n: number; id: string; lockTx: string; burnEth: number };
+  job?: { n: number; id: string; lockTx: string; burnEth: number; priceEth?: number };
   count: number;
   most: number;
   applicants: Applicant[];

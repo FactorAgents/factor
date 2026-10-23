@@ -6,7 +6,13 @@ import { lockAndBurn, lockedJob, Refusal } from "./desk";
 import { signText, type Provider } from "./wallet";
 
 export type PickRule = { by: "customer" } | { by: "best"; after?: number };
-export interface OpenJobText { customer: string; price: string; dueHours: number; early: boolean; title: string; brief: string; closesAt: number; pick: PickRule; at: number }
+/** With `offers`, the job is open to offers: `price` is the budget ("0": none) and `dueHours` the longest an offer may take. */
+export interface OpenJobText { customer: string; price: string; dueHours: number; early: boolean; title: string; brief: string; closesAt: number; pick: PickRule; at: number; offers?: boolean }
+/** An agent's offer: its price (wei as text), its hours from the lock, and when it ends (unix seconds), or null: until withdrawn. */
+export interface Offer { priceWei: string; dueHours: number; until: number | null }
+
+export const priceWords = (p: { price: string; offers?: boolean }): string =>
+  !p.offers ? `${formatEther(BigInt(p.price))} ETH` : BigInt(p.price) > 0n ? `open to offers, up to ${formatEther(BigInt(p.price))} ETH` : "open to offers";
 
 /** A pitch: one plain line, without links. */
 export const PITCH_MOST = 280;
@@ -17,8 +23,8 @@ export function postJobMessage(p: OpenJobText): string {
   return [
     "Factor: post an open job",
     `customer: ${p.customer}`,
-    `price: ${formatEther(BigInt(p.price))} ETH`,
-    `due: ${p.dueHours} hours after it is locked`,
+    `price: ${priceWords(p)}`,
+    p.offers ? `due: as offered, at most ${p.dueHours} hours after it is locked` : `due: ${p.dueHours} hours after it is locked`,
     `early: ${p.early ? "up to half may be drawn before delivery" : "nothing before delivery"}`,
     `title: ${p.title}`,
     `brief: ${p.brief ? keccak256(toHex(p.brief)) : "none"}`,
@@ -28,13 +34,18 @@ export function postJobMessage(p: OpenJobText): string {
   ].join("\n");
 }
 
-export const applyMessage = (a: { open: string; agent: string; pitch: string; at: number }): string => ["Factor: apply for an open job", `open job: ${a.open}`, `agent: ${a.agent}`, `pitch: ${a.pitch || "none"}`, `at: ${a.at}`].join("\n");
+export const applyMessage = (a: { open: string; agent: string; pitch: string; at: number; offer?: Offer }): string => [
+  "Factor: apply for an open job", `open job: ${a.open}`, `agent: ${a.agent}`, `pitch: ${a.pitch || "none"}`,
+  ...(a.offer ? [`offer: ${formatEther(BigInt(a.offer.priceWei))} ETH, due ${a.offer.dueHours} hours after it is locked`, `good until: ${a.offer.until ?? "withdrawn"}`] : []),
+  `at: ${a.at}`,
+].join("\n");
+export const withdrawMessage = (w: { open: string; agent: string; at: number }): string => ["Factor: withdraw an offer", `open job: ${w.open}`, `agent: ${w.agent}`, `at: ${w.at}`].join("\n");
 export const closeJobMessage = (c: { open: string; customer: string; at: number }): string => ["Factor: close an open job", `open job: ${c.open}`, `customer: ${c.customer}`, `at: ${c.at}`].join("\n");
 
 const said = (e: string | undefined, fallback: string): string => { const t = e ?? fallback; return t.charAt(0).toUpperCase() + t.slice(1) + (/[.!?]$/.test(t) ? "" : "."); };
 
 /** A post to the engine through the site, asked again while the engine has not read a brand new lock yet. */
-export async function askOpen<T>(path: "openjobs/post" | "openjobs/apply" | "openjobs/hire" | "openjobs/close", body: Record<string, unknown>): Promise<T> {
+export async function askOpen<T>(path: "openjobs/post" | "openjobs/apply" | "openjobs/hire" | "openjobs/close" | "openjobs/withdraw", body: Record<string, unknown>): Promise<T> {
   for (let tries = 0; ; tries++) {
     const r = await fetch(`/api/v1/${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
     const b = (await r.json().catch(() => ({}))) as T & { error?: string };
@@ -47,13 +58,20 @@ export async function askOpen<T>(path: "openjobs/post" | "openjobs/apply" | "ope
 /** The customer signs the listing: nothing is locked. Answers the open job's number. */
 export async function signPost(p: Provider, job: OpenJobText): Promise<{ open: string; created: boolean }> {
   const signature = await signText(p, postJobMessage(job), job.customer);
-  return askOpen<{ open: string; created: boolean }>("openjobs/post", { customer: job.customer, price: job.price, dueHours: job.dueHours, early: job.early, title: job.title, brief: job.brief, closesAt: job.closesAt, pick: job.pick.by, ...(job.pick.by === "best" && job.pick.after ? { pickAfter: job.pick.after } : {}), at: job.at, signature });
+  return askOpen<{ open: string; created: boolean }>("openjobs/post", { customer: job.customer, price: job.price, dueHours: job.dueHours, early: job.early, title: job.title, brief: job.brief, closesAt: job.closesAt, pick: job.pick.by, ...(job.pick.by === "best" && job.pick.after ? { pickAfter: job.pick.after } : {}), at: job.at, signature, ...(job.offers ? { offers: true } : {}) });
 }
 
-/** An agent signs that it applies. Answers where it stands among the applicants. */
-export async function signApply(p: Provider, a: { open: string; agent: string; pitch: string; at: number }): Promise<{ rank: number; of: number; listing: string }> {
+/** An agent signs that it applies, with its offer on a job open to offers. Answers where it stands among the applicants. */
+export async function signApply(p: Provider, a: { open: string; agent: string; pitch: string; at: number; offer?: Offer }): Promise<{ rank: number; of: number; listing: string; replaced?: boolean }> {
   const signature = await signText(p, applyMessage(a), a.agent);
-  return askOpen<{ rank: number; of: number; listing: string }>("openjobs/apply", { ...a, signature });
+  const { offer, ...rest } = a;
+  return askOpen<{ rank: number; of: number; listing: string; replaced?: boolean }>("openjobs/apply", { ...rest, signature, ...(offer ? { priceWei: offer.priceWei, dueHours: offer.dueHours, ...(offer.until !== null ? { until: offer.until } : {}) } : {}) });
+}
+
+/** An agent signs to take its offer back, until it is picked. */
+export async function signWithdraw(p: Provider, w: { open: string; agent: string; at: number }): Promise<void> {
+  const signature = await signText(p, withdrawMessage(w), w.agent);
+  await askOpen("openjobs/withdraw", { ...w, signature });
 }
 
 /** The customer signs to take the listing down. */
@@ -79,6 +97,9 @@ export async function lockForOpen(p: Provider, o: { passkey: boolean; desk: stri
     return { job, lockTx, linked: false, burned: false, note: e instanceof Error ? e.message : "Factor did not answer." };
   }
 }
+
+/** How long an offer takes, as a page says it. */
+export const hoursWords = (h: number): string => (h % 24 === 0 && h >= 48 ? `${h / 24} days` : `${h} hour${h === 1 ? "" : "s"}`);
 
 /** How a listing's status is said on a page. */
 export const STATUS_WORD: Record<string, string> = { open: "Taking applications", choosing: "Customer choosing", picked: "Agent picked", hired: "Hired", closed: "Taken down", expired: "Expired" };

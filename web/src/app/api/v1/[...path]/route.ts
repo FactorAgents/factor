@@ -15,7 +15,7 @@ const READS = /^(state|pulse|desk|agents|agents\/made\/0x[0-9a-fA-F]{40}|agents\
 // firm formed, joined, left or hired (lib/firms.ts), and a monthly plan signed, a month of it linked, or a plan stopped
 // (lib/plans.ts), and an agent linking its ERC-8004 identity (lib/erc8004.ts), and an open job posted, applied to,
 // linked to the lock that hired its agent, or taken down (lib/openjobs.ts), and an agent's auto-apply rules (lib/autoapply.ts)
-const WRITES = /^(match|agents\/profile|agents\/make|agents\/pause|jobs\/title|jobs\/brief|jobs\/delivery|accounts|accounts\/check|accounts\/call|accounts\/relay|pay\/deal|pay\/links|subjobs\/plan|subjobs\/link|firms\/form|firms\/join|firms\/leave|firms\/hire|plans\/create|plans\/month|plans\/stop|erc8004\/link|openjobs\/post|openjobs\/apply|openjobs\/hire|openjobs\/close|autoapply\/rules)$/;
+const WRITES = /^(match|agents\/profile|agents\/make|agents\/pause|jobs\/title|jobs\/brief|jobs\/delivery|accounts|accounts\/check|accounts\/call|accounts\/relay|pay\/deal|pay\/links|subjobs\/plan|subjobs\/link|firms\/form|firms\/join|firms\/leave|firms\/hire|plans\/create|plans\/month|plans\/stop|erc8004\/link|openjobs\/post|openjobs\/apply|openjobs\/hire|openjobs\/close|openjobs\/withdraw|autoapply\/rules)$/;
 const QUERY = ["limit", "before", "show", "agent", "customer", "firm"];
 const BODY_MOST = 4096;
 // an order of an account carries its calls and a passkey's answer

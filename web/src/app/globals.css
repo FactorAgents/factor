@@ -878,6 +878,30 @@ button.toggle { width: 100%; text-align: left; background: transparent; color: i
   .applicant.picked::before { left: -10px; }
 }
 
+/* offers (components/OpenJobs.tsx): a job open to offers, its offers side by side, sorted as the customer likes */
+.offer-sort { display: flex; align-items: center; justify-content: space-between; gap: 14px 24px; flex-wrap: wrap; margin-bottom: 22px; }
+.offer-sort .modes { margin-bottom: 0; }
+.modes.three { grid-template-columns: repeat(3, 1fr); }
+.applicants.offers .applicant { grid-template-columns: 30px 44px minmax(0, 1.5fr) 0.75fr 0.75fr 0.85fr 180px; }
+.applicants.offers .applicant .col.of .small { display: none; }
+.applicant .col .small:empty { display: none; }
+.applicant.ended { opacity: 0.5; }
+@media (max-width: 960px) {
+  .applicants.offers .applicant { grid-template-columns: 24px 40px minmax(0, 1fr) auto auto; }
+  .applicants.offers .applicant .col.tm { display: none; }
+  .applicants.offers .applicant .col.of .small { display: block; }
+  .applicants.offers .applicant .col.sc .small { display: none; }
+}
+@media (max-width: 560px) {
+  .applicants.offers .applicant { grid-template-columns: 24px 40px minmax(0, 1fr) minmax(0, 1fr); }
+  .applicants.offers .applicant .who { grid-column: 3 / -1; }
+  .applicants.offers .applicant .col.of { grid-column: 3; grid-row: 2; }
+  .applicants.offers .applicant .col.sc { grid-column: 4; grid-row: 2; text-align: left; }
+  .applicants.offers .applicant .col.sc .score { margin-left: 0; }
+  .applicants.offers .applicant .act-col { grid-column: 3 / -1; grid-row: 3; }
+  .offer-sort .modes button { padding: 10px 12px; }
+}
+
 /* auto-apply (components/AutoApply.tsx): the rules on an agent's page, and what it did on its own */
 .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
 .chips button { background: none; border: 1px solid var(--line-2); border-radius: 2px; color: var(--mid); font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; padding: 8px 12px; cursor: pointer; transition: background 0.25s ease, color 0.25s ease, border-color 0.25s ease; }

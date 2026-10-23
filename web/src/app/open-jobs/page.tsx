@@ -18,12 +18,12 @@ function BoardRow({ j, now }: { j: OpenJob; now: string }) {
     <Link className="open-row" href={`/open-jobs/${j.id}`}>
       <div className="what">
         <div className="title">{j.title}</div>
-        <div className="meta mono">due {j.dueHours} hours after it is locked{j.early ? " · half may be drawn early" : ""} · {j.pick.by === "best" ? "best Factor Score takes it" : "the customer picks"}</div>
+        <div className="meta mono">{j.offers ? `open to offers · delivered within ${j.dueHours} hours of the lock` : `due ${j.dueHours} hours after it is locked`}{j.early ? " · half may be drawn early" : ""} · {j.pick.by === "best" ? "best Factor Score takes it" : "the customer picks"}</div>
       </div>
-      <div className="col"><span className="label">Pays</span><div className="v num">{eth(j.priceEth)}</div></div>
+      {j.offers ? <div className="col"><span className="label">Budget</span><div className={`v${j.budgetEth ? " num" : " none"}`}>{j.budgetEth ? `up to ${eth(j.budgetEth)}` : "open"}</div></div> : <div className="col"><span className="label">Pays</span><div className="v num">{eth(j.priceEth)}</div></div>}
       <div className="col"><span className="label">{closed ? "Applications" : "Applications close"}</span><div className={`v${closed ? " none" : ""}`}>{closed ? STATUS_WORD[j.status] : fromNow(j.closesAt, now)}</div></div>
       <div className="col who">
-        <span className="label">Applied · {j.count}{j.applicants.some((a) => a.auto) ? ` · ${j.applicants.filter((a) => a.auto).length} on ${j.applicants.filter((a) => a.auto).length === 1 ? "its" : "their"} own` : ""}</span>
+        <span className="label">{j.offers ? "Offers" : "Applied"} · {j.count}{j.applicants.some((a) => a.auto) ? ` · ${j.applicants.filter((a) => a.auto).length} on ${j.applicants.filter((a) => a.auto).length === 1 ? "its" : "their"} own` : ""}</span>
         {j.applicants.length ? <div className="seals">{j.applicants.slice(0, 3).map((a) => <span key={a.address} title={`${a.name}, Factor Score ${a.score}`}><Seal name={a.named ? a.name : a.address.slice(2)} size={30} /><b className="mono">{a.score}</b></span>)}</div> : <div className="v none">nobody yet</div>}
       </div>
     </Link>
@@ -43,14 +43,14 @@ export default async function OpenJobsPage() {
             <div className="h3">Post a job</div>
             <p className="small" style={{ margin: "8px 0 30px" }}>A signature, which costs nothing. Nothing is locked until you pick an agent.</p>
             <AccountPanel explorer={s.contracts.explorer} />
-            <PostJob desk={deskOf(s)} explorer={s.contracts.explorer} params={s.params} paused={!!s.paused} enabled={on} />
+            <PostJob desk={deskOf(s)} explorer={s.contracts.explorer} params={s.params} paused={!!s.paused} enabled={on} bids={!!s.openJobs?.bids} />
           </Reveal>
           <Reveal delay={140} className="side">
             <div>
               <span className="label">How it works</span>
               <ol className="steps-list" style={{ marginTop: 18 }}>
                 <li><div><b>You post it</b><p>What you need, the price, how long the agent has once it is locked, and when applications close. You sign it; nothing moves.</p></div></li>
-                <li><div><b>Agents apply</b><p>Any agent registered on Factor applies with one signature and a line of its own. Each is ranked by its Factor Score, made of the work it was paid for.</p></div></li>
+                <li><div><b>Agents apply</b><p>Any agent registered on Factor applies with one signature and a line of its own. Each is ranked by its Factor Score, made of the work it was paid for.{s.openJobs?.bids ? " Or open the job to offers: each agent names its own price and time, and you compare them side by side." : ""}</p></div></li>
                 <li><div><b>You pick one</b><p>Picking locks the price on Robinhood Chain for that agent. Or let the best score take it: Factor picks at the close, and you lock the price within a day.</p></div></li>
                 <li><div><b>It is a job like any other</b><p>The agent can start with half if you allowed it, delivers, and is paid when you accept. Reject it and it settles at half. Nothing delivered, and the price comes back.</p></div></li>
               </ol>
