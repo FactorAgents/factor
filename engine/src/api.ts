@@ -23,6 +23,7 @@
 //   POST /v1/erc8004/link      an agent signs which ERC-8004 identity is its own, or that it wants none linked
 //   GET  /v1/openjobs?show=open|all&customer=&agent=   open jobs; /v1/openjobs/<id> one, its applicants by Factor Score (openjobs.ts)
 //   POST /v1/openjobs/post|apply|hire|close   a customer posts a job, an agent applies, the lock is linked, or it is taken down
+//   POST /v1/openjobs/withdraw  an agent takes back its offer on a job open to offers (BIDS=on)
 //   GET  /v1/autoapply/<agent>  an agent's auto-apply rules, its log, and the open jobs it may apply to now (autoapply.ts)
 //   POST /v1/autoapply/rules    an agent's owner signs its auto-apply rules
 //
@@ -180,7 +181,7 @@ export interface JobJson {
   /** a month of a monthly plan: which plan, and which month of how many */
   plan?: { id: string; month: number; months: number };
   /** locked from an open job: the listing, how many agents applied, and who picked the agent */
-  open?: { id: string; applicants: number; by: "factor" | "customer" };
+  open?: { id: string; applicants: number; by: "factor" | "customer"; offers?: boolean };
 }
 /** The other agents one agent hired for parts of its jobs, and those that hired it: one line each, with how many jobs. */
 export interface HiringJson { hiredBy: { address: string; name: string; named: boolean; jobs: number }[]; hires: { address: string; name: string; named: boolean; jobs: number }[] }
@@ -280,7 +281,7 @@ export interface FactorState {
   /** ERC-8004: whether settled jobs are written to the agents' reputation, the identity registry, and the address entries come from */
   erc8004: { enabled: boolean; registry: string | null; reviewer: string | null };
   /** open jobs: whether a customer can post one, how many agents may apply to each, and the listings open now */
-  openJobs: { enabled: boolean; maxApplicants: number; open: number; applicants: number; hired: number };
+  openJobs: { enabled: boolean; maxApplicants: number; open: number; applicants: number; hired: number; bids: boolean };
   /** auto-apply: whether agents can apply to open jobs on their own, how many have it on, and how often they applied */
   autoApply: { enabled: boolean; agents: number; applied: number; perAgentHour: number };
 }
@@ -741,7 +742,7 @@ export class EngineApi {
     const b = body as Record<string, unknown>;
     const o = v.openjobs;
     o.pickDue();
-    const a = path === "/v1/openjobs/post" ? await o.post(b, b.via === "kit" ? "kit" : "site") : path === "/v1/openjobs/apply" ? await o.apply(b) : path === "/v1/openjobs/hire" ? await o.hire(b) : await o.close(b);
+    const a = path === "/v1/openjobs/post" ? await o.post(b, b.via === "kit" ? "kit" : "site") : path === "/v1/openjobs/apply" ? await o.apply(b) : path === "/v1/openjobs/hire" ? await o.hire(b) : path === "/v1/openjobs/withdraw" ? await o.withdraw(b) : await o.close(b);
     if (a.status === 200) this.cache.clear();
     return a;
   }
@@ -895,7 +896,7 @@ export class EngineApi {
     if (path === "/v1/subjobs/plan" || path === "/v1/subjobs/link") return this.subjobsPost(path, body, from);
     if (path === "/v1/firms/form" || path === "/v1/firms/join" || path === "/v1/firms/leave" || path === "/v1/firms/hire") return this.firmsPost(path, body, from);
     if (path === "/v1/plans/create" || path === "/v1/plans/month" || path === "/v1/plans/stop") return this.plansPost(path, body, from);
-    if (path === "/v1/openjobs/post" || path === "/v1/openjobs/apply" || path === "/v1/openjobs/hire" || path === "/v1/openjobs/close") return this.openJobsPost(path, body, from);
+    if (path === "/v1/openjobs/post" || path === "/v1/openjobs/apply" || path === "/v1/openjobs/hire" || path === "/v1/openjobs/close" || path === "/v1/openjobs/withdraw") return this.openJobsPost(path, body, from);
     if (path === "/v1/autoapply/rules") return this.autoApplyPost(body, from);
     if (path === "/v1/accounts" || path.startsWith("/v1/accounts/")) return this.accountsPost(path, body, from);
     if (path === "/v1/agents/make" || path === "/v1/agents/pause") return this.hostedPost(path, body, from);
@@ -1248,7 +1249,7 @@ export class EngineApi {
     const plans = { enabled: !!v.plans && c.plans.enabled && v.state === "running", mostMonths: c.plans.mostMonths, ...planTotals };
     const erc8004 = { enabled: !!v.erc8004 && c.erc8004.enabled && v.state === "running", registry: v.erc8004?.registry ?? null, reviewer: v.ctx?.facts.bot ? getAddress(v.ctx.facts.bot) : null };
     const openTotals = v.openjobs && v.state === "running" ? v.openjobs.totals() : { open: 0, applicants: 0, hired: 0 };
-    const openJobs = { enabled: !!v.openjobs && c.openJobs.enabled && v.state === "running", maxApplicants: c.openJobs.maxApplicants, ...openTotals };
+    const openJobs = { enabled: !!v.openjobs && c.openJobs.enabled && v.state === "running", maxApplicants: c.openJobs.maxApplicants, ...openTotals, bids: !!v.openjobs && v.state === "running" && v.openjobs.offersOn() };
     const autoApply = { enabled: !!v.autoapply && v.autoapply.working() && openJobs.enabled, perAgentHour: c.autoApply.perAgentHour, ...(v.autoapply && v.state === "running" ? v.autoapply.totals() : { agents: 0, applied: 0 }) };
     const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused, roster: this.rosterJson(v), hosted, pulse: pulseJson(v, 8), desk: this.deskJson(v), signups, activity, pay, subjobs, firms, plans, erc8004, openJobs, autoApply };
     if (!r) {

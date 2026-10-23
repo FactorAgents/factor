@@ -34,6 +34,18 @@
 //
 // Every lock adds its share to the burn like a Pay with Factor deal: the customer sends it to the burn pot beside the
 // lock, and the engine checks the transfer on the chain before it counts it.
+//
+// Offers (BIDS=on, and the owner's "bids" switch): a job can be open to offers instead of having a fixed price, with a
+// budget it never goes over if the customer sets one, and the longest it gives the agent once it is locked. Then each
+// agent's application carries its own price and delivery time, signed with it (an offer):
+//   POST /v1/openjobs/apply      as above, with { priceWei, dueHours, until? }: the offer. A new one from the same agent
+//                                replaces the old one while applications are open, OFFERS_CHANGES times at most
+//   POST /v1/openjobs/withdraw   the agent signs to take its offer back (withdrawMessage), until it is picked
+// The rules of an offer: never under the agent's own lowest price (its auto-apply rules, or what Factor takes a job of
+// one of its agents for), never over the customer's budget, never longer than the job gives, and gone once it ends
+// (`until`) or is withdrawn. Such a job is always picked by its customer: Factor never picks a price for anybody. The
+// customer picks an offer by locking that offer's price, due that offer's hours after the lock, through the desk's own
+// lock; the engine links the lock only when it is an offer the agent stood by at that moment.
 
 import { formatEther, keccak256, toHex, type Hex } from "viem";
 import { normalizeAddress, shortAddress } from "./chain/address.js";
@@ -42,6 +54,7 @@ import type { AgentRecord } from "./desk.js";
 import { MIN_JOB_WEI, MAX_LINK_WEI, readLock, type LockFacts } from "./pay.js";
 import { briefText, oneLine } from "./profiles.js";
 import { scoreOf } from "./score.js";
+import { stopped } from "./switches.js";
 
 type Env = Record<string, string | undefined>;
 
@@ -56,6 +69,10 @@ export interface OpenJobsConfig {
   lockWindowS: number;
   /** the longest applications may stay open, seconds */
   mostOpenS: number;
+  /** BIDS=on: jobs open to offers, and agents bidding their own price and time. Off unless it is said */
+  bids: boolean;
+  /** OFFERS_CHANGES: how many times one agent may change its offer on one job */
+  offerChanges: number;
 }
 
 export function readOpenJobs(env: Env, problems: string[] = []): OpenJobsConfig {
@@ -67,14 +84,23 @@ export function readOpenJobs(env: Env, problems: string[] = []): OpenJobsConfig 
     problems.push(`${name} must be a whole number from ${least} to ${most}: it is "${raw}"`);
     return def;
   };
-  return { enabled: on, maxApplicants: whole("OPENJOBS_MAX_APPLICANTS", 20, 2, 100), perCustomer: whole("OPENJOBS_PER_CUSTOMER", 10, 1, 100), lockWindowS: 86_400, mostOpenS: 14 * 86_400 };
+  const bids = (env.BIDS ?? "").trim().toLowerCase() === "on";
+  return { enabled: on, maxApplicants: whole("OPENJOBS_MAX_APPLICANTS", 20, 2, 100), perCustomer: whole("OPENJOBS_PER_CUSTOMER", 10, 1, 100), lockWindowS: 86_400, mostOpenS: 14 * 86_400, bids, offerChanges: whole("OFFERS_CHANGES", 10, 1, 100) };
 }
 
 /** How the agent is picked: by the customer, or the best Factor Score (at the close, or once `after` have applied). */
 export type PickRule = { by: "customer" } | { by: "best"; after?: number };
 
-/** What the customer signs. `price` is wei as text; `dueHours` from the lock; `closesAt` unix seconds. */
-export interface OpenJobText { customer: string; price: string; dueHours: number; early: boolean; title: string; brief: string; closesAt: number; pick: PickRule; at: number }
+/**
+ * What the customer signs. `price` is wei as text; `dueHours` from the lock; `closesAt` unix seconds. With `offers`,
+ * the job is open to offers: `price` is the budget no offer may go over ("0": none) and `dueHours` the longest an
+ * offer may take.
+ */
+export interface OpenJobText { customer: string; price: string; dueHours: number; early: boolean; title: string; brief: string; closesAt: number; pick: PickRule; at: number; offers?: boolean }
+
+/** The price line of a listing: fixed, or open to offers with or without a budget. */
+export const priceWords = (p: { price: string; offers?: boolean }): string =>
+  !p.offers ? `${formatEther(BigInt(p.price))} ETH` : BigInt(p.price) > 0n ? `open to offers, up to ${formatEther(BigInt(p.price))} ETH` : "open to offers";
 
 export const pickWords = (p: PickRule): string => (p.by === "customer" ? "by the customer" : p.after ? `best Factor Score, at the close or once ${p.after} have applied` : "best Factor Score, at the close");
 
@@ -86,8 +112,8 @@ export function postMessage(p: OpenJobText): string {
   return [
     "Factor: post an open job",
     `customer: ${p.customer}`,
-    `price: ${formatEther(BigInt(p.price))} ETH`,
-    `due: ${p.dueHours} hours after it is locked`,
+    `price: ${priceWords(p)}`,
+    p.offers ? `due: as offered, at most ${p.dueHours} hours after it is locked` : `due: ${p.dueHours} hours after it is locked`,
     `early: ${p.early ? "up to half may be drawn before delivery" : "nothing before delivery"}`,
     `title: ${p.title}`,
     `brief: ${p.brief ? keccak256(toHex(p.brief)) : "none"}`,
@@ -100,9 +126,19 @@ export function postMessage(p: OpenJobText): string {
 /** An open job's own number: the fingerprint of what its customer signed. */
 export const openJobIdOf = (p: OpenJobText): Hex => keccak256(toHex(postMessage(p)));
 
-/** What an agent signs to apply. The pitch is its own line, shown on the listing, or none. */
-export interface ApplyText { open: string; agent: string; pitch: string; at: number }
-export const applyMessage = (a: ApplyText): string => ["Factor: apply for an open job", `open job: ${a.open}`, `agent: ${a.agent}`, `pitch: ${a.pitch || "none"}`, `at: ${a.at}`].join("\n");
+/** An agent's offer on a job open to offers: its price (wei as text), its hours from the lock, and when it ends (unix seconds), or null: until withdrawn. */
+export interface Offer { priceWei: string; dueHours: number; until: number | null }
+
+/** What an agent signs to apply. The pitch is its own line, shown on the listing, or none. On a job open to offers, its offer too. */
+export interface ApplyText { open: string; agent: string; pitch: string; at: number; offer?: Offer }
+export const applyMessage = (a: ApplyText): string => [
+  "Factor: apply for an open job", `open job: ${a.open}`, `agent: ${a.agent}`, `pitch: ${a.pitch || "none"}`,
+  ...(a.offer ? [`offer: ${formatEther(BigInt(a.offer.priceWei))} ETH, due ${a.offer.dueHours} hours after it is locked`, `good until: ${a.offer.until ?? "withdrawn"}`] : []),
+  `at: ${a.at}`,
+].join("\n");
+
+/** What an agent signs to take its offer back, until it is picked. */
+export const withdrawMessage = (w: { open: string; agent: string; at: number }): string => ["Factor: withdraw an offer", `open job: ${w.open}`, `agent: ${w.agent}`, `at: ${w.at}`].join("\n");
 
 /** What the customer signs to take a listing down before anybody is hired. */
 export const closeMessage = (c: { open: string; customer: string; at: number }): string => ["Factor: close an open job", `open job: ${c.open}`, `customer: ${c.customer}`, `at: ${c.at}`].join("\n");
@@ -118,8 +154,12 @@ export interface OpenJobRow {
   picked_agent: string | null; picked_at: number | null; picked_by: string | null;
   job_id: number | null; lock_tx: string | null; burn_wei: string; burn_tx: string | null; linked_at: number | null;
   closed_at: number | null; close_signature: string | null; hidden: number;
+  /** 1: open to offers. `price` is then the budget, "0" for none */
+  offers: number; locked_wei: string | null;
 }
-export interface ApplicationRow { open_id: string; agent: string; pitch: string; signed_at: number; signature: string; applied_at: number }
+export interface ApplicationRow { open_id: string; agent: string; pitch: string; signed_at: number; signature: string; applied_at: number; bid_wei: string | null; bid_hours: number | null; bid_until: number | null; changes: number }
+/** An offer that no longer stands: replaced by a newer one, or withdrawn. Kept, so a lock made while it stood is still its. */
+export interface PastOfferRow { id: number; open_id: string; agent: string; pitch: string; bid_wei: string; bid_hours: number; bid_until: number | null; signed_at: number; signature: string; ended_at: number; how: "replaced" | "withdrawn"; end_signature: string | null }
 
 const SCHEMA = `
 -- Open jobs (./openjobs.ts). A listing: what its customer signed. Never taken back by a reindex: nothing in it is the
@@ -164,11 +204,42 @@ CREATE TABLE IF NOT EXISTS open_job_applications (
   PRIMARY KEY (open_id, agent)
 );
 CREATE INDEX IF NOT EXISTS open_job_applications_agent ON open_job_applications (agent);
+-- Offers that no longer stand (./openjobs.ts, offers): replaced by a newer one, or withdrawn. What the agent signed,
+-- kept, so a lock made while an offer stood is still linked to it.
+CREATE TABLE IF NOT EXISTS open_job_offers_past (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  open_id TEXT NOT NULL,
+  agent TEXT NOT NULL,
+  pitch TEXT NOT NULL,
+  bid_wei TEXT NOT NULL,
+  bid_hours INTEGER NOT NULL,
+  bid_until INTEGER,
+  signed_at INTEGER NOT NULL,
+  signature TEXT NOT NULL,
+  ended_at INTEGER NOT NULL,         -- chain seconds
+  how TEXT NOT NULL,                 -- replaced | withdrawn
+  end_signature TEXT                 -- withdrawn: what the agent signed
+);
+CREATE INDEX IF NOT EXISTS open_job_offers_past_of ON open_job_offers_past (open_id, agent);
 `;
+
+/** Columns added with offers to tables made before them: added once, empty, so every listing from before reads as it did. */
+const ADDED: [table: string, column: string, kind: string][] = [
+  ["open_jobs", "offers", "INTEGER NOT NULL DEFAULT 0"],
+  ["open_jobs", "locked_wei", "TEXT"],
+  ["open_job_applications", "bid_wei", "TEXT"],
+  ["open_job_applications", "bid_hours", "INTEGER"],
+  ["open_job_applications", "bid_until", "INTEGER"],
+  ["open_job_applications", "changes", "INTEGER NOT NULL DEFAULT 0"],
+];
 
 export class OpenJobStore {
   constructor(private db: EngineDb) {
     db.db.exec(SCHEMA);
+    for (const [table, column, kind] of ADDED) {
+      const has = (db.db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).some((c) => c.name === column);
+      if (!has) db.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${kind}`);
+    }
   }
 
   get(id: string): OpenJobRow | null {
@@ -189,6 +260,15 @@ export class OpenJobStore {
 
   application(id: string, agent: string): ApplicationRow | null {
     return (this.db.q("SELECT * FROM open_job_applications WHERE open_id = ? AND agent = ?").get(id, agent) as ApplicationRow | undefined) ?? null;
+  }
+
+  /** An agent's offers on a job that no longer stand, newest first. */
+  pastOffers(id: string, agent: string): PastOfferRow[] {
+    return this.db.q("SELECT * FROM open_job_offers_past WHERE open_id = ? AND agent = ? ORDER BY id DESC").all(id, agent) as PastOfferRow[];
+  }
+
+  pastOfferBySignature(signature: string): PastOfferRow | null {
+    return (this.db.q("SELECT * FROM open_job_offers_past WHERE end_signature = ?").get(signature) as PastOfferRow | undefined) ?? null;
   }
 
   count(id: string): number {
@@ -235,6 +315,8 @@ export interface ApplicantJson {
   picked?: boolean;
   /** it applied on its own, under the auto-apply rules its owner signed (./autoapply.ts) */
   auto?: boolean;
+  /** its offer, on a job open to offers: the price, what a lock at it adds to the burn, its hours from the lock, when it ends, and how often it was changed */
+  offer?: { priceWei: string; priceEth: number; burnWei: string; dueHours: number; until?: string; ended?: boolean; changes: number };
   /** the words the agent signed, and the signature: on one listing's own answer */
   signed?: { message: string; signature: string };
 }
@@ -247,8 +329,13 @@ export interface OpenJobJson {
   customer: string;
   title: string;
   brief: string;
+  /** the fixed price; 0 on a job open to offers, where each offer has its own */
   priceEth: number;
   priceWei: string;
+  /** open to offers: each agent names its own price and time. `budgetWei`: the most an offer may be, when the customer set it */
+  offers: boolean;
+  budgetWei?: string;
+  budgetEth?: number;
   /** what the lock adds to the burn, wei */
   burnWei: string;
   dueHours: number;
@@ -262,8 +349,8 @@ export interface OpenJobJson {
   /** until when the customer can lock the price for an agent, once applications have closed or Factor picked */
   lockBy?: string;
   picked?: { address: string; name: string; named: boolean; by: "factor" | "customer"; at: string };
-  /** the desk job it became */
-  job?: { n: number; id: string; lockTx: string; burnEth: number };
+  /** the desk job it became, and the price locked */
+  job?: { n: number; id: string; lockTx: string; burnEth: number; priceEth: number };
   count: number;
   most: number;
   applicants: ApplicantJson[];
@@ -278,6 +365,8 @@ const no = (status: number, error: string): Answer => ({ status, body: { error }
 const WINDOW_S = 600;
 const HOUR = 3600;
 const DUE_SLACK_S = 900;
+/** a lock on its way while the agent changed or withdrew its offer still counts as the offer it saw, this long */
+const OFFER_GRACE_S = 120;
 const ethNum = (wei: bigint | string): number => Number(BigInt(wei) / 10n ** 12n) / 1e6;
 const iso = (s: number): string => new Date(s * 1000).toISOString();
 const pad = (id: number): string => String(id).padStart(4, "0");
@@ -310,7 +399,9 @@ export interface OpenJobDeps {
   /** a job already linked as something else: a sub-job or a month of a plan */
   linkedElsewhere: (job: number) => string | null;
   /** auto-apply (./autoapply.ts): whether an application said to be automatic may be taken, and who applied that way */
-  auto?: () => { allow(agent: string, row: OpenJobRow): string | null; applied(open: string, agent: string, rank: number, of: number): void; appliedTo(open: string): Set<string> } | null;
+  auto?: () => { allow(agent: string, row: OpenJobRow, o?: { replacing?: boolean }): string | null; applied(open: string, agent: string, rank: number, of: number, offer?: Offer): void; appliedTo(open: string): Set<string> } | null;
+  /** the least an agent takes a job for, and where that is said: its auto-apply rules, or what Factor takes a job of its own for. null: nothing said */
+  floorOf?: (agent: string) => { wei: bigint; why: string } | null;
 }
 
 export class OpenJobs {
@@ -322,6 +413,16 @@ export class OpenJobs {
 
   get cfg(): OpenJobsConfig {
     return this.d.cfg;
+  }
+
+  /** Whether a job can be posted open to offers, and an offer made, now: BIDS=on and not stopped by the owner. */
+  offersOn(): boolean {
+    return this.d.cfg.enabled && this.d.cfg.bids && !stopped(this.d.db, "bids");
+  }
+
+  /** The offer an application carries, or null on a job with a fixed price. */
+  offerOf(app: { bid_wei: string | null; bid_hours: number | null; bid_until: number | null }): Offer | null {
+    return app.bid_wei !== null && app.bid_hours !== null ? { priceWei: app.bid_wei, dueHours: app.bid_hours, until: app.bid_until } : null;
   }
 
   private record(address: string): AgentRecord | null {
@@ -339,7 +440,7 @@ export class OpenJobs {
   }
 
   textOf(row: OpenJobRow): OpenJobText {
-    return { customer: row.customer, price: row.price, dueHours: row.due_hours, early: !!row.early, title: row.title, brief: row.brief, closesAt: row.closes_at, pick: this.ruleOf(row), at: row.signed_at };
+    return { customer: row.customer, price: row.price, dueHours: row.due_hours, early: !!row.early, title: row.title, brief: row.brief, closesAt: row.closes_at, pick: this.ruleOf(row), at: row.signed_at, ...(row.offers ? { offers: true } : {}) };
   }
 
   /**
@@ -408,12 +509,16 @@ export class OpenJobs {
     if (paused) return no(409, paused);
     const customer = normalizeAddress(body.customer);
     if (!customer) return no(400, "customer is not an address");
+    if (body.offers !== undefined && typeof body.offers !== "boolean") return no(400, "offers is true or false: whether agents name their own price and time");
+    const offers = body.offers === true;
+    if (offers && !this.offersOn()) return no(503, "offers are switched off for now: post the job with its price");
     const price = typeof body.price === "string" && /^\d{1,30}$/.test(body.price) ? body.price : null;
-    if (price === null) return no(400, "price is the job's price, in wei, as text");
-    if (BigInt(price) < MIN_JOB_WEI) return no(400, "the smallest job is 0.001 ETH");
+    if (price === null) return no(400, offers ? "price is the budget no offer may go over, in wei, as text: \"0\" for none" : "price is the job's price, in wei, as text");
+    const noBudget = offers && BigInt(price) === 0n;
+    if (!noBudget && BigInt(price) < MIN_JOB_WEI) return no(400, offers ? "a budget is 0.001 ETH at least, or none" : "the smallest job is 0.001 ETH");
     if (BigInt(price) > MAX_LINK_WEI) return no(400, "an open job is 1000 ETH at most");
     const dueHours = typeof body.dueHours === "number" && Number.isSafeInteger(body.dueHours) ? body.dueHours : null;
-    if (dueHours === null || dueHours < 1 || dueHours > 720) return no(400, "dueHours is 1 to 720: how long the agent has once the job is locked (the desk's own limits)");
+    if (dueHours === null || dueHours < 1 || dueHours > 720) return no(400, offers ? "dueHours is 1 to 720: the longest an offer may take once the job is locked (the desk's own limits)" : "dueHours is 1 to 720: how long the agent has once the job is locked (the desk's own limits)");
     if (typeof body.early !== "boolean") return no(400, "early is true or false: whether the agent may start with up to half");
     const title = oneLine(body.title, 3, 80);
     if (!title || title !== body.title) return no(400, "a title is one plain line of 3 to 80 characters, without links, line breaks or double spaces");
@@ -430,7 +535,8 @@ export class OpenJobs {
       if (after !== undefined && (typeof after !== "number" || !Number.isSafeInteger(after) || after < 1 || after > this.d.cfg.maxApplicants)) return no(400, `pickAfter is how many applicants Factor waits for, 1 to ${this.d.cfg.maxApplicants}`);
       pick = { by: "best", ...(after ? { after } : {}) };
     } else return no(400, "pick is \"customer\" (the customer picks) or \"best\" (Factor picks the best Factor Score)");
-    const p: OpenJobText = { customer, price, dueHours, early: body.early, title, brief, closesAt, pick, at };
+    if (offers && pick.by !== "customer") return no(400, "a job open to offers is picked by its customer: Factor never picks a price for anybody");
+    const p: OpenJobText = { customer, price, dueHours, early: body.early, title, brief, closesAt, pick, at, ...(offers ? { offers: true } : {}) };
     let ok = false;
     try {
       ok = await this.d.signed(customer, postMessage(p), body.signature);
@@ -445,9 +551,9 @@ export class OpenJobs {
       if (this.store.get(id)) return { status: 200, body: { ok: true, open: id, created: false } };
       const live = this.store.list({ customer }).filter((r) => ["open", "choosing", "picked"].includes(this.status(r, t))).length;
       if (live >= this.d.cfg.perCustomer) return no(429, `a customer has ${this.d.cfg.perCustomer} open jobs at once at most: close one first`);
-      db.q("INSERT INTO open_jobs (id, customer, price, due_hours, early, title, brief, closes_at, pick, pick_after, signed_at, signature, via, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-        .run(id, customer, price, dueHours, p.early ? 1 : 0, title, brief, closesAt, pick.by, pick.by === "best" ? pick.after ?? null : null, at, String(body.signature), via, db.now());
-      return { status: 200, body: { ok: true, open: id, created: true, burnWei: this.d.burnFor(BigInt(price)).toString() } };
+      db.q("INSERT INTO open_jobs (id, customer, price, due_hours, early, title, brief, closes_at, pick, pick_after, signed_at, signature, via, created_at, offers) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+        .run(id, customer, price, dueHours, p.early ? 1 : 0, title, brief, closesAt, pick.by, pick.by === "best" ? pick.after ?? null : null, at, String(body.signature), via, db.now(), offers ? 1 : 0);
+      return { status: 200, body: { ok: true, open: id, created: true, burnWei: offers ? "0" : this.d.burnFor(BigInt(price)).toString(), ...(offers ? { offers: true } : {}) } };
     });
   }
 
@@ -465,9 +571,29 @@ export class OpenJobs {
     return null;
   }
 
+  /** Why an offer cannot be made on a listing, or null: the agent's own lowest price, the customer's budget, the job's hours, and when it ends. */
+  offerProblem(row: OpenJobRow, agent: string, offer: Offer, t = this.d.nowS()): string | null {
+    const price = BigInt(offer.priceWei), budget = BigInt(row.price);
+    if (price < MIN_JOB_WEI) return "an offer is 0.001 ETH at least, the smallest job";
+    if (price > MAX_LINK_WEI) return "an offer is 1000 ETH at most";
+    if (budget > 0n && price > budget) return `the offer is over the customer's budget of ${formatEther(budget)} ETH`;
+    const floor = this.d.floorOf?.(agent) ?? null;
+    if (floor && price < floor.wei) return `the offer is under ${floor.why}, ${formatEther(floor.wei)} ETH`;
+    if (offer.dueHours < 1 || offer.dueHours > row.due_hours) return `the offer's time is 1 to ${row.due_hours} hours after the lock: the longest the customer gives`;
+    if (offer.until !== null && (offer.until < t + 300 || offer.until > t + 30 * 86_400)) return "an offer ends 5 minutes to 30 days from now, or stands until it is withdrawn";
+    return null;
+  }
+
+  /** Whether an offer has ended by `t`. */
+  ended(offer: Offer | null, t = this.d.nowS()): boolean {
+    return !!offer && offer.until !== null && t > offer.until;
+  }
+
   /**
    * An agent signs that it applies. Asked again with the same signature, it answers the same. `auto: true` says it
-   * applied on its own, under its auto-apply rules: taken only while those rules are on and take the job.
+   * applied on its own, under its auto-apply rules: taken only while those rules are on and take the job. On a job
+   * open to offers it carries its offer ({ priceWei, dueHours, until? }), and a newer offer from the same agent
+   * replaces the one it made while applications are open.
    */
   async apply(body: Record<string, unknown>): Promise<Answer> {
     if (!this.d.cfg.enabled) return no(503, "open jobs are switched off for now");
@@ -481,19 +607,39 @@ export class OpenJobs {
     if (at === null) return no(400, "the signature's time is more than ten minutes from now: sign again");
     const row = this.store.get(id);
     if (!row || row.hidden) return no(404, "no such open job");
+    const said = body.priceWei !== undefined || body.dueHours !== undefined || body.until !== undefined;
+    let offer: Offer | null = null;
+    if (row.offers) {
+      const priceWei = typeof body.priceWei === "string" && /^\d{1,30}$/.test(body.priceWei) ? body.priceWei : null;
+      const dueHours = typeof body.dueHours === "number" && Number.isSafeInteger(body.dueHours) ? body.dueHours : null;
+      const until = body.until === undefined || body.until === null ? null : typeof body.until === "number" && Number.isSafeInteger(body.until) ? body.until : -1;
+      if (priceWei === null || dueHours === null) return no(400, "this job is open to offers: send the price (priceWei, wei as text) and the time (dueHours after the lock) the agent offers");
+      if (until === -1) return no(400, "until is when the offer ends, in unix seconds, or left out: until it is withdrawn");
+      offer = { priceWei, dueHours, until };
+    } else if (said) return no(400, "this job has a fixed price: apply without an offer");
     const had = this.store.application(id, agent);
-    if (had) return had.signature === String(body.signature) ? { status: 200, body: this.applied(row, agent) } : no(409, "this agent has applied for this job already: one application per agent");
+    if (had) {
+      if (had.signature === String(body.signature)) return { status: 200, body: this.applied(row, agent) };
+      if (!row.offers) return no(409, "this agent has applied for this job already: one application per agent");
+      if (at <= had.signed_at) return no(409, "a newer offer of this agent's stands already: sign again");
+      if (had.changes >= this.d.cfg.offerChanges) return no(409, `an agent changes its offer on one job ${this.d.cfg.offerChanges} times at most`);
+    }
+    if (row.offers && !this.offersOn()) return no(503, "offers are switched off for now");
     const why = this.applyProblem(row, agent);
     if (why) return no(409, why);
+    if (offer) {
+      const bad = this.offerProblem(row, agent, offer);
+      if (bad) return no(409, bad);
+    }
     const auto = body.auto === true ? this.d.auto?.() ?? null : null;
     if (body.auto === true) {
       if (!auto) return no(503, "auto-apply is switched off for now");
-      const not = auto.allow(agent, row);
+      const not = auto.allow(agent, row, { replacing: !!had });
       if (not) return no(409, not);
     }
     let ok = false;
     try {
-      ok = await this.d.signed(agent, applyMessage({ open: id, agent, pitch, at }), body.signature);
+      ok = await this.d.signed(agent, applyMessage({ open: id, agent, pitch, at, ...(offer ? { offer } : {}) }), body.signature);
     } catch {
       return no(503, "the chain could not be asked about the signature: try again in a moment");
     }
@@ -502,25 +648,74 @@ export class OpenJobs {
     const t = this.d.nowS();
     const r = db.tx((): Answer => {
       const now = this.store.get(id)!;
-      if (this.store.application(id, agent)) return no(409, "this agent has applied for this job already: one application per agent");
+      const stands = this.store.application(id, agent);
+      if (stands && (!offer || stands.signed_at !== had?.signed_at)) return no(409, offer ? "the agent's offer changed meanwhile: sign again" : "this agent has applied for this job already: one application per agent");
       const again = this.applyProblem(now, agent, t);
       if (again) return no(409, again);
+      if (stands && offer) {
+        // the newer offer replaces the one that stood, which is kept: a lock made while it stood is still its
+        db.q("INSERT INTO open_job_offers_past (open_id, agent, pitch, bid_wei, bid_hours, bid_until, signed_at, signature, ended_at, how) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'replaced')")
+          .run(id, agent, stands.pitch, stands.bid_wei, stands.bid_hours, stands.bid_until, stands.signed_at, stands.signature, t);
+        db.q("UPDATE open_job_applications SET pitch = ?, signed_at = ?, signature = ?, applied_at = ?, bid_wei = ?, bid_hours = ?, bid_until = ?, changes = changes + 1 WHERE open_id = ? AND agent = ?")
+          .run(pitch, at, String(body.signature), db.now(), offer.priceWei, offer.dueHours, offer.until, id, agent);
+        return { status: 200, body: {} };
+      }
       if (this.store.count(id) >= this.d.cfg.maxApplicants) return no(409, `${this.d.cfg.maxApplicants} agents have applied already: the job takes no more`);
-      db.q("INSERT INTO open_job_applications (open_id, agent, pitch, signed_at, signature, applied_at) VALUES (?, ?, ?, ?, ?, ?)").run(id, agent, pitch, at, String(body.signature), db.now());
+      db.q("INSERT INTO open_job_applications (open_id, agent, pitch, signed_at, signature, applied_at, bid_wei, bid_hours, bid_until) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+        .run(id, agent, pitch, at, String(body.signature), db.now(), offer?.priceWei ?? null, offer?.dueHours ?? null, offer?.until ?? null);
       return { status: 200, body: {} };
     });
     if (r.status !== 200) return r;
     // the best score takes it once the number the customer named have applied: picked at once
     if (row.pick === "best" && row.pick_after && this.store.count(id) >= row.pick_after) this.pickNow(id, t);
     const answer = this.applied(this.store.get(id)!, agent);
-    if (auto) auto.applied(id, agent, answer.rank as number, answer.of as number);
-    return { status: 200, body: answer };
+    if (auto) auto.applied(id, agent, answer.rank as number, answer.of as number, offer ?? undefined);
+    return { status: 200, body: { ...answer, ...(had ? { replaced: true } : {}) } };
   }
 
   private applied(row: OpenJobRow, agent: string): Record<string, unknown> {
     const ranked = this.ranked(row.id);
     const rank = ranked.findIndex((x) => x.app.agent === agent) + 1;
-    return { ok: true, open: row.id, agent, rank, of: ranked.length, listing: this.status(row), ...(row.picked_agent ? { picked: row.picked_agent } : {}) };
+    const offer = this.offerOf(ranked[rank - 1]!.app);
+    return { ok: true, open: row.id, agent, rank, of: ranked.length, listing: this.status(row), ...(row.picked_agent ? { picked: row.picked_agent } : {}), ...(offer ? { offer } : {}) };
+  }
+
+  /** An agent takes its offer back, until it is picked. Asked again with the same signature, it answers the same. */
+  async withdraw(body: Record<string, unknown>): Promise<Answer> {
+    if (!this.d.cfg.enabled) return no(503, "open jobs are switched off for now");
+    const id = typeof body.open === "string" && /^0x[0-9a-f]{64}$/.test(body.open) ? body.open : null;
+    if (!id) return no(400, "open is the open job's number");
+    const agent = normalizeAddress(body.agent);
+    if (!agent) return no(400, "agent is not an address");
+    const at = this.fresh(body.at);
+    if (at === null) return no(400, "the signature's time is more than ten minutes from now: sign again");
+    const row = this.store.get(id);
+    if (!row || row.hidden) return no(404, "no such open job");
+    if (!row.offers) return no(409, "only an offer is withdrawn: this job has a fixed price");
+    const done = this.store.pastOfferBySignature(String(body.signature));
+    if (done && done.open_id === id && done.agent === agent) return { status: 200, body: { ok: true, open: id, agent, withdrawn: true } };
+    const app = this.store.application(id, agent);
+    if (!app) return no(404, "this agent has no offer standing on this job");
+    if (row.job_id !== null) return no(409, `the job is locked already, as job ${pad(row.job_id)}`);
+    if (row.closed_at !== null) return no(409, "the customer took this job down: nothing is left to withdraw");
+    let ok = false;
+    try {
+      ok = await this.d.signed(agent, withdrawMessage({ open: id, agent, at }), body.signature);
+    } catch {
+      return no(503, "the chain could not be asked about the signature: try again in a moment");
+    }
+    if (!ok) return no(401, "the signature is not the agent's");
+    const db = this.d.db;
+    const t = this.d.nowS();
+    return db.tx((): Answer => {
+      const stands = this.store.application(id, agent);
+      if (!stands) return no(404, "this agent has no offer standing on this job");
+      if (this.store.get(id)!.job_id !== null) return no(409, "the job is locked already");
+      db.q("INSERT INTO open_job_offers_past (open_id, agent, pitch, bid_wei, bid_hours, bid_until, signed_at, signature, ended_at, how, end_signature) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'withdrawn', ?)")
+        .run(id, agent, stands.pitch, stands.bid_wei ?? "0", stands.bid_hours ?? 0, stands.bid_until, stands.signed_at, stands.signature, t, String(body.signature));
+      db.q("DELETE FROM open_job_applications WHERE open_id = ? AND agent = ?").run(id, agent);
+      return { status: 200, body: { ok: true, open: id, agent, withdrawn: true } };
+    });
   }
 
   /** The customer takes a listing down before anybody is hired. */
@@ -567,11 +762,20 @@ export class OpenJobs {
     if (row.hidden) return "that open job was taken off Factor";
     if (row.closed_at !== null) return "the customer took this job down before it was locked";
     if (locked.customer !== row.customer) return "that job was not locked by the open job's customer";
-    if (!this.store.application(row.id, locked.agent)) return "that job was locked for an agent that did not apply";
-    if (row.picked_by === "factor" && row.picked_agent !== locked.agent) return `Factor picked ${this.nameOf(row.picked_agent!)} by the best Factor Score: the job is locked for that agent`;
-    if (locked.price !== BigInt(row.price)) return "that job's price is not the open job's";
+    if (row.offers) {
+      // an offer the agent stood by when the lock was made: the one standing, or one replaced or withdrawn since
+      const offers = this.offersAt(row.id, locked.agent, locked.at);
+      if (!offers.length) return "that job was locked for an agent that made no offer";
+      const same = offers.filter((o) => locked.price === BigInt(o.priceWei) && Math.abs(locked.dueAt - (locked.at + o.dueHours * HOUR)) <= DUE_SLACK_S);
+      if (!same.length) return `that job's price or time is not ${this.nameOf(locked.agent)}'s offer`;
+      if (same.every((o) => o.until !== null && locked.at > o.until)) return `${this.nameOf(locked.agent)}'s offer had ended before the job was locked`;
+    } else {
+      if (!this.store.application(row.id, locked.agent)) return "that job was locked for an agent that did not apply";
+      if (row.picked_by === "factor" && row.picked_agent !== locked.agent) return `Factor picked ${this.nameOf(row.picked_agent!)} by the best Factor Score: the job is locked for that agent`;
+      if (locked.price !== BigInt(row.price)) return "that job's price is not the open job's";
+    }
     if (locked.allowEarly !== !!row.early) return "that job does not allow an early advance the way the open job says";
-    if (Math.abs(locked.dueAt - (locked.at + row.due_hours * HOUR)) > DUE_SLACK_S) return `that job is due at another time than the open job's ${row.due_hours} hours after the lock`;
+    if (!row.offers && Math.abs(locked.dueAt - (locked.at + row.due_hours * HOUR)) > DUE_SLACK_S) return `that job is due at another time than the open job's ${row.due_hours} hours after the lock`;
     if (locked.at < row.signed_at - WINDOW_S) return "that job was locked before the open job was posted";
     // Factor's pick, or the customer's own, must be locked within its day
     if (row.pick === "best" && row.picked_by !== "factor" && locked.at >= row.closes_at && this.store.count(row.id) > 0) {
@@ -581,6 +785,18 @@ export class OpenJobs {
     }
     if (locked.at > this.lockBy(row)) return `the open job expired on ${when(this.lockBy(row))}, before it was locked`;
     return null;
+  }
+
+  /**
+   * The offers of an agent on a listing that stood at `at` (chain seconds): the one standing now, and those replaced or
+   * withdrawn since, with two minutes' grace for a lock already on its way as the agent changed its offer.
+   */
+  offersAt(id: string, agent: string, at: number): Offer[] {
+    const out: Offer[] = [];
+    const now = this.store.application(id, agent);
+    if (now) { const o = this.offerOf(now); if (o) out.push(o); }
+    for (const p of this.store.pastOffers(id, agent)) if (p.ended_at >= at - OFFER_GRACE_S) out.push({ priceWei: p.bid_wei, dueHours: p.bid_hours, until: p.bid_until });
+    return out;
   }
 
   /** The link itself, once the lock was read from the chain. */
@@ -596,8 +812,8 @@ export class OpenJobs {
       if (elsewhere) return no(409, `that job is ${elsewhere} already`);
       const why = this.lockProblem(row, locked);
       if (why) return no(409, `${why}. The job stands on the desk as an ordinary job of yours`);
-      db.q("UPDATE open_jobs SET job_id = ?, lock_tx = ?, linked_at = ?, picked_agent = COALESCE(picked_agent, ?), picked_at = COALESCE(picked_at, ?), picked_by = COALESCE(picked_by, 'customer') WHERE id = ?")
-        .run(job, lockTx, db.now(), locked.agent, locked.at, id);
+      db.q("UPDATE open_jobs SET job_id = ?, lock_tx = ?, linked_at = ?, picked_agent = COALESCE(picked_agent, ?), picked_at = COALESCE(picked_at, ?), picked_by = COALESCE(picked_by, 'customer'), locked_wei = ? WHERE id = ?")
+        .run(job, lockTx, db.now(), locked.agent, locked.at, locked.price.toString(), id);
       // what the job is about, as the customer signed it with the listing
       db.q("INSERT INTO job_titles (job_id, title, by, signed_at) VALUES (?, ?, ?, ?) ON CONFLICT(job_id) DO NOTHING").run(job, row.title, row.customer, row.signed_at);
       if (row.brief) db.q("INSERT INTO job_briefs (job_id, brief, by, signed_at) VALUES (?, ?, ?, ?) ON CONFLICT(job_id) DO NOTHING").run(job, row.brief, row.customer, row.signed_at);
@@ -606,14 +822,14 @@ export class OpenJobs {
   }
 
   private linked(row: OpenJobRow): Record<string, unknown> {
-    return { ok: true, open: row.id, job: row.job_id, jobId: pad(row.job_id!), agent: row.picked_agent, pickedBy: row.picked_by, burnWei: row.burn_wei };
+    return { ok: true, open: row.id, job: row.job_id, jobId: pad(row.job_id!), agent: row.picked_agent, pickedBy: row.picked_by, burnWei: row.burn_wei, priceWei: this.lockedPrice(row).toString() };
   }
 
   /** What the customer added to the burn beside the lock. */
   private async addBurn(id: string, customer: string, burnTx: string): Promise<Record<string, unknown>> {
     const row = this.store.get(id);
     if (!row || row.job_id === null) return {};
-    const need = this.d.burnFor(BigInt(row.price));
+    const need = this.d.burnFor(this.lockedPrice(row));
     if (BigInt(row.burn_wei) > 0n) return { burned: BigInt(row.burn_wei) >= need, burnWei: row.burn_wei, burnNeededWei: need.toString() };
     const used = this.store.byBurnTx(burnTx);
     if ((used && used.id !== id) || this.d.burnUsed(burnTx)) return { burned: false, burnNote: "that transfer to the burn pot was already counted for another deal", burnNeededWei: need.toString() };
@@ -622,6 +838,11 @@ export class OpenJobs {
     if (sent < need) return { burned: false, burnNote: `the transfer to the burn pot was ${formatEther(sent)} ETH, under the job's ${formatEther(need)} ETH`, burnNeededWei: need.toString() };
     this.d.db.q("UPDATE open_jobs SET burn_wei = ?, burn_tx = ? WHERE id = ?").run(sent.toString(), burnTx, id);
     return { burned: true, burnWei: sent.toString(), burnNeededWei: need.toString() };
+  }
+
+  /** The price locked for the listing's job: its own, or the offer picked. */
+  lockedPrice(row: OpenJobRow): bigint {
+    return BigInt(row.locked_wei ?? row.price);
   }
 
   private nameOf(address: string): string {
@@ -636,6 +857,13 @@ export class OpenJobs {
   /** What the status means now, in a line. */
   private noteOf(row: OpenJobRow, st: OpenJobStatus, count: number): string {
     const lock = when(this.lockBy(row));
+    if (row.offers) switch (st) {
+      case "open": return `Taking offers until ${when(row.closes_at)}. Each agent names its own price and time, and the customer picks one by locking that price.`;
+      case "choosing": return `Offers closed. The customer can lock the price of one of the ${count} offer${count === 1 ? "" : "s"} until ${lock}.`;
+      case "hired": return `Locked on the desk as job ${pad(row.job_id!)} at ${formatEther(this.lockedPrice(row))} ETH, the offer the customer picked, an ordinary job from here on.`;
+      case "expired": return count === 0 ? "Nobody made an offer before offers closed. Nothing was locked." : "The customer did not lock an offer in time. Nothing was locked.";
+      default: break;
+    }
     switch (st) {
       case "open": return row.pick === "best"
         ? `Taking applications until ${when(row.closes_at)}${row.pick_after ? `, or until ${row.pick_after} have applied` : ""}. Then Factor picks the applicant with the best Factor Score.`
@@ -658,22 +886,27 @@ export class OpenJobs {
     const applicants: ApplicantJson[] = ranked.map((x, i) => {
       const r = x.record;
       const who = this.named(x.app.agent);
+      const offer = this.offerOf(x.app);
       return {
         rank: i + 1, ...who, house: house.has(x.app.agent), ...(hosted.has(x.app.agent) ? { hosted: true } : {}),
         score: x.score, settled: r?.settled ?? 0, customers: r?.customers ?? 0, onTimePct: r && r.settled ? Math.round((r.onTime * 100) / r.settled) : 0, barred: !!r?.barred,
         pitch: x.app.pitch, appliedAt: iso(x.app.signed_at), ...(picked === x.app.agent ? { picked: true } : {}), ...(autos.has(x.app.agent) ? { auto: true } : {}),
-        ...(o.full ? { signed: { message: applyMessage({ open: row.id, agent: x.app.agent, pitch: x.app.pitch, at: x.app.signed_at }), signature: x.app.signature } } : {}),
+        ...(offer ? { offer: { priceWei: offer.priceWei, priceEth: ethNum(offer.priceWei), burnWei: this.d.burnFor(BigInt(offer.priceWei)).toString(), dueHours: offer.dueHours, ...(offer.until !== null ? { until: iso(offer.until) } : {}), ...(this.ended(offer, t) ? { ended: true } : {}), changes: x.app.changes ?? 0 } } : {}),
+        ...(o.full ? { signed: { message: applyMessage({ open: row.id, agent: x.app.agent, pitch: x.app.pitch, at: x.app.signed_at, ...(offer ? { offer } : {}) }), signature: x.app.signature } } : {}),
       };
     });
     const why = st === "open" ? (ranked.length >= this.d.cfg.maxApplicants ? `${this.d.cfg.maxApplicants} agents have applied: the job takes no more` : null) : this.noteOf(row, st, ranked.length);
     return {
       id: row.id, status: st, note: this.noteOf(row, st, ranked.length), customer: row.customer, title: row.title, brief: row.brief,
-      priceEth: ethNum(row.price), priceWei: row.price, burnWei: this.d.burnFor(BigInt(row.price)).toString(), dueHours: row.due_hours, early: !!row.early,
+      // a job open to offers has no price of its own: 0, so nothing that reads only the price ever locks the budget
+      priceEth: row.offers ? 0 : ethNum(row.price), priceWei: row.offers ? "0" : row.price, burnWei: row.offers ? "0" : this.d.burnFor(BigInt(row.price)).toString(),
+      offers: !!row.offers, ...(row.offers && BigInt(row.price) > 0n ? { budgetWei: row.price, budgetEth: ethNum(row.price) } : {}),
+      dueHours: row.due_hours, early: !!row.early,
       postedAt: iso(row.signed_at), closesAt: iso(row.closes_at), pick: this.ruleOf(row),
       applying: st === "open" && !why, ...(why ? { why } : {}),
       ...(st === "choosing" || st === "picked" ? { lockBy: iso(this.lockBy(row)) } : {}),
       ...(picked && row.picked_by ? { picked: { ...this.named(picked), by: row.picked_by as "factor" | "customer", at: iso(row.picked_at ?? row.signed_at) } } : {}),
-      ...(row.job_id !== null ? { job: { n: row.job_id, id: pad(row.job_id), lockTx: row.lock_tx ?? "", burnEth: ethNum(row.burn_wei) } } : {}),
+      ...(row.job_id !== null ? { job: { n: row.job_id, id: pad(row.job_id), lockTx: row.lock_tx ?? "", burnEth: ethNum(row.burn_wei), priceEth: ethNum(this.lockedPrice(row)) } } : {}),
       count: ranked.length, most: this.d.cfg.maxApplicants, applicants,
       ...(o.full ? { signed: { message: postMessage(this.textOf(row)), signature: row.signature, by: row.customer } } : {}),
     };
@@ -707,9 +940,9 @@ export class OpenJobs {
   }
 
   /** The listing a desk job came from, for the job's page. */
-  of(job: number): { id: string; applicants: number; by: "factor" | "customer" } | null {
+  of(job: number): { id: string; applicants: number; by: "factor" | "customer"; offers?: boolean } | null {
     const row = this.store.byJob(job);
     if (!row || row.hidden) return null;
-    return { id: row.id, applicants: this.store.count(row.id), by: row.picked_by === "factor" ? "factor" : "customer" };
+    return { id: row.id, applicants: this.store.count(row.id), by: row.picked_by === "factor" ? "factor" : "customer", ...(row.offers ? { offers: true } : {}) };
   }
 }

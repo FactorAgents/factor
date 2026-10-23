@@ -11,7 +11,7 @@
 //
 // What the rules say: the work it takes (a few kinds, and words of its own, matched against a listing's title and
 // brief), the lowest price, the most jobs at once, its hours (always, or a window in UTC), whether it draws the half a
-// customer allows up front, a line to apply with, and on or off.
+// customer allows up front, a line to apply with, and on or off. It passes over jobs open to offers.
 //
 // Who applies:
 //   - an agent Factor runs (one of Factor's own, or one made on the site): the engine signs its application with the
@@ -32,7 +32,7 @@ import { normalizeAddress, shortAddress } from "./chain/address.js";
 import type { EngineDb } from "./chain/db.js";
 import { MAX_LINK_WEI, MIN_JOB_WEI } from "./pay.js";
 import { oneLine } from "./profiles.js";
-import { applyMessage, PITCH_MOST, type OpenJobRow, type OpenJobs } from "./openjobs.js";
+import { applyMessage, PITCH_MOST, type Offer, type OpenJobRow, type OpenJobs } from "./openjobs.js";
 import { stopped } from "./switches.js";
 
 type Env = Record<string, string | undefined>;
@@ -229,6 +229,7 @@ export interface AutoApplyDeps {
   setters: (agent: string) => string[];
   /** whether the engine can send anything now (live, a gas wallet, running) */
   live: () => boolean;
+
   names: () => Map<string, { name: string }>;
   log: (line: string) => void;
 }
@@ -248,6 +249,7 @@ export interface AutoApplyJson {
   log: { kind: LogKind; open: string; title: string; job?: { n: number; id: string }; note: string; at: string }[];
   /** open jobs it may apply to right now, under its rules and every limit: what an agent's own program applies to */
   fits: string[];
+
   limits: { perAgentHour: number; perHour: number; atOnceMost: number };
 }
 
@@ -326,6 +328,7 @@ export class AutoApply {
 
   /** Why the rules do not take a listing, or null when they do. Its price, its words, its owner. */
   misfit(agent: string, r: Rules, row: OpenJobRow, runner?: Runner): string | null {
+    if (row.offers) return "open to offers, and its rules name no price for offers";
     if (BigInt(row.price) < BigInt(r.floorWei)) return "under its lowest price";
     if (runner && BigInt(row.price) < runner.floorWei) return "under what it takes a job for";
     if (!takesWork(r, row.title, row.brief)) return "not work it takes";
@@ -334,25 +337,40 @@ export class AutoApply {
     return null;
   }
 
-  /** How many jobs an agent has on its hands: jobs locked for it and not delivered, and applications still standing. */
-  busy(agent: string, t = this.d.nowS()): number {
+  /**
+   * The least an agent takes a job for, as open jobs hold every offer to: the lowest price its owner signed in its
+   * rules, or what Factor takes a job of one of its own agents for when that is more. null: nothing is said.
+   */
+  floorOf(agent: string): { wei: bigint; why: string } | null {
+    const r = this.store.get(agent)?.r;
+    const runner = this.d.runners().get(agent);
+    const rules = r ? BigInt(r.floorWei) : null;
+    if (runner && (rules === null || runner.floorWei > rules)) return { wei: runner.floorWei, why: "what this agent takes a job for" };
+    return rules !== null ? { wei: rules, why: "the agent's own lowest price, in its auto-apply rules" } : null;
+  }
+
+  /** How many jobs an agent has on its hands: jobs locked for it and not delivered, and applications still standing. `except`: an open job not counted. */
+  busy(agent: string, t = this.d.nowS(), except?: string): number {
     const jobs = (this.d.db.q("SELECT COUNT(*) AS n FROM desk_jobs WHERE agent = ? AND state IN (1, 2)").get(agent) as { n: number }).n;
     const o = this.d.openjobs();
     let standing = 0;
     if (o) for (const row of o.store.waiting()) {
-      if (!o.store.application(row.id, agent)) continue;
+      if (row.id === except) continue;
+      const app = o.store.application(row.id, agent);
+      // an offer that has ended no longer stands
+      if (!app || o.ended(o.offerOf(app), t)) continue;
       const st = o.status(row, t);
       if (st === "open" || st === "choosing" || (st === "picked" && row.picked_agent === agent)) standing++;
     }
     return jobs + standing;
   }
 
-  /** Why the agent may not apply on its own right now, or null: on, its hours, its jobs at once, the hourly limits. */
-  limitProblem(agent: string, r: Rules | null, t = this.d.nowS()): string | null {
+  /** Why the agent may not apply on its own right now, or null: on, its hours, its jobs at once, the hourly limits. `except`: an open job whose offer it is changing. */
+  limitProblem(agent: string, r: Rules | null, t = this.d.nowS(), except?: string): string | null {
     if (!this.working()) return "auto-apply is switched off for now";
     if (!r || !r.on) return "auto-apply is off for this agent";
     if (!inHours(r.hours, t)) return `outside its hours (${hoursWords(r.hours)})`;
-    if (this.busy(agent, t) >= r.atOnce) return `it has ${r.atOnce} job${r.atOnce === 1 ? "" : "s"} on its hands, the most its rules allow`;
+    if (this.busy(agent, t, except) >= r.atOnce) return `it has ${r.atOnce} job${r.atOnce === 1 ? "" : "s"} on its hands, the most its rules allow`;
     const hourAgo = this.d.now() - 3_600_000;
     if (this.store.appliedSince(hourAgo, agent) >= this.d.cfg.perAgentHour) return `it applied ${this.d.cfg.perAgentHour} times in the last hour, the most one agent does`;
     if (this.store.appliedSince(hourAgo) >= this.d.cfg.perHour) return "agents applied on their own as often as Factor lets them in an hour: try again later";
@@ -363,16 +381,16 @@ export class AutoApply {
    * Asked by open jobs before it takes an application said to be automatic: the agent's rules must be on and take the
    * listing, and every limit must hold. Null when it may.
    */
-  allow(agent: string, row: OpenJobRow): string | null {
+  allow(agent: string, row: OpenJobRow, o: { replacing?: boolean } = {}): string | null {
     const had = this.store.get(agent);
-    const limit = this.limitProblem(agent, had?.r ?? null);
+    const limit = this.limitProblem(agent, had?.r ?? null, this.d.nowS(), o.replacing ? row.id : undefined);
     if (limit) return limit;
     const misfit = this.misfit(agent, had!.r, row, this.d.runners().get(agent));
     return misfit ? `its rules do not take this job: ${misfit}` : null;
   }
 
   /** Told by open jobs once an application said to be automatic is stored. */
-  applied(open: string, agent: string, rank: number, of: number): void {
+  applied(open: string, agent: string, rank: number, of: number, _offer?: Offer): void {
     this.store.write(agent, "found", open, "Found an open job that fits its rules", this.d.now());
     this.store.write(agent, "applied", open, `Applied with one signature, ranked ${rank} of ${of} by Factor Score`, this.d.now());
   }
@@ -382,7 +400,8 @@ export class AutoApply {
     const o = this.d.openjobs();
     if (!o) return [];
     return o.store.waiting()
-      .filter((row) => o.status(row, t) === "open" && !o.store.application(row.id, agent) && o.store.count(row.id) < o.cfg.maxApplicants && !o.applyProblem(row, agent, t) && !this.misfit(agent, r, row, runner))
+      // never twice: a job it applied to on its own once, and then withdrew from, is not found again
+      .filter((row) => o.status(row, t) === "open" && !o.store.application(row.id, agent) && !this.store.has(agent, "applied", row.id) && o.store.count(row.id) < o.cfg.maxApplicants && !o.applyProblem(row, agent, t) && !this.misfit(agent, r, row, runner))
       .sort((a, b) => a.created_at - b.created_at);
   }
 

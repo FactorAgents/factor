@@ -223,7 +223,7 @@ export class Engine {
   /** Counts of what a page shows beside the state (a job's brief, title and work; links; sub-jobs; months of plans; ERC-8004 links and entries). */
   private extraCounts(): string {
     const out: string[] = [];
-    for (const t of ["job_titles", "job_briefs", "job_deliveries", "pay_links", "subjobs", "plan_months", "firm_members", "hosted_agents", "erc8004_links", "erc8004_entries", "open_jobs", "open_job_applications", "autoapply_rules", "autoapply_log"]) {
+    for (const t of ["job_titles", "job_briefs", "job_deliveries", "pay_links", "subjobs", "plan_months", "firm_members", "hosted_agents", "erc8004_links", "erc8004_entries", "open_jobs", "open_job_applications", "open_job_offers_past", "autoapply_rules", "autoapply_log"]) {
       try {
         const r = this.sqlite.prepare(`SELECT COUNT(*) AS n, IFNULL(MAX(rowid), 0) AS m FROM ${t}`).get() as { n: number; m: number };
         out.push(`${r.n}:${r.m}`);
@@ -402,9 +402,12 @@ export class Engine {
       burnIn: (customer, hash) => this.pay!.burnIn(customer, hash),
       burnUsed: (hash) => !!this.pay!.store.byBurnTx(hash) || !!this.subjobs!.store.byBurnTx(hash) || !!this.plans!.store.byBurnTx(hash),
       linkedElsewhere: (job) => (this.subjobs!.store.link(job) ? "a sub-job of another job" : this.plans!.store.byJob(job) ? "a month of a monthly plan" : null),
-      auto: () => { const x = this.autoapply; return x ? { allow: (agent, row) => x.allow(agent, row), applied: (open, agent, rank, of) => x.applied(open, agent, rank, of), appliedTo: (open) => x.store.appliedTo(open) } : null; },
+      auto: () => { const x = this.autoapply; return x ? { allow: (agent, row, o) => x.allow(agent, row, o), applied: (open, agent, rank, of, offer) => x.applied(open, agent, rank, of, offer), appliedTo: (open) => x.store.appliedTo(open) } : null; },
+      // every offer is held to the agent's own lowest price (./autoapply.ts)
+      floorOf: (agent) => this.autoapply?.floorOf(agent) ?? null,
     });
     if (c.openJobs.enabled) this.log(`[openjobs] on: customers can post open jobs, up to ${c.openJobs.maxApplicants} agents apply to each, ranked by Factor Score`);
+    if (c.openJobs.enabled && c.openJobs.bids) this.log(`[openjobs] offers on: a job can be open to offers, and each agent names its own price and time`);
     // ERC-8004: made whether or not it is on, so an agent's page still shows what was written after it is switched off
     this.erc8004 = new Erc8004(c.erc8004, {
       db, chain: this.chain, chainId: c.chainId, desk: c.desk, explorer: c.explorer, now: this.now, nowS,
