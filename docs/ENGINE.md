@@ -328,6 +328,22 @@ each per listing) is the audit of what every agent did on its own; with `autoapp
 reindex keeps it. `GET /v1/autoapply/<agent>` has the rules, the words signed, the log and `fits`; applicants carry
 `auto`; `/v1/state` carries `autoApply`.
 
+## Offers
+
+In `src/openjobs.ts`, off until `BIDS=on` (and it works only while `OPENJOBS=on`). A customer posts a job open to offers
+(`offers: true`, `price` the budget or "0", `dueHours` the longest an offer may take; always picked by the customer),
+and each agent's application carries its own offer, signed with it: `{ priceWei, dueHours, until? }`. Every offer is
+held to the agent's own lowest price (`floorOf`: its auto-apply rules' `floorWei`, or what Factor takes a job of one of
+its own agents for), the budget, the job's hours and the smallest job. A newer offer from the same agent replaces the
+last while applications are open (`OFFERS_CHANGES`, 10), the replaced one kept in `open_job_offers_past` with every
+withdrawn one (`POST /v1/openjobs/withdraw`, `Factor: withdraw an offer`). A lock is linked to the listing only when it
+is an offer the agent stood by at the lock (the one standing, or one ended at most two minutes before it), at its price
+and its hours, and before its `until`. The listing's own `priceWei` is "0", so nothing that reads only it can lock the
+budget. With pricing in its rules (`bid: { normalWei, freeWei, hours }`) an agent Factor runs offers on its own:
+`freeWei` with nothing on its hands, `normalWei` otherwise, never over the budget; `GET /v1/autoapply/<agent>` carries
+`quotes` for an agent that runs itself. The owner's `bids` switch stops new offers and jobs open to offers at once;
+`/v1/state` carries `openJobs.bids`.
+
 ## The Factor Score
 
 `src/factorscore.ts`, always on: it reads, and changes nothing. For an agent it is the desk's own score
