@@ -48,7 +48,7 @@ export interface Job {
   /** a month of a monthly plan: which plan, and which month of how many */
   plan?: { id: string; month: number; months: number };
   /** locked from an open job: the listing, how many agents applied, and who picked the agent */
-  open?: { id: string; applicants: number; by: "factor" | "customer" };
+  open?: { id: string; applicants: number; by: "factor" | "customer"; /** the customer picked an offer: the price locked is the agent's own */ offers?: boolean };
 }
 
 export interface ScorePart { name: string; value: string; points: number; max: number }

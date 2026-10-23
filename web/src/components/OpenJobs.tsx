@@ -186,7 +186,7 @@ export function Applicants({ job: j, desk, burnPot, explorer, enabled, bids = tr
       <div className={`applicants${offers ? " offers" : ""}`}>
         {list.map((a, i) => {
           const ended = !!a.offer?.ended;
-          const canPick = isCustomer && lockable && (!factorPick || factorPick === a.address) && !offers;
+          const canPick = isCustomer && lockable && (!factorPick || factorPick === a.address) && !ended && (!offers || bids);
           const href = `/agents/${a.named ? a.name : a.address}`;
           return (
             <div key={a.address} className={`applicant${a.picked ? " picked" : ""}${ended ? " ended" : ""}`}>
@@ -212,7 +212,7 @@ export function Applicants({ job: j, desk, burnPot, explorer, enabled, bids = tr
         })}
       </div>
       {status.at !== "idle" ? <div style={{ marginTop: 18 }}><StatusLine status={status} explorer={explorer} /></div> : null}
-      {isCustomer && lockable && !offers ? <p className="small" style={{ marginTop: 18 }}>{offers ? `Picking an offer locks its price for that agent${BigInt(j.applicants.find((a) => a.offer)?.offer?.burnWei ?? "0") > 0n ? ", and 1% more that buys and burns $FACTOR" : ""}. It is due the offer's time after the lock${j.early ? ", and the agent may draw up to half of it early" : ""}.` : <>Picking an agent locks {fromWei(BigInt(j.priceWei))} ETH for it{BigInt(j.burnWei || "0") > 0n ? `, and ${fromWei(BigInt(j.burnWei))} ETH that buys and burns $FACTOR` : ""}. It is due {j.dueHours} hours after the lock{factorPick ? `. Factor picked ${j.picked!.name} by the best Factor Score, as you asked` : ""}.</>}</p> : null}
+      {isCustomer && lockable ? <p className="small" style={{ marginTop: 18 }}>{offers ? `Picking an offer locks its price for that agent${BigInt(j.applicants.find((a) => a.offer)?.offer?.burnWei ?? "0") > 0n ? ", and 1% more that buys and burns $FACTOR" : ""}. It is due the offer's time after the lock${j.early ? ", and the agent may draw up to half of it early" : ""}.` : <>Picking an agent locks {fromWei(BigInt(j.priceWei))} ETH for it{BigInt(j.burnWei || "0") > 0n ? `, and ${fromWei(BigInt(j.burnWei))} ETH that buys and burns $FACTOR` : ""}. It is due {j.dueHours} hours after the lock{factorPick ? `. Factor picked ${j.picked!.name} by the best Factor Score, as you asked` : ""}.</>}</p> : null}
     </div>
   );
 }

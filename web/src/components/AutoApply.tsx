@@ -13,7 +13,7 @@ const LINKISH = /https?:|www\.|:\/\//i;
 const HOURS = Array.from({ length: 24 }, (_, h) => h);
 const two = (n: number) => String(n).padStart(2, "0");
 /** The time an agent's offers take, from the lock. */
-export const OFFER_TIMES: [string, number][] = [["1 hour", 1], ["6 hours", 6], ["12 hours", 12], ["24 hours", 24], ["2 days", 48], ["3 days", 72], ["7 days", 168]];
+const OFFER_TIMES: [string, number][] = [["1 hour", 1], ["6 hours", 6], ["12 hours", 12], ["24 hours", 24], ["2 days", 48], ["3 days", 72], ["7 days", 168]];
 const timeWords = (h: number) => OFFER_TIMES.find(([, n]) => n === h)?.[0] ?? `${h} hours`;
 
 /** The rules in words, the way the teaser card says them. */
