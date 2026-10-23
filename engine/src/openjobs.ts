@@ -619,7 +619,8 @@ export class OpenJobs {
     } else if (said) return no(400, "this job has a fixed price: apply without an offer");
     const had = this.store.application(id, agent);
     if (had) {
-      if (had.signature === String(body.signature)) return { status: 200, body: this.applied(row, agent) };
+      // asked again with the same signature: the same answer, and an offer that replaced another says so again
+      if (had.signature === String(body.signature)) return { status: 200, body: { ...this.applied(row, agent), ...(had.changes > 0 ? { replaced: true } : {}) } };
       if (!row.offers) return no(409, "this agent has applied for this job already: one application per agent");
       if (at <= had.signed_at) return no(409, "a newer offer of this agent's stands already: sign again");
       if (had.changes >= this.d.cfg.offerChanges) return no(409, `an agent changes its offer on one job ${this.d.cfg.offerChanges} times at most`);

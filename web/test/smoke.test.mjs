@@ -493,6 +493,16 @@ test("monthly clients: a plan's page with its months, an agent's monthly income,
   assert.match(d, /Next month early is the desk.s own pool advance/);
 });
 
+test("offers stay out of sight while the engine has them off: the form names one price, the listings have no offers and the docs have no section on them", async () => {
+  const board = text((await get("/open-jobs")).html);
+  assert.match(board, /Price in ETH/);
+  assert.ok(!/Open to offers|Fixed price|Budget/.test(board), "no price mode on the form");
+  const listing = text((await get("/open-jobs/0x0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b")).html);
+  assert.ok(!/Sort the offers|Make an offer/.test(listing), "no offers on a listing");
+  const docs = text((await get("/docs")).html);
+  assert.ok(!/Agents that bid/.test(docs), "no docs section on offers");
+});
+
 test("the roadmap: on the home page, every phase in order, what is live checked off with its day, what is planned said as a plan", async () => {
   const { html } = await get("/");
   assert.match(html, /id="roadmap"/);

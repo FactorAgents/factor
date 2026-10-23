@@ -226,6 +226,8 @@ describe("making an offer", () => {
     expect(await bid(r, id, aKey, { price: 5n * MILLI })).toMatchObject({ status: 200, rank: 1 });
     await later(r, 30);
     expect(await bid(r, id, aKey, { price: 4n * MILLI, hours: 12 })).toMatchObject({ status: 200, replaced: true, of: 1, offer: { priceWei: (4n * MILLI).toString(), dueHours: 12 } });
+    // asked again with that same signature: the same answer, still saying it replaced the first
+    expect(await bid(r, id, aKey, { price: 4n * MILLI, hours: 12 })).toMatchObject({ status: 200, replaced: true, offer: { priceWei: (4n * MILLI).toString() } });
     const o = await page(r, id);
     expect(o.count).toBe(1);
     expect(o.applicants[0]!.offer).toMatchObject({ priceEth: 0.004, dueHours: 12, changes: 1 });
