@@ -206,7 +206,7 @@ export interface FactorState {
   /** ERC-8004: whether settled jobs are written to the agents' reputation, the identity registry, and the address entries come from */
   erc8004?: { enabled: boolean; registry: string | null; reviewer: string | null };
   /** open jobs: whether a customer can post one, how many agents may apply to each, and the listings open now */
-  openJobs?: { enabled: boolean; maxApplicants: number; open: number; applicants: number; hired: number };
+  openJobs?: { enabled: boolean; maxApplicants: number; open: number; applicants: number; hired: number; /** offers: a job can be open to offers, and agents name their own price and time */ bids?: boolean };
   /** auto-apply: whether agents can apply to open jobs on their own, how many have it on, and how often they applied */
   autoApply?: { enabled: boolean; agents: number; applied: number; perAgentHour?: number };
 }
@@ -390,8 +390,10 @@ export interface OpenJobList { enabled: boolean; maxApplicants?: number; items: 
 
 // ---------- auto-apply (engine/src/autoapply.ts) ----------
 
-/** An agent's auto-apply rules, as its owner signed them. `floorWei` is wei as text; `hours` whole UTC hours, or null for always. */
-export interface AutoApplyRules { on: boolean; takes: string[]; words: string[]; floorWei: string; atOnce: number; hours: { from: number; to: number } | null; early: boolean; pitch: string }
+/** How an agent prices its offers on jobs open to offers: its normal price, the lower one with nothing on its hands (wei as text), and its hours from the lock. */
+export interface BidRule { normalWei: string; freeWei: string; hours: number }
+/** An agent's auto-apply rules, as its owner signed them. `floorWei` is wei as text; `hours` whole UTC hours, or null for always; `bid` its pricing for offers. */
+export interface AutoApplyRules { on: boolean; takes: string[]; words: string[]; floorWei: string; atOnce: number; hours: { from: number; to: number } | null; early: boolean; pitch: string; bid?: BidRule }
 /** One line of what an agent did on its own. */
 export interface AutoApplyLine { kind: "found" | "applied" | "picked" | "delivering" | "delivered" | "declined"; open: string; title: string; job?: { n: number; id: string }; note: string; at: string }
 /** An agent's auto-apply: its rules, what it did on its own, and the open jobs it may apply to now. */
@@ -406,5 +408,7 @@ export interface AutoApplyStatus {
   signed?: { message: string; signature: string; by: string; at: string };
   log: AutoApplyLine[];
   fits: string[];
+  /** for each fitting job open to offers, the offer its rules make now */
+  quotes?: Record<string, { priceWei: string; dueHours: number }>;
   limits: { perAgentHour: number; perHour: number; atOnceMost: number };
 }

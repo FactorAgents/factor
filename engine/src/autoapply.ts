@@ -11,7 +11,10 @@
 //
 // What the rules say: the work it takes (a few kinds, and words of its own, matched against a listing's title and
 // brief), the lowest price, the most jobs at once, its hours (always, or a window in UTC), whether it draws the half a
-// customer allows up front, a line to apply with, and on or off. It passes over jobs open to offers.
+// customer allows up front, a line to apply with, and on or off. With offers on (BIDS=on), its pricing too: what it
+// offers on a job open to offers normally, the lower price it offers with nothing on its hands, and its time from the
+// lock (`bid`). An offer it makes on its own is that price, never over the customer's budget and never under its
+// lowest price; without `bid` it passes over jobs open to offers.
 //
 // Who applies:
 //   - an agent Factor runs (one of Factor's own, or one made on the site): the engine signs its application with the
@@ -73,8 +76,17 @@ export const KINDS: { name: string; words: string[] }[] = [
 ];
 const KIND_NAMES = new Set(KINDS.map((k) => k.name));
 
-/** An agent's rules. `floorWei` is wei as text; `hours` a window in whole UTC hours, or null for always. */
-export interface Rules { on: boolean; takes: string[]; words: string[]; floorWei: string; atOnce: number; hours: { from: number; to: number } | null; early: boolean; pitch: string }
+/**
+ * How an agent prices an offer on a job open to offers: its normal price, the lower one with nothing on its hands
+ * (wei as text, both its lowest price or more), and its time, in hours from the lock.
+ */
+export interface BidRule { normalWei: string; freeWei: string; hours: number }
+
+/** An agent's rules. `floorWei` is wei as text; `hours` a window in whole UTC hours, or null for always; `bid` its pricing for offers, when it has one. */
+export interface Rules { on: boolean; takes: string[]; words: string[]; floorWei: string; atOnce: number; hours: { from: number; to: number } | null; early: boolean; pitch: string; bid?: BidRule }
+
+/** The pricing line the owner signs with the rules. */
+export const bidWords = (b: BidRule): string => `${formatEther(BigInt(b.normalWei))} ETH a job, ${formatEther(BigInt(b.freeWei))} ETH with nothing on its hands, due ${b.hours} hours after the lock`;
 
 export const AT_ONCE_MOST = 10;
 export const WORDS_MOST = 12;
@@ -98,6 +110,7 @@ export function rulesMessage(r: Rules & { agent: string; by: string; at: number 
     `hours: ${hoursWords(r.hours)}`,
     `early half: ${r.early ? "drawn up front when the customer allows it" : "never"}`,
     `pitch: ${r.pitch || "none"}`,
+    ...(r.bid ? [`offers: ${bidWords(r.bid)}`] : []),
     `at: ${r.at}`,
   ].join("\n");
 }
@@ -229,7 +242,8 @@ export interface AutoApplyDeps {
   setters: (agent: string) => string[];
   /** whether the engine can send anything now (live, a gas wallet, running) */
   live: () => boolean;
-
+  /** whether offers on open jobs are on (BIDS=on, not stopped) */
+  offersOn?: () => boolean;
   names: () => Map<string, { name: string }>;
   log: (line: string) => void;
 }
@@ -249,7 +263,8 @@ export interface AutoApplyJson {
   log: { kind: LogKind; open: string; title: string; job?: { n: number; id: string }; note: string; at: string }[];
   /** open jobs it may apply to right now, under its rules and every limit: what an agent's own program applies to */
   fits: string[];
-
+  /** for each of those open to offers, the offer its rules make now: what an agent's own program offers, unless it prices its own */
+  quotes: Record<string, { priceWei: string; dueHours: number }>;
   limits: { perAgentHour: number; perHour: number; atOnceMost: number };
 }
 
@@ -309,7 +324,20 @@ export class AutoApply {
     if (pitch === null || (pitch !== "" && pitch !== body.pitch)) return no(400, `a pitch is one plain line of 3 to ${PITCH_MOST} characters, without links`);
     const at = typeof body.at === "number" && Number.isSafeInteger(body.at) && Math.abs(this.d.nowS() - body.at) <= WINDOW_S ? body.at : null;
     if (at === null) return no(400, "the signature's time is more than ten minutes from now: sign again");
-    const r: Rules = { on: body.on, takes: KINDS.map((k) => k.name).filter((n) => takes.includes(n)), words: words as string[], floorWei, atOnce, hours, early: body.early, pitch };
+    let bid: BidRule | null = null;
+    if (body.bid !== undefined && body.bid !== null) {
+      if (!this.d.offersOn?.()) return no(503, "offers are switched off for now: set the rules without a price for offers");
+      const b = body.bid as { normalWei?: unknown; freeWei?: unknown; hours?: unknown };
+      const wei = (v: unknown) => (typeof v === "string" && /^\d{1,30}$/.test(v) ? v : null);
+      const normalWei = typeof b === "object" ? wei(b.normalWei) : null, freeWei = typeof b === "object" ? wei(b.freeWei) : null;
+      const h = typeof b === "object" && typeof b.hours === "number" && Number.isSafeInteger(b.hours) ? b.hours : null;
+      if (normalWei === null || freeWei === null || h === null) return no(400, "bid is { normalWei, freeWei, hours }: its normal price and the price with nothing on its hands, in wei as text, and its time in hours after the lock");
+      if (BigInt(normalWei) < BigInt(floorWei) || BigInt(normalWei) > MAX_LINK_WEI) return no(400, "the normal price of its offers is its lowest price or more");
+      if (BigInt(freeWei) < BigInt(floorWei) || BigInt(freeWei) > BigInt(normalWei)) return no(400, "the price with nothing on its hands is from its lowest price up to its normal price");
+      if (h < 1 || h > 720) return no(400, "the time of its offers is 1 to 720 hours after the lock");
+      bid = { normalWei, freeWei, hours: h };
+    }
+    const r: Rules = { on: body.on, takes: KINDS.map((k) => k.name).filter((n) => takes.includes(n)), words: words as string[], floorWei, atOnce, hours, early: body.early, pitch, ...(bid ? { bid } : {}) };
     const had = this.store.get(agent);
     if (had && had.signature === String(body.signature)) return { status: 200, body: { ok: true, agent, rules: had.r } };
     if (had && at <= had.signed_at) return no(409, "newer rules are already stored: sign again");
@@ -328,13 +356,25 @@ export class AutoApply {
 
   /** Why the rules do not take a listing, or null when they do. Its price, its words, its owner. */
   misfit(agent: string, r: Rules, row: OpenJobRow, runner?: Runner): string | null {
-    if (row.offers) return "open to offers, and its rules name no price for offers";
-    if (BigInt(row.price) < BigInt(r.floorWei)) return "under its lowest price";
-    if (runner && BigInt(row.price) < runner.floorWei) return "under what it takes a job for";
+    if (row.offers) {
+      // a job open to offers: priced by its rules, within the customer's budget and time
+      if (!r.bid) return "open to offers, and its rules name no price for offers";
+      if (BigInt(row.price) > 0n && BigInt(row.price) < this.floorWei(r, runner)) return "the budget is under its lowest price";
+      if (r.bid.hours > row.due_hours) return "it needs more time than the job gives";
+    } else {
+      if (BigInt(row.price) < BigInt(r.floorWei)) return "under its lowest price";
+      if (runner && BigInt(row.price) < runner.floorWei) return "under what it takes a job for";
+    }
     if (!takesWork(r, row.title, row.brief)) return "not work it takes";
     if (this.settersOf(agent).includes(row.customer)) return "posted by its own owner";
     if (runner?.refuses(row.brief)) return "a brief it could not work from";
     return null;
+  }
+
+  /** The least it takes a job for: its rules' lowest price, or what Factor takes a job of it for when that is more. */
+  private floorWei(r: Rules, runner?: Runner): bigint {
+    const f = BigInt(r.floorWei);
+    return runner && runner.floorWei > f ? runner.floorWei : f;
   }
 
   /**
@@ -347,6 +387,19 @@ export class AutoApply {
     const rules = r ? BigInt(r.floorWei) : null;
     if (runner && (rules === null || runner.floorWei > rules)) return { wei: runner.floorWei, why: "what this agent takes a job for" };
     return rules !== null ? { wei: rules, why: "the agent's own lowest price, in its auto-apply rules" } : null;
+  }
+
+  /**
+   * The offer its rules make on a job open to offers now: the price with nothing on its hands when it has none, its
+   * normal price otherwise, never over the budget and never under its lowest price, at its own time. null: none fits.
+   */
+  quote(agent: string, r: Rules, row: OpenJobRow, runner?: Runner, t = this.d.nowS()): Offer | null {
+    if (!row.offers || !r.bid || r.bid.hours > row.due_hours) return null;
+    const base = this.busy(agent, t) === 0 ? BigInt(r.bid.freeWei) : BigInt(r.bid.normalWei);
+    const budget = BigInt(row.price);
+    const price = budget > 0n && base > budget ? budget : base;
+    if (price < this.floorWei(r, runner)) return null;
+    return { priceWei: price.toString(), dueHours: r.bid.hours, until: null };
   }
 
   /** How many jobs an agent has on its hands: jobs locked for it and not delivered, and applications still standing. `except`: an open job not counted. */
@@ -390,9 +443,9 @@ export class AutoApply {
   }
 
   /** Told by open jobs once an application said to be automatic is stored. */
-  applied(open: string, agent: string, rank: number, of: number, _offer?: Offer): void {
+  applied(open: string, agent: string, rank: number, of: number, offer?: Offer): void {
     this.store.write(agent, "found", open, "Found an open job that fits its rules", this.d.now());
-    this.store.write(agent, "applied", open, `Applied with one signature, ranked ${rank} of ${of} by Factor Score`, this.d.now());
+    this.store.write(agent, "applied", open, offer ? `Offered ${ethText(offer.priceWei)} ETH, due ${offer.dueHours} hours after the lock, ranked ${rank} of ${of} by Factor Score` : `Applied with one signature, ranked ${rank} of ${of} by Factor Score`, this.d.now());
   }
 
   /** The open jobs that fit an agent's rules now, oldest first, that it has not applied to. */
@@ -401,16 +454,20 @@ export class AutoApply {
     if (!o) return [];
     return o.store.waiting()
       // never twice: a job it applied to on its own once, and then withdrew from, is not found again
-      .filter((row) => o.status(row, t) === "open" && !o.store.application(row.id, agent) && !this.store.has(agent, "applied", row.id) && o.store.count(row.id) < o.cfg.maxApplicants && !o.applyProblem(row, agent, t) && !this.misfit(agent, r, row, runner))
+      .filter((row) => o.status(row, t) === "open" && !o.store.application(row.id, agent) && !this.store.has(agent, "applied", row.id) && (!row.offers || o.offersOn()) && o.store.count(row.id) < o.cfg.maxApplicants && !o.applyProblem(row, agent, t) && !this.misfit(agent, r, row, runner))
       .sort((a, b) => a.created_at - b.created_at);
   }
 
-  /** The open jobs an agent may apply to on its own right now, under its rules and every limit. */
-  fits(agent: string, t = this.d.nowS()): string[] {
+  /** The open jobs an agent may apply to on its own right now, under its rules and every limit, with the offer its rules make on those open to offers. */
+  fits(agent: string, t = this.d.nowS()): { ids: string[]; quotes: Record<string, { priceWei: string; dueHours: number }> } {
     const had = this.store.get(agent);
-    if (!had || this.limitProblem(agent, had.r, t)) return [];
+    if (!had || this.limitProblem(agent, had.r, t)) return { ids: [], quotes: {} };
     const room = Math.max(0, had.r.atOnce - this.busy(agent, t));
-    return this.fitting(agent, had.r, t, this.d.runners().get(agent)).slice(0, room).map((row) => row.id);
+    const runner = this.d.runners().get(agent);
+    const rows = this.fitting(agent, had.r, t, runner).slice(0, room);
+    const quotes: Record<string, { priceWei: string; dueHours: number }> = {};
+    for (const row of rows) { const q = this.quote(agent, had.r, row, runner, t); if (q) quotes[row.id] = { priceWei: q.priceWei, dueHours: q.dueHours }; }
+    return { ids: rows.filter((row) => !row.offers || quotes[row.id]).map((row) => row.id), quotes };
   }
 
   /**
@@ -435,9 +492,12 @@ export class AutoApply {
         if (this.limitProblem(agent, r, t)) break;
         try {
           const at = this.d.nowS();
-          const signature = await runner.sign(applyMessage({ open: row.id, agent, pitch: r.pitch, at }));
-          const a = await o.apply({ open: row.id, agent, pitch: r.pitch, at, signature, auto: true });
-          if (a.status === 200) { made++; this.d.log(`[autoapply] ${runner.name} applied for "${row.title}" on its own`); }
+          // a job open to offers: the offer its rules make now, or none
+          const offer = row.offers ? this.quote(agent, r, row, runner, at) : null;
+          if (row.offers && !offer) continue;
+          const signature = await runner.sign(applyMessage({ open: row.id, agent, pitch: r.pitch, at, ...(offer ? { offer } : {}) }));
+          const a = await o.apply({ open: row.id, agent, pitch: r.pitch, at, signature, auto: true, ...(offer ? { priceWei: offer.priceWei, dueHours: offer.dueHours } : {}) });
+          if (a.status === 200) { made++; this.d.log(`[autoapply] ${runner.name} ${offer ? `offered ${ethText(offer.priceWei)} ETH on` : "applied for"} "${row.title}" on its own`); }
           else this.d.log(`[autoapply] ${runner.name} could not apply for "${row.title}": ${String(a.body.error)}`);
         } catch (e) {
           this.d.log(`[autoapply] ${runner.name}, "${row.title}": ${e instanceof Error ? e.message : String(e)}`);
@@ -492,6 +552,7 @@ export class AutoApply {
     const had = this.store.get(agent);
     const oj = this.d.openjobs();
     const titles = new Map<string, string>();
+    const fits = this.fits(agent);
     const log = this.store.log(agent).map((l) => {
       if (!titles.has(l.open_id)) titles.set(l.open_id, oj?.store.get(l.open_id)?.title ?? "An open job");
       return { kind: l.kind, open: l.open_id, title: titles.get(l.open_id)!, ...(l.job_id !== null ? { job: { n: l.job_id, id: pad(l.job_id) } } : {}), note: l.note, at: iso(l.at) };
@@ -500,7 +561,7 @@ export class AutoApply {
       enabled: this.working(), agent, name: this.nameOf(agent), runBy: o.runBy, setters: this.d.setters(agent), kinds: KINDS.map((k) => k.name),
       rules: had?.r ?? null,
       ...(had ? { signed: { message: rulesMessage({ ...had.r, agent, by: had.by, at: had.signed_at }), signature: had.signature, by: had.by, at: new Date(had.signed_at * 1000).toISOString() } } : {}),
-      log, fits: this.fits(agent),
+      log, fits: fits.ids, quotes: fits.quotes,
       limits: { perAgentHour: this.d.cfg.perAgentHour, perHour: this.d.cfg.perHour, atOnceMost: AT_ONCE_MOST },
     };
   }

@@ -12,6 +12,9 @@ import { engineNow, Go, SignedInAs, StatusLine, useSend, useWallet } from "./Wal
 const LINKISH = /https?:|www\.|:\/\//i;
 const HOURS = Array.from({ length: 24 }, (_, h) => h);
 const two = (n: number) => String(n).padStart(2, "0");
+/** The time an agent's offers take, from the lock. */
+export const OFFER_TIMES: [string, number][] = [["1 hour", 1], ["6 hours", 6], ["12 hours", 12], ["24 hours", 24], ["2 days", 48], ["3 days", 72], ["7 days", 168]];
+const timeWords = (h: number) => OFFER_TIMES.find(([, n]) => n === h)?.[0] ?? `${h} hours`;
 
 /** The rules in words, the way the teaser card says them. */
 function RulesRead({ r }: { r: AutoApplyRules }) {
@@ -22,12 +25,13 @@ function RulesRead({ r }: { r: AutoApplyRules }) {
       <dt>At a time</dt><dd>{`Up to ${r.atOnce} job${r.atOnce === 1 ? "" : "s"}`}</dd>
       <dt>Hours</dt><dd>{r.hours ? hoursWords(r.hours) : "Always on"}</dd>
       <dt>Half up front</dt><dd>{r.early ? "When the customer allows it" : "Never"}</dd>
+      {r.bid ? <><dt>Its offers</dt><dd>{`${fromWei(BigInt(r.bid.normalWei))} ETH, ${fromWei(BigInt(r.bid.freeWei))} ETH when free, in ${timeWords(r.bid.hours)}`}</dd></> : null}
       {r.pitch ? <><dt>Its line</dt><dd className="line">&ldquo;{r.pitch}&rdquo;</dd></> : null}
     </dl>
   );
 }
 
-export function AutoApplyPanel({ st, fromEth, asOf, explorer, enabled }: { st: AutoApplyStatus; fromEth: number | null; asOf: string; explorer: string; enabled: boolean }) {
+export function AutoApplyPanel({ st, fromEth, asOf, explorer, enabled, bids = false }: { st: AutoApplyStatus; fromEth: number | null; asOf: string; explorer: string; enabled: boolean; bids?: boolean }) {
   const { address, wallet } = useWallet();
   const { status, run, busy } = useSend();
   const r = st.rules;
@@ -42,7 +46,12 @@ export function AutoApplyPanel({ st, fromEth, asOf, explorer, enabled }: { st: A
   const [hTo, setHTo] = useState(r?.hours?.to ?? 17);
   const [early, setEarly] = useState(r?.early ?? false);
   const [pitch, setPitch] = useState(r?.pitch ?? "");
+  const [offers, setOffers] = useState(!!r?.bid);
+  const [normal, setNormal] = useState(r?.bid ? fromWei(BigInt(r.bid.normalWei)) : "");
+  const [free, setFree] = useState(r?.bid ? fromWei(BigInt(r.bid.freeWei)) : "");
+  const [offerHours, setOfferHours] = useState(r?.bid?.hours ?? 24);
   const wei = toWei(from);
+  const normalWei = toWei(normal || from), freeWei = toWei(free || normal || from);
   const flip = (k: string) => setTakes((had) => (had.includes(k) ? had.filter((x) => x !== k) : [...had, k]));
 
   const save = () => run(async (step) => {
@@ -55,10 +64,13 @@ export function AutoApplyPanel({ st, fromEth, asOf, explorer, enabled }: { st: A
     const line = pitch.trim().replace(/\s+/g, " ");
     if (line && (line.length < 3 || line.length > 280 || /[<>]/.test(line) || LINKISH.test(line))) throw new Refusal("Its line is 3 to 280 characters, without links.");
     if (!always && hFrom === hTo) throw new Refusal("The hours start and end at different times.");
+    const pricing = bids && offers;
+    if (pricing && (normalWei === null || normalWei < wei)) throw new Refusal("Its normal offer is its lowest price or more.");
+    if (pricing && (freeWei === null || freeWei < wei || freeWei > normalWei!)) throw new Refusal("The offer with nothing on its hands is from its lowest price up to its normal offer.");
     step("signing");
     const at = await engineNow();
     step("saving");
-    const saved = await signRules(w, { agent: st.agent, by: address, at, on, takes: st.kinds.filter((k) => takes.includes(k)), words: own, floorWei: wei.toString(), atOnce, hours: always ? null : { from: hFrom, to: hTo }, early, pitch: line });
+    const saved = await signRules(w, { agent: st.agent, by: address, at, on, takes: st.kinds.filter((k) => takes.includes(k)), words: own, floorWei: wei.toString(), atOnce, hours: always ? null : { from: hFrom, to: hTo }, early, pitch: line, ...(pricing ? { bid: { normalWei: normalWei!.toString(), freeWei: freeWei!.toString(), hours: offerHours } } : {}) });
     return { note: saved.on ? `Saved. ${st.name} applies on its own from now on.` : `Saved. ${st.name} no longer applies on its own.` };
   });
 
@@ -116,6 +128,35 @@ export function AutoApplyPanel({ st, fromEth, asOf, explorer, enabled }: { st: A
           <i />
           <div><b>Take half up front</b><span>When the customer allows it, half is drawn as the work is handed over. Off, it is paid in full once the customer accepts.</span></div>
         </button>
+        {bids ? (
+          <>
+            <button type="button" className={`toggle${offers ? "" : " off"}`} role="switch" aria-checked={offers} onClick={() => setOffers((v) => !v)} disabled={busy}>
+              <i />
+              <div><b>Make offers on jobs open to offers</b><span>{`It names its own price and time, never over the customer's budget and never under its lowest price. Off, it passes over jobs open to offers.`}</span></div>
+            </button>
+            {offers ? (
+              <>
+                <div className="pair">
+                  <label className="field">
+                    <span className="label">Its offer, in ETH</span>
+                    <input value={normal} onChange={(e) => setNormal(e.target.value)} inputMode="decimal" placeholder={from} disabled={busy} aria-invalid={normalWei === null} />
+                  </label>
+                  <label className="field">
+                    <span className="label">With nothing on its hands</span>
+                    <input value={free} onChange={(e) => setFree(e.target.value)} inputMode="decimal" placeholder={normal || from} disabled={busy} aria-invalid={freeWei === null} />
+                  </label>
+                </div>
+                <label className="field">
+                  <span className="label">Delivered within</span>
+                  <select value={offerHours} onChange={(e) => setOfferHours(Number(e.target.value))} disabled={busy}>
+                    {OFFER_TIMES.map(([name, h]) => <option key={h} value={h}>{`${name} of the lock`}</option>)}
+                  </select>
+                  <div className="hint">A job that gives less time than this is passed over.</div>
+                </label>
+              </>
+            ) : null}
+          </>
+        ) : null}
         <label className="field">
           <span className="label">The line it applies with</span>
           <input value={pitch} onChange={(e) => setPitch(e.target.value)} maxLength={280} placeholder="One page from your brief, delivered on its own" disabled={busy} />

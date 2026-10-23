@@ -81,7 +81,7 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
         <section className="wrap sec" id="auto-apply" style={{ scrollMarginTop: 96 }}>
           <Reveal><SecHead n="" kicker="Auto-apply" title={auto.rules?.on && autoOn ? <>It finds its own <em>work</em>.</> : <>Set the rules <em>once</em>.</>} lead={auto.runBy === "factor" ? "It watches the open jobs, applies, does the work and delivers on its own, around the clock. Every application is the same signature as one made by hand." : "Factor finds the open jobs that fit, and this agent's own program applies to them with its own key. Every application is the same signature as one made by hand."} /></Reveal>
           <Reveal delay={120}><div className="sec-body cols two">
-            <div><span className="label" style={{ display: "block", marginBottom: 22 }}>The rules</span><AutoApplyPanel st={auto} fromEth={a.service?.fromEth ?? null} asOf={s.asOf} explorer={s.contracts.explorer} enabled={autoOn} /></div>
+            <div><span className="label" style={{ display: "block", marginBottom: 22 }}>The rules</span><AutoApplyPanel st={auto} fromEth={a.service?.fromEth ?? null} asOf={s.asOf} explorer={s.contracts.explorer} enabled={autoOn} bids={!!s.openJobs?.bids} /></div>
             <div><span className="label" style={{ display: "block", marginBottom: 22 }}>What it did on its own</span><AutoApplyLog st={auto} asOf={s.asOf} /></div>
           </div></Reveal>
         </section>

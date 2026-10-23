@@ -14,7 +14,7 @@ import { inHours, readAutoApply, rulesMessage, takesWork, type Rules } from "../
 import type { HouseSigner } from "../src/house/house.js";
 import { hostedMessage } from "../src/house/hosted.js";
 import { SERVICES } from "../src/house/services.js";
-import { applyMessage, openJobIdOf, postMessage, type OpenJobText } from "../src/openjobs.js";
+import { applyMessage, openJobIdOf, postMessage, withdrawMessage, type Offer, type OpenJobText } from "../src/openjobs.js";
 import { turn } from "../src/switches.js";
 import { A, ETH, FakeChain, GOOD_SIGNATURE } from "./chain/fake.js";
 import { rig, wallet, type Rig } from "./chain/harness.js";
@@ -83,9 +83,9 @@ async function setRules(w: Rig, agent: string, o: Partial<Rules> = {}, by: { key
 const BRIEF = "Our hours, the menu and where to find us, on one calm page. We open at seven and bake until noon.";
 async function postJob(w: Rig, o: Partial<OpenJobText> & { key?: Key } = {}): Promise<string> {
   const key = o.key ?? buyerKey;
-  const p: OpenJobText = { customer: low(key), price: o.price ?? (ETH / 250n).toString(), dueHours: o.dueHours ?? 24, early: o.early ?? true, title: o.title ?? "A one-page site for our bakery", brief: o.brief ?? BRIEF, closesAt: o.closesAt ?? w.chain.time + 6 * HOUR, pick: o.pick ?? { by: "customer" }, at: o.at ?? w.chain.time };
+  const p: OpenJobText = { customer: low(key), price: o.price ?? (ETH / 250n).toString(), dueHours: o.dueHours ?? 24, early: o.early ?? true, title: o.title ?? "A one-page site for our bakery", brief: o.brief ?? BRIEF, closesAt: o.closesAt ?? w.chain.time + 6 * HOUR, pick: o.pick ?? { by: "customer" }, at: o.at ?? w.chain.time, ...(o.offers ? { offers: true } : {}) };
   const signature = await key.signMessage({ message: postMessage(p) });
-  const a = await post(w, "/v1/openjobs/post", { customer: p.customer, price: p.price, dueHours: p.dueHours, early: p.early, title: p.title, brief: p.brief, closesAt: p.closesAt, pick: p.pick.by, at: p.at, signature });
+  const a = await post(w, "/v1/openjobs/post", { customer: p.customer, price: p.price, dueHours: p.dueHours, early: p.early, title: p.title, brief: p.brief, closesAt: p.closesAt, pick: p.pick.by, at: p.at, signature, ...(o.offers ? { offers: true } : {}) });
   expect(a.status).toBe(200);
   return openJobIdOf(p);
 }
@@ -93,10 +93,9 @@ const listing = async (w: Rig, id: string) => (await get(w, `/v1/openjobs/${id}`
 const kinds = async (w: Rig, agent: string) => ((await get(w, `/v1/autoapply/${agent}`)).log as Body[]).map((l) => l.kind).reverse();
 
 /** An agent with a wallet of its own applies from its own program, saying the application is automatic. */
-async function applyAuto(w: Rig, open: string, key: Key = aKey, pitch = ""): Promise<Body> {
-  const at = w.chain.time;
-  const signature = await key.signMessage({ message: applyMessage({ open, agent: low(key), pitch, at }) });
-  return post(w, "/v1/openjobs/apply", { open, agent: low(key), pitch, at, signature, auto: true });
+async function applyAuto(w: Rig, open: string, key: Key = aKey, pitch = "", offer?: Offer, at = w.chain.time): Promise<Body> {
+  const signature = await key.signMessage({ message: applyMessage({ open, agent: low(key), pitch, at, ...(offer ? { offer } : {}) }) });
+  return post(w, "/v1/openjobs/apply", { open, agent: low(key), pitch, at, signature, auto: true, ...(offer ? { priceWei: offer.priceWei, dueHours: offer.dueHours } : {}) });
 }
 
 /** The customer locks the price for an agent on the chain and links it to the listing. */
@@ -318,5 +317,130 @@ describe("the rules themselves", () => {
     const id = await postJob(w);
     expect(await applyAuto(w, id)).toMatchObject({ status: 409, error: "auto-apply is switched off for now" });
     expect((await get(w, "/v1/state")).autoApply).toEqual({ enabled: false, perAgentHour: 6, agents: 0, applied: 0 });
+  });
+});
+
+describe("offers on its own: the pricing in its rules", () => {
+  const MILLI = ETH / 1000n;
+  const BID = { normalWei: (5n * MILLI).toString(), freeWei: (4n * MILLI).toString(), hours: 24 };
+  const offer = (milli: bigint, hours = 24): Offer => ({ priceWei: (milli * MILLI).toString(), dueHours: hours, until: null });
+  const offerOf = async (w: Rig, id: string, name: string) => ((await listing(w, id)).applicants as Body[]).find((x) => x.name === name)?.offer as Body | undefined;
+
+  it("signs its pricing with the rules, in words, and the words of rules without it stay as they were", () => {
+    const m = rulesMessage({ ...RULES, bid: BID, agent: A1, by: A1, at: 1_800_000_000 });
+    expect(m).toContain("pitch: One page from your brief, delivered on its own\noffers: 0.005 ETH a job, 0.004 ETH with nothing on its hands, due 24 hours after the lock\nat: 1800000000");
+    expect(rulesMessage({ ...RULES, agent: A1, by: A1, at: 1 })).not.toContain("offers:");
+  });
+
+  it("takes pricing only while offers are on, from its lowest price up, the price with nothing on its hands no more than the normal one", async () => {
+    const off = await world();
+    expect(await setRules(off, A1, { bid: BID }, { key: aKey })).toMatchObject({ status: 503, error: expect.stringMatching(/offers are switched off/) });
+    const w = await world({ BIDS: "on" });
+    expect(await setRules(w, A1, { bid: { ...BID, normalWei: (2n * MILLI).toString(), freeWei: (2n * MILLI).toString() } }, { key: aKey })).toMatchObject({ status: 400, error: expect.stringMatching(/its lowest price or more/) });
+    expect(await setRules(w, A1, { bid: { ...BID, freeWei: (6n * MILLI).toString() } }, { key: aKey })).toMatchObject({ status: 400, error: expect.stringMatching(/up to its normal price/) });
+    expect(await setRules(w, A1, { bid: { ...BID, freeWei: (2n * MILLI).toString() } }, { key: aKey })).toMatchObject({ status: 400 });
+    expect(await setRules(w, A1, { bid: { ...BID, hours: 0 } }, { key: aKey })).toMatchObject({ status: 400 });
+    expect(await setRules(w, A1, { bid: BID }, { key: aKey })).toMatchObject({ status: 200, rules: { bid: BID } });
+    expect((await get(w, `/v1/autoapply/${A1}`)).signed.message).toContain("offers: 0.005 ETH a job");
+  });
+
+  it("an agent Factor runs offers its own price: lower with nothing on its hands, never over the budget or under its lowest price, then is picked at it and delivers", async () => {
+    const w = await world({ BIDS: "on" });
+    await setRules(w, PAGE, { atOnce: 3, bid: BID });
+    const first = await postJob(w, { offers: true, price: (6n * MILLI).toString() });
+    await round(w);
+    expect(await offerOf(w, first, "page-smith")).toMatchObject({ priceEth: 0.004, dueHours: 24 });
+    expect(((await listing(w, first)).applicants as Body[])[0]).toMatchObject({ auto: true, pitch: RULES.pitch });
+    expect(((await get(w, `/v1/autoapply/${PAGE}`)).log as Body[])[0]!.note).toBe("Offered 0.004 ETH, due 24 hours after the lock, ranked 1 of 1 by Factor Score");
+    // one offer standing: its normal price; a budget under that: the budget
+    const second = await postJob(w, { offers: true, price: "0", title: "A landing page for our tea shop", at: w.chain.time + 1 });
+    const third = await postJob(w, { offers: true, price: (45n * MILLI / 10n).toString(), title: "A landing page for a florist", at: w.chain.time + 2 });
+    // passed over: a budget under its lowest price, or less time than its offers take
+    const cheap = await postJob(w, { offers: true, price: (2n * MILLI).toString(), title: "A landing page, cheap", at: w.chain.time + 3 });
+    const quick = await postJob(w, { offers: true, price: "0", dueHours: 12, title: "A landing page by tonight", at: w.chain.time + 4 });
+    await round(w);
+    expect(await offerOf(w, second, "page-smith")).toMatchObject({ priceEth: 0.005 });
+    expect(await offerOf(w, third, "page-smith")).toMatchObject({ priceEth: 0.0045 });
+    expect((await listing(w, cheap)).applicants).toHaveLength(0);
+    expect((await listing(w, quick)).applicants).toHaveLength(0);
+    // the customer picks its first offer: locked at it, and Factor's own job flow does the work, half drawn up front
+    const { id: job, hash } = w.chain.lockTx(BUYER, PAGE, 4n * MILLI, 24 * HOUR, true);
+    await w.engine.watchOnce();
+    expect((await post(w, "/v1/openjobs/hire", { open: first, job, lockTx: hash })).status).toBe(200);
+    await round(w, 6);
+    expect(((await get(w, `/v1/jobs/${job}`)).job as Body).state).toBe("delivered");
+    expect(w.chain.jobs.get(job)!).toMatchObject({ price: 4n * MILLI, early: 2n * MILLI });
+    const log = ((await get(w, `/v1/autoapply/${PAGE}`)).log as Body[]).filter((x) => x.open === first);
+    expect(log.map((x) => x.kind).reverse()).toEqual(["found", "applied", "picked", "delivering", "delivered"]);
+    expect(log.find((x) => x.kind === "picked")!.note).toBe(`Picked: 0.004 ETH locked as job ${String(job).padStart(4, "0")}, half drawn up front`);
+  });
+
+  it("without pricing in its rules it passes over jobs open to offers, and takes jobs with a price as before", async () => {
+    const w = await world({ BIDS: "on" });
+    await setRules(w, PAGE, { atOnce: 3 });
+    const open = await postJob(w, { offers: true, price: "0" });
+    const fixed = await postJob(w, { title: "A landing page with its price", at: w.chain.time + 1 });
+    await round(w);
+    expect((await listing(w, open)).applicants).toHaveLength(0);
+    expect((await listing(w, fixed)).applicants).toMatchObject([{ name: "page-smith", auto: true }]);
+    expect(((await listing(w, fixed)).applicants as Body[])[0]!.offer).toBeUndefined();
+  });
+
+  it("an agent that runs itself is told the offer its rules make, offers from its own program, and is held to its lowest price", async () => {
+    const w = await world({ BIDS: "on" });
+    await setRules(w, A1, { words: ["bakery"], takes: [], atOnce: 2, bid: BID }, { key: aKey });
+    const id = await postJob(w, { offers: true, price: "0" });
+    await round(w);
+    const mine = await get(w, `/v1/autoapply/${A1}`);
+    expect(mine).toMatchObject({ fits: [id], quotes: { [id]: { priceWei: BID.freeWei, dueHours: 24 } } });
+    // its own program: under its lowest price is refused, and an offer of its own within its rules is taken
+    expect((await applyAuto(w, id, aKey, "", offer(2n))).error).toMatch(/under the agent's own lowest price/);
+    expect(await applyAuto(w, id, aKey, "", offer(4n))).toMatchObject({ status: 200, rank: 1, offer: { priceWei: BID.freeWei } });
+    expect(await kinds(w, A1)).toEqual(["found", "applied"]);
+    // a newer offer on its own replaces the first: it is not a second job on its hands
+    expect(await applyAuto(w, id, aKey, "", offer(5n), w.chain.time + 1)).toMatchObject({ status: 200, replaced: true });
+    expect(((await listing(w, id)).applicants as Body[])[0]!.offer).toMatchObject({ priceEth: 0.005, changes: 1 });
+    expect(await kinds(w, A1)).toEqual(["found", "applied"]);
+  });
+
+  it("keeps every limit of auto-apply: the hourly cap, its jobs at once, the owner's switch, the bids switch, and never twice after a withdrawal", async () => {
+    const w = await world({ BIDS: "on", AUTOAPPLY_PER_AGENT_HOUR: "2" });
+    await setRules(w, A1, { words: ["bakery"], takes: [], atOnce: 5, bid: BID }, { key: aKey });
+    const ids: string[] = [];
+    for (let i = 0; i < 3; i++) ids.push(await postJob(w, { offers: true, price: "0", at: w.chain.time + i }));
+    expect((await applyAuto(w, ids[0]!, aKey, "", offer(4n))).status).toBe(200);
+    expect((await applyAuto(w, ids[1]!, aKey, "", offer(5n))).status).toBe(200);
+    expect((await applyAuto(w, ids[2]!, aKey, "", offer(5n))).error).toContain("applied 2 times in the last hour");
+    // its jobs at once: two standing offers and a rule of two
+    await setRules(w, A1, { words: ["bakery"], takes: [], atOnce: 2, bid: BID }, { key: aKey }, w.chain.time + 1);
+    w.chain.time += 2 * HOUR;
+    await w.engine.watchOnce();
+    expect((await applyAuto(w, ids[2]!, aKey, "", offer(5n))).error).toContain("2 jobs on its hands");
+    // withdrawn, the offer no longer stands, and the job it withdrew from is never found for it again
+    const at = w.chain.time;
+    const signature = await aKey.signMessage({ message: withdrawMessage({ open: ids[0]!, agent: A1, at }) });
+    expect((await post(w, "/v1/openjobs/withdraw", { open: ids[0]!, agent: A1, at, signature })).status).toBe(200);
+    expect((await get(w, `/v1/autoapply/${A1}`)).fits).toEqual([ids[2]]);
+    // the owner's switches: auto-apply stops every offer on its own; bids stops every offer
+    turn(w.db, "autoapply", false, "");
+    expect((await applyAuto(w, ids[2]!, aKey, "", offer(5n))).error).toBe("auto-apply is switched off for now");
+    turn(w.db, "autoapply", true);
+    turn(w.db, "bids", false, "");
+    expect((await get(w, `/v1/autoapply/${A1}`)).fits).toEqual([]);
+    expect((await applyAuto(w, ids[2]!, aKey, "", offer(5n))).status).toBe(503);
+    turn(w.db, "bids", true);
+    expect((await applyAuto(w, ids[2]!, aKey, "", offer(5n))).status).toBe(200);
+  });
+
+  it("an agent Factor runs makes no offer while the bids switch is off", async () => {
+    const w = await world({ BIDS: "on" });
+    await setRules(w, PAGE, { bid: BID });
+    const id = await postJob(w, { offers: true, price: "0" });
+    turn(w.db, "bids", false, "");
+    await round(w, 2);
+    expect((await listing(w, id)).applicants).toHaveLength(0);
+    turn(w.db, "bids", true);
+    await round(w);
+    expect(await offerOf(w, id, "page-smith")).toMatchObject({ priceEth: 0.004 });
   });
 });

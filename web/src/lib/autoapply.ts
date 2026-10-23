@@ -3,10 +3,12 @@
 import { formatEther } from "viem";
 import { Refusal } from "./desk";
 import { signText, type Provider } from "./wallet";
-import type { AutoApplyLine, AutoApplyRules } from "./types";
+import type { AutoApplyLine, AutoApplyRules, BidRule } from "./types";
 
 const two = (n: number) => String(n).padStart(2, "0");
 export const hoursWords = (h: AutoApplyRules["hours"]): string => (h ? `${two(h.from)}:00 to ${two(h.to)}:00 UTC` : "always");
+/** The pricing line the owner signs with the rules. */
+export const bidWords = (b: BidRule): string => `${formatEther(BigInt(b.normalWei))} ETH a job, ${formatEther(BigInt(b.freeWei))} ETH with nothing on its hands, due ${b.hours} hours after the lock`;
 
 export function rulesMessage(r: AutoApplyRules & { agent: string; by: string; at: number }): string {
   return [
@@ -21,6 +23,7 @@ export function rulesMessage(r: AutoApplyRules & { agent: string; by: string; at
     `hours: ${hoursWords(r.hours)}`,
     `early half: ${r.early ? "drawn up front when the customer allows it" : "never"}`,
     `pitch: ${r.pitch || "none"}`,
+    ...(r.bid ? [`offers: ${bidWords(r.bid)}`] : []),
     `at: ${r.at}`,
   ].join("\n");
 }

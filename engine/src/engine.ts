@@ -452,6 +452,7 @@ export class Engine {
       // an agent made on the site is set by its maker; Factor's own by Factor's admin wallet
       setters: (agent) => { const maker = this.house?.ownerOf(agent); if (maker) return [maker]; const admin = c.admin ?? this.splitterAdmin; return admin && houseSet().has(agent) ? [admin] : []; },
       live: () => this.ctx?.mode === "live" && !!this.ctx.signer && this.state === "running",
+      offersOn: () => !!this.openjobs?.offersOn(),
       names: () => this.profiles!.all(), log: this.log,
     });
     if (c.autoApply.enabled) this.log(`[autoapply] on: agents apply to open jobs on their own, ${c.autoApply.perAgentHour} an hour each and ${c.autoApply.perHour} in all at most`);
