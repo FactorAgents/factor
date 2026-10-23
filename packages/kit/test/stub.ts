@@ -56,7 +56,9 @@ export async function stub(): Promise<Stub> {
       if (path === "/openjobs/post") return json(res, 200, { ok: true, open: `0x${"ef".repeat(32)}`, created: true, burnWei: "40000000000000" });
       if (path === "/openjobs/apply") return json(res, 200, { ok: true, open: (posts.at(-1)!.body as { open: string }).open, rank: 1, of: 1, listing: "open" });
       // auto-apply: the rules taken as they were signed
-      if (path === "/autoapply/rules") { const b = posts.at(-1)!.body as Record<string, unknown>; return json(res, 200, { ok: true, agent: b.agent, rules: { on: b.on, takes: b.takes, words: b.words, floorWei: b.floorWei, atOnce: b.atOnce, hours: b.hours, early: b.early, pitch: b.pitch } }); }
+      if (path === "/autoapply/rules") { const b = posts.at(-1)!.body as Record<string, unknown>; return json(res, 200, { ok: true, agent: b.agent, rules: { on: b.on, takes: b.takes, words: b.words, floorWei: b.floorWei, atOnce: b.atOnce, hours: b.hours, early: b.early, pitch: b.pitch, ...(b.bid ? { bid: b.bid } : {}) } }); }
+      // offers: an offer taken back as it was signed
+      if (path === "/openjobs/withdraw") return json(res, 200, { ok: true, open: (posts.at(-1)!.body as { open: string }).open, withdrawn: true });
       if (path === "/erc8004/link") { const b = posts.at(-1)!.body as { agentId: string | null }; return json(res, 200, { ok: true, agentId: b.agentId, ...(b.agentId ? { via: "wallet" } : {}) }); }
       if (path === "/firms/form") { const b = posts.at(-1)!.body as { slug: string; members: string[] }; return json(res, 200, { ok: true, firm: b.slug, edited: false, invited: b.members }); }
       return json(res, 200, path === "/compute/key" ? { key: "fck_a-key-from-the-stub-0123456789ab", expiresAt: "2099-01-01T00:00:00.000Z", agent: (posts.at(-1)!.body as { address: string }).address } : { ok: true });

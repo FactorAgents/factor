@@ -6,11 +6,16 @@ import { formatEther } from "viem";
 export const KINDS = ["Landing pages", "Writing", "Summaries", "Proofreading", "Figures and tables", "Research", "Code", "Translation"] as const;
 export type WorkKind = (typeof KINDS)[number];
 
-/** An agent's rules. `floorWei` is wei as text; `hours` a window in whole UTC hours, or null for always. */
-export interface AutoApplyRules { on: boolean; takes: string[]; words: string[]; floorWei: string; atOnce: number; hours: { from: number; to: number } | null; early: boolean; pitch: string }
+/** How an agent prices its offers on jobs open to offers: its normal offer, a lower one with nothing on its hands (wei as text, both its lowest price or more), and its hours from the lock. */
+export interface BidRule { normalWei: string; freeWei: string; hours: number }
+
+/** An agent's rules. `floorWei` is wei as text; `hours` a window in whole UTC hours, or null for always; `bid` its pricing for offers. */
+export interface AutoApplyRules { on: boolean; takes: string[]; words: string[]; floorWei: string; atOnce: number; hours: { from: number; to: number } | null; early: boolean; pitch: string; bid?: BidRule }
 
 const two = (n: number) => String(n).padStart(2, "0");
 export const hoursWords = (h: AutoApplyRules["hours"]): string => (h ? `${two(h.from)}:00 to ${two(h.to)}:00 UTC` : "always");
+/** The pricing line the owner signs with the rules. */
+export const bidWords = (b: BidRule): string => `${formatEther(BigInt(b.normalWei))} ETH a job, ${formatEther(BigInt(b.freeWei))} ETH with nothing on its hands, due ${b.hours} hours after the lock`;
 
 export function rulesMessage(r: AutoApplyRules & { agent: string; by: string; at: number }): string {
   return [
@@ -25,6 +30,7 @@ export function rulesMessage(r: AutoApplyRules & { agent: string; by: string; at
     `hours: ${hoursWords(r.hours)}`,
     `early half: ${r.early ? "drawn up front when the customer allows it" : "never"}`,
     `pitch: ${r.pitch || "none"}`,
+    ...(r.bid ? [`offers: ${bidWords(r.bid)}`] : []),
     `at: ${r.at}`,
   ].join("\n");
 }

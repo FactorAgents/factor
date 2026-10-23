@@ -21,12 +21,12 @@ import { factorAccountAbi } from "./abi/FactorAccount.js";
 import { factorAccountsAbi } from "./abi/FactorAccounts.js";
 import { factorDeskAbi } from "./abi/FactorDesk.js";
 import { CHAIN_ID, DEFAULT_API, DEFAULT_RPC } from "./defaults.js";
-import type { AccountInfo, Agent, AgentPage, Application, AutoApplyStatus, ComputeCredit, ComputeKey, Deal, Erc8004Entries, Erc8004Status, Firm, FirmHire, FirmPage, FirmRecord, Job, JobPage, JobState, JobTree, LedgerLine, ModelAnswer, OpenJob, OpenJobHire, PickedJob, OpenJobPage, OpenJobPosted, Page, PayLinkInfo, Plan, PlanMonthSent, PlanPage, RouterModel, Sent, State, SubJob } from "./types.js";
+import type { AccountInfo, Agent, AgentPage, Applicant, Application, AutoApplyStatus, ComputeCredit, ComputeKey, Deal, Erc8004Entries, Erc8004Status, Firm, FirmHire, FirmPage, FirmRecord, Job, JobPage, JobState, JobTree, LedgerLine, ModelAnswer, OpenJob, OpenJobHire, PickedJob, OpenJobPage, OpenJobPosted, Page, PayLinkInfo, Plan, PlanMonthSent, PlanPage, RouterModel, Sent, State, SubJob } from "./types.js";
 import { MONTH_S, PLAN_TITLE_MOST, planMessage, stopPlanMessage, type PlanText } from "./plans.js";
 import { FIRM_SLUG, firmHireMessage, firmMessage, joinMessage, leaveMessage, slugOf } from "./firms.js";
 import { hireMessage, type HirePlan } from "./subjobs.js";
-import { applyMessage, closeJobMessage, PITCH_MOST, postJobMessage, type OpenJobText, type PickRule } from "./openjobs.js";
-import { KINDS, rulesMessage, type AutoApplyRules } from "./autoapply.js";
+import { applyMessage, closeJobMessage, PITCH_MOST, postJobMessage, withdrawMessage, type Offer, type OpenJobText, type PickRule } from "./openjobs.js";
+import { KINDS, rulesMessage, type AutoApplyRules, type BidRule } from "./autoapply.js";
 import { ERC8004_TAG, erc8004LinkMessage, erc8004Registry, IDENTITY_REGISTRY, identityAbi, REPUTATION_REGISTRY, reputationAbi } from "./erc8004.js";
 import { explain, Refusal, WORDS } from "./words.js";
 
@@ -41,10 +41,10 @@ export { firmHireMessage, firmMessage, joinMessage, leaveMessage, slugOf } from 
 export { MONTH_S, monthlyPlanId, planMessage, stopPlanMessage } from "./plans.js";
 export { ERC8004_TAG, erc8004LinkMessage, erc8004Registry, IDENTITY_REGISTRY, REPUTATION_REGISTRY } from "./erc8004.js";
 export type { PlanText } from "./plans.js";
-export { applyMessage, closeJobMessage, openJobId, pickWords, postJobMessage } from "./openjobs.js";
-export { hoursWords, KINDS, rulesMessage } from "./autoapply.js";
-export type { AutoApplyRules, WorkKind } from "./autoapply.js";
-export type { OpenJobText, PickRule } from "./openjobs.js";
+export { applyMessage, closeJobMessage, openJobId, pickWords, postJobMessage, priceWords, withdrawMessage } from "./openjobs.js";
+export { bidWords, hoursWords, KINDS, rulesMessage } from "./autoapply.js";
+export type { AutoApplyRules, BidRule, WorkKind } from "./autoapply.js";
+export type { Offer, OpenJobText, PickRule } from "./openjobs.js";
 export type { HirePlan } from "./subjobs.js";
 
 const ABI = factorDeskAbi as Abi;
@@ -1074,16 +1074,32 @@ export class Factor {
    * nothing, and nothing is locked: registered agents apply, ranked by their Factor Score, and you pick one with
    * pickAgent, which locks the price for it as an ordinary job. With `pick: "best"` Factor picks the best Factor Score
    * for you at the close (or once `pickAfter` have applied), and you lock for that agent within a day.
+   *
+   * With `offers: true` (when Factor has offers on) the job is open to offers instead: no price of its own, an optional
+   * `budget` no offer may go over, and `dueInHours` the longest an offer may take. Each agent names its own price and
+   * time; you compare them with offers(id) and pick one with pickAgent, which locks that offer's price.
    */
-  async postJob(o: { title: string; price: Amount; brief?: string; dueInHours?: number; allowEarly?: boolean; closesInHours?: number; pick?: "customer" | "best"; pickAfter?: number }): Promise<OpenJobPosted> {
+  async postJob(o: { title: string; price?: Amount; offers?: boolean; budget?: Amount; brief?: string; dueInHours?: number; allowEarly?: boolean; closesInHours?: number; pick?: "customer" | "best"; pickAfter?: number }): Promise<OpenJobPosted> {
     const customer = this.mine();
     const s = await this.state();
     if (s.paused) throw new Refusal(s.paused, "paused");
     if (!s.openJobs?.enabled) throw new Refusal("Open jobs are not switched on yet.", "openjobs_off");
-    const price = toWei(o.price);
-    if (price < 10n ** 15n) throw new Refusal("The smallest job is 0.001 ETH.", "bad_amount");
+    const offers = o.offers === true;
+    let price: bigint;
+    if (offers) {
+      if (!s.openJobs.bids) throw new Refusal("Offers are not switched on yet: post the job with its price.", "offers_off");
+      if (o.price !== undefined) throw new Refusal("A job open to offers has no price of its own: give a budget if you like.", "bad_amount");
+      price = o.budget === undefined ? 0n : toWei(o.budget);
+      if (price !== 0n && price < 10n ** 15n) throw new Refusal("A budget is 0.001 ETH or more, or none.", "bad_amount");
+      if (o.pick === "best") throw new Refusal("A job open to offers is picked by its customer: Factor never picks a price for anybody.", "bad_pick");
+    } else {
+      if (o.price === undefined) throw new Refusal("Give the job's price, or post it open to offers.", "bad_amount");
+      if (o.budget !== undefined) throw new Refusal("A budget goes with offers: true.", "bad_amount");
+      price = toWei(o.price);
+      if (price < 10n ** 15n) throw new Refusal("The smallest job is 0.001 ETH.", "bad_amount");
+    }
     const dueHours = o.dueInHours ?? 24;
-    if (!Number.isSafeInteger(dueHours) || dueHours < 1 || dueHours > 720) throw new Refusal("dueInHours is a whole number of hours from 1 to 720: how long the agent has once the job is locked.", "bad_due");
+    if (!Number.isSafeInteger(dueHours) || dueHours < 1 || dueHours > 720) throw new Refusal(offers ? "dueInHours is a whole number of hours from 1 to 720: the longest an offer may take once the job is locked." : "dueInHours is a whole number of hours from 1 to 720: how long the agent has once the job is locked.", "bad_due");
     const closesIn = o.closesInHours ?? 24;
     if (!(closesIn >= 1 && closesIn <= 14 * 24)) throw new Refusal("Applications close 1 hour to 14 days from now.", "bad_close");
     const title = oneLine(o.title);
@@ -1096,9 +1112,9 @@ export class Factor {
     const at = await this.clock();
     // a little inside the hour at the short end, so the engine's own clock never finds it too soon
     const closesAt = at + Math.max(Math.round(closesIn * 3600), 3600 + 120);
-    const p: OpenJobText = { customer, price: price.toString(), dueHours, early: o.allowEarly === true, title, brief, closesAt: Math.min(closesAt, at + 14 * 86_400 - 120), pick, at };
+    const p: OpenJobText = { customer, price: price.toString(), dueHours, early: o.allowEarly === true, title, brief, closesAt: Math.min(closesAt, at + 14 * 86_400 - 120), pick, at, ...(offers ? { offers: true } : {}) };
     const signature = await this.sign(postJobMessage(p));
-    const r = await this.askPatient<{ open: Hex; created: boolean; burnWei?: string }>("/openjobs/post", { customer, price: p.price, dueHours, early: p.early, title, brief, closesAt: p.closesAt, pick: pick.by, ...(pick.by === "best" && pick.after ? { pickAfter: pick.after } : {}), at, signature, via: "kit" });
+    const r = await this.askPatient<{ open: Hex; created: boolean; burnWei?: string }>("/openjobs/post", { customer, price: p.price, dueHours, early: p.early, title, brief, closesAt: p.closesAt, pick: pick.by, ...(pick.by === "best" && pick.after ? { pickAfter: pick.after } : {}), at, signature, via: "kit", ...(offers ? { offers: true } : {}) });
     return { id: r.open, url: `${this.site()}/open-jobs/${r.open}`, created: r.created, burnWei: BigInt(r.burnWei ?? "0") };
   }
 
@@ -1120,30 +1136,73 @@ export class Factor {
   /**
    * Apply for an open job as this agent: one signature, which costs nothing, with a line of your own if you like (one
    * plain line of up to 280 characters, without links). Only an agent registered on the desk applies, once per job.
-   * Answers where it stands among the applicants, ranked by Factor Score.
+   * Answers where it stands among the applicants, ranked by Factor Score. On a job open to offers, give your offer too:
+   * `price` (never over the customer's budget, never under your own lowest price), `dueInHours` from the lock (never
+   * longer than the job gives), and `standsForHours` if it should end by itself. A newer offer replaces your last one
+   * while offers are open.
    */
-  async applyToJob(id: string, o: { pitch?: string; auto?: boolean } = {}): Promise<Application> {
+  async applyToJob(id: string, o: { pitch?: string; auto?: boolean; price?: Amount; dueInHours?: number; standsForHours?: number } = {}): Promise<Application> {
     const agent = this.mine();
     const page = await this.openJob(id);
     if (!page) throw new Refusal(`There is no open job ${id} on Factor.`, "no_open_job");
     const j = page.open;
     if (j.customer.toLowerCase() === agent) throw new Refusal("A customer cannot apply for its own job.", "self_hire");
-    if (!j.applying) throw new Refusal(sentence(j.why ?? "This job takes no applications now"), "not_applying");
+    const mine = j.applicants.find((a) => a.address === agent);
+    if (!j.applying && !(j.offers && mine && j.status === "open")) throw new Refusal(sentence(j.why ?? "This job takes no applications now"), "not_applying");
     const pitch = o.pitch === undefined || o.pitch.trim() === "" ? "" : o.pitch.trim().replace(/\s+/g, " ");
     if (pitch && (pitch.length < 3 || pitch.length > PITCH_MOST || /[<>]/.test(pitch) || /https?:|www\.|:\/\//i.test(pitch))) throw new Refusal(`A pitch is one line of 3 to ${PITCH_MOST} characters, without links.`, "bad_text");
+    let wei: bigint | null = null;
+    if (j.offers) {
+      if (o.price === undefined || o.dueInHours === undefined) throw new Refusal("This job is open to offers: give your price and dueInHours.", "needs_offer");
+      wei = toWei(o.price);
+      if (wei < 10n ** 15n) throw new Refusal("An offer is 0.001 ETH or more.", "bad_amount");
+      if (j.budgetWei && wei > BigInt(j.budgetWei)) throw new Refusal(`The customer's budget is ${ethText(BigInt(j.budgetWei))} ETH: no offer goes over it.`, "over_budget");
+      if (!Number.isSafeInteger(o.dueInHours) || o.dueInHours < 1 || o.dueInHours > j.dueHours) throw new Refusal(`dueInHours is a whole number from 1 to ${j.dueHours}: the longest this job gives.`, "bad_due");
+      if (o.standsForHours !== undefined && !(o.standsForHours >= 0.1 && o.standsForHours <= 720)) throw new Refusal("standsForHours is from 0.1 to 720, or left out: until you withdraw it.", "bad_due");
+    } else if (o.price !== undefined || o.dueInHours !== undefined || o.standsForHours !== undefined) throw new Refusal("This job has a fixed price: apply without an offer.", "fixed_price");
     const at = await this.clock();
-    const signature = await this.sign(applyMessage({ open: id, agent, pitch, at }));
-    const r = await this.askPatient<{ rank: number; of: number; listing: Application["listing"]; picked?: string }>("/openjobs/apply", { open: id, agent, pitch, at, signature, ...(o.auto ? { auto: true } : {}) });
-    return { open: id, rank: r.rank, of: r.of, listing: r.listing, ...(r.picked ? { picked: r.picked } : {}) };
+    const offer: Offer | undefined = wei !== null ? { priceWei: wei.toString(), dueHours: o.dueInHours!, until: o.standsForHours ? at + Math.round(o.standsForHours * 3600) : null } : undefined;
+    const signature = await this.sign(applyMessage({ open: id, agent, pitch, at, ...(offer ? { offer } : {}) }));
+    const r = await this.askPatient<{ rank: number; of: number; listing: Application["listing"]; picked?: string; replaced?: boolean }>("/openjobs/apply", { open: id, agent, pitch, at, signature, ...(o.auto ? { auto: true } : {}), ...(offer ? { priceWei: offer.priceWei, dueHours: offer.dueHours, ...(offer.until !== null ? { until: offer.until } : {}) } : {}) });
+    return { open: id, rank: r.rank, of: r.of, listing: r.listing, ...(r.picked ? { picked: r.picked } : {}), ...(offer ? { offer } : {}), ...(r.replaced ? { replaced: true } : {}) };
+  }
+
+  /**
+   * Make an offer on a job open to offers, as this agent: your own price and time, signed, which costs nothing. The
+   * same as applyToJob with an offer; a newer one replaces the last while offers are open.
+   */
+  bid(id: string, o: { price: Amount; dueInHours: number; standsForHours?: number; pitch?: string; auto?: boolean }): Promise<Application> {
+    return this.applyToJob(id, o);
+  }
+
+  /** Take back this agent's offer on a job open to offers, until it is picked. A signature; nothing was locked. */
+  async withdrawOffer(id: string): Promise<{ withdrawn: boolean }> {
+    const agent = this.mine();
+    if (!/^0x[0-9a-f]{64}$/.test(id)) throw new Refusal("An open job's number is 0x and 64 hex characters.", "bad_open_job");
+    const at = await this.clock();
+    const signature = await this.sign(withdrawMessage({ open: id, agent, at }));
+    const r = await this.askPatient<{ withdrawn?: boolean }>("/openjobs/withdraw", { open: id, agent, at, signature });
+    return { withdrawn: r.withdrawn === true };
+  }
+
+  /**
+   * The offers on a job open to offers, side by side, sorted: `score` (best Factor Score first, the default), `price`
+   * (lowest first) or `fast` (shortest time first). Offers that have ended come last. Empty for a job with a fixed price.
+   */
+  async offers(id: string, by: "score" | "price" | "fast" = "score"): Promise<Applicant[]> {
+    const page = await this.openJob(id);
+    if (!page) throw new Refusal(`There is no open job ${id} on Factor.`, "no_open_job");
+    return sortOffers(page.open.applicants.filter((a) => a.offer), by);
   }
 
   /**
    * Pick an agent for an open job this wallet posted: the price is locked on Robinhood Chain for it as an ordinary job,
    * with its 1% for the burn, and Factor links the job to the listing. `agent` is an applicant's name or address; left
    * out, the agent Factor picked (the best Factor Score), or the applicant ranked first. `maxEth` caps the price and
-   * the burn together.
+   * the burn together. On a job open to offers it locks the offer's own price, due the offer's hours after the lock:
+   * `agent` picks one, or `by` the first by score, lowest price or shortest time among the offers still standing.
    */
-  async pickAgent(id: string, o: { agent?: string; maxEth?: Amount } = {}): Promise<OpenJobHire> {
+  async pickAgent(id: string, o: { agent?: string; by?: "score" | "price" | "fast"; maxEth?: Amount } = {}): Promise<OpenJobHire> {
     const customer = this.mine();
     const page = await this.openJob(id);
     if (!page) throw new Refusal(`There is no open job ${id} on Factor.`, "no_open_job");
@@ -1152,25 +1211,29 @@ export class Factor {
     if (j.job) throw new Refusal(`It is locked already, as job ${j.job.id}.`, "hired");
     if (j.status === "closed" || j.status === "expired") throw new Refusal(sentence(j.note), "closed");
     if (!j.applicants.length) throw new Refusal("Nobody has applied yet.", "no_applicants");
-    let who = j.picked?.by === "factor" ? j.applicants.find((a) => a.address === j.picked!.address) : j.applicants[0];
+    const standing = j.offers ? sortOffers(j.applicants.filter((a) => a.offer && !a.offer.ended), o.by ?? "score") : j.applicants;
+    if (!standing.length) throw new Refusal("No offer is standing on this job.", "no_applicants");
+    let who = j.picked?.by === "factor" ? j.applicants.find((a) => a.address === j.picked!.address) : standing[0];
     if (o.agent !== undefined) {
       const want = o.agent.toLowerCase();
       who = j.applicants.find((a) => a.address === want || (a.named && a.name === o.agent));
       if (!who) throw new Refusal(`${o.agent} has not applied for this job.`, "not_an_applicant");
+      if (j.offers && (!who.offer || who.offer.ended)) throw new Refusal(`${who.name}'s offer is not standing any more.`, "offer_ended");
       if (j.picked?.by === "factor" && who.address !== j.picked.address) throw new Refusal(`Factor picked ${j.picked.name} by the best Factor Score, as the job was posted: lock for that agent.`, "factor_picked");
     }
     if (!who) throw new Refusal("Nobody can be picked for this job.", "no_applicants");
     const s = await this.state();
     if (s.paused) throw new Refusal(s.paused, "paused");
-    const price = BigInt(j.priceWei), burnWei = BigInt(j.burnWei || "0");
+    const price = j.offers ? BigInt(who.offer!.priceWei) : BigInt(j.priceWei), burnWei = j.offers ? BigInt(who.offer!.burnWei || "0") : BigInt(j.burnWei || "0");
+    const hours = j.offers ? who.offer!.dueHours : j.dueHours;
     const cap = o.maxEth === undefined ? null : toWei(o.maxEth);
     if (cap !== null && price + burnWei > cap) throw new Refusal(`It costs ${ethText(price + burnWei)} ETH with its burn, over the ${ethText(cap)} ETH allowed. Nothing was locked.`, "over_cap");
     const pot = s.contracts.burnPot?.toLowerCase() ?? "";
     if (burnWei > 0n && !/^0x[0-9a-f]{40}$/.test(pot)) throw new Refusal("Factor names no burn pot. Nothing was locked.", "wrong_pot");
-    // due the listing's hours after the lock, on the chain's own clock
+    // due the listing's hours (or the offer's) after the lock, on the chain's own clock
     const now = Number((await this.pub.getBlock()).timestamp);
-    const { lockTx, burnTx, jobId } = await this.lockAndBurn(who.address, now + j.dueHours * 3600, j.early, price, burnWei, pot);
-    const out: OpenJobHire = { open: id as Hex, jobId, agent: who.address, lockTx, burnTx, burned: false, linked: false, jobUrl: `${this.site()}/jobs/${String(jobId).padStart(4, "0")}`, openUrl: `${this.site()}/open-jobs/${id}`, explorer: `${this.explorer}/tx/${lockTx}` };
+    const { lockTx, burnTx, jobId } = await this.lockAndBurn(who.address, now + hours * 3600, j.early, price, burnWei, pot);
+    const out: OpenJobHire = { open: id as Hex, jobId, agent: who.address, priceWei: price, lockTx, burnTx, burned: false, linked: false, jobUrl: `${this.site()}/jobs/${String(jobId).padStart(4, "0")}`, openUrl: `${this.site()}/open-jobs/${id}`, explorer: `${this.explorer}/tx/${lockTx}` };
     try {
       const r = await this.askPatient<{ burned?: boolean }>("/openjobs/hire", { open: id, job: jobId, lockTx, burnTx });
       out.linked = true;
@@ -1210,7 +1273,7 @@ export class Factor {
    * half a customer allows up front, and a line to apply with. `agent` left out: this wallet's own agent. Otherwise
    * this wallet must be whoever runs that agent on Factor (the maker of an agent made on the site).
    */
-  async setAutoApply(o: { on?: boolean; takes?: string[]; words?: string[]; from?: Amount; atOnce?: number; hours?: "always" | { from: number; to: number }; early?: boolean; pitch?: string; agent?: string }): Promise<AutoApplyRules> {
+  async setAutoApply(o: { on?: boolean; takes?: string[]; words?: string[]; from?: Amount; atOnce?: number; hours?: "always" | { from: number; to: number }; early?: boolean; pitch?: string; agent?: string; offers?: { price: Amount; whenFree?: Amount; dueInHours: number } }): Promise<AutoApplyRules> {
     const by = this.mine();
     const agent = o.agent ? (/^0x[0-9a-fA-F]{40}$/.test(o.agent) ? o.agent.toLowerCase() : (await this.agent(o.agent))?.agent.address.toLowerCase()) : by;
     if (!agent) throw new Refusal(`There is no agent ${o.agent} on Factor.`, "no_agent");
@@ -1231,7 +1294,16 @@ export class Factor {
     if (hours && (![hours.from, hours.to].every((h) => Number.isSafeInteger(h) && h >= 0 && h <= 23) || hours.from === hours.to)) throw new Refusal("hours is \"always\", or { from, to }: whole hours of the day in UTC, 0 to 23, not the same.", "bad_hours");
     const pitch = o.pitch === undefined || o.pitch.trim() === "" ? "" : o.pitch.trim().replace(/\s+/g, " ");
     if (pitch && (pitch.length < 3 || pitch.length > PITCH_MOST || /[<>]/.test(pitch) || /https?:|www\.|:\/\//i.test(pitch))) throw new Refusal(`A pitch is one line of 3 to ${PITCH_MOST} characters, without links.`, "bad_text");
-    const r: AutoApplyRules = { on, takes: KINDS.filter((k) => takes.includes(k)), words, floorWei: floorWei.toString(), atOnce, hours, early: o.early === true, pitch };
+    let bid: BidRule | null = null;
+    if (o.offers) {
+      if (!s.openJobs?.bids) throw new Refusal("Offers are not switched on yet: set the rules without them.", "offers_off");
+      const normal = toWei(o.offers.price), free = toWei(o.offers.whenFree ?? o.offers.price);
+      if (normal < floorWei) throw new Refusal("Its offer is its lowest price (from) or more.", "bad_amount");
+      if (free < floorWei || free > normal) throw new Refusal("Its offer with nothing on its hands (whenFree) is from its lowest price up to its normal offer.", "bad_amount");
+      if (!Number.isSafeInteger(o.offers.dueInHours) || o.offers.dueInHours < 1 || o.offers.dueInHours > 720) throw new Refusal("offers.dueInHours is 1 to 720: the time its offers take from the lock.", "bad_due");
+      bid = { normalWei: normal.toString(), freeWei: free.toString(), hours: o.offers.dueInHours };
+    }
+    const r: AutoApplyRules = { on, takes: KINDS.filter((k) => takes.includes(k)), words, floorWei: floorWei.toString(), atOnce, hours, early: o.early === true, pitch, ...(bid ? { bid } : {}) };
     const at = await this.clock();
     const signature = await this.sign(rulesMessage({ ...r, agent, by, at }));
     const a = await this.askPatient<{ rules: AutoApplyRules }>("/autoapply/rules", { agent, by, ...r, at, signature });
@@ -1244,8 +1316,10 @@ export class Factor {
    * price is locked, it draws the half up front when its rules and the job allow it and calls onPicked with the job.
    * Whatever onPicked answers (the work, as text) is delivered and shown on the job's page. Answers a stop function.
    * Every application is the same signed words as one by hand, marked as made on its own, and held to its rules.
+   * On a job open to offers it offers what its rules make (its offers pricing), or what `price` answers from its own
+   * program: `{ price, dueInHours }` for an offer of its own, null to pass the job over.
    */
-  watchOpenJobs(o: { onPicked?: (job: PickedJob) => Promise<string | void> | string | void; onApplied?: (a: Application & { title: string }) => void; onError?: (e: unknown) => void; everyMs?: number } = {}): { stop: () => void; done: Promise<void> } {
+  watchOpenJobs(o: { onPicked?: (job: PickedJob) => Promise<string | void> | string | void; onApplied?: (a: Application & { title: string }) => void; onError?: (e: unknown) => void; everyMs?: number; price?: (job: OpenJob, quote: { priceWei: bigint; dueHours: number }) => Promise<{ price: Amount; dueInHours: number } | null | undefined> | { price: Amount; dueInHours: number } | null | undefined } = {}): { stop: () => void; done: Promise<void> } {
     const me = this.mine();
     const every = Math.max(o.everyMs ?? 20_000, 2000);
     const handled = new Set<number>();
@@ -1258,7 +1332,14 @@ export class Factor {
       for (const id of status.fits) {
         if (stopped) return;
         try {
-          const a = await this.applyToJob(id, { pitch: rules.pitch, auto: true });
+          const quote = status.quotes?.[id];
+          let offer: { price: Amount; dueInHours: number } | null | undefined;
+          if (quote) {
+            offer = { price: BigInt(quote.priceWei), dueInHours: quote.dueHours };
+            if (o.price) { const page = await this.openJob(id); if (!page) continue; offer = await o.price(page.open, { priceWei: BigInt(quote.priceWei), dueHours: quote.dueHours }); }
+            if (!offer) continue;
+          }
+          const a = await this.applyToJob(id, { pitch: rules.pitch, auto: true, ...(offer ? { price: offer.price, dueInHours: offer.dueInHours } : {}) });
           o.onApplied?.({ ...a, title: (await this.openJob(id))?.open.title ?? "" });
         } catch (e) { o.onError?.(e); }
       }
@@ -1269,7 +1350,11 @@ export class Factor {
         handled.add(j.job.n);
         try {
           let drewEth = 0;
-          if (rules.early && j.early && page.job.state === "locked") { const half = BigInt(j.priceWei) / 2n; await this.draw(j.job.n, half, "early"); drewEth = Number(formatEther(half)); }
+          // half of the price locked (the listing's, or the offer picked), as the desk says it
+          if (rules.early && j.early && page.job.state === "locked") {
+            const { earlyWei: half } = await this.canDraw(j.job.n);
+            if (half > 0n) { await this.draw(j.job.n, half, "early"); drewEth = Number(formatEther(half)); }
+          }
           const work = await o.onPicked?.({ open: j, jobId: j.job.n, job: page.job, brief: page.brief ?? j.brief, drewEth });
           if (typeof work === "string" && work.trim()) await this.deliver(j.job.n, work, { show: true });
         } catch (e) { o.onError?.(e); }
@@ -1565,6 +1650,12 @@ function subjobOf(body: Record<string, unknown>, forJob?: number): Pick<Deal, "s
   const sub = body.subjob as { parent?: number; depth?: number } | undefined;
   if (sub?.parent) return { subjob: { parent: sub.parent, depth: sub.depth ?? 1 } };
   return { subjob: null, ...(typeof body.subjobNote === "string" ? { subjobNote: sentence(body.subjobNote) } : {}) };
+}
+
+/** Offers sorted: best Factor Score, lowest price or shortest time first; offers that ended last. */
+function sortOffers(list: Applicant[], by: "score" | "price" | "fast"): Applicant[] {
+  const v = (a: Applicant): bigint => (by === "price" ? BigInt(a.offer?.priceWei ?? "0") : by === "fast" ? BigInt(a.offer?.dueHours ?? 0) : 0n);
+  return [...list].sort((x, y) => (x.offer?.ended ? 1 : 0) - (y.offer?.ended ? 1 : 0) || (v(x) < v(y) ? -1 : v(x) > v(y) ? 1 : 0) || x.rank - y.rank);
 }
 
 const sentence = (text: string): string => { const t = text.charAt(0).toUpperCase() + text.slice(1); return /[.!?]$/.test(t) ? t : `${t}.`; };

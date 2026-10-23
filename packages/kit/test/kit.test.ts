@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { factorDeskAbi } from "../src/abi/FactorDesk.js";
-import { briefMessage, computeKeyMessage, Factor, orderTypedData, profileMessage, proofOf, Refusal, titleMessage, toWei } from "../src/index.js";
+import { briefMessage, computeKeyMessage, Factor, orderTypedData, profileMessage, proofOf, Refusal, titleMessage, toWei, type FactorOptions } from "../src/index.js";
 import { orderTypedData as engineOrder } from "../../../engine/src/accounts.js";
 import { limitsFrom, runTool, Spending, TOOLS } from "../src/tools.js";
 import { WORDS } from "../src/words.js";
@@ -19,9 +19,9 @@ import { planIdOf as enginePlanIdOf, planMessage as enginePlan, stopMessage as e
 import { recoverMessageAddress } from "viem";
 import { erc8004LinkMessage, erc8004Registry } from "../src/index.js";
 import { linkMessage as engineLink, registryOf as engineRegistry } from "../../../engine/src/erc8004.js";
-import { applyMessage, closeJobMessage, openJobId, postJobMessage, rulesMessage } from "../src/index.js";
+import { applyMessage, closeJobMessage, openJobId, postJobMessage, rulesMessage, withdrawMessage } from "../src/index.js";
 import { rulesMessage as engineRules } from "../../../engine/src/autoapply.js";
-import { applyMessage as engineApply, closeMessage as engineClose, openJobIdOf as engineOpenJobId, postMessage as enginePost } from "../../../engine/src/openjobs.js";
+import { applyMessage as engineApply, closeMessage as engineClose, openJobIdOf as engineOpenJobId, postMessage as enginePost, withdrawMessage as engineWithdraw } from "../../../engine/src/openjobs.js";
 import { AGENTS, DESK, JOB, KEY, state, stub, type Stub } from "./stub.js";
 
 let s: Stub;
@@ -347,9 +347,9 @@ describe("the assistant's caps", () => {
 
 describe("the tools", () => {
   it("have a name, a description and an input each, and say which of them send something", () => {
-    expect(TOOLS.map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_hire", "factor_accept", "factor_reject", "factor_set_title", "factor_register", "factor_set_profile", "factor_bond", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_ask_model", "factor_draw", "factor_deliver", "factor_decline", "factor_sign_up", "factor_create_pay_link", "factor_pay_link_info", "factor_pay_link", "factor_pay_x402", "factor_hire_for_job", "factor_job_tree", "factor_reject_sub_jobs", "factor_record", "factor_erc8004", "factor_link_erc8004", "factor_firms", "factor_firm_record", "factor_hire_firm", "factor_plan", "factor_subscribe", "factor_pay_month", "factor_stop_plan", "factor_draw_next_month", "factor_open_jobs", "factor_open_job", "factor_post_job", "factor_apply_to_job", "factor_pick_agent", "factor_close_job", "factor_auto_apply", "factor_set_auto_apply", "factor_auto_apply_now"]);
+    expect(TOOLS.map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_hire", "factor_accept", "factor_reject", "factor_set_title", "factor_register", "factor_set_profile", "factor_bond", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_ask_model", "factor_draw", "factor_deliver", "factor_decline", "factor_sign_up", "factor_create_pay_link", "factor_pay_link_info", "factor_pay_link", "factor_pay_x402", "factor_hire_for_job", "factor_job_tree", "factor_reject_sub_jobs", "factor_record", "factor_erc8004", "factor_link_erc8004", "factor_firms", "factor_firm_record", "factor_hire_firm", "factor_plan", "factor_subscribe", "factor_pay_month", "factor_stop_plan", "factor_draw_next_month", "factor_open_jobs", "factor_open_job", "factor_post_job", "factor_apply_to_job", "factor_bid", "factor_withdraw_offer", "factor_offers", "factor_pick_agent", "factor_close_job", "factor_auto_apply", "factor_set_auto_apply", "factor_auto_apply_now"]);
     for (const t of TOOLS) expect(t.description.length, t.name).toBeGreaterThan(40);
-    expect(TOOLS.filter((t) => t.readOnly).map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_pay_link_info", "factor_job_tree", "factor_record", "factor_erc8004", "factor_firms", "factor_firm_record", "factor_plan", "factor_open_jobs", "factor_open_job", "factor_auto_apply"]);
+    expect(TOOLS.filter((t) => t.readOnly).map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_pay_link_info", "factor_job_tree", "factor_record", "factor_erc8004", "factor_firms", "factor_firm_record", "factor_plan", "factor_open_jobs", "factor_open_job", "factor_offers", "factor_auto_apply"]);
     // the ones that spend or cannot be undone say so in capitals, where an assistant will not miss it
     for (const name of ["factor_hire", "factor_reject", "factor_bond", "factor_pay_link", "factor_pay_x402", "factor_hire_for_job", "factor_reject_sub_jobs", "factor_hire_firm", "factor_subscribe", "factor_pay_month", "factor_pick_agent"]) expect(TOOLS.find((t) => t.name === name)!.description).toMatch(/SPENDS ETH|SETTLES AT HALF/);
   });
@@ -884,5 +884,138 @@ describe("auto-apply", () => {
     expect((await runTool(f, "factor_auto_apply_now", {}, null)).text).toMatch(/applied, ranked 1 of 1/);
     s.site.autoApply = null;
     s.site.openJob = null;
+  });
+});
+
+describe("offers", () => {
+  let s: Stub;
+  beforeAll(async () => { s = await stub(); });
+  afterAll(async () => { await s.close(); });
+  const connect = (o: Partial<FactorOptions> = {}) => Factor.connect({ api: s.api, rpcUrl: s.rpc, ...o });
+  const ID = `0x${"cd".repeat(32)}`;
+  const C1 = "0x00000000000000000000000000000000000000c1";
+  const offer = (milli: number, hours: number, over: Record<string, unknown> = {}) => ({ priceWei: (BigInt(milli) * 10n ** 15n).toString(), priceEth: milli / 1000, burnWei: (BigInt(milli) * 10n ** 13n).toString(), dueHours: hours, changes: 0, ...over });
+  const listing = (over: Record<string, unknown> = {}) => ({
+    id: ID, status: "open", note: "Taking offers until 2026-10-23 18:00 UTC.", customer: C1, title: "Check every figure in our quarterly note", brief: "",
+    priceEth: 0, priceWei: "0", burnWei: "0", offers: true, budgetWei: "6000000000000000", budgetEth: 0.006, dueHours: 48, early: true, postedAt: "2026-10-23T08:00:00.000Z", closesAt: "2026-10-23T18:00:00.000Z", pick: { by: "customer" },
+    applying: true, count: 3, most: 20,
+    applicants: [
+      { rank: 1, address: AGENTS[0]!.address, name: "lumen-07", named: true, house: false, score: 624, settled: 4, customers: 2, onTimePct: 100, barred: false, pitch: "", appliedAt: "", offer: offer(5, 24) },
+      { rank: 2, address: AGENTS[1]!.address, name: "page-smith", named: true, house: true, score: 580, settled: 4, customers: 2, onTimePct: 100, barred: false, pitch: "", appliedAt: "", offer: offer(4, 12) },
+      { rank: 3, address: "0x00000000000000000000000000000000000000d3", name: "quill-02", named: true, house: false, score: 300, settled: 1, customers: 1, onTimePct: 100, barred: false, pitch: "", appliedAt: "", offer: offer(3, 6, { ended: true }) },
+    ],
+    ...over,
+  });
+  const on = () => state({ openJobs: { enabled: true, maxApplicants: 20, open: 0, applicants: 0, hired: 0, bids: true }, autoApply: { enabled: true, agents: 0, applied: 0 } } as never);
+
+  it("signs to the letter the words the engine checks", () => {
+    const p = { customer: C1, price: "6000000000000000", dueHours: 48, early: true, title: "Check the figures", brief: "", closesAt: 1_800_000_000, pick: { by: "customer" as const }, at: 1_799_990_000, offers: true };
+    expect(postJobMessage(p)).toBe(enginePost(p));
+    expect(postJobMessage({ ...p, price: "0" })).toBe(enginePost({ ...p, price: "0" }));
+    expect(openJobId(p)).toBe(engineOpenJobId(p));
+    const o = { open: ID, agent: C1, pitch: "On time", at: 1, offer: { priceWei: "4500000000000000", dueHours: 24, until: null } };
+    expect(applyMessage(o)).toBe(engineApply(o));
+    expect(applyMessage({ ...o, offer: { ...o.offer, until: 1_800_000_000 } })).toBe(engineApply({ ...o, offer: { ...o.offer, until: 1_800_000_000 } }));
+    expect(withdrawMessage({ open: ID, agent: C1, at: 1 })).toBe(engineWithdraw({ open: ID, agent: C1, at: 1 }));
+    const r = { on: true, takes: ["Research"], words: [], floorWei: "3000000000000000", atOnce: 2, hours: null, early: true, pitch: "", bid: { normalWei: "5000000000000000", freeWei: "4000000000000000", hours: 24 }, agent: C1, by: C1, at: 1 };
+    expect(rulesMessage(r)).toBe(engineRules(r));
+  });
+
+  it("posts a job open to offers only while offers are on, with a budget or none, and never picked by Factor", async () => {
+    const f = await connect({ privateKey: KEY });
+    s.site.state = state({ openJobs: { enabled: true, maxApplicants: 20, open: 0, applicants: 0, hired: 0 } } as never);
+    expect((await refusal(f.postJob({ title: "Check the figures", offers: true }))).code).toBe("offers_off");
+    s.site.state = on();
+    expect((await refusal(f.postJob({ title: "Check the figures", offers: true, price: "0.004" }))).code).toBe("bad_amount");
+    expect((await refusal(f.postJob({ title: "Check the figures", offers: true, budget: "0.0001" }))).code).toBe("bad_amount");
+    expect((await refusal(f.postJob({ title: "Check the figures", offers: true, pick: "best" }))).code).toBe("bad_pick");
+    expect((await refusal(f.postJob({ title: "Check the figures" }))).code).toBe("bad_amount");
+    await f.postJob({ title: "Check the figures", offers: true, budget: "0.006", dueInHours: 48 });
+    const b = s.posts.at(-1)!.body as { customer: string; price: string; dueHours: number; early: boolean; title: string; brief: string; closesAt: number; pick: string; at: number; signature: `0x${string}`; offers: boolean };
+    expect(b).toMatchObject({ price: "6000000000000000", offers: true, pick: "customer" });
+    const words = enginePost({ customer: b.customer, price: b.price, dueHours: b.dueHours, early: b.early, title: b.title, brief: b.brief, closesAt: b.closesAt, pick: { by: "customer" }, at: b.at, offers: true });
+    expect((await recoverMessageAddress({ message: words, signature: b.signature })).toLowerCase()).toBe(b.customer);
+    await f.postJob({ title: "Check the figures", offers: true });
+    expect((s.posts.at(-1)!.body as { price: string }).price).toBe("0");
+    s.site.state = state();
+  });
+
+  it("bids with the agent's own signature, within the budget and the job's time, and withdraws", async () => {
+    const f = await connect({ privateKey: KEY });
+    s.site.openJob = { enabled: true, open: listing() };
+    expect((await refusal(f.applyToJob(ID))).code).toBe("needs_offer");
+    expect((await refusal(f.bid(ID, { price: "0.007", dueInHours: 24 }))).code).toBe("over_budget");
+    expect((await refusal(f.bid(ID, { price: "0.004", dueInHours: 49 }))).code).toBe("bad_due");
+    expect((await refusal(f.bid(ID, { price: "0.0001", dueInHours: 24 }))).code).toBe("bad_amount");
+    const r = await f.bid(ID, { price: "0.0045", dueInHours: 24, standsForHours: 6, pitch: "Every figure, twice" });
+    expect(r).toMatchObject({ rank: 1, of: 1, offer: { priceWei: "4500000000000000", dueHours: 24 } });
+    const b = s.posts.at(-1)!.body as { open: string; agent: string; pitch: string; at: number; signature: `0x${string}`; priceWei: string; dueHours: number; until: number };
+    expect(b).toMatchObject({ priceWei: "4500000000000000", dueHours: 24, until: b.at + 6 * 3600 });
+    const words = engineApply({ open: b.open, agent: b.agent, pitch: b.pitch, at: b.at, offer: { priceWei: b.priceWei, dueHours: b.dueHours, until: b.until } });
+    expect((await recoverMessageAddress({ message: words, signature: b.signature })).toLowerCase()).toBe(f.address);
+    // a job with a fixed price takes no offer
+    s.site.openJob = { enabled: true, open: listing({ offers: false, priceWei: "4000000000000000", priceEth: 0.004 }) };
+    expect((await refusal(f.bid(ID, { price: "0.004", dueInHours: 24 }))).code).toBe("fixed_price");
+    expect(await f.withdrawOffer(ID)).toEqual({ withdrawn: true });
+    const w = s.posts.at(-1)!;
+    expect(w.path).toBe("/openjobs/withdraw");
+    const wb = w.body as { open: string; agent: string; at: number; signature: `0x${string}` };
+    expect((await recoverMessageAddress({ message: engineWithdraw(wb), signature: wb.signature })).toLowerCase()).toBe(f.address);
+    s.site.openJob = null;
+  });
+
+  it("reads the offers side by side, sorted by score, price or speed, ended ones last, and picks at the offer's own price", async () => {
+    const f = await connect({ privateKey: KEY });
+    s.site.openJob = { enabled: true, open: listing() };
+    expect((await f.offers(ID)).map((x) => x.name)).toEqual(["lumen-07", "page-smith", "quill-02"]);
+    expect((await f.offers(ID, "price")).map((x) => x.name)).toEqual(["page-smith", "lumen-07", "quill-02"]);
+    expect((await f.offers(ID, "fast")).map((x) => x.name)).toEqual(["page-smith", "lumen-07", "quill-02"]);
+    s.site.openJob = { enabled: true, open: listing({ customer: f.address }) };
+    // the cap meets the offer's own price and its burn: never the budget
+    expect((await refusal(f.pickAgent(ID, { maxEth: "0.004" }))).message).toMatch(/It costs 0\.00505 ETH with its burn/);
+    expect((await refusal(f.pickAgent(ID, { by: "price", maxEth: "0.004" }))).message).toMatch(/It costs 0\.00404 ETH with its burn/);
+    expect((await refusal(f.pickAgent(ID, { agent: "quill-02" }))).code).toBe("offer_ended");
+    const tool = (await runTool(f, "factor_offers", { open: ID, sort: "price" }, null)).text;
+    expect(tool.split("\n")[0]).toBe("1. page-smith: 0.004 ETH, in 12 hours, Factor Score 580 (4 jobs settled)");
+    expect(tool).toMatch(/3\. quill-02: 0\.003 ETH, in 6 hours, Factor Score 300 \(1 job settled\), ENDED/);
+    const one = (await runTool(f, "factor_open_job", { open: ID }, null)).text;
+    expect(one).toMatch(/open to offers, a budget of 0\.006 ETH/);
+    expect(one).toMatch(/2\. page-smith \(0x[0-9a-f]+\): offers 0\.004 ETH in 12 hours, Factor Score 580/);
+    s.site.openJob = null;
+  });
+
+  it("offers on its own what its rules make, or what its program prices, and the tools set and say the pricing", async () => {
+    const f = await connect({ privateKey: KEY });
+    s.site.state = on();
+    expect((await refusal(f.setAutoApply({ takes: ["Research"], from: "0.003", offers: { price: "0.002", dueInHours: 24 } }))).code).toBe("bad_amount");
+    expect((await refusal(f.setAutoApply({ takes: ["Research"], from: "0.003", offers: { price: "0.005", whenFree: "0.006", dueInHours: 24 } }))).code).toBe("bad_amount");
+    const r = await f.setAutoApply({ takes: ["Research"], from: "0.003", offers: { price: "0.005", whenFree: "0.004", dueInHours: 24 } });
+    expect(r.bid).toEqual({ normalWei: "5000000000000000", freeWei: "4000000000000000", hours: 24 });
+    const rb = s.posts.at(-1)!.body as Parameters<typeof engineRules>[0] & { signature: `0x${string}` };
+    expect((await recoverMessageAddress({ message: engineRules(rb), signature: rb.signature })).toLowerCase()).toBe(f.address);
+    const RULES = { on: true, takes: ["Research"], words: [], floorWei: "3000000000000000", atOnce: 2, hours: null, early: false, pitch: "", bid: r.bid };
+    s.site.autoApply = { enabled: true, agent: f.address, name: "lumen-07", runBy: "self", setters: [], kinds: [], rules: RULES, log: [], fits: [ID], quotes: { [ID]: { priceWei: "4000000000000000", dueHours: 24 } }, limits: { perAgentHour: 6, perHour: 60, atOnceMost: 10 } };
+    s.site.openJob = { enabled: true, open: listing({ applicants: [], count: 0 }) };
+    const watchOnce = async (o: Parameters<Factor["watchOpenJobs"]>[0] = {}) => {
+      const applied: string[] = [];
+      const w = f.watchOpenJobs({ ...o, onApplied: (a) => applied.push(a.open), everyMs: 60_000 });
+      for (let i = 0; i < 50 && !applied.length; i++) await new Promise((res) => setTimeout(res, 20));
+      w.stop();
+      await w.done;
+      return applied;
+    };
+    expect(await watchOnce()).toEqual([ID]);
+    expect(s.posts.filter((p) => p.path === "/openjobs/apply").at(-1)!.body).toMatchObject({ auto: true, priceWei: "4000000000000000", dueHours: 24 });
+    // its own program prices it
+    expect(await watchOnce({ price: (job, quote) => ({ price: quote.priceWei + 500_000_000_000_000n, dueInHours: Math.min(12, job.dueHours) }) })).toEqual([ID]);
+    expect(s.posts.filter((p) => p.path === "/openjobs/apply").at(-1)!.body).toMatchObject({ auto: true, priceWei: "4500000000000000", dueHours: 12 });
+    const said = (await runTool(f, "factor_auto_apply", {}, null)).text;
+    expect(said).toMatch(/offers 0\.005 ETH, 0\.004 ETH with nothing on its hands, delivered in 24 hours/);
+    expect((await runTool(f, "factor_auto_apply_now", {}, null)).text).toMatch(/offered 0\.004 ETH in 24 hours, ranked 1 of 1/);
+    expect((await runTool(f, "factor_bid", { open: ID, price: "0.0045", due_in_hours: 24 }, null)).text).toMatch(/Offered: 0\.0045 ETH, delivered within 24 hours of the lock/);
+    expect((await runTool(f, "factor_withdraw_offer", { open: ID }, null)).text).toMatch(/withdrawn/);
+    s.site.autoApply = null;
+    s.site.openJob = null;
+    s.site.state = state();
   });
 });

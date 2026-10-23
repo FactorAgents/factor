@@ -94,7 +94,7 @@ export interface State {
   /** monthly clients: whether a customer can put an agent or a firm on a plan, the longest plan, and the plans running */
   plans?: { enabled: boolean; mostMonths: number; active: number; clients: number; monthlyEth: number };
   /** open jobs: whether a customer can post one, how many agents may apply to each, and the listings open now */
-  openJobs?: { enabled: boolean; maxApplicants: number; open: number; applicants: number; hired: number };
+  openJobs?: { enabled: boolean; maxApplicants: number; open: number; applicants: number; hired: number; /** offers: a job can be open to offers, and agents name their own price and time */ bids?: boolean };
   autoApply?: { enabled: boolean; agents: number; applied: number };
 }
 
@@ -373,7 +373,9 @@ export interface PlanMonthSent { plan: `0x${string}`; month: number; months: num
 /** Where an open job stands: taking applications, waiting on the customer's pick or lock, locked as a job, taken down, or expired. */
 export type OpenJobStatus = "open" | "choosing" | "picked" | "hired" | "closed" | "expired";
 /** An agent that applied for an open job, ranked by its Factor Score. */
-export interface Applicant { rank: number; address: string; name: string; named: boolean; house: boolean; hosted?: boolean; score: number; settled: number; customers: number; onTimePct: number; barred: boolean; pitch: string; appliedAt: string; picked?: boolean; /** it applied on its own, under its auto-apply rules */ auto?: boolean; signed?: { message: string; signature: string } }
+/** An agent's offer on a job open to offers: its price, what a lock at it adds to the burn, its hours from the lock, when it ends, and how often it was changed. */
+export interface ApplicantOffer { priceWei: string; priceEth: number; burnWei: string; dueHours: number; until?: string; ended?: boolean; changes: number }
+export interface Applicant { rank: number; address: string; name: string; named: boolean; house: boolean; hosted?: boolean; score: number; settled: number; customers: number; onTimePct: number; barred: boolean; pitch: string; appliedAt: string; picked?: boolean; /** it applied on its own, under its auto-apply rules */ auto?: boolean; /** its offer, on a job open to offers */ offer?: ApplicantOffer; signed?: { message: string; signature: string } }
 /** An open job as Factor serves it (GET /api/v1/openjobs, /api/v1/openjobs/<id>). */
 export interface OpenJob {
   id: string;
@@ -383,10 +385,15 @@ export interface OpenJob {
   customer: string;
   title: string;
   brief: string;
+  /** the fixed price; 0 on a job open to offers, where each offer has its own */
   priceEth: number;
   priceWei: string;
   /** what locking it adds to the burn, wei */
   burnWei: string;
+  /** open to offers: each agent names its own price and time. `budgetWei`: the most an offer may be, when the customer set it */
+  offers?: boolean;
+  budgetWei?: string;
+  budgetEth?: number;
   dueHours: number;
   early: boolean;
   postedAt: string;
@@ -398,8 +405,8 @@ export interface OpenJob {
   /** until when the customer can lock the price for an agent */
   lockBy?: string;
   picked?: { address: string; name: string; named: boolean; by: "factor" | "customer"; at: string };
-  /** the desk job it became */
-  job?: { n: number; id: string; lockTx: string; burnEth: number };
+  /** the desk job it became, and the price locked */
+  job?: { n: number; id: string; lockTx: string; burnEth: number; priceEth?: number };
   count: number;
   most: number;
   applicants: Applicant[];
@@ -409,9 +416,9 @@ export interface OpenJobPage { enabled: boolean; open: OpenJob; job?: Job }
 /** A listing posted by the kit. */
 export interface OpenJobPosted { id: `0x${string}`; url: string; created: boolean; burnWei: bigint }
 /** An application sent by the kit: where the agent stands among the applicants. */
-export interface Application { open: string; rank: number; of: number; listing: OpenJobStatus; picked?: string }
+export interface Application { open: string; rank: number; of: number; listing: OpenJobStatus; picked?: string; /** the offer it made, on a job open to offers */ offer?: { priceWei: string; dueHours: number; until: number | null }; /** it replaced the offer this agent had made */ replaced?: boolean }
 /** A pick made by the kit: the price locked for the agent, and whether Factor linked it to the listing. */
-export interface OpenJobHire { open: `0x${string}`; jobId: number; agent: string; lockTx: `0x${string}`; burnTx: `0x${string}` | null; burned: boolean; linked: boolean; note?: string; jobUrl: string; openUrl: string; explorer: string }
+export interface OpenJobHire { open: `0x${string}`; jobId: number; agent: string; /** the price locked: the listing's, or the offer's */ priceWei: bigint; lockTx: `0x${string}`; burnTx: `0x${string}` | null; burned: boolean; linked: boolean; note?: string; jobUrl: string; openUrl: string; explorer: string }
 
 /** One line of what an agent did on its own: found, applied, picked, delivering, delivered or declined. */
 export interface AutoApplyLine { kind: "found" | "applied" | "picked" | "delivering" | "delivered" | "declined"; open: string; title: string; job?: { n: number; id: string }; note: string; at: string }
@@ -430,6 +437,8 @@ export interface AutoApplyStatus {
   log: AutoApplyLine[];
   /** the open jobs it may apply to on its own right now */
   fits: string[];
+  /** for each of those open to offers, the offer its rules make now (watchOpenJobs offers it, unless the program prices its own) */
+  quotes?: Record<string, { priceWei: string; dueHours: number }>;
   limits: { perAgentHour: number; perHour: number; atOnceMost: number };
 }
 /** A job an agent was picked for after it applied on its own: what watchOpenJobs hands its onPicked. */

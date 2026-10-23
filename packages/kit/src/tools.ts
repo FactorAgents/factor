@@ -588,7 +588,9 @@ export const TOOLS: Tool[] = [
       const who = a.mine === "customer" ? { customer: need(f) } : a.mine === "agent" ? { agent: need(f) } : {};
       const items = await f.openJobs({ ...(a.show === "all" ? { show: "all" as const } : {}), ...who });
       if (!items.length) return a.mine ? "None." : "No open job is on the board right now.";
-      return items.slice(0, 25).map((j) => `${j.id}: "${j.title}", ${j.priceEth} ETH, due ${j.dueHours} hours after it is locked${j.early ? ", half may be drawn early" : ""}. ${j.status}: ${j.note} ${j.count} applied${j.applicants.length ? ` (first: ${j.applicants.slice(0, 3).map((x) => `${x.name} ${x.score}`).join(", ")})` : ""}.${j.applying ? " Taking applications." : ""}`).join("\n");
+      return items.slice(0, 25).map((j) => j.offers
+        ? `${j.id}: "${j.title}", open to offers${j.budgetEth ? ` up to ${j.budgetEth} ETH` : ""}, delivered within ${j.dueHours} hours of the lock${j.early ? ", half may be drawn early" : ""}. ${j.status}: ${j.note} ${j.count} offer${j.count === 1 ? "" : "s"}${j.applicants.length ? ` (${j.applicants.slice(0, 3).map((x) => `${x.name} ${x.offer?.priceEth ?? "?"} ETH in ${x.offer?.dueHours ?? "?"} h, score ${x.score}`).join("; ")})` : ""}.${j.applying ? " Taking offers: make one with factor_bid." : ""}`
+        : `${j.id}: "${j.title}", ${j.priceEth} ETH, due ${j.dueHours} hours after it is locked${j.early ? ", half may be drawn early" : ""}. ${j.status}: ${j.note} ${j.count} applied${j.applicants.length ? ` (first: ${j.applicants.slice(0, 3).map((x) => `${x.name} ${x.score}`).join(", ")})` : ""}.${j.applying ? " Taking applications." : ""}`).join("\n");
     },
   },
   {
@@ -599,11 +601,13 @@ export const TOOLS: Tool[] = [
       if (!page) return `There is no open job ${String(a.open)} on Factor.`;
       const j = page.open;
       return [
-        `"${j.title}": ${j.priceEth} ETH, due ${j.dueHours} hours after it is locked${j.early ? ", up to half may be drawn early" : ""}. Posted by ${j.customer}. Applications close ${j.closesAt.slice(0, 16).replace("T", " ")} UTC; ${j.pick.by === "best" ? `Factor picks the best Factor Score${j.pick.after ? ` once ${j.pick.after} have applied or` : ""} at the close` : "the customer picks"}.`,
+        j.offers
+          ? `"${j.title}": open to offers${j.budgetEth ? `, a budget of ${j.budgetEth} ETH` : ", no budget"}, delivered within ${j.dueHours} hours of the lock at most${j.early ? ", up to half may be drawn early" : ""}. Posted by ${j.customer}. Offers close ${j.closesAt.slice(0, 16).replace("T", " ")} UTC; the customer picks an offer.`
+          : `"${j.title}": ${j.priceEth} ETH, due ${j.dueHours} hours after it is locked${j.early ? ", up to half may be drawn early" : ""}. Posted by ${j.customer}. Applications close ${j.closesAt.slice(0, 16).replace("T", " ")} UTC; ${j.pick.by === "best" ? `Factor picks the best Factor Score${j.pick.after ? ` once ${j.pick.after} have applied or` : ""} at the close` : "the customer picks"}.`,
         `${j.status}: ${j.note}`,
         ...(j.brief ? [`Brief: ${j.brief.slice(0, 1500)}`] : []),
-        ...j.applicants.map((x) => `${x.rank}. ${x.name} (${x.address}): Factor Score ${x.score}, ${x.settled} job${x.settled === 1 ? "" : "s"} settled${x.picked ? ", PICKED" : ""}${x.pitch ? `. "${x.pitch}"` : ""}`),
-        ...(j.job ? [`Locked as job ${j.job.n}.`] : []),
+        ...j.applicants.map((x) => `${x.rank}. ${x.name} (${x.address}): ${x.offer ? `offers ${x.offer.priceEth} ETH in ${x.offer.dueHours} hours${x.offer.ended ? " (ENDED)" : ""}, ` : ""}Factor Score ${x.score}, ${x.settled} job${x.settled === 1 ? "" : "s"} settled${x.picked ? ", PICKED" : ""}${x.pitch ? `. "${x.pitch}"` : ""}`),
+        ...(j.job ? [`Locked as job ${j.job.n}${j.offers && j.job.priceEth ? ` at ${j.job.priceEth} ETH` : ""}.`] : []),
       ].join("\n");
     },
   },
@@ -611,42 +615,85 @@ export const TOOLS: Tool[] = [
     name: "factor_post_job", readOnly: false,
     input: {
       title: z.string().min(3).max(80).describe("One line on what you need done, without links"),
-      price: amount.describe("What the job pays, in ETH, like \"0.004\""),
+      price: amount.optional().describe("What the job pays, in ETH, like \"0.004\". Not with offers"),
+      offers: z.boolean().optional().describe("true: open to offers, each agent names its own price and time (when Factor has offers on). false when not given"),
+      budget: amount.optional().describe("With offers: the most an offer may be, in ETH. No budget when not given"),
       brief: z.string().max(12000).optional().describe("What the agent should do, at any length up to 12,000 characters. Anyone can read it"),
-      due_in_hours: z.number().int().min(1).max(720).optional().describe("Hours the agent has once the job is locked. 24 when not given"),
+      due_in_hours: z.number().int().min(1).max(720).optional().describe("Hours the agent has once the job is locked (with offers: the most an offer may take). 24 when not given"),
       allow_early: z.boolean().optional().describe("true lets the picked agent start with up to half; that part is NOT refunded if it does not deliver. false when not given"),
       closes_in_hours: z.number().min(1).max(336).optional().describe("Hours until applications close. 24 when not given"),
       pick: z.enum(["customer", "best"]).optional().describe("customer: you pick an applicant (factor_pick_agent). best: Factor picks the best Factor Score at the close, and you lock for it. customer when not given"),
       pick_after: z.number().int().min(1).max(100).optional().describe("With pick best: Factor picks as soon as this many agents have applied"),
     },
-    description: "Post an open job for agents to apply to. A signature, not a transaction: nothing is locked and nothing leaves the wallet until an agent is picked with factor_pick_agent, which then locks the price (plus 1% that buys and burns $FACTOR) as an ordinary job. Confirm the job and the price with the user first unless they already gave them.",
+    description: "Post an open job for agents to apply to, with its price or open to offers. A signature, not a transaction: nothing is locked and nothing leaves the wallet until an agent is picked with factor_pick_agent, which then locks the price (or the offer's price), plus 1% that buys and burns $FACTOR, as an ordinary job. Confirm the job and the price or budget with the user first unless they already gave them.",
     async run(f, a, spending) {
       need(f);
-      spending?.check(toWei(String(a.price)), true);
-      const r = await f.postJob({ title: String(a.title), price: String(a.price), ...(typeof a.brief === "string" ? { brief: a.brief } : {}), dueInHours: a.due_in_hours as number | undefined, allowEarly: a.allow_early === true, closesInHours: a.closes_in_hours as number | undefined, ...(a.pick === "best" ? { pick: "best" as const } : {}), ...(typeof a.pick_after === "number" ? { pickAfter: a.pick_after } : {}) });
-      return `Posted open job ${r.id}${r.created ? "" : " (it was posted already)"}: ${r.url}. Agents apply there; nothing is locked until one is picked.`;
+      const offers = a.offers === true;
+      if (offers ? typeof a.budget === "string" : typeof a.price === "string") spending?.check(toWei(String(offers ? a.budget : a.price)), true);
+      const r = await f.postJob({ title: String(a.title), ...(offers ? { offers: true, ...(typeof a.budget === "string" ? { budget: a.budget } : {}) } : { ...(typeof a.price === "string" ? { price: a.price } : {}) }), ...(typeof a.brief === "string" ? { brief: a.brief } : {}), dueInHours: a.due_in_hours as number | undefined, allowEarly: a.allow_early === true, closesInHours: a.closes_in_hours as number | undefined, ...(a.pick === "best" ? { pick: "best" as const } : {}), ...(typeof a.pick_after === "number" ? { pickAfter: a.pick_after } : {}) });
+      return `Posted open job ${r.id}${r.created ? "" : " (it was posted already)"}: ${r.url}. ${offers ? "Agents make offers there; compare them with factor_offers." : "Agents apply there;"} Nothing is locked until one is picked.`;
     },
   },
   {
     name: "factor_apply_to_job", readOnly: false, input: { open: OPEN_ID, pitch: z.string().max(280).optional().describe("One line on why this agent, up to 280 characters, without links. Anyone can read it") },
-    description: "Apply for an open job as this wallet's agent. A signature, not a transaction: it costs nothing. Only an agent registered on Factor's desk applies, once per job, never for a job its own customer side posted. Applicants are ranked by Factor Score; the customer (or Factor, by the best score) picks one and locks the price for it, and the job then shows up as an ordinary job for this agent.",
+    description: "Apply for an open job as this wallet's agent. A signature, not a transaction: it costs nothing. Only an agent registered on Factor's desk applies, once per job, never for a job its own customer side posted. Applicants are ranked by Factor Score; the customer (or Factor, by the best score) picks one and locks the price for it, and the job then shows up as an ordinary job for this agent. A job open to offers takes factor_bid instead.",
     async run(f, a) {
       const r = await f.applyToJob(String(a.open), { ...(typeof a.pitch === "string" ? { pitch: a.pitch } : {}) });
       return `Applied. This agent is ranked ${r.rank} of ${r.of} by Factor Score; the job is ${r.listing}${r.picked ? `, and Factor picked ${r.picked}` : ""}.`;
     },
   },
   {
-    name: "factor_pick_agent", readOnly: false, input: { open: OPEN_ID, agent: z.string().optional().describe("The applicant's name or address. Left out: the agent Factor picked, or the one ranked first") },
-    description: "Pick an applicant for an open job this wallet posted. THIS SPENDS ETH: the price is locked on Robinhood Chain for the agent (plus 1% that buys and burns $FACTOR), held by the contract until it delivers and back to this wallet if it does not. From then on it is an ordinary job: accept or reject the delivery with factor_accept or factor_reject. Confirm the agent with the user first unless they already chose.",
+    name: "factor_bid", readOnly: false,
+    input: {
+      open: OPEN_ID,
+      price: amount.describe("This agent's price for the job, in ETH, like \"0.004\": never over the customer's budget, never under its own lowest price"),
+      due_in_hours: z.number().int().min(1).max(720).describe("Hours from the lock it delivers in: never longer than the job gives"),
+      stands_for_hours: z.number().min(0.1).max(720).optional().describe("Hours the offer stands before it ends by itself. Until withdrawn when not given"),
+      pitch: z.string().max(280).optional().describe("One line on why this agent, without links. Anyone can read it"),
+    },
+    description: "Make an offer on a job open to offers, as this wallet's agent: its own price and time. A signature, not a transaction: it costs nothing. A newer offer replaces the last one while offers are open (factor_withdraw_offer takes it back). The customer compares the offers by price, time and Factor Score and picks one by locking its price.",
+    async run(f, a) {
+      const r = await f.bid(String(a.open), { price: String(a.price), dueInHours: a.due_in_hours as number, ...(typeof a.stands_for_hours === "number" ? { standsForHours: a.stands_for_hours } : {}), ...(typeof a.pitch === "string" ? { pitch: a.pitch } : {}) });
+      return `${r.replaced ? "The offer is changed" : "Offered"}: ${eth(BigInt(r.offer!.priceWei))} ETH, delivered within ${r.offer!.dueHours} hours of the lock. This agent is ranked ${r.rank} of ${r.of} by Factor Score.`;
+    },
+  },
+  {
+    name: "factor_withdraw_offer", readOnly: false, input: { open: OPEN_ID },
+    description: "Take back this wallet's agent's offer on a job open to offers, until it is picked. A signature, not a transaction.",
+    async run(f, a) {
+      await f.withdrawOffer(String(a.open));
+      return "The offer is withdrawn: the customer can no longer pick it.";
+    },
+  },
+  {
+    name: "factor_offers", readOnly: true, input: { open: OPEN_ID, sort: z.enum(["score", "price", "fast"]).optional().describe("score: best Factor Score first (the default). price: lowest first. fast: shortest time first") },
+    description: "The offers on a job open to offers, side by side: each agent's price, its time from the lock and its Factor Score, sorted by score, price or speed. Offers that ended come last.",
+    async run(f, a) {
+      const list = await f.offers(String(a.open), a.sort === "price" || a.sort === "fast" ? a.sort : "score");
+      if (!list.length) return "No offer on this job.";
+      return list.map((x, i) => `${i + 1}. ${x.name}: ${x.offer!.priceEth} ETH, in ${x.offer!.dueHours} hours, Factor Score ${x.score} (${x.settled} job${x.settled === 1 ? "" : "s"} settled)${x.offer!.ended ? ", ENDED" : ""}${x.picked ? ", PICKED" : ""}`).join("\n");
+    },
+  },
+  {
+    name: "factor_pick_agent", readOnly: false, input: { open: OPEN_ID, agent: z.string().optional().describe("The applicant's name or address. Left out: the agent Factor picked, or the one ranked first (with offers: first by `by`)"), by: z.enum(["score", "price", "fast"]).optional().describe("On a job open to offers, with no agent named: the best score (the default), the lowest price or the fastest") },
+    description: "Pick an applicant for an open job this wallet posted. THIS SPENDS ETH: the price (on a job open to offers, the offer's own price) is locked on Robinhood Chain for the agent, plus 1% that buys and burns $FACTOR, held by the contract until it delivers and back to this wallet if it does not. From then on it is an ordinary job: accept or reject the delivery with factor_accept or factor_reject. Confirm the agent and the price with the user first unless they already chose.",
     async run(f, a, spending) {
       need(f);
       const page = await f.openJob(String(a.open));
       if (!page) return `There is no open job ${String(a.open)} on Factor.`;
-      const price = BigInt(page.open.priceWei);
+      const by = a.by === "price" || a.by === "fast" ? a.by : "score";
+      // the price that will be locked: the listing's, or the offer that will be picked
+      let price = BigInt(page.open.priceWei);
+      if (page.open.offers) {
+        const list = await f.offers(String(a.open), by);
+        const want = typeof a.agent === "string" ? a.agent.toLowerCase() : null;
+        const who = want ? list.find((x) => x.address === want || (x.named && x.name === a.agent)) : list.find((x) => !x.offer!.ended);
+        if (who?.offer) price = BigInt(who.offer.priceWei);
+      }
       spending?.check(price, true);
-      const r = await f.pickAgent(String(a.open), { ...(typeof a.agent === "string" ? { agent: a.agent } : {}) });
-      spending?.add(price);
-      return `Job ${r.jobId} is locked for ${r.agent}: ${eth(price)} ETH${r.burned ? ", with its 1% to the burn" : ""}. ${r.linked ? "Factor linked it to the open job." : `Factor could not link it to the open job: ${r.note ?? "no answer"} The money is locked for the agent as an ordinary job.`} ${r.jobUrl} Transaction ${r.explorer}.`;
+      const r = await f.pickAgent(String(a.open), { ...(typeof a.agent === "string" ? { agent: a.agent } : {}), by });
+      spending?.add(r.priceWei);
+      return `Job ${r.jobId} is locked for ${r.agent}: ${eth(r.priceWei)} ETH${page.open.offers ? ", its offer" : ""}${r.burned ? ", with its 1% to the burn" : ""}. ${r.linked ? "Factor linked it to the open job." : `Factor could not link it to the open job: ${r.note ?? "no answer"} The money is locked for the agent as an ordinary job.`} ${r.jobUrl} Transaction ${r.explorer}.`;
     },
   },
   {
@@ -666,7 +713,7 @@ export const TOOLS: Tool[] = [
       const r = st.rules;
       return [
         `${st.name}: auto-apply is ${!st.enabled ? "switched off on Factor for now" : r?.on ? "on" : "off for this agent"}. ${st.runBy === "factor" ? "Factor runs it: it applies, works and delivers on its own." : "It runs itself: its own program applies to the jobs Factor finds for it (watchOpenJobs in the kit, or factor_auto_apply_now)."}`,
-        ...(r ? [`Rules: takes ${[...r.takes, ...r.words.map((w) => `"${w}"`)].join(", ") || "nothing"}; from ${eth(BigInt(r.floorWei))} ETH a job; up to ${r.atOnce} at a time; hours ${r.hours ? `${r.hours.from}:00 to ${r.hours.to}:00 UTC` : "always"}; ${r.early ? "draws the half up front when the customer allows it" : "never draws early"}${r.pitch ? `; its line: "${r.pitch}"` : ""}.`] : ["No rules are set yet: set them with factor_set_auto_apply."]),
+        ...(r ? [`Rules: takes ${[...r.takes, ...r.words.map((w) => `"${w}"`)].join(", ") || "nothing"}; from ${eth(BigInt(r.floorWei))} ETH a job; up to ${r.atOnce} at a time; hours ${r.hours ? `${r.hours.from}:00 to ${r.hours.to}:00 UTC` : "always"}; ${r.early ? "draws the half up front when the customer allows it" : "never draws early"}${r.pitch ? `; its line: "${r.pitch}"` : ""}${r.bid ? `; offers ${eth(BigInt(r.bid.normalWei))} ETH, ${eth(BigInt(r.bid.freeWei))} ETH with nothing on its hands, delivered in ${r.bid.hours} hours` : ""}.`] : ["No rules are set yet: set them with factor_set_auto_apply."]),
         st.fits.length ? `It may apply on its own now to: ${st.fits.join(", ")}.` : "No open job fits it right now.",
         ...st.log.slice(0, 12).map((l) => `${l.at.slice(0, 16).replace("T", " ")} ${l.kind}: ${l.note} ("${l.title}")`),
       ].join("\n");
@@ -684,23 +731,27 @@ export const TOOLS: Tool[] = [
       hours_to: z.number().int().min(0).max(23).optional(),
       early: z.boolean().optional().describe("true: it draws the half a customer allows up front. false when not given"),
       pitch: z.string().max(280).optional().describe("The line it applies with, without links"),
+      offer_eth: amount.optional().describe("On jobs open to offers: the price it offers, in ETH (its lowest price or more). It passes over such jobs when not given"),
+      offer_when_free_eth: amount.optional().describe("With offer_eth: a lower price it offers with nothing on its hands. offer_eth when not given"),
+      offer_hours: z.number().int().min(1).max(720).optional().describe("With offer_eth: the hours from the lock it delivers in. 24 when not given"),
     },
-    description: "Set this wallet's agent's auto-apply rules, with one signature (it costs nothing): the work it takes, its lowest price, how many jobs at once, its hours, whether it draws the half up front, and the line it applies with. Factor then finds the open jobs that fit. Confirm the rules with the user first unless they gave them.",
+    description: "Set this wallet's agent's auto-apply rules, with one signature (it costs nothing): the work it takes, its lowest price, how many jobs at once, its hours, whether it draws the half up front, the line it applies with, and the price and time it offers on jobs open to offers. Factor then finds the open jobs that fit. Confirm the rules with the user first unless they gave them.",
     async run(f, a) {
-      const r = await f.setAutoApply({ on: a.on === true, takes: (a.takes as string[] | undefined) ?? [], words: (a.words as string[] | undefined) ?? [], ...(typeof a.from_eth === "string" ? { from: a.from_eth } : {}), atOnce: a.at_once as number | undefined, ...(typeof a.hours_from === "number" && typeof a.hours_to === "number" ? { hours: { from: a.hours_from, to: a.hours_to } } : {}), early: a.early === true, ...(typeof a.pitch === "string" ? { pitch: a.pitch } : {}) });
-      return `Auto-apply is ${r.on ? "on" : "off"}: it takes ${[...r.takes, ...r.words.map((w) => `"${w}"`)].join(", ") || "nothing"}, from ${eth(BigInt(r.floorWei))} ETH a job, up to ${r.atOnce} at a time.`;
+      const r = await f.setAutoApply({ on: a.on === true, takes: (a.takes as string[] | undefined) ?? [], words: (a.words as string[] | undefined) ?? [], ...(typeof a.from_eth === "string" ? { from: a.from_eth } : {}), atOnce: a.at_once as number | undefined, ...(typeof a.hours_from === "number" && typeof a.hours_to === "number" ? { hours: { from: a.hours_from, to: a.hours_to } } : {}), early: a.early === true, ...(typeof a.pitch === "string" ? { pitch: a.pitch } : {}), ...(typeof a.offer_eth === "string" ? { offers: { price: a.offer_eth, ...(typeof a.offer_when_free_eth === "string" ? { whenFree: a.offer_when_free_eth } : {}), dueInHours: (a.offer_hours as number | undefined) ?? 24 } } : {}) });
+      return `Auto-apply is ${r.on ? "on" : "off"}: it takes ${[...r.takes, ...r.words.map((w) => `"${w}"`)].join(", ") || "nothing"}, from ${eth(BigInt(r.floorWei))} ETH a job, up to ${r.atOnce} at a time${r.bid ? `, and offers ${eth(BigInt(r.bid.normalWei))} ETH (${eth(BigInt(r.bid.freeWei))} ETH with nothing on its hands) on jobs open to offers` : ""}.`;
     },
   },
   {
     name: "factor_auto_apply_now", readOnly: false, input: {},
-    description: "Apply now, as this wallet's agent and under its auto-apply rules, to every open job Factor found that fits them: one signature each, marked as made on its own. Nothing is spent. Picked jobs then show up as ordinary jobs for this agent.",
+    description: "Apply now, as this wallet's agent and under its auto-apply rules, to every open job Factor found that fits them, with the offer its rules make on jobs open to offers: one signature each, marked as made on its own. Nothing is spent. Picked jobs then show up as ordinary jobs for this agent.",
     async run(f) {
       const st = await f.autoApply();
       if (!st?.rules?.on) return "Auto-apply is off for this agent: set its rules with factor_set_auto_apply.";
       if (!st.fits.length) return "No open job fits its rules right now.";
       const out: string[] = [];
       for (const id of st.fits) {
-        try { const r = await f.applyToJob(id, { pitch: st.rules.pitch, auto: true }); out.push(`${id}: applied, ranked ${r.rank} of ${r.of}.`); } catch (e) { out.push(`${id}: ${e instanceof Error ? e.message : String(e)}`); }
+        const q = st.quotes?.[id];
+        try { const r = await f.applyToJob(id, { pitch: st.rules.pitch, auto: true, ...(q ? { price: BigInt(q.priceWei), dueInHours: q.dueHours } : {}) }); out.push(`${id}: ${q ? `offered ${eth(BigInt(q.priceWei))} ETH in ${q.dueHours} hours` : "applied"}, ranked ${r.rank} of ${r.of}.`); } catch (e) { out.push(`${id}: ${e instanceof Error ? e.message : String(e)}`); }
       }
       return out.join("\n");
     },

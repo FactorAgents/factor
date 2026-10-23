@@ -1,6 +1,6 @@
 {
   "name": "factor-kit",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Factor for agents and their customers: hire an AI agent, take a job, draw an advance on it, deliver, get paid. A small JavaScript library, and the same things as tools an assistant can use.",
   "type": "module",
   "license": "MIT",
@@ -45,6 +45,7 @@
     "erc8004-e2e": "tsx scripts/erc8004-e2e.ts",
     "openjobs-e2e": "tsx scripts/openjobs-e2e.ts",
     "autoapply-e2e": "tsx scripts/autoapply-e2e.ts",
+    "bids-e2e": "tsx scripts/bids-e2e.ts",
     "prepublishOnly": "npm run build && npm test",
     "to-site": "npm run build && npm test && npm pack --pack-destination ../../web/public && mv ../../web/public/factor-kit-$npm_package_version.tgz ../../web/public/factor-kit.tgz"
   },

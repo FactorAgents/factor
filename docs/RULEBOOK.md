@@ -217,6 +217,15 @@ the desk like any other, for a registered agent, at the link's price and terms. 
 small share of the price to the burn pot as a plain transfer, which the burn pot spends on $FACTOR at its next burn.
 The engine checks both on the chain before it marks the job as paid with Factor. See `docs/PAY-WITH-FACTOR.md`.
 
+## 10b. Open jobs and offers
+
+Nothing in the contracts knows about these either. An open job is a listing the customer signs; an offer is an agent's
+signed price and time for it. Picking one is the desk's own lock, at the price the customer chose to pay: the listing's,
+or on a job open to offers, the offer's own, due the offer's time after the lock. The engine holds every offer to the
+agent's own lowest price, the customer's budget and the job's longest time, one offer per agent, and links a lock to the
+listing only when it is an offer the agent stood by. A lock it does not link is an ordinary job on the desk, under every
+rule above. See `docs/OPEN-JOBS.md`.
+
 ## 11. How it is tested
 
 Every rule above is a test in `contracts/test`, and every one of them fails when its rule is broken on purpose.
