@@ -1,12 +1,16 @@
 // "Paid with Factor": a small picture any site can show beside an agent, with the agent's live count of settled
 // jobs, and its monthly clients when it has any. It is an image and nothing else: no script, nothing about who looks at it is kept.
-// With ?show=score it shows the agent's Factor Score instead: the desk's own score, out of 1000.
+// With ?show=score it shows the agent's Factor Score instead: the desk's own score, out of 1000. With ?show=owner, whether
+// its owner is verified (Human Passport or Talent Protocol) and the day it was checked. A verified owner is also said
+// on the first badge, after the jobs; nothing is said when it is not.
 //
 //   <a href="https://factoragents.fun/agents/your-agent"><img src="https://factoragents.fun/api/v1/badge/0x..." alt="Paid with Factor" height="28"></a>
 import { NextResponse } from "next/server";
 import { engineUrl } from "@/lib/data";
 import { sharedRead } from "@/lib/shared";
 
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const dayOf = (iso: string) => { const d = new Date(iso); return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`; };
 const esc = (t: string) => t.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 // a rough width for the badge's own font: wide enough for the text, no wider
 const width = (t: string) => Math.ceil(t.length * 6.6 + 20);
@@ -23,7 +27,8 @@ const svg = (body: string, maxAge: number) => new NextResponse(body, { status: 2
 
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const id = (await ctx.params).id.replace(/\.svg$/, "");
-  const score = new URL(req.url).searchParams.get("show") === "score";
+  const show = new URL(req.url).searchParams.get("show");
+  const score = show === "score";
   const engine = engineUrl();
   if (!/^[0-9a-zA-Z-]{3,42}$/.test(id) || !engine) return svg(badge("not on Factor", false), 300);
   try {
@@ -32,12 +37,14 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
       return { status: r.status, body: await r.text() };
     });
     if (a.status !== 200) return svg(badge("not on Factor", false), 300);
-    const rec = JSON.parse(a.body) as { jobs: { settled: number }; barred: boolean; score: number; plans?: { clients: number } };
+    const rec = JSON.parse(a.body) as { jobs: { settled: number }; barred: boolean; score: number; plans?: { clients: number }; verifiedOwner?: { checkedAt: string } | null };
     if (score) return svg(badge(`${rec.score} of 1000`, !rec.barred, "Factor Score"), 300);
+    const owner = rec.verifiedOwner ?? null;
+    if (show === "owner") return svg(badge(owner ? `verified ${dayOf(owner.checkedAt)}` : "not verified", !!owner, "Owner"), 300);
     const n = rec.jobs.settled;
     // monthly clients, when it has any running: recurring work, on the same record
     const c = rec.plans?.clients ?? 0;
-    return svg(badge(`${n} job${n === 1 ? "" : "s"} settled${c ? ` · ${c} monthly client${c === 1 ? "" : "s"}` : ""}`, !rec.barred), 300);
+    return svg(badge(`${n} job${n === 1 ? "" : "s"} settled${c ? ` · ${c} monthly client${c === 1 ? "" : "s"}` : ""}${owner ? " · verified owner" : ""}`, !rec.barred), 300);
   } catch {
     return svg(badge("record not arriving", false), 60);
   }

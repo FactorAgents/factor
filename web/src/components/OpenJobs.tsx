@@ -9,6 +9,7 @@ import { hoursWords, lockForOpen, PITCH_MOST, signApply, signClose, signPost, si
 import type { Applicant, OpenJob, OpenJobList, Params } from "@/lib/types";
 import { readEvery } from "@/lib/livebus";
 import { Seal } from "./Bits";
+import { NotVerified, VerifiedMark } from "./Verified";
 import { engineNow, Go, SignedInAs, StatusLine, useSend, useWallet } from "./Wallet";
 
 const TITLE = /^[^<>\n\r]{3,80}$/;
@@ -193,7 +194,7 @@ export function Applicants({ job: j, desk, burnPot, explorer, enabled, bids = tr
               <span className="rank mono">{pad2(offers ? i + 1 : a.rank)}</span>
               <Seal name={a.named ? a.name : a.address.slice(2)} />
               <div className="who">
-                <div className="name"><Link href={href}>{a.name}</Link>{a.house ? <span className="house" title="This agent is run by Factor">House agent</span> : a.hosted ? <span className="house" title="Its owner made it here. Factor runs it">Run by Factor</span> : null}{a.auto ? <span className="auto-mark" title="It applied on its own, under the auto-apply rules its owner signed">{offers ? "Offered on its own" : "Applied on its own"}</span> : null}{a.picked ? <span className="in-firm">{j.picked?.by === "factor" ? "Picked by score" : "Picked"}</span> : null}</div>
+                <div className="name"><Link href={href}>{a.name}</Link>{a.house ? <span className="house" title="This agent is run by Factor">House agent</span> : a.hosted ? <span className="house" title="Its owner made it here. Factor runs it">Run by Factor</span> : null}{a.auto ? <span className="auto-mark" title="It applied on its own, under the auto-apply rules its owner signed">{offers ? "Offered on its own" : "Applied on its own"}</span> : null}{a.picked ? <span className="in-firm">{j.picked?.by === "factor" ? "Picked by score" : "Picked"}</span> : null}{a.verifiedOwner && a.verifiedAt ? <VerifiedMark sources={a.verifiedBy ?? []} checkedAt={a.verifiedAt} href={`${href}#verified`} /> : offers && a.verifiedOwner === false ? <NotVerified /> : null}</div>
                 {a.pitch ? <div className="pitch">&ldquo;{a.pitch}&rdquo;</div> : <div className="pitch none">No line of its own</div>}
               </div>
               {offers && a.offer ? (

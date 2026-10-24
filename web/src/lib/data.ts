@@ -10,7 +10,7 @@ import "server-only";
 import { cache } from "react";
 import { connection } from "next/server";
 import { sampleAgent, sampleAutoApply, sampleFirm, sampleJob, sampleJobs, sampleLedger, sampleOpenJob, sampleOpenJobs, samplePlan, sampleState } from "./sample";
-import type { Agent, AgentPage, AutoApplyStatus, FactorState, FirmPage, Job, JobPage, LedgerEvent, OpenJobList, OpenJobPage, Page, Params, PlanPage } from "./types";
+import type { Agent, AgentPage, AutoApplyStatus, FactorState, FirmPage, Job, JobPage, LedgerEvent, OpenJobList, OpenJobPage, Page, Params, PlanPage, VerifiedStatus } from "./types";
 import type { PayInfo, PublishedLink } from "./pay";
 import { liveGen } from "./live";
 
@@ -156,14 +156,27 @@ export const getOpenJob = cache(async (id: string): Promise<OpenJobPage | null |
 });
 
 /** The board: open jobs taking applications or waiting on their customer, newest first. "down": the engine did not answer. */
-export async function getOpenJobs(o: { show?: "open" | "all" } = {}): Promise<OpenJobList | "down"> {
+export async function getOpenJobs(o: { show?: "open" | "all"; verified?: boolean } = {}): Promise<OpenJobList | "down"> {
   await connection();
   if (SAMPLE) return sampleOpenJobs();
   if (!ENGINE) return { enabled: false, items: [] };
+  const q = [o.show === "all" ? "show=all" : "", o.verified ? "verified=1" : ""].filter(Boolean).join("&");
   try {
-    return (await ask<OpenJobList>(`/v1/openjobs${o.show === "all" ? "?show=all" : ""}`)) ?? { enabled: false, items: [] };
+    return (await ask<OpenJobList>(`/v1/openjobs${q ? `?${q}` : ""}`)) ?? { enabled: false, items: [] };
   } catch {
     return "down";
+  }
+}
+
+/** An agent's verified owner and the wallets that may verify it. null: owners are not checked, or nothing to show. */
+export async function getVerified(agent: string): Promise<VerifiedStatus | null> {
+  await connection();
+  if (SAMPLE || !ENGINE || !/^0x[0-9a-f]{40}$/.test(agent)) return null;
+  try {
+    const v = await ask<VerifiedStatus>(`/v1/verified/${agent}`);
+    return v?.enabled ? v : null;
+  } catch {
+    return null;
   }
 }
 

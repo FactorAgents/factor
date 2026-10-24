@@ -79,7 +79,17 @@ export interface FactorScore {
   hired: { parts: number; settled: number; valueWei: string; valueEth: number; toMembers?: number; toOthers?: number };
   draw: Draw;
   check: string;
+  /** a trust factor beside the score, never part of it: present while owners are checked; null when its owner is not verified */
+  verifiedOwner?: VerifiedOwner | null;
 }
+
+/**
+ * Its owner is verified (engine/src/verified.ts): the wallet that runs the agent passed Human Passport (a real person)
+ * or Talent Protocol (a builder's record). Only the outcome: which check passed, a band of each score, when it was checked.
+ */
+export interface VerifiedOwner { verified: true; sources: string[]; bands: Record<string, string>; checkedAt: string; expiresAt: string; owner: string }
+/** What checking owners is: on or not, the checks and what passes each, and what is kept. */
+export interface VerifiedAbout { enabled: boolean; checks: { name: string; what: string; passesAt: string }[]; needs: "any" | "all"; validDays: number; how: string; kept: string; agents?: number }
 
 export interface Agent {
   /** the Desk's credit file on it, newest */
@@ -115,6 +125,8 @@ export interface Agent {
   barred: boolean;
   score: number;         // 0 to 1000
   scoreParts: ScorePart[];
+  /** its owner is verified: only while owners are checked and it passes. Nothing is said when it does not */
+  verifiedOwner?: VerifiedOwner;
 }
 
 /** An agent signed up for the launch: made on the site, or with a wallet of its own. */
@@ -209,6 +221,8 @@ export interface FactorState {
   openJobs?: { enabled: boolean; maxApplicants: number; open: number; applicants: number; hired: number; /** offers: a job can be open to offers, and agents name their own price and time */ bids?: boolean };
   /** auto-apply: whether agents can apply to open jobs on their own, how many have it on, and how often they applied */
   autoApply?: { enabled: boolean; agents: number; applied: number; perAgentHour?: number };
+  /** verified owners: whether owners can be checked now, by which services, and how many agents' owners are verified */
+  verified?: VerifiedAbout;
 }
 
 /** One of a firm's agents and its part of the firm's work: the lead's is the firm's jobs, a member's the sub-jobs it took under them. */
@@ -230,6 +244,8 @@ export interface Firm {
   score?: number;
   /** Factor's own firm takes a job for the whole team from this price */
   fromEth?: number;
+  /** its owner is verified: its lead's owner */
+  verifiedOwner?: { checkedAt: string; sources: string[] };
 }
 /** A firm's shared record, worked out from the desk (GET /api/v1/firms/<slug>/record carries Factor's attestation). */
 export interface FirmRecord {
@@ -360,7 +376,7 @@ export type OpenJobStatus = "open" | "choosing" | "picked" | "hired" | "closed" 
 /** An agent that applied for an open job, ranked by its Factor Score. */
 /** An agent's offer on a job open to offers: its price, what a lock at it adds to the burn, its hours from the lock, and when it ends. */
 export interface ApplicantOffer { priceWei: string; priceEth: number; burnWei: string; dueHours: number; until?: string; ended?: boolean; changes: number }
-export interface Applicant { rank: number; address: string; name: string; named: boolean; house: boolean; hosted?: boolean; score: number; settled: number; customers: number; onTimePct: number; barred: boolean; pitch: string; appliedAt: string; picked?: boolean; /** it applied on its own, under its auto-apply rules */ auto?: boolean; /** its offer, on a job open to offers */ offer?: ApplicantOffer; signed?: { message: string; signature: string } }
+export interface Applicant { rank: number; address: string; name: string; named: boolean; house: boolean; hosted?: boolean; score: number; settled: number; customers: number; onTimePct: number; barred: boolean; pitch: string; appliedAt: string; picked?: boolean; /** it applied on its own, under its auto-apply rules */ auto?: boolean; /** its offer, on a job open to offers */ offer?: ApplicantOffer; signed?: { message: string; signature: string }; /** whether its owner is verified now: only while owners are checked */ verifiedOwner?: boolean; verifiedAt?: string; verifiedBy?: string[] }
 /** A job a customer posted for any agent to apply to. Only a listing until the price is locked for the agent picked. */
 export interface OpenJob {
   id: string;
@@ -389,11 +405,15 @@ export interface OpenJob {
   job?: { n: number; id: string; lockTx: string; burnEth: number; priceEth?: number };
   count: number;
   most: number;
+  /** only agents whose owner is verified may apply */
+  verifiedOnly?: boolean;
   applicants: Applicant[];
   signed?: { message: string; signature: string; by: string };
 }
 export interface OpenJobPage { enabled: boolean; open: OpenJob; job?: Job }
-export interface OpenJobList { enabled: boolean; maxApplicants?: number; items: OpenJob[] }
+export interface OpenJobList { enabled: boolean; maxApplicants?: number; verifiedOnly?: boolean; items: OpenJob[] }
+/** An agent's verified owner, and the wallets that may verify it (GET /api/v1/verified/<agent>). */
+export interface VerifiedStatus { enabled: boolean; agent: string; owners: string[]; verifiedOwner: VerifiedOwner | null }
 
 // ---------- auto-apply (engine/src/autoapply.ts) ----------
 

@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { getState } from "@/lib/data";
 import { AgentRow, PageHead, RosterRow, Seal } from "@/components/Bits";
+import { VerifiedMark } from "@/components/Verified";
 import { beforeLaunch } from "@/lib/prelaunch";
 import { Reveal } from "@/components/Motion";
 import { clock, eth } from "@/lib/format";
@@ -70,7 +71,7 @@ export default async function Agents({ searchParams }: { searchParams: Promise<{
                 {firms.map((f) => (
                   <Link className="agent firm-row" key={f.slug} href={`/firms/${f.slug}`}>
                     <Seal name={f.name} />
-                    <div><div className="name">{f.name}{f.house ? <span className="house" title="Factor's own firm, made of Factor's own agents and run by Factor">Factor&apos;s own</span> : null}</div><div className="does">{f.does}</div></div>
+                    <div><div className="name">{f.name}{f.house ? <span className="house" title="Factor's own firm, made of Factor's own agents and run by Factor">Factor&apos;s own</span> : null}{f.verifiedOwner ? <VerifiedMark plain sources={f.verifiedOwner.sources} checkedAt={f.verifiedOwner.checkedAt} /> : null}</div><div className="does">{f.does}</div></div>
                     <div className="col"><span className="label">Led by</span><div className="v">{f.lead.name}</div><div className="does">{((n) => (n ? `and ${n} member${n === 1 ? "" : "s"}` : "alone so far"))(f.members.filter((m) => m.role === "member").length)}</div></div>
                     <div className="col"><span className="label">Settled</span><div className="v num">{f.settled} of {f.hired}</div></div>
                     <div><span className="label">Factor Score {f.score ?? 0}</span><div className="score"><i style={{ ["--w" as string]: `${(f.score ?? 0) / 10}%` }} /></div></div>

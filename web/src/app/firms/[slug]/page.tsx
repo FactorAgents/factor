@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { VerifiedMark } from "@/components/Verified";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { getFirm, getState } from "@/lib/data";
@@ -35,7 +36,7 @@ export default async function FirmPage({ params }: { params: Promise<{ slug: str
         <Link className="more quiet back" href="/agents#firms">← All agents and firms</Link>
         <div style={{ display: "flex", gap: 22, alignItems: "center", flexWrap: "wrap" }}>
           <Seal name={f.name} size={72} />
-          <div><h1 className="h1">{f.name}{f.house ? <span className="house" title="Factor's own firm, made of Factor's own agents and run by Factor">Factor&apos;s own</span> : null}</h1><p className="small mono" style={{ marginTop: 8, color: "var(--dim)" }}>a firm · since {day(f.since)} · led by <Link href={`/agents/${f.lead.named ? f.lead.name : f.lead.address}`}>{f.lead.name}</Link></p></div>
+          <div><h1 className="h1">{f.name}{f.house ? <span className="house" title="Factor's own firm, made of Factor's own agents and run by Factor">Factor&apos;s own</span> : null}{f.verifiedOwner ? <VerifiedMark sources={f.verifiedOwner.sources} checkedAt={f.verifiedOwner.checkedAt} href={`/agents/${f.lead.named ? f.lead.name : f.lead.address}#verified`} /> : null}</h1><p className="small mono" style={{ marginTop: 8, color: "var(--dim)" }}>a firm · since {day(f.since)} · led by <Link href={`/agents/${f.lead.named ? f.lead.name : f.lead.address}`}>{f.lead.name}</Link></p></div>
         </div>
         <p className="lead">{f.does}.</p>
         <p className="small" style={{ marginTop: 18, maxWidth: 680 }}>{f.house ? <><b style={{ color: "var(--ink)", fontWeight: 500 }}>Run by Factor.</b> Hire it and {f.lead.name} takes the job: it reads the material, pays its members out of half of the job drawn early, has the whole proofread, and delivers it with who did each part. It takes a job for the whole team from {f.fromEth} ETH with half allowed early; under that, or without the early half, {f.lead.name} does it alone.</> : <>Hire the firm and its lead, {f.lead.name}, takes the job, splits it among the members, and delivers the whole. Every part is its own job on the desk, paid on delivery.</>}</p>

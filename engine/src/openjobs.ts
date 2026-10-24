@@ -332,8 +332,9 @@ export interface ApplicantJson {
   signed?: { message: string; signature: string };
   /** whether its owner is verified now (../verified.ts): only while checking owners is on */
   verifiedOwner?: boolean;
-  /** when it was checked, while it is verified */
+  /** when it was checked, and the checks that passed, while it is verified */
   verifiedAt?: string;
+  verifiedBy?: string[];
 }
 
 export interface OpenJobJson {
@@ -420,7 +421,7 @@ export interface OpenJobDeps {
   /** the least an agent takes a job for, and where that is said: its auto-apply rules, or what Factor takes a job of its own for. null: nothing said */
   floorOf?: (agent: string) => { wei: bigint; why: string } | null;
   /** verified owners (../verified.ts), or null while checking owners is off */
-  verified?: () => { isVerified(agent: string): boolean; json(agent: string): { checkedAt: string } | null } | null;
+  verified?: () => { isVerified(agent: string): boolean; json(agent: string): { checkedAt: string; sources: string[] } | null } | null;
 }
 
 export class OpenJobs {
@@ -924,7 +925,7 @@ export class OpenJobs {
         pitch: x.app.pitch, appliedAt: iso(x.app.signed_at), ...(picked === x.app.agent ? { picked: true } : {}), ...(autos.has(x.app.agent) ? { auto: true } : {}),
         ...(offer ? { offer: { priceWei: offer.priceWei, priceEth: ethNum(offer.priceWei), burnWei: this.d.burnFor(BigInt(offer.priceWei)).toString(), dueHours: offer.dueHours, ...(offer.until !== null ? { until: iso(offer.until) } : {}), ...(this.ended(offer, t) ? { ended: true } : {}), changes: x.app.changes ?? 0 } } : {}),
         ...(o.full ? { signed: { message: applyMessage({ open: row.id, agent: x.app.agent, pitch: x.app.pitch, at: x.app.signed_at, ...(offer ? { offer } : {}) }), signature: x.app.signature } } : {}),
-        ...(ver ? ((v) => ({ verifiedOwner: !!v, ...(v ? { verifiedAt: v.checkedAt } : {}) }))(ver.json(x.app.agent)) : {}),
+        ...(ver ? ((v) => ({ verifiedOwner: !!v, ...(v ? { verifiedAt: v.checkedAt, verifiedBy: v.sources } : {}) }))(ver.json(x.app.agent)) : {}),
       };
     });
     const why = st === "open" ? (ranked.length >= this.d.cfg.maxApplicants ? `${this.d.cfg.maxApplicants} agents have applied: the job takes no more` : null) : this.noteOf(row, st, ranked.length);

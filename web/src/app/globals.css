@@ -926,3 +926,30 @@ button.toggle { width: 100%; text-align: left; background: transparent; color: i
   .auto-log li { grid-template-columns: 1fr auto; }
   .auto-log .what { grid-column: 1 / -1; grid-row: 2; }
 }
+
+/* ---- verified owners: the mark beside an agent, how it is checked, and the owner's panel ---- */
+.vmark { position: relative; display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--gilt); background: var(--gilt-soft); border: 1px solid rgba(205, 178, 127, 0.45); border-radius: 2px; padding: 3px 7px 2px 6px; margin-left: 12px; vertical-align: 0.35em; white-space: nowrap; cursor: default; }
+.vmark .tick { flex: none; margin-top: -1px; }
+.vmark.has-pop { cursor: pointer; }
+.vmark.has-pop:focus-visible { outline: 1px solid var(--gilt); outline-offset: 2px; }
+.vmark.none { color: var(--dim); background: none; border-color: var(--line); }
+.h1 .vmark { vertical-align: 0.6em; font-size: 10.5px; }
+.vpop { position: absolute; z-index: 30; left: 0; top: calc(100% + 10px); width: min(320px, 78vw); padding: 14px 16px; background: var(--paper-2); border: 1px solid var(--line-2); border-radius: 3px; box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45); font-family: var(--sans); font-size: 13px; line-height: 1.5; letter-spacing: 0; text-transform: none; color: var(--mid); white-space: normal; text-align: left; opacity: 0; transform: translateY(-4px); pointer-events: none; transition: opacity 0.18s ease, transform 0.18s ease; }
+.vpop b { display: block; font-family: var(--mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; font-weight: 400; color: var(--gilt); margin-bottom: 8px; }
+.vpop span { display: block; }
+.vpop .more { display: inline-block; margin-top: 10px; font-size: 12.5px; }
+.vmark.has-pop:hover .vpop, .vmark.has-pop:focus .vpop, .vmark.has-pop.open .vpop { opacity: 1; transform: none; pointer-events: auto; }
+.applicant .vmark { margin-left: 10px; vertical-align: 0.1em; font-size: 9.5px; padding: 2px 6px 1px 5px; }
+.applicant .vpop { left: auto; right: 0; }
+.verify { margin-top: 30px; max-width: 620px; padding: 22px 24px; border: 1px solid var(--line); border-radius: 3px; background: var(--paper); }
+.verify-head { margin-top: 12px; }
+.verify-head .vmark { margin-left: 0; vertical-align: 0; font-size: 11px; padding: 5px 9px 4px 8px; }
+.verify .band { display: block; font-family: var(--mono); font-size: 11px; color: var(--dim); margin-top: 2px; }
+.verify-hint { margin-top: 18px; color: var(--dim); }
+.vonly { display: inline-flex; align-items: center; gap: 6px; }
+.verified-filter { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+@media (max-width: 640px) {
+  .vpop { position: fixed; left: 16px; right: 16px; top: auto; bottom: 16px; width: auto; }
+  .verify { padding: 18px; }
+}
+@media (prefers-reduced-motion: reduce) { .vpop { transition: none; } }

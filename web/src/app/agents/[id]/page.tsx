@@ -3,7 +3,8 @@ import { Fragment } from "react";
 import { FileLine } from "@/components/Desk";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { getAgent, getAutoApply, getPayLinks, getState } from "@/lib/data";
+import { getAgent, getAutoApply, getPayLinks, getState, getVerified } from "@/lib/data";
+import { VerifiedMark, VerifyPanel } from "@/components/Verified";
 import { AutoApplyLog, AutoApplyPanel } from "@/components/AutoApply";
 import { badgeSnippet } from "@/lib/pay";
 import { Hosted, House, Seal, SecHead, Tag } from "@/components/Bits";
@@ -26,7 +27,7 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
   const hiredBy = hiring?.hiredBy ?? [], hires = hiring?.hires ?? [];
   const who = (x: { address: string; name: string; named: boolean }) => `/agents/${x.named ? x.name : x.address}`;
   const less = 50 * a.settledAtHalf;
-  const [links, auto] = await Promise.all([getPayLinks(a.address), getAutoApply(a.address)]);
+  const [links, auto, ver] = await Promise.all([getPayLinks(a.address), getAutoApply(a.address), getVerified(a.address)]);
   const autoOn = !!s.autoApply?.enabled;
   const deals = jobs.filter((j) => j.deal);
   const site = "https://factoragents.fun";
@@ -37,7 +38,7 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
         <Link className="more quiet back" href="/agents">← All agents</Link>
         <div style={{ display: "flex", gap: 22, alignItems: "center", flexWrap: "wrap" }}>
           <Seal name={a.named ? a.name : a.address.slice(2)} size={72} />
-          <div><h1 className="h1">{a.name}{a.house ? <House /> : a.hosted ? <Hosted /> : null}{erc8004 ? <Erc8004Mark agentId={erc8004.agentId} /> : null}</h1><p className="small mono" style={{ marginTop: 8, color: "var(--dim)" }}><a href={addressHref(s.contracts.explorer, a.address)} target="_blank" rel="noopener noreferrer">{short(a.address)}</a> · since {day(a.since)}</p></div>
+          <div><h1 className="h1">{a.name}{a.house ? <House /> : a.hosted ? <Hosted /> : null}{erc8004 ? <Erc8004Mark agentId={erc8004.agentId} /> : null}{a.verifiedOwner ? <VerifiedMark sources={a.verifiedOwner.sources} checkedAt={a.verifiedOwner.checkedAt} href="#verified" /> : null}</h1><p className="small mono" style={{ marginTop: 8, color: "var(--dim)" }}><a href={addressHref(s.contracts.explorer, a.address)} target="_blank" rel="noopener noreferrer">{short(a.address)}</a> · since {day(a.since)}</p></div>
         </div>
         <p className="lead">{a.does ? `${a.does}.` : "This agent has registered and has not said what it does yet."}</p>
         {firms?.length ? <p className="small" style={{ marginTop: 14 }}>{firms.map((f, i) => <span key={f.slug}>{i ? " · " : ""}{f.role === "lead" ? "Leads" : f.role === "member" ? "A member of" : "Invited to"} <Link className="more quiet" href={`/firms/${f.slug}`}>{f.name}</Link></span>)}</p> : null}
@@ -47,6 +48,7 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
           <Link className={`btn ${links[0] ? "line" : "go"}`} href={`/hire?agent=${a.address}`}>Hire {a.name}</Link>
           {s.plans?.enabled ? <Link className="btn line" href={`/hire?agent=${a.address}&monthly=1`}>Monthly plan</Link> : null}
         </div>
+        {ver && s.verified?.enabled ? <VerifyPanel agent={a.address} name={a.name} owners={ver.owners} v={ver.verifiedOwner} checks={s.verified.checks} validDays={s.verified.validDays} explorer={s.contracts.explorer} /> : null}
       </section>
 
       {factorScore ? <FactorScoreCard fs={factorScore} who={a.address} desk={s.contracts.desk} extra={`Delivered on time: ${a.settled ? `${a.onTimePct}%` : "no jobs yet"}.${a.unanswered ? ` Jobs left unanswered: ${a.unanswered}.` : ""}`} file={a.file ? <div style={{ marginTop: 22 }}><FileLine text={a.file.text} at={a.file.at} /></div> : null} /> : (

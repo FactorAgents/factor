@@ -9,14 +9,15 @@ import { engineUrl, sampleMode } from "@/lib/data";
 import { sampleAgent, sampleAutoApply, sampleFirm, sampleJob, sampleJobs, sampleLedger, sampleOpenJob, sampleOpenJobs, samplePlan, sampleState } from "@/lib/sample";
 import { answerBody, answerHeaders, sharedRead } from "@/lib/shared";
 
-const READS = /^(state|pulse|desk|agents|agents\/made\/0x[0-9a-fA-F]{40}|agents\/[0-9a-zA-Z-]{3,42}|jobs|jobs\/\d{1,9}|jobs\/\d{1,9}\/tree|ledger|burns|accounts\/0x[0-9a-fA-F]{40}|accounts\/relay\/0x[0-9a-f]{64}|accounts\/by-credential\/0x[0-9a-f]{2,2046}|pay\/link\/[A-Za-z0-9_-]{20,6000}\.[A-Za-z0-9_-]{80,3000}|pay\/links\/0x[0-9a-fA-F]{40}|firms|firms\/[a-z0-9-]{3,32}|plans|plans\/0x[0-9a-f]{64}|erc8004|erc8004\/[0-9a-zA-Z-]{3,42}|openjobs|openjobs\/0x[0-9a-f]{64}|autoapply\/[0-9a-zA-Z-]{3,42})$/;
+const READS = /^(state|pulse|desk|agents|agents\/made\/0x[0-9a-fA-F]{40}|agents\/[0-9a-zA-Z-]{3,42}|jobs|jobs\/\d{1,9}|jobs\/\d{1,9}\/tree|ledger|burns|accounts\/0x[0-9a-fA-F]{40}|accounts\/relay\/0x[0-9a-f]{64}|accounts\/by-credential\/0x[0-9a-f]{2,2046}|pay\/link\/[A-Za-z0-9_-]{20,6000}\.[A-Za-z0-9_-]{80,3000}|pay\/links\/0x[0-9a-fA-F]{40}|firms|firms\/[a-z0-9-]{3,32}|plans|plans\/0x[0-9a-f]{64}|erc8004|erc8004\/[0-9a-zA-Z-]{3,42}|openjobs|openjobs\/0x[0-9a-f]{64}|autoapply\/[0-9a-zA-Z-]{3,42}|verified|verified\/[0-9a-zA-Z-]{3,42})$/;
 // two things a wallet signs, what an account without a wallet asks of the engine (lib/passkey.ts), a job paid
 // through a Pay with Factor link (lib/pay.ts), an agent hiring another for part of its job (lib/subjobs.ts), and a
 // firm formed, joined, left or hired (lib/firms.ts), and a monthly plan signed, a month of it linked, or a plan stopped
 // (lib/plans.ts), and an agent linking its ERC-8004 identity (lib/erc8004.ts), and an open job posted, applied to,
-// linked to the lock that hired its agent, or taken down (lib/openjobs.ts), and an agent's auto-apply rules (lib/autoapply.ts)
-const WRITES = /^(match|agents\/profile|agents\/make|agents\/pause|jobs\/title|jobs\/brief|jobs\/delivery|accounts|accounts\/check|accounts\/call|accounts\/relay|pay\/deal|pay\/links|subjobs\/plan|subjobs\/link|firms\/form|firms\/join|firms\/leave|firms\/hire|plans\/create|plans\/month|plans\/stop|erc8004\/link|openjobs\/post|openjobs\/apply|openjobs\/hire|openjobs\/close|openjobs\/withdraw|autoapply\/rules)$/;
-const QUERY = ["limit", "before", "show", "agent", "customer", "firm"];
+// linked to the lock that hired its agent, or taken down (lib/openjobs.ts), and an agent's auto-apply rules (lib/autoapply.ts),
+// and an owner verifying the wallet that runs its agent (lib/verified.ts)
+const WRITES = /^(match|agents\/profile|agents\/make|agents\/pause|jobs\/title|jobs\/brief|jobs\/delivery|accounts|accounts\/check|accounts\/call|accounts\/relay|pay\/deal|pay\/links|subjobs\/plan|subjobs\/link|firms\/form|firms\/join|firms\/leave|firms\/hire|plans\/create|plans\/month|plans\/stop|erc8004\/link|openjobs\/post|openjobs\/apply|openjobs\/hire|openjobs\/close|openjobs\/withdraw|autoapply\/rules|verified\/check)$/;
+const QUERY = ["limit", "before", "show", "agent", "customer", "firm", "verified"];
 const BODY_MOST = 4096;
 // an order of an account carries its calls and a passkey's answer
 const ORDER_MOST = 32_768;
@@ -42,6 +43,7 @@ function fromSample(path: string, q: URLSearchParams): unknown {
   if (path === "openjobs") return sampleOpenJobs();
   if (path.startsWith("openjobs/")) return sampleOpenJob(path.slice(9));
   if (path.startsWith("autoapply/")) return sampleAutoApply(path.slice(10));
+  if (path === "verified" || path.startsWith("verified/")) return { enabled: false };
   return null;
 }
 
