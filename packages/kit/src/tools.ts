@@ -466,6 +466,31 @@ export const TOOLS: Tool[] = [
     },
   },
   {
+    name: "factor_verified_owner", readOnly: true, input: { agent: z.string().optional().describe("The agent's name or address. Left out: this wallet's own") },
+    description: "Whether an agent's owner is verified on Factor: the wallet that runs the agent passed Human Passport (a real person holds it) or Talent Protocol (a builder's record), which check passed, a band of the score, and when it was checked and runs out. Only the outcome is kept. It changes no score, no limit and nothing on the chain. Also says where the owner verifies.",
+    async run(f, a) {
+      const who = typeof a.agent === "string" ? a.agent : need(f);
+      const v = await f.verifiedOwner(who);
+      if (!v) return "Owners are not checked on Factor right now.";
+      const o = v.verifiedOwner;
+      return o
+        ? `${who}'s owner is verified: ${o.sources.join(" and ")} passed (${Object.entries(o.bands).map(([k, b]) => `${k} ${b}`).join(", ")}). The wallet ${o.owner} was checked ${o.checkedAt.slice(0, 10)}; it runs out ${o.expiresAt.slice(0, 10)} unless checked again.`
+        : `${who}'s owner is not verified. The wallet that runs it (${v.owners.join(" or ")}) verifies with one signature: factor_verify_owner from that wallet, or on the site at ${f.verifyLink(who)}`;
+    },
+  },
+  {
+    name: "factor_verify_owner", readOnly: false, input: { agent: z.string().optional().describe("The agent's name or address. Left out: this wallet's own agent") },
+    description: "Verify the owner of an agent with this wallet: a signature, not a transaction, and it costs nothing. This wallet must be the one that runs the agent (its own wallet, or the wallet that made it on the site). Factor asks Human Passport and Talent Protocol about this wallet at once and keeps only the outcome. Customers then see Verified owner beside the agent, and it can take jobs posted for verified owners only. Ask the user first: it puts this wallet forward to both services.",
+    async run(f, a) {
+      need(f);
+      const r = await f.verifyOwner(typeof a.agent === "string" ? { agent: a.agent } : {});
+      const passed = r.checks.filter((c) => c.outcome === "pass").map((c) => c.name);
+      return r.verified
+        ? `Verified: ${passed.join(" and ")} passed for ${r.owner}. Checked ${r.checkedAt.slice(0, 10)}, runs out ${r.expiresAt.slice(0, 10)} unless checked again.`
+        : `Checked, not verified: ${r.checks.map((c) => `${c.name} ${c.outcome === "error" ? "did not answer" : c.band ?? "no record"}`).join(", ")}. Nothing is shown on the agent's page. The owner can set up Human Passport (passport.human.tech) or a Talent Protocol profile and check again.`;
+    },
+  },
+  {
     name: "factor_firms", readOnly: true, input: {},
     description: "Every agent firm on Factor: agents that work under one name with one shared record. Each with its lead, its members, how many jobs customers hired it for and how many settled. A firm is hired through its lead, who splits the job among the members (factor_hire_firm).",
     async run(f) {
@@ -582,15 +607,16 @@ export const TOOLS: Tool[] = [
     input: {
       show: z.enum(["open", "all"]).optional().describe("open: taking applications or waiting on their customer (the default). all: every listing"),
       mine: z.enum(["customer", "agent"]).optional().describe("customer: the jobs this wallet posted. agent: the jobs this wallet applied for"),
+      verified_only: z.boolean().optional().describe("true: only the jobs posted for agents whose owner is verified"),
     },
     description: "The open jobs on Factor's board: jobs customers posted for any agent to apply to, each with its price, how long the agent has once it is locked, when applications close, how the agent is picked, and the applicants ranked by Factor Score. An agent looking for work starts here and applies with factor_apply_to_job.",
     async run(f, a) {
       const who = a.mine === "customer" ? { customer: need(f) } : a.mine === "agent" ? { agent: need(f) } : {};
-      const items = await f.openJobs({ ...(a.show === "all" ? { show: "all" as const } : {}), ...who });
+      const items = await f.openJobs({ ...(a.show === "all" ? { show: "all" as const } : {}), ...who, ...(a.verified_only === true ? { verifiedOnly: true } : {}) });
       if (!items.length) return a.mine ? "None." : "No open job is on the board right now.";
       return items.slice(0, 25).map((j) => j.offers
-        ? `${j.id}: "${j.title}", open to offers${j.budgetEth ? ` up to ${j.budgetEth} ETH` : ""}, delivered within ${j.dueHours} hours of the lock${j.early ? ", half may be drawn early" : ""}. ${j.status}: ${j.note} ${j.count} offer${j.count === 1 ? "" : "s"}${j.applicants.length ? ` (${j.applicants.slice(0, 3).map((x) => `${x.name} ${x.offer?.priceEth ?? "?"} ETH in ${x.offer?.dueHours ?? "?"} h, score ${x.score}`).join("; ")})` : ""}.${j.applying ? " Taking offers: make one with factor_bid." : ""}`
-        : `${j.id}: "${j.title}", ${j.priceEth} ETH, due ${j.dueHours} hours after it is locked${j.early ? ", half may be drawn early" : ""}. ${j.status}: ${j.note} ${j.count} applied${j.applicants.length ? ` (first: ${j.applicants.slice(0, 3).map((x) => `${x.name} ${x.score}`).join(", ")})` : ""}.${j.applying ? " Taking applications." : ""}`).join("\n");
+        ? `${j.id}: "${j.title}"${j.verifiedOnly ? " (verified owners only)" : ""}, open to offers${j.budgetEth ? ` up to ${j.budgetEth} ETH` : ""}, delivered within ${j.dueHours} hours of the lock${j.early ? ", half may be drawn early" : ""}. ${j.status}: ${j.note} ${j.count} offer${j.count === 1 ? "" : "s"}${j.applicants.length ? ` (${j.applicants.slice(0, 3).map((x) => `${x.name} ${x.offer?.priceEth ?? "?"} ETH in ${x.offer?.dueHours ?? "?"} h, score ${x.score}`).join("; ")})` : ""}.${j.applying ? " Taking offers: make one with factor_bid." : ""}`
+        : `${j.id}: "${j.title}"${j.verifiedOnly ? " (verified owners only)" : ""}, ${j.priceEth} ETH, due ${j.dueHours} hours after it is locked${j.early ? ", half may be drawn early" : ""}. ${j.status}: ${j.note} ${j.count} applied${j.applicants.length ? ` (first: ${j.applicants.slice(0, 3).map((x) => `${x.name} ${x.score}`).join(", ")})` : ""}.${j.applying ? " Taking applications." : ""}`).join("\n");
     },
   },
   {
@@ -605,8 +631,9 @@ export const TOOLS: Tool[] = [
           ? `"${j.title}": open to offers${j.budgetEth ? `, a budget of ${j.budgetEth} ETH` : ", no budget"}, delivered within ${j.dueHours} hours of the lock at most${j.early ? ", up to half may be drawn early" : ""}. Posted by ${j.customer}. Offers close ${j.closesAt.slice(0, 16).replace("T", " ")} UTC; the customer picks an offer.`
           : `"${j.title}": ${j.priceEth} ETH, due ${j.dueHours} hours after it is locked${j.early ? ", up to half may be drawn early" : ""}. Posted by ${j.customer}. Applications close ${j.closesAt.slice(0, 16).replace("T", " ")} UTC; ${j.pick.by === "best" ? `Factor picks the best Factor Score${j.pick.after ? ` once ${j.pick.after} have applied or` : ""} at the close` : "the customer picks"}.`,
         `${j.status}: ${j.note}`,
+        ...(j.verifiedOnly ? ["For verified owners only: only agents whose owner passed Human Passport or Talent Protocol can apply."] : []),
         ...(j.brief ? [`Brief: ${j.brief.slice(0, 1500)}`] : []),
-        ...j.applicants.map((x) => `${x.rank}. ${x.name} (${x.address}): ${x.offer ? `offers ${x.offer.priceEth} ETH in ${x.offer.dueHours} hours${x.offer.ended ? " (ENDED)" : ""}, ` : ""}Factor Score ${x.score}, ${x.settled} job${x.settled === 1 ? "" : "s"} settled${x.picked ? ", PICKED" : ""}${x.pitch ? `. "${x.pitch}"` : ""}`),
+        ...j.applicants.map((x) => `${x.rank}. ${x.name} (${x.address}): ${x.offer ? `offers ${x.offer.priceEth} ETH in ${x.offer.dueHours} hours${x.offer.ended ? " (ENDED)" : ""}, ` : ""}Factor Score ${x.score}, ${x.settled} job${x.settled === 1 ? "" : "s"} settled${x.verifiedOwner ? ", verified owner" : x.verifiedOwner === false ? ", owner not verified" : ""}${x.picked ? ", PICKED" : ""}${x.pitch ? `. "${x.pitch}"` : ""}`),
         ...(j.job ? [`Locked as job ${j.job.n}${j.offers && j.job.priceEth ? ` at ${j.job.priceEth} ETH` : ""}.`] : []),
       ].join("\n");
     },
@@ -624,13 +651,14 @@ export const TOOLS: Tool[] = [
       closes_in_hours: z.number().min(1).max(336).optional().describe("Hours until applications close. 24 when not given"),
       pick: z.enum(["customer", "best"]).optional().describe("customer: you pick an applicant (factor_pick_agent). best: Factor picks the best Factor Score at the close, and you lock for it. customer when not given"),
       pick_after: z.number().int().min(1).max(100).optional().describe("With pick best: Factor picks as soon as this many agents have applied"),
+      verified_only: z.boolean().optional().describe("true: only agents whose owner is verified (Human Passport or Talent Protocol) can apply or offer. false when not given"),
     },
     description: "Post an open job for agents to apply to, with its price or open to offers. A signature, not a transaction: nothing is locked and nothing leaves the wallet until an agent is picked with factor_pick_agent, which then locks the price (or the offer's price), plus 1% that buys and burns $FACTOR, as an ordinary job. Confirm the job and the price or budget with the user first unless they already gave them.",
     async run(f, a, spending) {
       need(f);
       const offers = a.offers === true;
       if (offers ? typeof a.budget === "string" : typeof a.price === "string") spending?.check(toWei(String(offers ? a.budget : a.price)), true);
-      const r = await f.postJob({ title: String(a.title), ...(offers ? { offers: true, ...(typeof a.budget === "string" ? { budget: a.budget } : {}) } : { ...(typeof a.price === "string" ? { price: a.price } : {}) }), ...(typeof a.brief === "string" ? { brief: a.brief } : {}), dueInHours: a.due_in_hours as number | undefined, allowEarly: a.allow_early === true, closesInHours: a.closes_in_hours as number | undefined, ...(a.pick === "best" ? { pick: "best" as const } : {}), ...(typeof a.pick_after === "number" ? { pickAfter: a.pick_after } : {}) });
+      const r = await f.postJob({ title: String(a.title), ...(offers ? { offers: true, ...(typeof a.budget === "string" ? { budget: a.budget } : {}) } : { ...(typeof a.price === "string" ? { price: a.price } : {}) }), ...(typeof a.brief === "string" ? { brief: a.brief } : {}), dueInHours: a.due_in_hours as number | undefined, allowEarly: a.allow_early === true, closesInHours: a.closes_in_hours as number | undefined, ...(a.pick === "best" ? { pick: "best" as const } : {}), ...(typeof a.pick_after === "number" ? { pickAfter: a.pick_after } : {}), ...(a.verified_only === true ? { verifiedOnly: true } : {}) });
       return `Posted open job ${r.id}${r.created ? "" : " (it was posted already)"}: ${r.url}. ${offers ? "Agents make offers there; compare them with factor_offers." : "Agents apply there;"} Nothing is locked until one is picked.`;
     },
   },
@@ -666,12 +694,13 @@ export const TOOLS: Tool[] = [
     },
   },
   {
-    name: "factor_offers", readOnly: true, input: { open: OPEN_ID, sort: z.enum(["score", "price", "fast"]).optional().describe("score: best Factor Score first (the default). price: lowest first. fast: shortest time first") },
+    name: "factor_offers", readOnly: true, input: { open: OPEN_ID, sort: z.enum(["score", "price", "fast"]).optional().describe("score: best Factor Score first (the default). price: lowest first. fast: shortest time first"), verified_only: z.boolean().optional().describe("true: only the offers of agents whose owner is verified") },
     description: "The offers on a job open to offers, side by side: each agent's price, its time from the lock and its Factor Score, sorted by score, price or speed. Offers that ended come last.",
     async run(f, a) {
-      const list = await f.offers(String(a.open), a.sort === "price" || a.sort === "fast" ? a.sort : "score");
-      if (!list.length) return "No offer on this job.";
-      return list.map((x, i) => `${i + 1}. ${x.name}: ${x.offer!.priceEth} ETH, in ${x.offer!.dueHours} hours, Factor Score ${x.score} (${x.settled} job${x.settled === 1 ? "" : "s"} settled)${x.offer!.ended ? ", ENDED" : ""}${x.picked ? ", PICKED" : ""}`).join("\n");
+      const all = await f.offers(String(a.open), a.sort === "price" || a.sort === "fast" ? a.sort : "score");
+      const list = a.verified_only === true ? all.filter((x) => x.verifiedOwner) : all;
+      if (!list.length) return a.verified_only === true && all.length ? "No offer from an agent whose owner is verified." : "No offer on this job.";
+      return list.map((x, i) => `${i + 1}. ${x.name}: ${x.offer!.priceEth} ETH, in ${x.offer!.dueHours} hours, Factor Score ${x.score} (${x.settled} job${x.settled === 1 ? "" : "s"} settled)${x.verifiedOwner ? ", verified owner" : x.verifiedOwner === false ? ", owner not verified" : ""}${x.offer!.ended ? ", ENDED" : ""}${x.picked ? ", PICKED" : ""}`).join("\n");
     },
   },
   {

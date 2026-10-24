@@ -21,12 +21,13 @@ import { factorAccountAbi } from "./abi/FactorAccount.js";
 import { factorAccountsAbi } from "./abi/FactorAccounts.js";
 import { factorDeskAbi } from "./abi/FactorDesk.js";
 import { CHAIN_ID, DEFAULT_API, DEFAULT_RPC } from "./defaults.js";
-import type { AccountInfo, Agent, AgentPage, Applicant, Application, AutoApplyStatus, ComputeCredit, ComputeKey, Deal, Erc8004Entries, Erc8004Status, Firm, FirmHire, FirmPage, FirmRecord, Job, JobPage, JobState, JobTree, LedgerLine, ModelAnswer, OpenJob, OpenJobHire, PickedJob, OpenJobPage, OpenJobPosted, Page, PayLinkInfo, Plan, PlanMonthSent, PlanPage, RouterModel, Sent, State, SubJob } from "./types.js";
+import type { AccountInfo, Agent, AgentPage, Applicant, Application, AutoApplyStatus, ComputeCredit, ComputeKey, Deal, Erc8004Entries, Erc8004Status, Firm, FirmHire, FirmPage, FirmRecord, Job, JobPage, JobState, JobTree, LedgerLine, ModelAnswer, OpenJob, OpenJobHire, PickedJob, OpenJobPage, OpenJobPosted, Page, PayLinkInfo, Plan, PlanMonthSent, PlanPage, RouterModel, Sent, State, SubJob, OwnerCheck, VerifiedStatus } from "./types.js";
 import { MONTH_S, PLAN_TITLE_MOST, planMessage, stopPlanMessage, type PlanText } from "./plans.js";
 import { FIRM_SLUG, firmHireMessage, firmMessage, joinMessage, leaveMessage, slugOf } from "./firms.js";
 import { hireMessage, type HirePlan } from "./subjobs.js";
 import { applyMessage, closeJobMessage, PITCH_MOST, postJobMessage, withdrawMessage, type Offer, type OpenJobText, type PickRule } from "./openjobs.js";
 import { KINDS, rulesMessage, type AutoApplyRules, type BidRule } from "./autoapply.js";
+import { verifyOwnerMessage } from "./verified.js";
 import { ERC8004_TAG, erc8004LinkMessage, erc8004Registry, IDENTITY_REGISTRY, identityAbi, REPUTATION_REGISTRY, reputationAbi } from "./erc8004.js";
 import { explain, Refusal, WORDS } from "./words.js";
 
@@ -39,6 +40,7 @@ export type { AgentRecord, PayLink, RecordMessage, X402Requirements } from "./pa
 export { hireMessage, planIdOf } from "./subjobs.js";
 export { firmHireMessage, firmMessage, joinMessage, leaveMessage, slugOf } from "./firms.js";
 export { MONTH_S, monthlyPlanId, planMessage, stopPlanMessage } from "./plans.js";
+export { verifyOwnerMessage } from "./verified.js";
 export { ERC8004_TAG, erc8004LinkMessage, erc8004Registry, IDENTITY_REGISTRY, REPUTATION_REGISTRY } from "./erc8004.js";
 export type { PlanText } from "./plans.js";
 export { applyMessage, closeJobMessage, openJobId, pickWords, postJobMessage, priceWords, withdrawMessage } from "./openjobs.js";
@@ -1079,11 +1081,12 @@ export class Factor {
    * `budget` no offer may go over, and `dueInHours` the longest an offer may take. Each agent names its own price and
    * time; you compare them with offers(id) and pick one with pickAgent, which locks that offer's price.
    */
-  async postJob(o: { title: string; price?: Amount; offers?: boolean; budget?: Amount; brief?: string; dueInHours?: number; allowEarly?: boolean; closesInHours?: number; pick?: "customer" | "best"; pickAfter?: number }): Promise<OpenJobPosted> {
+  async postJob(o: { title: string; price?: Amount; offers?: boolean; budget?: Amount; brief?: string; dueInHours?: number; allowEarly?: boolean; closesInHours?: number; pick?: "customer" | "best"; pickAfter?: number; verifiedOnly?: boolean }): Promise<OpenJobPosted> {
     const customer = this.mine();
     const s = await this.state();
     if (s.paused) throw new Refusal(s.paused, "paused");
     if (!s.openJobs?.enabled) throw new Refusal("Open jobs are not switched on yet.", "openjobs_off");
+    if (o.verifiedOnly && !s.verified?.enabled) throw new Refusal("Verified owners are not switched on yet: post the job open to every agent.", "verified_off");
     const offers = o.offers === true;
     let price: bigint;
     if (offers) {
@@ -1112,16 +1115,17 @@ export class Factor {
     const at = await this.clock();
     // a little inside the hour at the short end, so the engine's own clock never finds it too soon
     const closesAt = at + Math.max(Math.round(closesIn * 3600), 3600 + 120);
-    const p: OpenJobText = { customer, price: price.toString(), dueHours, early: o.allowEarly === true, title, brief, closesAt: Math.min(closesAt, at + 14 * 86_400 - 120), pick, at, ...(offers ? { offers: true } : {}) };
+    const p: OpenJobText = { customer, price: price.toString(), dueHours, early: o.allowEarly === true, title, brief, closesAt: Math.min(closesAt, at + 14 * 86_400 - 120), pick, at, ...(offers ? { offers: true } : {}), ...(o.verifiedOnly ? { verifiedOnly: true } : {}) };
     const signature = await this.sign(postJobMessage(p));
-    const r = await this.askPatient<{ open: Hex; created: boolean; burnWei?: string }>("/openjobs/post", { customer, price: p.price, dueHours, early: p.early, title, brief, closesAt: p.closesAt, pick: pick.by, ...(pick.by === "best" && pick.after ? { pickAfter: pick.after } : {}), at, signature, via: "kit", ...(offers ? { offers: true } : {}) });
+    const r = await this.askPatient<{ open: Hex; created: boolean; burnWei?: string }>("/openjobs/post", { customer, price: p.price, dueHours, early: p.early, title, brief, closesAt: p.closesAt, pick: pick.by, ...(pick.by === "best" && pick.after ? { pickAfter: pick.after } : {}), at, signature, via: "kit", ...(offers ? { offers: true } : {}), ...(o.verifiedOnly ? { verifiedOnly: true } : {}) });
     return { id: r.open, url: `${this.site()}/open-jobs/${r.open}`, created: r.created, burnWei: BigInt(r.burnWei ?? "0") };
   }
 
   /** The open jobs on the board, newest first: taking applications, or waiting on their customer. `show: "all"` for every one. */
-  async openJobs(o: { show?: "open" | "all"; customer?: string; agent?: string } = {}): Promise<OpenJob[]> {
+  async openJobs(o: { show?: "open" | "all"; customer?: string; agent?: string; verifiedOnly?: boolean } = {}): Promise<OpenJob[]> {
     const q = new URLSearchParams();
     if (o.show) q.set("show", o.show);
+    if (o.verifiedOnly) q.set("verified", "1");
     if (o.customer) q.set("customer", o.customer);
     if (o.agent) q.set("agent", o.agent);
     return (await read<{ items: OpenJob[] }>(this.api, `/openjobs${q.size ? `?${q}` : ""}`))?.items ?? [];
@@ -1368,6 +1372,44 @@ export class Factor {
       }
     })();
     return { stop: () => { stopped = true; wake?.(); }, done };
+  }
+
+  // ---------- verified owners ----------
+
+  /**
+   * Whether an agent's owner is verified: the wallet that runs it passed Human Passport (a real person) or Talent
+   * Protocol (a builder's record), which passed, a band of each score and when it was checked. And the wallets that may
+   * verify it. null: owners are not checked on Factor right now. Left out: this wallet's own agent.
+   */
+  async verifiedOwner(agent?: string): Promise<VerifiedStatus | null> {
+    const who = agent ?? this.mine();
+    if (!/^[0-9a-zA-Z-]{3,42}$/.test(who)) throw new Refusal("Give the agent's name or address.", "bad_agent");
+    const v = await read<VerifiedStatus>(this.api, `/verified/${who}`);
+    return v?.enabled ? v : null;
+  }
+
+  /** The page where an agent's owner verifies on the site, with a wallet or a passkey. */
+  verifyLink(agent?: string): string {
+    const who = agent ?? this.mine();
+    return `${this.site()}/agents/${who}#verified`;
+  }
+
+  /**
+   * Verify the owner of an agent with this wallet: one signature, no gas. This wallet must be the one that runs the agent
+   * on Factor (the agent's own wallet, or the wallet that made it on the site). Factor then asks Human Passport and
+   * Talent Protocol about THIS wallet at once, and keeps only the outcome. Asked again later, it checks again.
+   */
+  async verifyOwner(o: { agent?: string } = {}): Promise<OwnerCheck> {
+    const owner = this.mine();
+    const raw = o.agent ?? owner;
+    const agent = /^0x[0-9a-fA-F]{40}$/.test(raw) ? raw.toLowerCase() : (await this.agent(raw))?.agent.address ?? null;
+    if (!agent) throw new Refusal(`There is no agent ${raw} on Factor.`, "no_agent");
+    const at = await this.clock();
+    const signature = await this.sign(verifyOwnerMessage({ agent, owner, at }));
+    const r = await fetch(`${this.api}/verified/check`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ agent, owner, at, signature }), signal: AbortSignal.timeout(45_000) });
+    const b = (await r.json().catch(() => ({}))) as OwnerCheck & { error?: string };
+    if (!r.ok) throw new Refusal(sentence(b.error ?? `Factor's site answered ${r.status}`), r.status === 503 ? "verified_off" : r.status === 429 ? "too_soon" : "refused");
+    return b;
   }
 
   // ---------- ERC-8004 ----------

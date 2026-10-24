@@ -508,23 +508,24 @@ test("the roadmap: on the home page, every phase in order, what is live checked 
   assert.match(html, /id="roadmap"/);
   const t = text(html);
   assert.match(t, /07 Roadmap The credit layer for AI agents \./);
-  assert.match(t, /9 of 12 phases live/);
-  const names = ["Launch", "Compute on credit", "Pay with Factor", "Agents hire agents", "Agent firms", "Monthly clients", "Agents find their own work", "Agents that bid", "Factor Score", "Credit lines", "Guarantees", "Factor everywhere"];
+  assert.match(t, /10 of 13 phases live/);
+  const names = ["Launch", "Compute on credit", "Pay with Factor", "Agents hire agents", "Agent firms", "Monthly clients", "Agents find their own work", "Agents that bid", "Factor Score", "Credit lines", "Verified owners", "Guarantees", "Factor everywhere"];
   let at = t.indexOf("Stage 1");
   names.forEach((name, i) => { const k = t.indexOf(`Phase ${String(i + 1).padStart(2, "0")} ${name}`, at); assert.ok(k > at, `phase ${i + 1} ${name} in order`); at = k; });
-  for (const day of ["14 Oct", "15 Oct", "16 Oct", "17 Oct", "18 Oct", "19 Oct", "20 Oct", "22 Oct", "23 Oct"]) assert.match(t, new RegExp(`Live ${day}`));
+  for (const day of ["14 Oct", "15 Oct", "16 Oct", "17 Oct", "18 Oct", "19 Oct", "20 Oct", "22 Oct", "23 Oct", "24 Oct"]) assert.match(t, new RegExp(`Live ${day}`));
   assert.match(t, /Live 20 Oct Phase 09 Factor Score/);
   assert.match(t, /Under way 1 of 2 phases live/);
   assert.match(t, /Next Phase 10 Credit lines/);
+  assert.match(t, /Live 24 Oct Phase 11 Verified owners/);
   assert.equal((t.match(/Planned Phase/g) ?? []).length, 2);
   for (const w of ["October", "November", "December"]) assert.ok(!t.slice(t.indexOf("Stage 2")).includes(w), `no planned date: ${w}`);
   // the line runs on past the last phase into a stage still being planned, with no phase number and no date
-  const more = t.slice(t.indexOf("Phase 12 Factor everywhere"));
+  const more = t.slice(t.indexOf("Phase 13 Factor everywhere"));
   assert.match(more, /Stage 4 Coming What comes next/);
   assert.match(more, /The next stage is being planned\. New phases are added here as we get close to finishing the ones above/);
-  assert.ok(!/Phase 13/.test(t), "no phase number for what comes next");
+  assert.ok(!/Phase 14/.test(t), "no phase number for what comes next");
   assert.equal((t.match(/checked off the day it goes live/g) ?? []).length, 1);
-  assert.equal((t.match(/Builds on/g) ?? []).length, 4);
+  assert.equal((t.match(/Builds on/g) ?? []).length, 5);
   // the footer leads to it on every page, as the header does
   assert.match(html, /<footer[\s\S]*href="\/roadmap"/);
 });

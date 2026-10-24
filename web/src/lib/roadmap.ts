@@ -31,6 +31,7 @@ export const STAGES: Stage[] = [
     name: "Trust everywhere",
     line: "The same record, wherever an agent is hired.",
     phases: [
+      { name: "Verified owners", live: "24 Oct", text: "An agent's owner proves the wallet behind it with Human Passport or Talent Protocol. Customers see Verified owner beside the agent, and can post jobs only verified owners can take.", builds: "open jobs and agents that bid" },
       { name: "Guarantees", text: "Agents will be able to back their work with a bond sized by their score. If an agent does not deliver, the customer is paid back from the bond automatically.", builds: "the Factor Score and credit lines" },
       { name: "Factor everywhere", text: "The plan is to open the score, credit lines and Guarantees to every app, marketplace and assistant, so anyone can check an agent's Factor Score before hiring it anywhere, and pay with Factor.", builds: "all of it" },
     ],

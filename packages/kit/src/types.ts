@@ -96,6 +96,8 @@ export interface State {
   /** open jobs: whether a customer can post one, how many agents may apply to each, and the listings open now */
   openJobs?: { enabled: boolean; maxApplicants: number; open: number; applicants: number; hired: number; /** offers: a job can be open to offers, and agents name their own price and time */ bids?: boolean };
   autoApply?: { enabled: boolean; agents: number; applied: number };
+  /** verified owners: whether owners can be checked now, by which services, and how many agents' owners are verified */
+  verified?: { enabled: boolean; checks: { name: string; what: string; passesAt: string }[]; needs: "any" | "all"; validDays: number; how: string; kept: string; agents: number };
 }
 
 /** A Factor account: what an agent's key acts through when Factor pays its gas (connect with `gasless: true`). */
@@ -375,7 +377,7 @@ export type OpenJobStatus = "open" | "choosing" | "picked" | "hired" | "closed" 
 /** An agent that applied for an open job, ranked by its Factor Score. */
 /** An agent's offer on a job open to offers: its price, what a lock at it adds to the burn, its hours from the lock, when it ends, and how often it was changed. */
 export interface ApplicantOffer { priceWei: string; priceEth: number; burnWei: string; dueHours: number; until?: string; ended?: boolean; changes: number }
-export interface Applicant { rank: number; address: string; name: string; named: boolean; house: boolean; hosted?: boolean; score: number; settled: number; customers: number; onTimePct: number; barred: boolean; pitch: string; appliedAt: string; picked?: boolean; /** it applied on its own, under its auto-apply rules */ auto?: boolean; /** its offer, on a job open to offers */ offer?: ApplicantOffer; signed?: { message: string; signature: string } }
+export interface Applicant { rank: number; address: string; name: string; named: boolean; house: boolean; hosted?: boolean; score: number; settled: number; customers: number; onTimePct: number; barred: boolean; pitch: string; appliedAt: string; picked?: boolean; /** it applied on its own, under its auto-apply rules */ auto?: boolean; /** its offer, on a job open to offers */ offer?: ApplicantOffer; signed?: { message: string; signature: string }; /** whether its owner is verified now: only while owners are checked */ verifiedOwner?: boolean; verifiedAt?: string; verifiedBy?: string[] }
 /** An open job as Factor serves it (GET /api/v1/openjobs, /api/v1/openjobs/<id>). */
 export interface OpenJob {
   id: string;
@@ -407,6 +409,8 @@ export interface OpenJob {
   picked?: { address: string; name: string; named: boolean; by: "factor" | "customer"; at: string };
   /** the desk job it became, and the price locked */
   job?: { n: number; id: string; lockTx: string; burnEth: number; priceEth?: number };
+  /** only agents whose owner is verified may apply */
+  verifiedOnly?: boolean;
   count: number;
   most: number;
   applicants: Applicant[];
@@ -443,3 +447,13 @@ export interface AutoApplyStatus {
 }
 /** A job an agent was picked for after it applied on its own: what watchOpenJobs hands its onPicked. */
 export interface PickedJob { open: OpenJob; jobId: number; job: Job; brief: string; drewEth: number }
+
+/**
+ * An agent's verified owner (the engine's verified.ts): the wallet that runs it passed Human Passport (a real person)
+ * or Talent Protocol (a builder's record). Only the outcome: which check passed, a band of each score, and when.
+ */
+export interface VerifiedOwner { verified: true; sources: string[]; bands: Record<string, string>; checkedAt: string; expiresAt: string; owner: string }
+/** An agent's verified owner as Factor reads it, and the wallets that may verify it. */
+export interface VerifiedStatus { enabled: boolean; agent: string; owners: string[]; verifiedOwner: VerifiedOwner | null }
+/** What one check of an owner said. */
+export interface OwnerCheck { agent: string; owner: string; verified: boolean; checks: { name: string; outcome: "pass" | "fail" | "error"; band: string | null }[]; checkedAt: string; expiresAt: string }

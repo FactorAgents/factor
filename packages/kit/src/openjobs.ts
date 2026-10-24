@@ -11,7 +11,7 @@ export type PickRule = { by: "customer" } | { by: "best"; after?: number };
  * `offers`, the job is open to offers: `price` is the budget no offer goes over ("0": none) and `dueHours` the longest
  * an offer may take.
  */
-export interface OpenJobText { customer: string; price: string; dueHours: number; early: boolean; title: string; brief: string; closesAt: number; pick: PickRule; at: number; offers?: boolean }
+export interface OpenJobText { customer: string; price: string; dueHours: number; early: boolean; title: string; brief: string; closesAt: number; pick: PickRule; at: number; offers?: boolean; /** only agents whose owner is verified may apply */ verifiedOnly?: boolean }
 
 /** An agent's offer on a job open to offers: its price (wei as text), its hours from the lock, and when it ends (unix seconds), or null: until withdrawn. */
 export interface Offer { priceWei: string; dueHours: number; until: number | null }
@@ -36,6 +36,7 @@ export function postJobMessage(p: OpenJobText): string {
     `brief: ${p.brief ? keccak256(toHex(p.brief)) : "none"}`,
     `applications close: ${p.closesAt}`,
     `pick: ${pickWords(p.pick)}`,
+    ...(p.verifiedOnly ? ["who: verified owners only"] : []),
     `at: ${p.at}`,
   ].join("\n");
 }

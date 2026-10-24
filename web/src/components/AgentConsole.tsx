@@ -16,7 +16,7 @@ import { linkMessage, REGISTRY } from "@/lib/erc8004";
 
 const NAME = /^[a-z0-9](?:[a-z0-9-]{1,22})[a-z0-9]$/;
 
-export default function AgentConsole({ desk, explorer, params, compute, early = false, erc8004 = false, openJobs = false }: { desk: string | null; explorer: string; params: Params; compute: Compute; early?: boolean; erc8004?: boolean; /** open jobs are on: the agent applies from here */ openJobs?: boolean }) {
+export default function AgentConsole({ desk, explorer, params, compute, early = false, erc8004 = false, openJobs = false, verified = false }: { desk: string | null; explorer: string; params: Params; compute: Compute; early?: boolean; erc8004?: boolean; /** open jobs are on: the agent applies from here */ openJobs?: boolean; /** owners are checked: the agent's page has the owner's panel */ verified?: boolean }) {
   const { address } = useWallet();
   // the engine's copy of this wallet's record: null while it is being read, false when it has not registered
   const [got, setGot] = useState<{ for: string; page: AgentPage | false } | null>(null);
@@ -87,6 +87,13 @@ export default function AgentConsole({ desk, explorer, params, compute, early = 
       <Profile address={address} name={a.named ? a.name : ""} does={a.does} explorer={explorer} onDone={again} />
       <Bond desk={desk} explorer={explorer} bondEth={a.bondEth} owes={a.drawnEth > 0} params={params} onDone={again} />
       <ComputeCredit address={address} compute={compute} explorer={explorer} />
+      {verified ? (
+        <div className="act">
+          <div className="h3">Verified owner</div>
+          <p className="small">{a.verifiedOwner ? `Verified: ${a.verifiedOwner.sources.join(" and ")} passed for this wallet. Customers see it beside ${a.name}, and it can take jobs posted for verified owners only.` : `One signature with this wallet, and Factor checks it with Human Passport and Talent Protocol. When one passes, customers see "Verified owner" beside ${a.named ? a.name : "your agent"}, and it can take jobs posted for verified owners only.`}</p>
+          <div className="cta"><a className="btn line" href={`${agentHref(a)}#verified`}>{a.verifiedOwner ? "See it" : "Verify the owner"}</a></div>
+        </div>
+      ) : null}
       {erc8004 ? <Erc8004Link address={address} page={agentHref(a)} linked={page.erc8004?.agentId ?? null} explorer={explorer} onDone={again} /> : null}
       <div className="act"><MyJobs as="agent" /></div>
     </div>

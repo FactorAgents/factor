@@ -22,6 +22,8 @@ import { linkMessage as engineLink, registryOf as engineRegistry } from "../../.
 import { applyMessage, closeJobMessage, openJobId, postJobMessage, rulesMessage, withdrawMessage } from "../src/index.js";
 import { rulesMessage as engineRules } from "../../../engine/src/autoapply.js";
 import { applyMessage as engineApply, closeMessage as engineClose, openJobIdOf as engineOpenJobId, postMessage as enginePost, withdrawMessage as engineWithdraw } from "../../../engine/src/openjobs.js";
+import { verifyOwnerMessage } from "../src/index.js";
+import { verifyMessage as engineVerify } from "../../../engine/src/verified.js";
 import { AGENTS, DESK, JOB, KEY, state, stub, type Stub } from "./stub.js";
 
 let s: Stub;
@@ -347,9 +349,9 @@ describe("the assistant's caps", () => {
 
 describe("the tools", () => {
   it("have a name, a description and an input each, and say which of them send something", () => {
-    expect(TOOLS.map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_hire", "factor_accept", "factor_reject", "factor_set_title", "factor_register", "factor_set_profile", "factor_bond", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_ask_model", "factor_draw", "factor_deliver", "factor_decline", "factor_sign_up", "factor_create_pay_link", "factor_pay_link_info", "factor_pay_link", "factor_pay_x402", "factor_hire_for_job", "factor_job_tree", "factor_reject_sub_jobs", "factor_record", "factor_erc8004", "factor_link_erc8004", "factor_firms", "factor_firm_record", "factor_hire_firm", "factor_plan", "factor_subscribe", "factor_pay_month", "factor_stop_plan", "factor_draw_next_month", "factor_open_jobs", "factor_open_job", "factor_post_job", "factor_apply_to_job", "factor_bid", "factor_withdraw_offer", "factor_offers", "factor_pick_agent", "factor_close_job", "factor_auto_apply", "factor_set_auto_apply", "factor_auto_apply_now"]);
+    expect(TOOLS.map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_hire", "factor_accept", "factor_reject", "factor_set_title", "factor_register", "factor_set_profile", "factor_bond", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_ask_model", "factor_draw", "factor_deliver", "factor_decline", "factor_sign_up", "factor_create_pay_link", "factor_pay_link_info", "factor_pay_link", "factor_pay_x402", "factor_hire_for_job", "factor_job_tree", "factor_reject_sub_jobs", "factor_record", "factor_erc8004", "factor_link_erc8004", "factor_verified_owner", "factor_verify_owner", "factor_firms", "factor_firm_record", "factor_hire_firm", "factor_plan", "factor_subscribe", "factor_pay_month", "factor_stop_plan", "factor_draw_next_month", "factor_open_jobs", "factor_open_job", "factor_post_job", "factor_apply_to_job", "factor_bid", "factor_withdraw_offer", "factor_offers", "factor_pick_agent", "factor_close_job", "factor_auto_apply", "factor_set_auto_apply", "factor_auto_apply_now"]);
     for (const t of TOOLS) expect(t.description.length, t.name).toBeGreaterThan(40);
-    expect(TOOLS.filter((t) => t.readOnly).map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_pay_link_info", "factor_job_tree", "factor_record", "factor_erc8004", "factor_firms", "factor_firm_record", "factor_plan", "factor_open_jobs", "factor_open_job", "factor_offers", "factor_auto_apply"]);
+    expect(TOOLS.filter((t) => t.readOnly).map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_pay_link_info", "factor_job_tree", "factor_record", "factor_erc8004", "factor_verified_owner", "factor_firms", "factor_firm_record", "factor_plan", "factor_open_jobs", "factor_open_job", "factor_offers", "factor_auto_apply"]);
     // the ones that spend or cannot be undone say so in capitals, where an assistant will not miss it
     for (const name of ["factor_hire", "factor_reject", "factor_bond", "factor_pay_link", "factor_pay_x402", "factor_hire_for_job", "factor_reject_sub_jobs", "factor_hire_firm", "factor_subscribe", "factor_pay_month", "factor_pick_agent"]) expect(TOOLS.find((t) => t.name === name)!.description).toMatch(/SPENDS ETH|SETTLES AT HALF/);
   });
@@ -1017,5 +1019,55 @@ describe("offers", () => {
     s.site.autoApply = null;
     s.site.openJob = null;
     s.site.state = state();
+  });
+});
+
+describe("verified owners", () => {
+  it("signs the engine's words to the letter, as the owner wallet, and says what was checked", async () => {
+    const words = { agent: AGENTS[0]!.address, owner: "0x00000000000000000000000000000000000000b1", at: 1_760_000_000 };
+    expect(verifyOwnerMessage(words)).toBe(engineVerify(words));
+    const f = await connect({ privateKey: KEY });
+    const r = await f.verifyOwner({ agent: AGENTS[0]!.address });
+    expect(r).toMatchObject({ verified: true, owner: f.address, checks: [{ name: "Human Passport", outcome: "pass" }, { name: "Talent Protocol", outcome: "fail" }] });
+    const sent = s.posts.at(-1)!;
+    expect(sent.path).toBe("/verified/check");
+    const b = sent.body as { agent: string; owner: string; at: number; signature: `0x${string}` };
+    expect(b.agent).toBe(AGENTS[0]!.address);
+    expect((await recoverMessageAddress({ message: engineVerify({ agent: b.agent, owner: b.owner, at: b.at }), signature: b.signature })).toLowerCase()).toBe(f.address);
+    // by name, and its own agent when none is named
+    await f.verifyOwner({ agent: "lumen-07" });
+    expect((s.posts.at(-1)!.body as { agent: string }).agent).toBe(AGENTS[0]!.address);
+    await f.verifyOwner();
+    expect((s.posts.at(-1)!.body as { agent: string }).agent).toBe(f.address);
+    expect((await refusal((await connect()).verifyOwner())).code).toBe("read_only");
+    expect(f.verifyLink("lumen-07")).toMatch(/\/agents\/lumen-07#verified$/);
+  });
+
+  it("posts a job for verified owners only in the engine's words, filters the board, and refuses while it is off", async () => {
+    const f = await connect({ privateKey: KEY });
+    s.site.state = state({ openJobs: { enabled: true, maxApplicants: 20, open: 0, applicants: 0, hired: 0 } });
+    expect((await refusal(f.postJob({ title: "A one-page site", price: "0.004", verifiedOnly: true }))).code).toBe("verified_off");
+    s.site.state = state({ openJobs: { enabled: true, maxApplicants: 20, open: 0, applicants: 0, hired: 0 }, verified: { enabled: true, checks: [], needs: "any", validDays: 30, how: "", kept: "", agents: 0 } });
+    await f.postJob({ title: "A one-page site", price: "0.004", verifiedOnly: true });
+    const b = s.posts.at(-1)!.body as Record<string, unknown> & { signature: `0x${string}` };
+    expect(b.verifiedOnly).toBe(true);
+    const text = { customer: f.address!, price: String(b.price), dueHours: Number(b.dueHours), early: !!b.early, title: String(b.title), brief: String(b.brief), closesAt: Number(b.closesAt), pick: { by: "customer" as const }, at: Number(b.at), verifiedOnly: true };
+    expect(postJobMessage(text)).toBe(enginePost(text));
+    expect(postJobMessage(text)).toContain("\nwho: verified owners only\n");
+    expect((await recoverMessageAddress({ message: enginePost(text), signature: b.signature })).toLowerCase()).toBe(f.address);
+    s.site.openJobs = [{ id: `0x${"ab".repeat(32)}`, title: "A one-page site", verifiedOnly: true, offers: false, priceEth: 0.004, dueHours: 24, early: false, status: "open", note: "Taking applications.", count: 0, applicants: [], applying: true }];
+    expect((await runTool(f, "factor_open_jobs", { verified_only: true }, null)).text).toMatch(/"A one-page site" \(verified owners only\)/);
+    s.site.state = state();
+  });
+
+  it("its tools say whether an owner is verified, and where it verifies when it is not", async () => {
+    const f = await connect({ privateKey: KEY });
+    expect((await runTool(f, "factor_verified_owner", { agent: "lumen-07" }, null)).text).toBe("Owners are not checked on Factor right now.");
+    s.site.verified = { enabled: true, agent: AGENTS[0]!.address, owners: [AGENTS[0]!.address], verifiedOwner: null };
+    expect((await runTool(f, "factor_verified_owner", { agent: "lumen-07" }, null)).text).toMatch(/is not verified\. The wallet that runs it .* verifies with one signature: factor_verify_owner .*\/agents\/lumen-07#verified$/);
+    s.site.verified = { enabled: true, agent: AGENTS[0]!.address, owners: [AGENTS[0]!.address], verifiedOwner: { verified: true, sources: ["Human Passport"], bands: { "Human Passport": "20 to 29" }, checkedAt: "2026-10-24T09:00:00.000Z", expiresAt: "2026-11-23T09:00:00.000Z", owner: AGENTS[0]!.address } };
+    expect((await runTool(f, "factor_verified_owner", { agent: "lumen-07" }, null)).text).toMatch(/owner is verified: Human Passport passed \(Human Passport 20 to 29\)\. .* checked 2026-10-24; it runs out 2026-11-23/);
+    expect((await runTool(f, "factor_verify_owner", {}, null)).text).toMatch(/^Verified: Human Passport passed for 0x/);
+    s.site.verified = null;
   });
 });
