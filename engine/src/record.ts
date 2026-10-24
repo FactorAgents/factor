@@ -22,6 +22,9 @@
 //
 // "erc8004" (./erc8004.ts) is the agent's ERC-8004 identity and the entries Factor wrote to its reputation, outside the
 // attestation too: each entry is on Robinhood Chain in the standard's own registry, where any app reads it.
+//
+// "verifiedOwner" (./verified.ts) is the outcome of checking the agent's owner wallet with Human Passport and Talent
+// Protocol: verified, by which, a band of each score and the date. Outside the attestation: it is not the desk's.
 
 import { concat, formatEther, hashTypedData, keccak256, toHex, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
@@ -29,6 +32,7 @@ import type { AgentRecord, AgentRow } from "./desk.js";
 import { scoreOf } from "./score.js";
 import type { FactorScoreJson } from "./factorscore.js";
 import type { Erc8004Json } from "./erc8004.js";
+import type { VerifiedJson } from "./verified.js";
 import { takeHouseSeed } from "./house/house.js";
 import type { EngineDb } from "./chain/db.js";
 
@@ -119,6 +123,8 @@ export interface RecordJson {
   factorScore: FactorScoreJson | null;
   /** its ERC-8004 identity and the entries Factor wrote to its reputation; null when no identity is linked */
   erc8004: Erc8004Json | null;
+  /** its owner is verified (./verified.ts): the outcome only, outside the attestation. Present while checking owners is on; null: not verified */
+  verifiedOwner?: VerifiedJson | null;
   page: string;
   badge: string;
   attestation: { signer: string; signature: Hex; digest: Hex; message: RecordMessage; issuedAt: string; expiresAt: string } | null;
@@ -138,6 +144,7 @@ export async function recordOf(o: {
   plans?: { active: number; clients: number; monthlyWei: string; monthsDelivered: number; monthsSettled: number } | null;
   factorScore?: FactorScoreJson | null;
   erc8004?: Erc8004Json | null;
+  verifiedOwner?: VerifiedJson | null;
 }): Promise<RecordJson> {
   const r: AgentRecord = o.row.record;
   const { byState, distinct } = jobCounts(o.db, o.row.address);
@@ -168,6 +175,7 @@ export async function recordOf(o: {
     plans: { active: o.plans?.active ?? 0, clients: o.plans?.clients ?? 0, monthlyWei: o.plans?.monthlyWei ?? "0", monthlyEth: formatEther(BigInt(o.plans?.monthlyWei ?? "0")), monthsDelivered: o.plans?.monthsDelivered ?? 0, monthsSettled: o.plans?.monthsSettled ?? 0 },
     factorScore: o.factorScore ?? null,
     erc8004: o.erc8004 ?? null,
+    ...(o.verifiedOwner !== undefined ? { verifiedOwner: o.verifiedOwner } : {}),
     page: `${o.site}/agents/${path}`, badge: `${o.site}/api/v1/badge/${o.row.address}`,
     attestation,
   };

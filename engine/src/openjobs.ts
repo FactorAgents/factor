@@ -46,6 +46,11 @@
 // (`until`) or is withdrawn. Such a job is always picked by its customer: Factor never picks a price for anybody. The
 // customer picks an offer by locking that offer's price, due that offer's hours after the lock, through the desk's own
 // lock; the engine links the lock only when it is an offer the agent stood by at that moment.
+//
+// Verified owners only (VERIFIED=on, ../verified.ts): the customer can post a job only agents whose owner is verified
+// may apply to or make an offer on, said in the words it signs ("who: verified owners only"). The engine holds every
+// application to it, auto-apply too, and an agent's owner must still be verified when its application or offer comes.
+// While checking owners is off, such a job takes no application at all: nobody can be shown to be verified.
 
 import { formatEther, keccak256, toHex, type Hex } from "viem";
 import { normalizeAddress, shortAddress } from "./chain/address.js";
@@ -96,7 +101,7 @@ export type PickRule = { by: "customer" } | { by: "best"; after?: number };
  * the job is open to offers: `price` is the budget no offer may go over ("0": none) and `dueHours` the longest an
  * offer may take.
  */
-export interface OpenJobText { customer: string; price: string; dueHours: number; early: boolean; title: string; brief: string; closesAt: number; pick: PickRule; at: number; offers?: boolean }
+export interface OpenJobText { customer: string; price: string; dueHours: number; early: boolean; title: string; brief: string; closesAt: number; pick: PickRule; at: number; offers?: boolean; verifiedOnly?: boolean }
 
 /** The price line of a listing: fixed, or open to offers with or without a budget. */
 export const priceWords = (p: { price: string; offers?: boolean }): string =>
@@ -119,6 +124,8 @@ export function postMessage(p: OpenJobText): string {
     `brief: ${p.brief ? keccak256(toHex(p.brief)) : "none"}`,
     `applications close: ${p.closesAt}`,
     `pick: ${pickWords(p.pick)}`,
+    // said only when it is so: every listing posted before it keeps its words, and so its number
+    ...(p.verifiedOnly ? ["who: verified owners only"] : []),
     `at: ${p.at}`,
   ].join("\n");
 }
@@ -156,6 +163,8 @@ export interface OpenJobRow {
   closed_at: number | null; close_signature: string | null; hidden: number;
   /** 1: open to offers. `price` is then the budget, "0" for none */
   offers: number; locked_wei: string | null;
+  /** 1: only agents whose owner is verified may apply (../verified.ts) */
+  verified_only: number;
 }
 export interface ApplicationRow { open_id: string; agent: string; pitch: string; signed_at: number; signature: string; applied_at: number; bid_wei: string | null; bid_hours: number | null; bid_until: number | null; changes: number }
 /** An offer that no longer stands: replaced by a newer one, or withdrawn. Kept, so a lock made while it stood is still its. */
@@ -231,6 +240,7 @@ const ADDED: [table: string, column: string, kind: string][] = [
   ["open_job_applications", "bid_hours", "INTEGER"],
   ["open_job_applications", "bid_until", "INTEGER"],
   ["open_job_applications", "changes", "INTEGER NOT NULL DEFAULT 0"],
+  ["open_jobs", "verified_only", "INTEGER NOT NULL DEFAULT 0"],
 ];
 
 export class OpenJobStore {
@@ -275,8 +285,9 @@ export class OpenJobStore {
     return (this.db.q("SELECT COUNT(*) AS n FROM open_job_applications WHERE open_id = ?").get(id) as { n: number }).n;
   }
 
-  list(o: { customer?: string; agent?: string; limit?: number } = {}): OpenJobRow[] {
+  list(o: { customer?: string; agent?: string; limit?: number; verifiedOnly?: boolean } = {}): OpenJobRow[] {
     const where = ["hidden = 0"], args: unknown[] = [];
+    if (o.verifiedOnly) where.push("verified_only = 1");
     if (o.customer) { where.push("customer = ?"); args.push(o.customer); }
     if (o.agent) { where.push("id IN (SELECT open_id FROM open_job_applications WHERE agent = ?)"); args.push(o.agent); }
     return this.db.q(`SELECT * FROM open_jobs WHERE ${where.join(" AND ")} ORDER BY created_at DESC LIMIT ?`).all(...args, o.limit ?? 200) as OpenJobRow[];
@@ -319,6 +330,10 @@ export interface ApplicantJson {
   offer?: { priceWei: string; priceEth: number; burnWei: string; dueHours: number; until?: string; ended?: boolean; changes: number };
   /** the words the agent signed, and the signature: on one listing's own answer */
   signed?: { message: string; signature: string };
+  /** whether its owner is verified now (../verified.ts): only while checking owners is on */
+  verifiedOwner?: boolean;
+  /** when it was checked, while it is verified */
+  verifiedAt?: string;
 }
 
 export interface OpenJobJson {
@@ -353,6 +368,8 @@ export interface OpenJobJson {
   job?: { n: number; id: string; lockTx: string; burnEth: number; priceEth: number };
   count: number;
   most: number;
+  /** only agents whose owner is verified may apply (../verified.ts) */
+  verifiedOnly?: boolean;
   applicants: ApplicantJson[];
   /** the words the customer signed, and the signature: on one listing's own answer */
   signed?: { message: string; signature: string; by: string };
@@ -402,6 +419,8 @@ export interface OpenJobDeps {
   auto?: () => { allow(agent: string, row: OpenJobRow, o?: { replacing?: boolean }): string | null; applied(open: string, agent: string, rank: number, of: number, offer?: Offer): void; appliedTo(open: string): Set<string> } | null;
   /** the least an agent takes a job for, and where that is said: its auto-apply rules, or what Factor takes a job of its own for. null: nothing said */
   floorOf?: (agent: string) => { wei: bigint; why: string } | null;
+  /** verified owners (../verified.ts), or null while checking owners is off */
+  verified?: () => { isVerified(agent: string): boolean; json(agent: string): { checkedAt: string } | null } | null;
 }
 
 export class OpenJobs {
@@ -440,7 +459,12 @@ export class OpenJobs {
   }
 
   textOf(row: OpenJobRow): OpenJobText {
-    return { customer: row.customer, price: row.price, dueHours: row.due_hours, early: !!row.early, title: row.title, brief: row.brief, closesAt: row.closes_at, pick: this.ruleOf(row), at: row.signed_at, ...(row.offers ? { offers: true } : {}) };
+    return { customer: row.customer, price: row.price, dueHours: row.due_hours, early: !!row.early, title: row.title, brief: row.brief, closesAt: row.closes_at, pick: this.ruleOf(row), at: row.signed_at, ...(row.offers ? { offers: true } : {}), ...(row.verified_only ? { verifiedOnly: true } : {}) };
+  }
+
+  /** Whether a job for verified owners only can be posted now: checking owners is on. */
+  verifiedOn(): boolean {
+    return !!this.d.verified?.();
   }
 
   /**
@@ -536,7 +560,10 @@ export class OpenJobs {
       pick = { by: "best", ...(after ? { after } : {}) };
     } else return no(400, "pick is \"customer\" (the customer picks) or \"best\" (Factor picks the best Factor Score)");
     if (offers && pick.by !== "customer") return no(400, "a job open to offers is picked by its customer: Factor never picks a price for anybody");
-    const p: OpenJobText = { customer, price, dueHours, early: body.early, title, brief, closesAt, pick, at, ...(offers ? { offers: true } : {}) };
+    if (body.verifiedOnly !== undefined && typeof body.verifiedOnly !== "boolean") return no(400, "verifiedOnly is true or false: whether only agents whose owner is verified may apply");
+    const verifiedOnly = body.verifiedOnly === true;
+    if (verifiedOnly && !this.verifiedOn()) return no(503, "verified owners are switched off for now: post the job open to every agent");
+    const p: OpenJobText = { customer, price, dueHours, early: body.early, title, brief, closesAt, pick, at, ...(offers ? { offers: true } : {}), ...(verifiedOnly ? { verifiedOnly: true } : {}) };
     let ok = false;
     try {
       ok = await this.d.signed(customer, postMessage(p), body.signature);
@@ -551,9 +578,9 @@ export class OpenJobs {
       if (this.store.get(id)) return { status: 200, body: { ok: true, open: id, created: false } };
       const live = this.store.list({ customer }).filter((r) => ["open", "choosing", "picked"].includes(this.status(r, t))).length;
       if (live >= this.d.cfg.perCustomer) return no(429, `a customer has ${this.d.cfg.perCustomer} open jobs at once at most: close one first`);
-      db.q("INSERT INTO open_jobs (id, customer, price, due_hours, early, title, brief, closes_at, pick, pick_after, signed_at, signature, via, created_at, offers) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-        .run(id, customer, price, dueHours, p.early ? 1 : 0, title, brief, closesAt, pick.by, pick.by === "best" ? pick.after ?? null : null, at, String(body.signature), via, db.now(), offers ? 1 : 0);
-      return { status: 200, body: { ok: true, open: id, created: true, burnWei: offers ? "0" : this.d.burnFor(BigInt(price)).toString(), ...(offers ? { offers: true } : {}) } };
+      db.q("INSERT INTO open_jobs (id, customer, price, due_hours, early, title, brief, closes_at, pick, pick_after, signed_at, signature, via, created_at, offers, verified_only) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+        .run(id, customer, price, dueHours, p.early ? 1 : 0, title, brief, closesAt, pick.by, pick.by === "best" ? pick.after ?? null : null, at, String(body.signature), via, db.now(), offers ? 1 : 0, verifiedOnly ? 1 : 0);
+      return { status: 200, body: { ok: true, open: id, created: true, burnWei: offers ? "0" : this.d.burnFor(BigInt(price)).toString(), ...(offers ? { offers: true } : {}), ...(verifiedOnly ? { verifiedOnly: true } : {}) } };
     });
   }
 
@@ -568,6 +595,8 @@ export class OpenJobs {
     if (!this.d.db.q("SELECT 1 FROM desk_agents WHERE address = ?").get(agent)) return "that agent has not registered on the desk";
     if (agent === row.customer) return "a customer cannot apply for its own job";
     if (this.d.sameHand(agent, row.customer)) return "that agent is run by the same hand as the customer, so the job would only make records";
+    // fails closed: with checking owners off, nobody is verified
+    if (row.verified_only && !this.d.verified?.()?.isVerified(agent)) return "this job takes only agents whose owner is verified: the owner verifies on the agent's page first";
     return null;
   }
 
@@ -883,6 +912,7 @@ export class OpenJobs {
     const st = this.status(row, t, ranked.length);
     const house = this.d.house(), hosted = this.d.hosted();
     const autos = this.d.auto?.()?.appliedTo(row.id) ?? new Set<string>();
+    const ver = this.d.verified?.() ?? null;
     const picked = row.picked_agent;
     const applicants: ApplicantJson[] = ranked.map((x, i) => {
       const r = x.record;
@@ -894,6 +924,7 @@ export class OpenJobs {
         pitch: x.app.pitch, appliedAt: iso(x.app.signed_at), ...(picked === x.app.agent ? { picked: true } : {}), ...(autos.has(x.app.agent) ? { auto: true } : {}),
         ...(offer ? { offer: { priceWei: offer.priceWei, priceEth: ethNum(offer.priceWei), burnWei: this.d.burnFor(BigInt(offer.priceWei)).toString(), dueHours: offer.dueHours, ...(offer.until !== null ? { until: iso(offer.until) } : {}), ...(this.ended(offer, t) ? { ended: true } : {}), changes: x.app.changes ?? 0 } } : {}),
         ...(o.full ? { signed: { message: applyMessage({ open: row.id, agent: x.app.agent, pitch: x.app.pitch, at: x.app.signed_at, ...(offer ? { offer } : {}) }), signature: x.app.signature } } : {}),
+        ...(ver ? ((v) => ({ verifiedOwner: !!v, ...(v ? { verifiedAt: v.checkedAt } : {}) }))(ver.json(x.app.agent)) : {}),
       };
     });
     const why = st === "open" ? (ranked.length >= this.d.cfg.maxApplicants ? `${this.d.cfg.maxApplicants} agents have applied: the job takes no more` : null) : this.noteOf(row, st, ranked.length);
@@ -908,15 +939,15 @@ export class OpenJobs {
       ...(st === "choosing" || st === "picked" ? { lockBy: iso(this.lockBy(row)) } : {}),
       ...(picked && row.picked_by ? { picked: { ...this.named(picked), by: row.picked_by as "factor" | "customer", at: iso(row.picked_at ?? row.signed_at) } } : {}),
       ...(row.job_id !== null ? { job: { n: row.job_id, id: pad(row.job_id), lockTx: row.lock_tx ?? "", burnEth: ethNum(row.burn_wei), priceEth: ethNum(this.lockedPrice(row)) } } : {}),
-      count: ranked.length, most: this.d.cfg.maxApplicants, applicants,
+      count: ranked.length, most: this.d.cfg.maxApplicants, ...(row.verified_only ? { verifiedOnly: true } : {}), applicants,
       ...(o.full ? { signed: { message: postMessage(this.textOf(row)), signature: row.signature, by: row.customer } } : {}),
     };
   }
 
   /** Listings for a board: open ones (taking applications, or waiting on the customer's lock), or all of them. */
-  list(o: { show?: "open" | "all"; customer?: string; agent?: string; limit?: number } = {}): OpenJobJson[] {
+  list(o: { show?: "open" | "all"; customer?: string; agent?: string; limit?: number; verifiedOnly?: boolean } = {}): OpenJobJson[] {
     const t = this.d.nowS();
-    const rows = this.store.list({ customer: o.customer, agent: o.agent, limit: o.show === "all" || o.customer || o.agent ? o.limit ?? 100 : 500 });
+    const rows = this.store.list({ customer: o.customer, agent: o.agent, verifiedOnly: o.verifiedOnly, limit: o.show === "all" || o.customer || o.agent ? o.limit ?? 100 : 500 });
     const out: OpenJobJson[] = [];
     for (const row of rows) {
       const j = this.json(row, { t });

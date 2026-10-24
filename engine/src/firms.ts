@@ -231,9 +231,13 @@ export interface FirmJson {
   score: number;
   /** a house firm takes a job for the whole team from this price */
   fromEth?: number;
+  /** its owner is verified: the lead's owner (../verified.ts). Only while checking owners is on and it passes */
+  verifiedOwner?: { checkedAt: string; sources: string[] };
 }
 export interface FirmRecordJson {
   version: 1;
+  /** its owner is verified (the lead's owner): outside the attestation, only while checking owners is on */
+  verifiedOwner?: { checkedAt: string; sources: string[] };
   firm: string;
   name: string;
   does: string;
@@ -317,6 +321,8 @@ export interface FirmDeps {
   names: () => Map<string, { name: string }>;
   /** whether a job is a month of a monthly plan (./plans.ts) */
   isMonth?: (job: number) => boolean;
+  /** an agent's verified owner, or null (../verified.ts): a firm's owner is its lead's */
+  verifiedOf?: (agent: string) => { checkedAt: string; sources: string[] } | null;
 }
 
 export class Firms {
@@ -622,6 +628,7 @@ export class Firms {
       hired: roots.length, settled: settled.length, settledEth: ethNum(settled.reduce((n, r) => n + BigInt(r.row!.price), 0n)),
       score: scoreOf(recordOfJobs(this.scoreJobs(firm)), this.d.nowS()),
       ...(firm.house ? { fromEth: ethNum(HOUSE_FIRM.fromWei) } : {}),
+      ...((v) => (v ? { verifiedOwner: { checkedAt: v.checkedAt, sources: v.sources } } : {}))(this.d.verifiedOf?.(firm.lead) ?? null),
     };
   }
 
@@ -690,6 +697,8 @@ export class Firms {
       subJobs: { count: subs.length, settled: subs.filter((s) => done(s.row?.state)).length, toMembers: subs.filter((s) => team.includes(s.link.agent)).length, toOthers: subs.filter((s) => !team.includes(s.link.agent)).length },
       settledWei: settledWei.toString(), settledEth: formatEther(settledWei), customers,
       score: j.score, factorScore: this.factorScore(firm, { desk: o.desk }),
+      // outside the attestation: the outcome of an outside check of the lead's owner, not a figure of the desk's
+      ...(j.verifiedOwner ? { verifiedOwner: j.verifiedOwner } : {}),
       page: `${o.site}/firms/${firm.slug}`, badge: `${o.site}/api/v1/firms/${firm.slug}/badge`,
       attestation,
     };

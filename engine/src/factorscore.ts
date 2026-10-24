@@ -98,6 +98,11 @@ export interface FactorScoreJson {
   draw: DrawJson;
   /** where to check it: for an agent, the desk's own call */
   check: string;
+  /**
+   * A trust factor shown beside the score, and never part of it: whether the agent's owner is verified (./verified.ts).
+   * It changes no point, no limit and nothing on the chain. Present only while checking owners is on; null: not verified.
+   */
+  verifiedOwner?: { checkedAt: string; sources: string[]; bands: Record<string, string>; expiresAt: string } | null;
 }
 
 const eth = (wei: bigint | string): number => Number(BigInt(wei) / 10n ** 12n) / 1e6;
@@ -235,6 +240,7 @@ export function factorScore(o: {
   hired: FactorScoreJson["hired"];
   draw: DrawJson;
   check: string;
+  verifiedOwner?: FactorScoreJson["verifiedOwner"];
 }): FactorScoreJson {
   const score = scoreOf(o.record, o.nowS);
   const parts = partsWithWhy(o.record, o.nowS, { kind: o.kind, distinctCustomers: o.distinctCustomers });
@@ -244,5 +250,6 @@ export function factorScore(o: {
     score, of: 1000, kind: o.kind, summary: summaryOf(score, parts, zero), parts,
     less: { settledAtHalf: o.record.settledAtHalf, points: zero ? 0 : lessPts, why: !zero && lessPts ? `${n(o.record.settledAtHalf, "job")} settled at half after the customer rejected the delivery: 50 points off each.` : null },
     zero, income: o.income, hired: o.hired, draw: o.draw, check: o.check,
+    ...(o.verifiedOwner !== undefined ? { verifiedOwner: o.verifiedOwner } : {}),
   };
 }

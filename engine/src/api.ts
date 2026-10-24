@@ -26,6 +26,9 @@
 //   POST /v1/openjobs/withdraw  an agent takes back its offer on a job open to offers (BIDS=on)
 //   GET  /v1/autoapply/<agent>  an agent's auto-apply rules, its log, and the open jobs it may apply to now (autoapply.ts)
 //   POST /v1/autoapply/rules    an agent's owner signs its auto-apply rules
+//   GET  /v1/verified           verified owners: whether owners are checked, by which services, and what is kept (verified.ts)
+//   GET  /v1/verified/<agent>   an agent's verified owner, and the wallets that may verify it
+//   POST /v1/verified/check     the owner signs with its wallet, and Factor checks that wallet at once
 //
 // Every GET is answered from the database (the last reading of the chain, the ledger, the engine's copy of each
 // job and agent), so a burst of visitors costs the node nothing. Before the contracts are given, and whenever the
@@ -64,6 +67,7 @@ import type { FirmJson, Firms } from "./firms.js";
 import type { Plans, PlansSummaryJson } from "./plans.js";
 import type { OpenJobs } from "./openjobs.js";
 import type { AutoApply } from "./autoapply.js";
+import type { Verified, VerifiedJson, VerifiedAbout } from "./verified.js";
 
 export interface Answer {
   status: number;
@@ -112,6 +116,8 @@ export interface EngineView {
   openjobs?: OpenJobs | null;
   /** auto-apply (./autoapply.ts) */
   autoapply?: AutoApply | null;
+  /** verified owners (./verified.ts) */
+  verified?: Verified | null;
 }
 
 /** How a job came to its agent (./factorscore.ts), from the engine's links between jobs. */
@@ -219,6 +225,8 @@ export interface AgentJson {
   barred: boolean;
   score: number;
   scoreParts: { name: string; value: string; points: number; max: number }[];
+  /** its owner is verified (./verified.ts): only while checking owners is on and it passes. Never said when it does not */
+  verifiedOwner?: VerifiedJson;
 }
 export interface EventJson { n: number; at: string; kind: string; jobId?: string; agentId?: string; text: string; amount: string; tx: string; demo?: boolean; /** the Desk's reason for an advance */ why?: string }
 export interface BurnJson { n: number; at: string; eth: number; tokens: number; tx: string }
@@ -284,6 +292,8 @@ export interface FactorState {
   openJobs: { enabled: boolean; maxApplicants: number; open: number; applicants: number; hired: number; bids: boolean };
   /** auto-apply: whether agents can apply to open jobs on their own, how many have it on, and how often they applied */
   autoApply: { enabled: boolean; agents: number; applied: number; perAgentHour: number };
+  /** verified owners: whether owners can be checked now, by which services, and how many agents' owners are verified */
+  verified: VerifiedAbout & { agents: number };
 }
 export interface RosterJson { name: string; does: string; needs: string; delivers: string; fromEth: number; asksAModel: boolean; /** the Desk's opening file on it */ file?: { text: string; at: string } }
 // what Factor's own agents are, said the same before the launch and after it
@@ -341,6 +351,8 @@ interface Names {
   /** the jobs that are demonstrations */
   demoJobs?: Set<number>;
   service?: (address: string) => AgentJson["service"] | null;
+  /** an agent's verified owner, or null (./verified.ts) */
+  verified?: (address: string) => VerifiedJson | null;
 }
 const nameOf = (names: Names, address: string | null): string => (address ? (names.profiles.get(address)?.name ?? shortAddress(address)) : "an agent");
 
@@ -357,6 +369,7 @@ export function agentJson(row: AgentRow, names: Names, nowS: number): AgentJson 
     advancesRepaid: r.advancesRepaid, advancesMissed: r.advancesNotRepaid + r.earlyKept, barred: r.barred, score: scoreOf(r, nowS),
     scoreParts: scoreParts(r, nowS).map((s) => (s.name.startsWith("Fees") ? { ...s, value: ethText(s.value) } : s)),
     ...(names.desk?.("file", row.address) ? { file: names.desk("file", row.address)! } : {}),
+    ...((v) => (v ? { verifiedOwner: v } : {}))(names.verified?.(row.address) ?? null),
   };
 }
 
@@ -499,7 +512,7 @@ export class EngineApi {
       if (from && this.tooMany(from, "openjobs-get", 600)) return { status: 429, body: { error: "too many requests: try again in a minute" } };
       const v = this.view();
       const ttl = v.config.params.apiCacheMs;
-      const key = `${path}?${["show", "agent", "customer", "limit"].map((k) => `${k}=${(query.get(k) ?? "").slice(0, 64)}`).join("&")}`;
+      const key = `${path}?${["show", "agent", "customer", "limit", "verified"].map((k) => `${k}=${(query.get(k) ?? "").slice(0, 64)}`).join("&")}`;
       if (v.openjobs && v.state === "running" && v.openjobs.pickDue() > 0) this.cache.clear();
       const hit = this.cache.get(key);
       if (hit && ttl > 0 && Date.now() - hit.at < ttl) return hit.answer;
@@ -509,6 +522,11 @@ export class EngineApi {
         this.cache.set(key, { at: Date.now(), answer });
       }
       return answer;
+    }
+    // verified owners: whether they are on, and one agent's outcome. Read from the database only: no service is asked
+    if (path === "/v1/verified" || path.startsWith("/v1/verified/")) {
+      if (from && this.tooMany(from, "openjobs-get", 600)) return { status: 429, body: { error: "too many requests: try again in a minute" } };
+      return this.verifiedGet(this.view(), path);
     }
     // an agent's auto-apply rules and log, kept a few seconds like the rest
     if (path.startsWith("/v1/autoapply/")) {
@@ -605,6 +623,7 @@ export class EngineApi {
         plans: this.plansOf(v, { agent: row.address }),
         factorScore: this.factorScoreOf(v, r, row),
         erc8004: v.erc8004?.json(row.address) ?? null,
+        ...(v.verified?.on() ? { verifiedOwner: v.verified.json(row.address) } : {}),
       }) as unknown as Record<string, unknown>);
     }
     return null;
@@ -697,7 +716,8 @@ export class EngineApi {
       const customer = normalizeAddress(query.get("customer")) ?? undefined;
       const agent = normalizeAddress(query.get("agent")) ?? (query.get("agent") ? v.profiles?.byName(query.get("agent")!) ?? undefined : undefined);
       const limit = Math.min(Math.max(Number(query.get("limit")) || 100, 1), 200);
-      return ok({ enabled: v.config.openJobs.enabled, maxApplicants: v.config.openJobs.maxApplicants, items: o.list({ show: query.get("show") === "all" ? "all" : "open", customer, agent, limit }) });
+      const verifiedOnly = query.get("verified") === "1" && !!v.verified?.on();
+      return ok({ enabled: v.config.openJobs.enabled, maxApplicants: v.config.openJobs.maxApplicants, ...(verifiedOnly ? { verifiedOnly: true } : {}), items: o.list({ show: query.get("show") === "all" ? "all" : "open", customer, agent, limit, verifiedOnly }) });
     }
     const m = /^\/v1\/openjobs\/(0x[0-9a-f]{64})$/.exec(path);
     if (!m) return null;
@@ -719,6 +739,31 @@ export class EngineApi {
     if (!address || !r.store.agent(address)) return notFound("no such agent: it has not registered on the desk");
     const factor = new Set([...v.config.houseAgents, ...(v.house?.addresses() ?? []), ...(v.house?.hostedAddresses().keys() ?? [])]);
     return ok(v.autoapply.json(address, { runBy: factor.has(address) ? "factor" : "self" }) as unknown as Record<string, unknown>);
+  }
+
+  // Verified owners (./verified.ts): what is checked, and one agent's outcome with the wallets that may ask for it.
+  private verifiedGet(v: EngineView, path: string): Answer | null {
+    const ver = v.verified;
+    if (path === "/v1/verified") return ok(ver ? (ver.about() as unknown as Record<string, unknown>) : { enabled: false });
+    const m = /^\/v1\/verified\/([0-9a-zA-Z-]{3,42})$/.exec(path);
+    if (!m) return null;
+    const r = this.running(v);
+    if (!ver || !r) return { status: 503, body: { error: "the engine is not reading the chain yet" } };
+    const address = normalizeAddress(m[1]) ?? v.profiles?.byName(m[1]!) ?? null;
+    if (!address || !r.store.agent(address)) return notFound("no such agent: it has not registered on the desk");
+    const on = ver.on();
+    return ok({ enabled: on, agent: address, owners: on ? ver.ownersOf(address) : [], verifiedOwner: on ? ver.json(address) : null });
+  }
+
+  // The owner signs, and its wallet is checked (./verified.ts).
+  private async verifiedPost(body: unknown, from: string): Promise<Answer> {
+    const v = this.view();
+    if (!v.verified || v.state !== "running") return { status: 503, body: { error: "the engine is not reading the chain yet" } };
+    if (!body || typeof body !== "object" || Array.isArray(body)) return { status: 400, body: { error: "the body is not a JSON object" } };
+    if (this.tooMany(from, "verified", 12)) return { status: 429, body: { error: "too many requests: try again in a minute" } };
+    const a = await v.verified.check(body as Record<string, unknown>);
+    if (a.status === 200) this.cache.clear();
+    return a;
   }
 
   // An agent's owner signs its auto-apply rules.
@@ -901,6 +946,7 @@ export class EngineApi {
     if (path === "/v1/accounts" || path.startsWith("/v1/accounts/")) return this.accountsPost(path, body, from);
     if (path === "/v1/agents/make" || path === "/v1/agents/pause") return this.hostedPost(path, body, from);
     if (path === "/v1/erc8004/link") return this.erc8004Post(body, from);
+    if (path === "/v1/verified/check") return this.verifiedPost(body, from);
     if (path !== "/v1/agents/profile" && path !== "/v1/jobs/title" && path !== "/v1/jobs/brief" && path !== "/v1/jobs/delivery" && path !== "/v1/admin/hide" && path !== "/v1/admin/switch") return null;
     const v = this.view();
     if ((!v.profiles || v.state !== "running") && path === "/v1/agents/profile" && v.launchList && body && typeof body === "object" && !Array.isArray(body)) {
@@ -947,7 +993,7 @@ export class EngineApi {
 
   private names(v: EngineView): Names {
     const d = v.deskMind;
-    return { desk: d ? (kind, subject) => { const n = d.latest(kind, subject); return n ? { text: n.text, at: new Date(n.at).toISOString() } : null; } : undefined, profiles: v.profiles?.all() ?? new Map(), house: new Set([...v.config.houseAgents, ...(v.house?.addresses() ?? [])]), hosted: v.house?.hostedAddresses() ?? new Map(), demoJobs: this.demoJobs(v), service: (a) => v.house?.serviceOf(a) ?? null };
+    return { desk: d ? (kind, subject) => { const n = d.latest(kind, subject); return n ? { text: n.text, at: new Date(n.at).toISOString() } : null; } : undefined, profiles: v.profiles?.all() ?? new Map(), house: new Set([...v.config.houseAgents, ...(v.house?.addresses() ?? [])]), hosted: v.house?.hostedAddresses() ?? new Map(), demoJobs: this.demoJobs(v), service: (a) => v.house?.serviceOf(a) ?? null, verified: v.verified?.on() ? (a) => v.verified!.json(a) : undefined };
   }
 
   /** The jobs whose customer is Factor's own demonstration customer (./house/demo.ts). */
@@ -1069,6 +1115,8 @@ export class EngineApi {
       hired: { parts: out.length, settled: out.filter((x) => x.state === STATE.settled || x.state === STATE.half).length, valueWei: value.toString(), valueEth: eth(value) },
       draw: drawOf(row.record, income),
       check: `score(${row.address}) on the desk, ${r.ctx.addr.desk}`,
+      // a trust factor shown beside the number: never part of it, of the limit, or of anything on the chain
+      ...(v.verified?.on() ? { verifiedOwner: v.verified.json(row.address) } : {}),
     });
   }
 
@@ -1251,7 +1299,9 @@ export class EngineApi {
     const openTotals = v.openjobs && v.state === "running" ? v.openjobs.totals() : { open: 0, applicants: 0, hired: 0 };
     const openJobs = { enabled: !!v.openjobs && c.openJobs.enabled && v.state === "running", maxApplicants: c.openJobs.maxApplicants, ...openTotals, bids: !!v.openjobs && v.state === "running" && v.openjobs.offersOn() };
     const autoApply = { enabled: !!v.autoapply && v.autoapply.working() && openJobs.enabled, perAgentHour: c.autoApply.perAgentHour, ...(v.autoapply && v.state === "running" ? v.autoapply.totals() : { agents: 0, applied: 0 }) };
-    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused, roster: this.rosterJson(v), hosted, pulse: pulseJson(v, 8), desk: this.deskJson(v), signups, activity, pay, subjobs, firms, plans, erc8004, openJobs, autoApply };
+    const verifiedOn = !!v.verified && v.state === "running" && v.verified.on();
+    const verified = { ...(v.verified && verifiedOn ? v.verified.about() : { enabled: false, checks: [], needs: c.verified.needs, validDays: Math.round(c.verified.validS / 86_400), how: "", kept: "" }), agents: verifiedOn ? v.verified!.all().size : 0 };
+    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused, roster: this.rosterJson(v), hosted, pulse: pulseJson(v, 8), desk: this.deskJson(v), signups, activity, pay, subjobs, firms, plans, erc8004, openJobs, autoApply, verified };
     if (!r) {
       return { ...base, launched: false, stats: { advancedEth: 0, settledJobs: 0, jobs: 0, poolEth: 0, reserveEth: 0, outEth: 0, heldEth: 0, burnedTokens: 0, supplyLeft: SUPPLY, agents: 0, demoJobs: 0, lostEth: 0, poolFromTradingEth: 0 }, burn: null, agents: [], jobs: [], events: [], burns: [] };
     }

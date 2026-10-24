@@ -43,6 +43,7 @@ import { OpenJobs } from "./openjobs.js";
 import { AutoApply } from "./autoapply.js";
 import { recordSigner, type RecordSigner } from "./record.js";
 import { Erc8004 } from "./erc8004.js";
+import { providersOf, Verified, type Provider } from "./verified.js";
 import { sourceOf } from "./api.js";
 import { snapshotOf } from "./chain/context.js";
 
@@ -55,6 +56,7 @@ export interface EngineOptions {
   pollMs?: number; // how often a sent transaction's receipt is asked for
   manual?: boolean; // no loops: the caller runs each pass itself (tests)
   houseSigners?: (name: string) => HouseSigner; // instead of the keys made from the seed (tests)
+  verifiedProviders?: Provider[]; // instead of Human Passport and Talent Protocol (tests)
 }
 
 const ZERO = "0x0000000000000000000000000000000000000000";
@@ -115,6 +117,8 @@ export class Engine {
   openjobs: OpenJobs | null = null;
   /** auto-apply (./autoapply.ts): agents that apply to open jobs on their own, under rules their owners signed */
   autoapply: AutoApply | null = null;
+  /** verified owners (./verified.ts): an agent's owner wallet checked by Human Passport and Talent Protocol */
+  verified: Verified | null = null;
   /** the splitter's admin, read at the boot check: Factor's own wallet, which sets the rules of Factor's own agents */
   private splitterAdmin: string | null = null;
   /** the key that signs agents' records for other apps (./record.ts), or null */
@@ -177,7 +181,7 @@ export class Engine {
     for (const [name, l] of this.loops) loops[name] = { lastRunAt: l.lastRunAt, lastOkAt: l.lastOkAt, runs: l.runs, failures: l.failures, waitMs: l.waitMs, backingOff: l.backingOff };
     return {
       config: this.config, state: this.state, problems: this.problems, warnings: this.warnings, lastError: this.lastError, loops, ctx: this.ctx, rpc: this.chain?.health() ?? null, now: this.now,
-      links: { pons: link(this.env.FACTOR_PONS_URL), github: link(this.env.FACTOR_GITHUB_URL), x: link(this.env.FACTOR_X_URL) }, dataDirSet: !!this.env.FACTOR_DATA_DIR?.trim(), profiles: this.profiles, gateway: this.gateway, accounts: this.accounts, house: this.house, demo: this.demo, pulse: this.pulse, deskMind: this.deskMind, launchList: this.launchList, activity: this.activity, matcher: this.matcher, pay: this.pay, subjobs: this.subjobs, recordSigner: this.recordSigner, firms: this.firms, plans: this.plans, erc8004: this.erc8004, openjobs: this.openjobs, autoapply: this.autoapply,
+      links: { pons: link(this.env.FACTOR_PONS_URL), github: link(this.env.FACTOR_GITHUB_URL), x: link(this.env.FACTOR_X_URL) }, dataDirSet: !!this.env.FACTOR_DATA_DIR?.trim(), profiles: this.profiles, gateway: this.gateway, accounts: this.accounts, house: this.house, demo: this.demo, pulse: this.pulse, deskMind: this.deskMind, launchList: this.launchList, activity: this.activity, matcher: this.matcher, pay: this.pay, subjobs: this.subjobs, recordSigner: this.recordSigner, firms: this.firms, plans: this.plans, erc8004: this.erc8004, openjobs: this.openjobs, autoapply: this.autoapply, verified: this.verified,
     };
   }
 
@@ -223,7 +227,7 @@ export class Engine {
   /** Counts of what a page shows beside the state (a job's brief, title and work; links; sub-jobs; months of plans; ERC-8004 links and entries). */
   private extraCounts(): string {
     const out: string[] = [];
-    for (const t of ["job_titles", "job_briefs", "job_deliveries", "pay_links", "subjobs", "plan_months", "firm_members", "hosted_agents", "erc8004_links", "erc8004_entries", "open_jobs", "open_job_applications", "open_job_offers_past", "autoapply_rules", "autoapply_log"]) {
+    for (const t of ["job_titles", "job_briefs", "job_deliveries", "pay_links", "subjobs", "plan_months", "firm_members", "hosted_agents", "erc8004_links", "erc8004_entries", "open_jobs", "open_job_applications", "open_job_offers_past", "autoapply_rules", "autoapply_log", "verified_owners"]) {
       try {
         const r = this.sqlite.prepare(`SELECT COUNT(*) AS n, IFNULL(MAX(rowid), 0) AS m FROM ${t}`).get() as { n: number; m: number };
         out.push(`${r.n}:${r.m}`);
@@ -372,6 +376,7 @@ export class Engine {
       family: (root) => this.subjobs!.store.family(root),
       names: () => this.profiles!.all(),
       isMonth: (job) => !!this.plans?.store.byJob(job),
+      verifiedOf: (agent) => this.verified?.json(agent) ?? null,
     });
     // plans are read whether or not they are on, so a plan's page still shows after it is switched off
     this.plans = new Plans({
@@ -405,6 +410,8 @@ export class Engine {
       auto: () => { const x = this.autoapply; return x ? { allow: (agent, row, o) => x.allow(agent, row, o), applied: (open, agent, rank, of, offer) => x.applied(open, agent, rank, of, offer), appliedTo: (open) => x.store.appliedTo(open) } : null; },
       // every offer is held to the agent's own lowest price (./autoapply.ts)
       floorOf: (agent) => this.autoapply?.floorOf(agent) ?? null,
+      // verified owners (./verified.ts): null while it is off, and then nothing about it shows or is asked
+      verified: () => (this.verified?.on() ? this.verified : null),
     });
     if (c.openJobs.enabled) this.log(`[openjobs] on: customers can post open jobs, up to ${c.openJobs.maxApplicants} agents apply to each, ranked by Factor Score`);
     if (c.openJobs.enabled && c.openJobs.bids) this.log(`[openjobs] offers on: a job can be open to offers, and each agent names its own price and time`);
@@ -444,17 +451,31 @@ export class Engine {
       token: () => this.ctx?.facts.token ?? null,
       live: () => this.ctx?.mode === "live" && !!this.ctx.signer && this.state === "running", now: this.now, log: this.log,
     });
+    // who signs for an agent besides itself: an agent made on the site is set by its maker; Factor's own by Factor's admin wallet
+    const setters = (agent: string): string[] => { const maker = this.house?.ownerOf(agent); if (maker) return [maker]; const admin = c.admin ?? this.splitterAdmin; return admin && houseSet().has(agent) ? [admin] : []; };
     // auto-apply: made whether or not it is on, so an agent's rules and its log still show after it is switched off
     this.autoapply = new AutoApply({
       cfg: c.autoApply, db, nowS, now: this.now, openjobs: () => this.openjobs,
       signed: async (address, message, signature) => this.profiles!.signed(address, message, signature),
       runners: () => this.house?.runners() ?? new Map(),
       // an agent made on the site is set by its maker; Factor's own by Factor's admin wallet
-      setters: (agent) => { const maker = this.house?.ownerOf(agent); if (maker) return [maker]; const admin = c.admin ?? this.splitterAdmin; return admin && houseSet().has(agent) ? [admin] : []; },
+      setters,
       live: () => this.ctx?.mode === "live" && !!this.ctx.signer && this.state === "running",
       offersOn: () => !!this.openjobs?.offersOn(),
       names: () => this.profiles!.all(), log: this.log,
     });
+    // verified owners: made whether or not it is on, and asks nothing of anybody while it is off
+    this.verified = new Verified({
+      cfg: c.verified, db, now: this.now, log: this.log, setters,
+      providers: c.verified.enabled ? (this.opts.verifiedProviders ?? providersOf(c.verified, this.env)) : [],
+      signed: async (address, message, signature) => this.profiles!.signed(address, message, signature),
+    });
+    const checks = this.verified.sources();
+    if (c.verified.enabled && !checks.length) this.log(`[verified] NOT ON: ${c.verified.note ?? "no check can run"}`);
+    else if (c.verified.enabled) {
+      this.log(`[verified] on: owners are checked by ${checks.map((x) => (x === "passport" ? "Human Passport" : "Talent Protocol")).join(" and ")}${c.verified.fake.on ? " (the local stand-in)" : ""}, ${c.verified.needs === "all" ? "all must pass" : "one passing is enough"}`);
+      if (c.verified.note) this.log(`[verified] WARNING: ${c.verified.note}`);
+    }
     if (c.autoApply.enabled) this.log(`[autoapply] on: agents apply to open jobs on their own, ${c.autoApply.perAgentHour} an hour each and ${c.autoApply.perHour} in all at most`);
     if (c.house.demo.enabled) this.log(`[demo] on: a demonstration job every ${c.house.demo.everyS / 60} minutes, each marked as Factor's own`);
     if (c.house.hosted.enabled) this.log(`[house] people can make agents here: ${c.house.hosted.perOwner} for one address, ${c.house.hosted.most} in all`);
@@ -635,6 +656,8 @@ export class Engine {
     try { this.openjobs?.pickDue(); } catch (e) { this.log(`[openjobs] picking failed: ${e instanceof Error ? e.message : String(e)}`); }
     // agents with auto-apply on look at the open jobs, and those Factor runs apply (./autoapply.ts)
     try { if ((await this.autoapply?.pass()) && this.api) this.api.forget(); } catch (e) { this.log(`[autoapply] the pass failed: ${e instanceof Error ? e.message : String(e)}`); }
+    // owners whose outcome is old are checked again, a few at a time (./verified.ts). Never waited on: a slow service holds nothing up
+    if (this.verified?.on()) void this.verified.pass().then((n) => { if (n) this.api.forget(); }).catch((e: unknown) => this.log(`[verified] the pass failed: ${e instanceof Error ? e.message : String(e)}`));
     if (this.config.rehearsalClock) {
       const offset = pass.head.timestamp * 1000 - Date.now();
       if (Math.abs(offset - this.clockOffset) > 2000) this.clockOffset = offset;

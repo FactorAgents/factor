@@ -33,7 +33,7 @@ const P = ETH / 25n;
 
 // every key the site's type has (web/src/lib/types.ts), so a change on one side is noticed on the other
 function expectShape(s: FactorState): void {
-  expect(Object.keys(s).sort()).toEqual(["accounts", "activity", "agents", "asOf", "autoApply", "burn", "burns", "compute", "contracts", "desk", "erc8004", "events", "firms", "hosted", "jobs", "launched", "links", "openJobs", "params", "paused", "pay", "plans", "pulse", "roster", "signups", "source", "stats", "subjobs"]);
+  expect(Object.keys(s).sort()).toEqual(["accounts", "activity", "agents", "asOf", "autoApply", "burn", "burns", "compute", "contracts", "desk", "erc8004", "events", "firms", "hosted", "jobs", "launched", "links", "openJobs", "params", "paused", "pay", "plans", "pulse", "roster", "signups", "source", "stats", "subjobs", "verified"]);
   // Factor's own agents are said in every answer, before the launch and after: fifteen, each with what it takes a job for
   const roster = (s as unknown as { roster: { name: string; does: string; fromEth: number }[] }).roster;
   expect(roster).toHaveLength(15);
