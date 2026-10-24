@@ -226,6 +226,26 @@ describe("the owner's signature", () => {
   });
 });
 
+describe("the Factor Score", () => {
+  it("shows a verified owner beside the score and never in it: the number, the parts and what it can draw are the same", async () => {
+    const r = await desk({ providers: [stand("passport", { [A1]: 25 })] });
+    const settled = r.chain.lock(BUYER, A1, ETH / 25n);
+    r.chain.deliver(settled);
+    r.chain.accept(settled);
+    await r.engine.watchOnce();
+    const before = await get(r, `/v1/agents/${A1}`);
+    expect(before.factorScore.verifiedOwner).toBeNull();
+    await verify(r);
+    const after = await get(r, `/v1/agents/${A1}`);
+    expect(after.factorScore.verifiedOwner).toMatchObject({ sources: ["Human Passport"] });
+    const strip = (x: Body) => { const { verifiedOwner: _v, ...rest } = x; return rest; };
+    expect(strip(after.factorScore)).toEqual(strip(before.factorScore));
+    expect(after.agent.score).toBe(before.agent.score);
+    expect(after.agent.limitEth).toBe(before.agent.limitEth);
+    expect((await get(r, `/v1/record/${A1}`)).attestation?.message?.score ?? after.agent.score).toBe(before.agent.score);
+  });
+});
+
 describe("a firm", () => {
   it("is verified when its owner is: the lead's", async () => {
     const r = await desk({ providers: [stand("passport", { [A1]: 25 })], more: { FIRMS: "on" } });

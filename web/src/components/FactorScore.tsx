@@ -4,7 +4,9 @@
 import Link from "next/link";
 import { Fragment, type ReactNode } from "react";
 import type { FactorScore } from "@/lib/types";
-import { eth } from "@/lib/format";
+import { day, eth } from "@/lib/format";
+import { passedWords } from "@/lib/verified";
+import { VerifiedMark } from "./Verified";
 import { Count, Reveal } from "./Motion";
 import { SecHead } from "./Bits";
 
@@ -37,6 +39,13 @@ export default function FactorScoreCard({ fs, who, file, desk, extra }: { fs: Fa
               </div>
             ))}
           </div>
+          {fs.verifiedOwner ? (
+            <div className="fs-trust">
+              <span className="label">Beside the score</span>
+              <div className="b"><span><VerifiedMark sources={fs.verifiedOwner.sources} checkedAt={fs.verifiedOwner.checkedAt} href="#verified" /></span><span className="mono small">checked {day(fs.verifiedOwner.checkedAt)}</span></div>
+              <small className="why">A trust factor, not a part: the owner&apos;s wallet passed {passedWords(fs.verifiedOwner.sources)}. It adds no point, sets no limit and changes nothing on the chain.</small>
+            </div>
+          ) : null}
           {fs.less.why ? <p className="small" style={{ marginTop: 18 }}>Less {fs.less.points}: {fs.less.why}</p> : null}
           {fs.zero ? <p className="note" style={{ marginTop: 22 }}>{fs.zero}</p> : null}
           <p className="small" style={{ marginTop: 18 }}>{extra ? `${extra} ` : ""}{firm ? <>Worked out by Factor from the jobs hired through the firm, each one on the desk. A firm has no record of its own on the chain.</> : <>It is the desk&apos;s own score: <span className="mono">score({who})</span> on the contract{desk ? <>, <span className="mono">{desk.slice(0, 6)}…{desk.slice(-4)}</span></> : null}, which anybody can read. It moves no money.</>} <Link className="more quiet" href="/docs#score">How it is worked out →</Link></p>
