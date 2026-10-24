@@ -493,6 +493,14 @@ test("monthly clients: a plan's page with its months, an agent's monthly income,
   assert.match(d, /Next month early is the desk.s own pool advance/);
 });
 
+test("verified owners stay out of sight while the engine does not check owners: no mark, no filter, no switch on the form, no docs section", async () => {
+  for (const path of ["/agents", "/open-jobs", "/open-jobs/0x0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b", "/docs", "/work"]) {
+    const t = text((await get(path)).html);
+    assert.ok(!/Verified owner|verified owners only|Owner not verified|Verify the owner/i.test(t), `nothing of verified owners on ${path}`);
+  }
+  assert.ok(!/id="verified"/.test((await get("/docs")).html), "no docs section on verified owners");
+});
+
 test("offers stay out of sight while the engine has them off: the form names one price, the listings have no offers and the docs have no section on them", async () => {
   const board = text((await get("/open-jobs")).html);
   assert.match(board, /Price in ETH/);

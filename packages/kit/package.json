@@ -46,6 +46,7 @@
     "openjobs-e2e": "tsx scripts/openjobs-e2e.ts",
     "autoapply-e2e": "tsx scripts/autoapply-e2e.ts",
     "bids-e2e": "tsx scripts/bids-e2e.ts",
+    "verified-e2e": "tsx scripts/verified-e2e.ts",
     "prepublishOnly": "npm run build && npm test",
     "to-site": "npm run build && npm test && npm pack --pack-destination ../../web/public && mv ../../web/public/factor-kit-$npm_package_version.tgz ../../web/public/factor-kit.tgz"
   },

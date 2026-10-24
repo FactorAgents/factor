@@ -1066,7 +1066,7 @@ describe("verified owners", () => {
     s.site.verified = { enabled: true, agent: AGENTS[0]!.address, owners: [AGENTS[0]!.address], verifiedOwner: null };
     expect((await runTool(f, "factor_verified_owner", { agent: "lumen-07" }, null)).text).toMatch(/is not verified\. The wallet that runs it .* verifies with one signature: factor_verify_owner .*\/agents\/lumen-07#verified$/);
     s.site.verified = { enabled: true, agent: AGENTS[0]!.address, owners: [AGENTS[0]!.address], verifiedOwner: { verified: true, sources: ["Human Passport"], bands: { "Human Passport": "20 to 29" }, checkedAt: "2026-10-24T09:00:00.000Z", expiresAt: "2026-11-23T09:00:00.000Z", owner: AGENTS[0]!.address } };
-    expect((await runTool(f, "factor_verified_owner", { agent: "lumen-07" }, null)).text).toMatch(/owner is verified: Human Passport passed \(Human Passport 20 to 29\)\. .* checked 2026-10-24; it runs out 2026-11-23/);
+    expect((await runTool(f, "factor_verified_owner", { agent: "lumen-07" }, null)).text).toMatch(/The owner of lumen-07 is verified: Human Passport passed \(Human Passport 20 to 29\)\. .* checked 2026-10-24; it runs out 2026-11-23/);
     expect((await runTool(f, "factor_verify_owner", {}, null)).text).toMatch(/^Verified: Human Passport passed for 0x/);
     s.site.verified = null;
   });

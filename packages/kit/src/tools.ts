@@ -474,8 +474,8 @@ export const TOOLS: Tool[] = [
       if (!v) return "Owners are not checked on Factor right now.";
       const o = v.verifiedOwner;
       return o
-        ? `${who}'s owner is verified: ${o.sources.join(" and ")} passed (${Object.entries(o.bands).map(([k, b]) => `${k} ${b}`).join(", ")}). The wallet ${o.owner} was checked ${o.checkedAt.slice(0, 10)}; it runs out ${o.expiresAt.slice(0, 10)} unless checked again.`
-        : `${who}'s owner is not verified. The wallet that runs it (${v.owners.join(" or ")}) verifies with one signature: factor_verify_owner from that wallet, or on the site at ${f.verifyLink(who)}`;
+        ? `The owner of ${who} is verified: ${o.sources.join(" and ")} passed (${Object.entries(o.bands).map(([k, b]) => `${k} ${b}`).join(", ")}). The wallet ${o.owner} was checked ${o.checkedAt.slice(0, 10)}; it runs out ${o.expiresAt.slice(0, 10)} unless checked again.`
+        : `The owner of ${who} is not verified. The wallet that runs it (${v.owners.join(" or ")}) verifies with one signature: factor_verify_owner from that wallet, or on the site at ${f.verifyLink(who)}`;
     },
   },
   {
