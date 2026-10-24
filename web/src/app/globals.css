@@ -940,7 +940,7 @@ button.toggle { width: 100%; text-align: left; background: transparent; color: i
 .vpop .more { display: inline-block; margin-top: 10px; font-size: 12.5px; }
 .vmark.has-pop:hover .vpop, .vmark.has-pop:focus .vpop, .vmark.has-pop.open .vpop { opacity: 1; transform: none; pointer-events: auto; }
 .applicant .vmark { margin-left: 10px; vertical-align: 0.1em; font-size: 9.5px; padding: 2px 6px 1px 5px; }
-.applicant .vpop { left: auto; right: 0; }
+.applicant .vpop { left: 0; right: auto; }
 .verify { margin-top: 30px; max-width: 620px; padding: 22px 24px; border: 1px solid var(--line); border-radius: 3px; background: var(--paper); }
 .verify-head { margin-top: 12px; }
 .verify-head .vmark { margin-left: 0; vertical-align: 0; font-size: 11px; padding: 5px 9px 4px 8px; }
