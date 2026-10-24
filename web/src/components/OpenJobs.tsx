@@ -26,7 +26,7 @@ const STANDS: [string, number][] = [["Until I withdraw it", 0], ["24 hours", 24]
 type SortBy = "score" | "price" | "fast";
 
 /** The form a customer posts an open job with. Signed, costs nothing, and nothing is locked. */
-export function PostJob({ desk, explorer, params, paused = false, enabled, bids = false }: { desk: string | null; explorer: string; params: Params; paused?: boolean; enabled: boolean; bids?: boolean }) {
+export function PostJob({ desk, explorer, params, paused = false, enabled, bids = false, verified = false }: { desk: string | null; explorer: string; params: Params; paused?: boolean; enabled: boolean; bids?: boolean; verified?: boolean }) {
   const { address, wallet } = useWallet();
   const { status, run, busy } = useSend();
   const [title, setTitle] = useState("");
@@ -39,6 +39,8 @@ export function PostJob({ desk, explorer, params, paused = false, enabled, bids 
   const [early, setEarly] = useState(false);
   const [offersMode, setOffers] = useState(false);
   const [budget, setBudget] = useState("");
+  const [onlyVerified, setOnlyVerified] = useState(false);
+  const vOnly = verified && onlyVerified;
   const offers = bids && offersMode;
   const wei = offers ? (budget.trim() ? toWei(budget) : 0n) : toWei(price);
   const tooSmall = wei !== null && (!offers || wei > 0n) && wei < (toWei(String(params.minJobEth)) ?? 0n);
@@ -57,7 +59,7 @@ export function PostJob({ desk, explorer, params, paused = false, enabled, bids 
     on("signing");
     const at = await engineNow();
     const closesAt = at + Math.max(closes * 3600, 3600 + 120);
-    const made = await signPost(p, { customer: address, price: wei.toString(), dueHours: due, early, title: text, brief: details, closesAt, pick, at, ...(offers ? { offers: true } : {}) });
+    const made = await signPost(p, { customer: address, price: wei.toString(), dueHours: due, early, title: text, brief: details, closesAt, pick, at, ...(offers ? { offers: true } : {}), ...(vOnly ? { verifiedOnly: true } : {}) });
     setTitle("");
     setBrief("");
     return { note: made.created ? (offers ? "The job is posted. Agents can make offers now, and nothing is locked until you pick one." : "The job is posted. Agents can apply now, and nothing is locked until you pick one.") : "This job was posted already.", href: `/open-jobs/${made.open}`, hrefText: "Open the listing" };
@@ -129,6 +131,12 @@ export function PostJob({ desk, explorer, params, paused = false, enabled, bids 
           </select>
         </label>
       ) : null}
+      {verified ? (
+        <button type="button" className={`toggle${onlyVerified ? "" : " off"}`} role="switch" aria-checked={onlyVerified} onClick={() => setOnlyVerified((v) => !v)} disabled={busy}>
+          <i />
+          <div><b>Verified owners only</b><span>Only agents whose owner passed Human Passport or Talent Protocol can {offers ? "make an offer" : "apply"}. Factor holds every {offers ? "offer" : "application"} to it, including those agents make on their own.</span></div>
+        </button>
+      ) : null}
       <button type="button" className={`toggle${early ? "" : " off"}`} role="switch" aria-checked={early} onClick={() => setEarly((v) => !v)} disabled={busy}>
         <i />
         <div><b>Let the agent have half early</b><span>{`Up to ${offers ? "half of the offer you pick" : `${half} ETH`} goes to the agent you pick as soon as it asks. If it does not deliver, that part is not refunded. Leave this off and the agent can only be advanced by the pool, which never touches what you locked.`}</span></div>
@@ -153,6 +161,9 @@ export function Applicants({ job: j, desk, burnPot, explorer, enabled, bids = tr
   const { address, wallet, kind } = useWallet();
   const { status, run, busy } = useSend();
   const [by, setBy] = useState<SortBy>("score");
+  const [onlyVerified, setOnlyVerified] = useState(false);
+  // owners are checked when the engine says so of each applicant: only then is there anything to filter by
+  const checking = j.applicants.some((a) => a.verifiedOwner !== undefined);
   const isCustomer = !!address && address === j.customer.toLowerCase();
   const lockable = !j.job && (j.status === "open" || j.status === "choosing" || j.status === "picked");
   const factorPick = j.picked?.by === "factor" ? j.picked.address : null;
@@ -170,20 +181,29 @@ export function Applicants({ job: j, desk, burnPot, explorer, enabled, bids = tr
   });
 
   if (!j.applicants.length) return <p className="small" style={{ padding: "22px 0", borderTop: "1px solid var(--line)", borderBottom: "1px solid var(--line)" }}>{j.status === "open" ? (offers ? "No offer yet. Registered agents make one with a signature: their own price and time, shown here beside their Factor Score." : "Nobody has applied yet. Registered agents apply with one signature, and each is ranked here by its Factor Score.") : (offers ? "Nobody made an offer." : "Nobody applied.")}</p>;
-  const list = offers ? sorted(j.applicants, by) : j.applicants;
-  const top = offers && by !== "score" ? list[0]?.address : j.applicants[0]?.address;
+  const all = offers ? sorted(j.applicants, by) : j.applicants;
+  const list = checking && onlyVerified ? all.filter((a) => a.verifiedOwner) : all;
+  const top = (offers && by !== "score") || onlyVerified ? list[0]?.address : j.applicants[0]?.address;
   return (
     <div>
-      {offers ? (
+      {offers || checking ? (
         <div className="offer-sort">
-          <span className="label">Sort the offers</span>
-          <div className="modes three" role="group" aria-label="Sort the offers">
-            <button type="button" aria-pressed={by === "score"} onClick={() => setBy("score")}>Best score</button>
-            <button type="button" aria-pressed={by === "price"} onClick={() => setBy("price")}>Lowest price</button>
-            <button type="button" aria-pressed={by === "fast"} onClick={() => setBy("fast")}>Fastest</button>
-          </div>
+          {offers ? <>
+            <span className="label">Sort the offers</span>
+            <div className="modes three" role="group" aria-label="Sort the offers">
+              <button type="button" aria-pressed={by === "score"} onClick={() => setBy("score")}>Best score</button>
+              <button type="button" aria-pressed={by === "price"} onClick={() => setBy("price")}>Lowest price</button>
+              <button type="button" aria-pressed={by === "fast"} onClick={() => setBy("fast")}>Fastest</button>
+            </div>
+          </> : null}
+          {checking ? (
+            <button type="button" className={`toggle mini${onlyVerified ? "" : " off"}`} role="switch" aria-checked={onlyVerified} onClick={() => setOnlyVerified((v) => !v)}>
+              <i /><div><b>Verified owners only</b><span>{`${j.applicants.filter((a) => a.verifiedOwner).length} of ${j.applicants.length}`}</span></div>
+            </button>
+          ) : null}
         </div>
       ) : null}
+      {checking && onlyVerified && !list.length ? <p className="small" style={{ padding: "22px 0", borderTop: "1px solid var(--line)" }}>{offers ? "No offer from an agent whose owner is verified yet." : "No applicant whose owner is verified yet."}</p> : null}
       <div className={`applicants${offers ? " offers" : ""}`}>
         {list.map((a, i) => {
           const ended = !!a.offer?.ended;
@@ -356,12 +376,14 @@ export function OpenJobActions({ job: j, explorer, enabled, bids = true }: { job
       ) : j.applying && offers ? (
         <div className="act">
           <div className="h3">Make an offer</div>
+          {j.verifiedOnly ? <p className="small vonly">For agents whose owner is verified. Verify on your agent&apos;s page first, with one signature.</p> : null}
           <p className="small">Your own price and time, signed with your agent&apos;s wallet; it costs nothing. The customer sees every offer beside each agent&apos;s Factor Score. You can change it or withdraw it until it is picked.</p>
           <OfferForm j={j} enabled={enabled && bids} explorer={explorer} onDone={setSaid} />
         </div>
       ) : j.applying ? (
         <div className="act">
           <div className="h3">Apply for it</div>
+          {j.verifiedOnly ? <p className="small vonly">For agents whose owner is verified. Verify on your agent&apos;s page first, with one signature.</p> : null}
           <p className="small">One signature with your agent&apos;s wallet; it costs nothing. Applicants are ranked by their Factor Score, the same number on every agent&apos;s page.</p>
           <div className="form" style={{ marginTop: 18 }}>
             <label className="field"><span className="label">A line of your own (if you like)</span><input value={pitch} onChange={(e) => setPitch(e.target.value)} maxLength={PITCH_MOST} placeholder="Why this agent, in one line" disabled={apply.busy} /></label>
@@ -412,7 +434,7 @@ export function OpenJobsToApply({ address, explorer }: { address: string; explor
             const me = j.applicants.find((a) => a.address === address);
             return (
               <div key={j.id} className="row">
-                <Link className="what" href={`/open-jobs/${j.id}`}>{j.title}</Link>
+                <Link className="what" href={`/open-jobs/${j.id}`}>{j.title}{j.verifiedOnly ? <span className="vtag">Verified owners only</span> : null}</Link>
                 <span className="mono amt">{j.offers ? (j.budgetEth ? `up to ${eth(j.budgetEth)}` : "offers") : eth(j.priceEth)}</span>
                 <span className="end">{me ? <span className="tag go">Ranked {me.rank} of {j.count}</span> : j.applying && j.offers ? <Link className="btn line pill" href={`/open-jobs/${j.id}#apply`}>Make an offer</Link> : j.applying ? <button type="button" className="btn line pill" disabled={busy} onClick={() => void apply(j)}>Apply</button> : <span className="tag">{STATUS_WORD[j.status]}</span>}</span>
                 <span className="small sub">{j.count} {j.offers ? `offer${j.count === 1 ? "" : "s"}` : "applied"} · closes {fromNow(j.closesAt, at)}</span>

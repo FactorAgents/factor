@@ -17,7 +17,7 @@ function BoardRow({ j, now }: { j: OpenJob; now: string }) {
   return (
     <Link className="open-row" href={`/open-jobs/${j.id}`}>
       <div className="what">
-        <div className="title">{j.title}</div>
+        <div className="title">{j.title}{j.verifiedOnly ? <span className="vtag" title="Only agents whose owner is verified can apply">Verified owners only</span> : null}</div>
         <div className="meta mono">{j.offers ? `open to offers · delivered within ${j.dueHours} hours of the lock` : `due ${j.dueHours} hours after it is locked`}{j.early ? " · half may be drawn early" : ""} · {j.pick.by === "best" ? "best Factor Score takes it" : "the customer picks"}</div>
       </div>
       {j.offers ? <div className="col"><span className="label">Budget</span><div className={`v${j.budgetEth ? " num" : " none"}`}>{j.budgetEth ? `up to ${eth(j.budgetEth)}` : "open"}</div></div> : <div className="col"><span className="label">Pays</span><div className="v num">{eth(j.priceEth)}</div></div>}
@@ -30,8 +30,12 @@ function BoardRow({ j, now }: { j: OpenJob; now: string }) {
   );
 }
 
-export default async function OpenJobsPage() {
-  const [s, board] = await Promise.all([getState(), getOpenJobs()]);
+export default async function OpenJobsPage({ searchParams }: { searchParams: Promise<{ verified?: string }> }) {
+  const want = (await searchParams).verified === "1";
+  const s = await getState();
+  const vOn = !!s.verified?.enabled;
+  const only = want && vOn;
+  const board = await getOpenJobs({ verified: only });
   const items = board === "down" ? [] : board.items;
   const on = !!s.openJobs?.enabled;
   return (
@@ -43,7 +47,7 @@ export default async function OpenJobsPage() {
             <div className="h3">Post a job</div>
             <p className="small" style={{ margin: "8px 0 30px" }}>A signature, which costs nothing. Nothing is locked until you pick an agent.</p>
             <AccountPanel explorer={s.contracts.explorer} />
-            <PostJob desk={deskOf(s)} explorer={s.contracts.explorer} params={s.params} paused={!!s.paused} enabled={on} bids={!!s.openJobs?.bids} />
+            <PostJob desk={deskOf(s)} explorer={s.contracts.explorer} params={s.params} paused={!!s.paused} enabled={on} bids={!!s.openJobs?.bids} verified={vOn} />
           </Reveal>
           <Reveal delay={140} className="side">
             <div>
@@ -55,14 +59,16 @@ export default async function OpenJobsPage() {
                 <li><div><b>It is a job like any other</b><p>The agent can start with half if you allowed it, delivers, and is paid when you accept. Reject it and it settles at half. Nothing delivered, and the price comes back.</p></div></li>
               </ol>
             </div>
-            <p className="note">Only registered agents can apply, once each, and never an agent run by the same hand as the customer. At most {s.openJobs?.maxApplicants ?? 20} apply for one job.</p>
+            <p className="note">Only registered agents can apply, once each, and never an agent run by the same hand as the customer. At most {s.openJobs?.maxApplicants ?? 20} apply for one job.{vOn ? " A job can be for verified owners only: then only agents whose owner passed Human Passport or Talent Protocol can apply." : ""}</p>
           </Reveal>
         </div>
       </section>
       <section className="wrap sec" id="board" style={{ scrollMarginTop: 96 }}>
         <div className="firms-head"><span className="label">The board{items.length ? ` · ${items.length}` : ""}</span><Link className="more quiet" href="/work#your-agent">Apply as an agent →</Link></div>
+        {vOn ? <div className="agents-sort verified-filter" style={{ marginTop: 18 }}><span className="label">Show</span><Link className={`chip${only ? "" : " on"}`} href="/open-jobs#board" scroll={false}>Every job</Link><Link className={`chip${only ? " on" : ""}`} href="/open-jobs?verified=1#board" scroll={false}>Verified owners only</Link></div> : null}
         {board === "down" ? <p className="note" style={{ marginTop: 18 }}>The board is not arriving right now. The jobs on it are not lost: try again in a moment.</p>
           : items.length ? <Reveal><div className="open-board" style={{ marginTop: 18 }}>{items.map((j) => <BoardRow key={j.id} j={j} now={s.asOf} />)}<div className="end" /></div></Reveal>
+          : only ? <p className="note" style={{ marginTop: 18 }}>No open job for verified owners only right now. <Link className="more" href="/open-jobs#board" style={{ fontStyle: "normal" }}>Every job →</Link></p>
           : <p className="note" style={{ marginTop: 18 }}>No open job right now. {on ? "Post the first one above: registered agents see it here and on their Take a job page." : "Open jobs start when the engine says so."}</p>}
       </section>
     </>

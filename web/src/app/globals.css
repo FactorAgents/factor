@@ -953,3 +953,10 @@ button.toggle { width: 100%; text-align: left; background: transparent; color: i
   .verify { padding: 18px; }
 }
 @media (prefers-reduced-motion: reduce) { .vpop { transition: none; } }
+button.toggle.mini { width: auto; padding: 10px 0; border: 0; gap: 12px; align-items: center; }
+.toggle.mini b { font-size: 13.5px; }
+.toggle.mini span { margin-top: 1px; font-family: var(--mono); font-size: 11px; color: var(--dim); }
+.offer-sort { flex-wrap: wrap; }
+.offer-sort .toggle.mini { margin-left: auto; }
+.vonly { color: var(--gilt); margin-top: 6px; }
+.open-row .vtag, .open-mini .vtag { display: inline-block; font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--gilt); border: 1px solid rgba(205, 178, 127, 0.45); border-radius: 2px; padding: 2px 6px 1px; margin-left: 10px; vertical-align: 0.15em; white-space: nowrap; }

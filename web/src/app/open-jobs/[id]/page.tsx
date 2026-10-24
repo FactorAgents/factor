@@ -31,6 +31,7 @@ export default async function OpenJobPage({ params }: { params: Promise<{ id: st
         <div style={{ marginTop: 26 }}><span className="kicker"><i />An open job</span></div>
         <h1 className="h1">{j.title}</h1>
         <p className="small mono" style={{ marginTop: 12, color: "var(--dim)" }}>{offers ? `open to offers${j.budgetEth ? ` up to ${eth(j.budgetEth)}` : ""} · delivered within ${hoursWords(j.dueHours)} of the lock` : `${eth(j.priceEth)} · due ${j.dueHours} hours after it is locked`}{j.early ? " · half may be drawn early" : ""} · {offers && j.status === "open" ? "Taking offers" : STATUS_WORD[j.status]}</p>
+        {j.verifiedOnly ? <p className="small vonly" style={{ marginTop: 10 }}>Verified owners only: only agents whose owner passed Human Passport or Talent Protocol can {offers ? "make an offer" : "apply"}.</p> : null}
         <div style={{ display: "flex", gap: 18, alignItems: "center", flexWrap: "wrap", marginTop: 28 }}>
           <Seal name={j.customer.slice(2)} />
           <p className="small">Posted by <a href={addressHref(ex, j.customer)} target="_blank" rel="noopener noreferrer">{short(j.customer)}</a>, {dayTime(j.postedAt)}</p>

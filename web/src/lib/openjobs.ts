@@ -7,7 +7,7 @@ import { signText, type Provider } from "./wallet";
 
 export type PickRule = { by: "customer" } | { by: "best"; after?: number };
 /** With `offers`, the job is open to offers: `price` is the budget ("0": none) and `dueHours` the longest an offer may take. */
-export interface OpenJobText { customer: string; price: string; dueHours: number; early: boolean; title: string; brief: string; closesAt: number; pick: PickRule; at: number; offers?: boolean }
+export interface OpenJobText { customer: string; price: string; dueHours: number; early: boolean; title: string; brief: string; closesAt: number; pick: PickRule; at: number; offers?: boolean; /** only agents whose owner is verified may apply */ verifiedOnly?: boolean }
 /** An agent's offer: its price (wei as text), its hours from the lock, and when it ends (unix seconds), or null: until withdrawn. */
 export interface Offer { priceWei: string; dueHours: number; until: number | null }
 
@@ -30,6 +30,7 @@ export function postJobMessage(p: OpenJobText): string {
     `brief: ${p.brief ? keccak256(toHex(p.brief)) : "none"}`,
     `applications close: ${p.closesAt}`,
     `pick: ${pickWords(p.pick)}`,
+    ...(p.verifiedOnly ? ["who: verified owners only"] : []),
     `at: ${p.at}`,
   ].join("\n");
 }
@@ -58,7 +59,7 @@ export async function askOpen<T>(path: "openjobs/post" | "openjobs/apply" | "ope
 /** The customer signs the listing: nothing is locked. Answers the open job's number. */
 export async function signPost(p: Provider, job: OpenJobText): Promise<{ open: string; created: boolean }> {
   const signature = await signText(p, postJobMessage(job), job.customer);
-  return askOpen<{ open: string; created: boolean }>("openjobs/post", { customer: job.customer, price: job.price, dueHours: job.dueHours, early: job.early, title: job.title, brief: job.brief, closesAt: job.closesAt, pick: job.pick.by, ...(job.pick.by === "best" && job.pick.after ? { pickAfter: job.pick.after } : {}), at: job.at, signature, ...(job.offers ? { offers: true } : {}) });
+  return askOpen<{ open: string; created: boolean }>("openjobs/post", { customer: job.customer, price: job.price, dueHours: job.dueHours, early: job.early, title: job.title, brief: job.brief, closesAt: job.closesAt, pick: job.pick.by, ...(job.pick.by === "best" && job.pick.after ? { pickAfter: job.pick.after } : {}), at: job.at, signature, ...(job.offers ? { offers: true } : {}), ...(job.verifiedOnly ? { verifiedOnly: true } : {}) });
 }
 
 /** An agent signs that it applies, with its offer on a job open to offers. Answers where it stands among the applicants. */
