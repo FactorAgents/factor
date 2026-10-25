@@ -565,10 +565,11 @@ export const TOOLS: Tool[] = [
     async run(f, a, spending) {
       need(f);
       const price = toWei(String(a.price));
-      spending?.check(price, true);
+      const burn = (price + 99n) / 100n;
+      spending?.check(price + burn, true);
       if (typeof a.agent !== "string" && typeof a.firm !== "string") throw new Refusal("Name the agent, or the firm.", "no_agent");
-      const r = await f.subscribe({ ...(typeof a.firm === "string" ? { firm: a.firm } : { agent: String(a.agent) }), price, months: a.months as number, title: String(a.title), ...(typeof a.brief === "string" ? { brief: a.brief } : {}), allowEarly: a.allow_early === true });
-      spending?.add(price);
+      const r = await f.subscribe({ ...(typeof a.firm === "string" ? { firm: a.firm } : { agent: String(a.agent) }), price, months: a.months as number, title: String(a.title), ...(typeof a.brief === "string" ? { brief: a.brief } : {}), allowEarly: a.allow_early === true, maxEth: price + burn });
+      spending?.add(price + (r.burnTx ? burn : 0n));
       return `Plan ${r.plan}: month 1 of ${r.months} is locked as job ${r.jobId}, ${eth(price)} ETH${r.burned ? ", with its 1% to the burn" : ""}. ${r.linked ? "Factor linked it to the plan." : `Factor could not link it to the plan: ${r.note ?? "no answer"} The money is locked for the agent as an ordinary job.`} Plan page ${r.planUrl}. Transaction ${r.explorer}.`;
     },
   },
@@ -580,9 +581,10 @@ export const TOOLS: Tool[] = [
       const page = await f.plan(String(a.plan));
       if (!page) return `There is no plan ${String(a.plan)} on Factor.`;
       const price = BigInt(page.plan.priceWei);
-      spending?.check(price, true);
-      const r = await f.payMonth(String(a.plan));
-      spending?.add(price);
+      const burn = BigInt(page.burnWei ?? "0");
+      spending?.check(price + burn, true);
+      const r = await f.payMonth(String(a.plan), { maxEth: price + burn });
+      spending?.add(price + (r.burnTx ? burn : 0n));
       return `Month ${r.month} of ${r.months} is locked as job ${r.jobId}, ${eth(price)} ETH${r.burned ? ", with its 1% to the burn" : ""}. ${r.linked ? "Factor linked it to the plan." : `Factor could not link it to the plan: ${r.note ?? "no answer"}`} ${r.jobUrl} Transaction ${r.explorer}.`;
     },
   },
@@ -713,15 +715,16 @@ export const TOOLS: Tool[] = [
       const by = a.by === "price" || a.by === "fast" ? a.by : "score";
       // the price that will be locked: the listing's, or the offer that will be picked
       let price = BigInt(page.open.priceWei);
+      let burn = BigInt(page.open.burnWei || "0");
       if (page.open.offers) {
         const list = await f.offers(String(a.open), by);
         const want = typeof a.agent === "string" ? a.agent.toLowerCase() : null;
         const who = want ? list.find((x) => x.address === want || (x.named && x.name === a.agent)) : list.find((x) => !x.offer!.ended);
-        if (who?.offer) price = BigInt(who.offer.priceWei);
+        if (who?.offer) { price = BigInt(who.offer.priceWei); burn = BigInt(who.offer.burnWei || "0"); }
       }
-      spending?.check(price, true);
-      const r = await f.pickAgent(String(a.open), { ...(typeof a.agent === "string" ? { agent: a.agent } : {}), by });
-      spending?.add(r.priceWei);
+      spending?.check(price + burn, true);
+      const r = await f.pickAgent(String(a.open), { ...(typeof a.agent === "string" ? { agent: a.agent } : {}), by, maxEth: price + burn });
+      spending?.add(r.priceWei + (r.burnTx ? burn : 0n));
       return `Job ${r.jobId} is locked for ${r.agent}: ${eth(r.priceWei)} ETH${page.open.offers ? ", its offer" : ""}${r.burned ? ", with its 1% to the burn" : ""}. ${r.linked ? "Factor linked it to the open job." : `Factor could not link it to the open job: ${r.note ?? "no answer"} The money is locked for the agent as an ordinary job.`} ${r.jobUrl} Transaction ${r.explorer}.`;
     },
   },
