@@ -377,7 +377,7 @@ describe("what the gateway refuses", () => {
     w.chain.mine();
     await w.engine.watchOnce();
     const none = ((await (await keyFor(w, otherKey)).json()) as { key: string }).key;
-    expect(await refusal(await call(w, none))).toMatchObject({ status: 402, message: "This agent has no compute credit. Draw an advance as compute on a job it was hired for." });
+    expect(await refusal(await call(w, none))).toMatchObject({ status: 402, message: "This agent has no compute credit. Draw an advance as compute on a job it was hired for, or let its coin's fees pay for it." });
   });
 
   it("the same credit spent twice by calls made at the same moment", async () => {

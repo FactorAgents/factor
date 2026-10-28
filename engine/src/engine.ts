@@ -44,6 +44,9 @@ import { AutoApply } from "./autoapply.js";
 import { recordSigner, type RecordSigner } from "./record.js";
 import { Erc8004 } from "./erc8004.js";
 import { providersOf, Verified, type Provider } from "./verified.js";
+import { Coins } from "./coins.js";
+import { DeskStore } from "./desk.js";
+import { scoreOf } from "./score.js";
 import { sourceOf } from "./api.js";
 import { snapshotOf } from "./chain/context.js";
 
@@ -119,6 +122,8 @@ export class Engine {
   autoapply: AutoApply | null = null;
   /** verified owners (./verified.ts): an agent's owner wallet checked by Human Passport and Talent Protocol */
   verified: Verified | null = null;
+  /** agent coins (./coins.ts): every agent's own coin on Pons, read, swept and credited to its compute */
+  coins: Coins | null = null;
   /** the splitter's admin, read at the boot check: Factor's own wallet, which sets the rules of Factor's own agents */
   private splitterAdmin: string | null = null;
   /** the key that signs agents' records for other apps (./record.ts), or null */
@@ -181,7 +186,7 @@ export class Engine {
     for (const [name, l] of this.loops) loops[name] = { lastRunAt: l.lastRunAt, lastOkAt: l.lastOkAt, runs: l.runs, failures: l.failures, waitMs: l.waitMs, backingOff: l.backingOff };
     return {
       config: this.config, state: this.state, problems: this.problems, warnings: this.warnings, lastError: this.lastError, loops, ctx: this.ctx, rpc: this.chain?.health() ?? null, now: this.now,
-      links: { pons: link(this.env.FACTOR_PONS_URL), github: link(this.env.FACTOR_GITHUB_URL), x: link(this.env.FACTOR_X_URL) }, dataDirSet: !!this.env.FACTOR_DATA_DIR?.trim(), profiles: this.profiles, gateway: this.gateway, accounts: this.accounts, house: this.house, demo: this.demo, pulse: this.pulse, deskMind: this.deskMind, launchList: this.launchList, activity: this.activity, matcher: this.matcher, pay: this.pay, subjobs: this.subjobs, recordSigner: this.recordSigner, firms: this.firms, plans: this.plans, erc8004: this.erc8004, openjobs: this.openjobs, autoapply: this.autoapply, verified: this.verified,
+      links: { pons: link(this.env.FACTOR_PONS_URL), github: link(this.env.FACTOR_GITHUB_URL), x: link(this.env.FACTOR_X_URL) }, dataDirSet: !!this.env.FACTOR_DATA_DIR?.trim(), profiles: this.profiles, gateway: this.gateway, accounts: this.accounts, house: this.house, demo: this.demo, pulse: this.pulse, deskMind: this.deskMind, launchList: this.launchList, activity: this.activity, matcher: this.matcher, pay: this.pay, subjobs: this.subjobs, recordSigner: this.recordSigner, firms: this.firms, plans: this.plans, erc8004: this.erc8004, openjobs: this.openjobs, autoapply: this.autoapply, verified: this.verified, coins: this.coins,
     };
   }
 
@@ -470,6 +475,21 @@ export class Engine {
       providers: c.verified.enabled ? (this.opts.verifiedProviders ?? providersOf(c.verified, this.env)) : [],
       signed: async (address, message, signature) => this.profiles!.signed(address, message, signature),
     });
+    // agent coins: made whether or not they are on, and read nothing until AGENT_COINS=on and the launcher is given
+    this.coins = new Coins({
+      cfg: c.coins, db, chain: this.chain, chainId: c.chainId, desk: c.desk, nowS, now: this.now, log: this.log,
+      names: () => this.profiles!.all(),
+      setters,
+      signerFor: (agent) => this.house?.coinSignerFor(agent) ?? null,
+      signed: async (address, message, signature) => this.profiles!.signed(address, message, signature),
+      record: (agent) => {
+        const row = new DeskStore(db).agent(agent);
+        return row ? { score: scoreOf(row.record, nowS()), settled: row.record.settled, barred: row.record.barred, house: houseSet().has(agent), hosted: !!this.house?.hostedAddresses().has(agent) } : null;
+      },
+    });
+    this.ctx.coins = this.coins;
+    if (c.coins.enabled && c.coins.note) this.log(`[coins] NOT ON: ${c.coins.note}`);
+    else if (c.coins.enabled) this.log(`[coins] on: agents' coins are read from the launcher ${c.coins.launcher}, and a coin's fees are swept once they are worth ${c.coins.gasMultiple} times the gas`);
     const checks = this.verified.sources();
     if (c.verified.enabled && !checks.length) this.log(`[verified] NOT ON: ${c.verified.note ?? "no check can run"}`);
     else if (c.verified.enabled) {
@@ -652,6 +672,11 @@ export class Engine {
   async watchOnce(): Promise<WatchResult> {
     if (!this.ctx) throw new Error("the engine is not running");
     const pass = await watchPass(this.ctx);
+    // agents' coins: their logs, then what is read of them (./coins.ts)
+    if (this.coins?.reading()) {
+      await this.coins.watch(this.ctx, pass.head);
+      await this.coins.refresh();
+    }
     // an open job whose rule is the best Factor Score is picked as soon as its moment has come (./openjobs.ts)
     try { this.openjobs?.pickDue(); } catch (e) { this.log(`[openjobs] picking failed: ${e instanceof Error ? e.message : String(e)}`); }
     // agents with auto-apply on look at the open jobs, and those Factor runs apply (./autoapply.ts)

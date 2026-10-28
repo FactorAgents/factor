@@ -21,13 +21,17 @@
 //   verified  checking agents' owners (../verified.ts): no new check, and no outcome shown anywhere, as if it were
 //             off. Off unless VERIFIED=on, which is how it starts: this switch only stops it. Turned back on, the
 //             outcomes that have not run out show again.
+//   coins     agent coins (../coins.ts): every coin hidden, no permission signed for an agent Factor runs, and no sweep
+//             of a coin's fees by the keeper. Off unless AGENT_COINS=on, which is how it starts: this switch only stops
+//             it. The chain is still read, so what a coin pays into its agent's compute credit is never missed, and
+//             anyone can still launch a coin or sweep one on the chain itself.
 //
 // A switch is turned with POST /v1/admin/switch and the owner's key, or set at start with ENGINE_STOP (names with
 // commas between them). It is kept in the database, so it holds across a restart until it is turned back.
 
 import type { EngineDb } from "./chain/db.js";
 
-export const SWITCHES = ["keeper", "accounts", "compute", "house", "hiring", "erc8004", "autoapply", "bids", "verified"] as const;
+export const SWITCHES = ["keeper", "accounts", "compute", "house", "hiring", "erc8004", "autoapply", "bids", "verified", "coins"] as const;
 export type Switch = (typeof SWITCHES)[number];
 const key = (name: Switch) => `switch:${name}`;
 

@@ -18,6 +18,7 @@
 
 import { concat, keccak256, toHex, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
+import type { PermissionTypedData } from "../coins.js";
 import type { Accounts, Call, Key } from "../accounts.js";
 import { deskCall, KIND, orderTypedData } from "../accounts.js";
 import { normalizeAddress } from "../chain/address.js";
@@ -113,10 +114,12 @@ export interface HouseSigner {
   signTypedData(typed: ReturnType<typeof orderTypedData>): Promise<Hex>;
   /** plain words, signed: what a hire by Factor's own firm carries (./firm.ts) */
   signMessage?(message: string): Promise<Hex>;
+  /** the agent's permission for its maker to launch its coin (../coins.ts) */
+  signTyped?(typed: PermissionTypedData): Promise<Hex>;
 }
 export function houseSigner(seed: Hex, name: string): HouseSigner {
   const account = privateKeyToAccount(keccak256(concat([seed, toHex(`factor house agent ${name}`)])));
-  return { address: account.address.toLowerCase(), signTypedData: (typed) => account.signTypedData(typed), signMessage: (message) => account.signMessage({ message }) };
+  return { address: account.address.toLowerCase(), signTypedData: (typed) => account.signTypedData(typed), signMessage: (message) => account.signMessage({ message }), signTyped: (typed) => account.signTypedData(typed) };
 }
 
 type State = "waiting" | "worked" | "delivering" | "delivered" | "to_decline" | "declining" | "declined" | "gave_up";
@@ -264,6 +267,16 @@ export class House {
       out.set(a.address, { address: a.address, name: a.service.name, floorWei: a.service.floorWei, refuses: (brief) => a.service.refuses(brief), paused, sign: (m) => sign(m) });
     }
     return out;
+  }
+
+  /**
+   * The key that signs as an agent Factor runs, once it is on the desk: an agent's permission for its maker to launch
+   * its coin is signed with it, and the agent's account says yes to that signature (ERC-1271). Null for any other.
+   */
+  coinSignerFor(address: string): { signTyped: (typed: PermissionTypedData) => Promise<Hex> } | null {
+    const a = this.agents.find((x) => x.address === address && x.setUp);
+    const sign = a?.signer.signTyped;
+    return sign ? { signTyped: (typed) => sign(typed) } : null;
   }
 
   /** The house agents' addresses on the desk, as far as they are known yet. */

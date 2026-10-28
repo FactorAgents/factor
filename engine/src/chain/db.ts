@@ -185,6 +185,7 @@ CREATE TABLE IF NOT EXISTS compute_lots (
   state TEXT NOT NULL DEFAULT 'open',-- open: the job is not closed. kept: the agent's own. closed: all taken back
   back_wei TEXT NOT NULL DEFAULT '0',-- unspent ETH the pool took back when the job was refunded at a loss
   back_tx TEXT,
+  source TEXT NOT NULL DEFAULT 'advance', -- advance: a compute advance on a job. coin: the agent's coin paid it (../coins.ts)
   PRIMARY KEY (tx_hash, log_index)
 );
 CREATE INDEX IF NOT EXISTS compute_lots_agent ON compute_lots (agent, block);
@@ -317,6 +318,78 @@ CREATE TABLE IF NOT EXISTS house_jobs (
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
+-- Agent coins (../coins.ts): each coin the launcher made, as its launch log says it, and what is read of it since.
+CREATE TABLE IF NOT EXISTS coins (
+  agent TEXT PRIMARY KEY,
+  coin TEXT NOT NULL UNIQUE,
+  splitter TEXT NOT NULL UNIQUE,
+  curve TEXT NOT NULL,
+  maker TEXT NOT NULL,
+  by_signature INTEGER NOT NULL,
+  opening_eth TEXT NOT NULL,
+  opening_tokens TEXT NOT NULL,
+  block INTEGER NOT NULL,
+  at INTEGER NOT NULL,
+  tx_hash TEXT NOT NULL,
+  name TEXT,                         -- read from the coin itself; null until it is read
+  symbol TEXT,
+  logo TEXT,
+  listed INTEGER NOT NULL DEFAULT 0, -- its name keeps the rule (../coins.ts): only then is it shown on Factor
+  state TEXT NOT NULL DEFAULT '{}',  -- JSON: what the splitter, the escrow and Pons hold for it, read at the head
+  state_at INTEGER NOT NULL DEFAULT 0,  -- ms
+  holders INTEGER NOT NULL DEFAULT 0,
+  holders_dirty INTEGER NOT NULL DEFAULT 1,
+  checked_at INTEGER NOT NULL DEFAULT 0, -- ms: when the keeper last asked what a sweep would move
+  swept_at INTEGER NOT NULL DEFAULT 0,   -- the chain's time of the keeper's last sweep of it
+  retried_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS coins_block ON coins (block);
+-- Each split of a coin's fees.
+CREATE TABLE IF NOT EXISTS coin_splits (
+  tx_hash TEXT NOT NULL,
+  log_index INTEGER NOT NULL,
+  block INTEGER NOT NULL,
+  at INTEGER NOT NULL,
+  agent TEXT NOT NULL,
+  amount TEXT NOT NULL,
+  to_compute TEXT NOT NULL,
+  to_maker TEXT NOT NULL,
+  to_burn TEXT NOT NULL,
+  to_owner TEXT NOT NULL,
+  pushed INTEGER NOT NULL,           -- every share was delivered as it was split
+  PRIMARY KEY (tx_hash, log_index)
+);
+CREATE INDEX IF NOT EXISTS coin_splits_agent ON coin_splits (agent, block);
+CREATE INDEX IF NOT EXISTS coin_splits_block ON coin_splits (block);
+-- Each trade of a coin: a buy or a sell on its curve, or a swap in its pool after graduation.
+CREATE TABLE IF NOT EXISTS coin_trades (
+  tx_hash TEXT NOT NULL,
+  log_index INTEGER NOT NULL,
+  block INTEGER NOT NULL,
+  at INTEGER NOT NULL,
+  agent TEXT NOT NULL,
+  side TEXT NOT NULL,                -- buy or sell
+  eth TEXT NOT NULL,                 -- the ETH that went in (a buy) or came out (a sell)
+  tokens TEXT NOT NULL,
+  who TEXT NOT NULL,                 -- for whom, on the curve; the swapping contract, in the pool
+  venue TEXT NOT NULL,               -- curve or pool
+  PRIMARY KEY (tx_hash, log_index)
+);
+CREATE INDEX IF NOT EXISTS coin_trades_agent ON coin_trades (agent, block);
+CREATE INDEX IF NOT EXISTS coin_trades_block ON coin_trades (block);
+-- Each transfer of a coin: who holds it is worked out from these.
+CREATE TABLE IF NOT EXISTS coin_transfers (
+  tx_hash TEXT NOT NULL,
+  log_index INTEGER NOT NULL,
+  block INTEGER NOT NULL,
+  agent TEXT NOT NULL,
+  src TEXT NOT NULL,
+  dst TEXT NOT NULL,
+  value TEXT NOT NULL,
+  PRIMARY KEY (tx_hash, log_index)
+);
+CREATE INDEX IF NOT EXISTS coin_transfers_agent ON coin_transfers (agent);
+CREATE INDEX IF NOT EXISTS coin_transfers_block ON coin_transfers (block);
 CREATE TABLE IF NOT EXISTS job_titles (
   job_id INTEGER PRIMARY KEY,
   title TEXT NOT NULL,
@@ -326,7 +399,7 @@ CREATE TABLE IF NOT EXISTS job_titles (
 );
 `;
 
-export type ActionKind = "sweep" | "retry_split" | "claim_token" | "burn" | "settle_job" | "refund_job" | "collect" | "return_compute" | "skim" | "relay" | "erc8004" | "unstick";
+export type ActionKind = "sweep" | "retry_split" | "claim_token" | "burn" | "settle_job" | "refund_job" | "collect" | "return_compute" | "skim" | "relay" | "erc8004" | "coin_sweep" | "unstick";
 export type ActionStatus = "dry" | "signed" | "sent" | "done" | "failed" | "replaced";
 
 export interface ActionRow {
@@ -358,7 +431,7 @@ export interface EventRow {
 }
 
 // The tables a stretch of blocks writes to, all keyed by block: what a reorg or a reindex takes back.
-const BY_BLOCK = ["chain_events", "chain_splits", "chain_burns", "ledger", "desk_advances"];
+const BY_BLOCK = ["chain_events", "chain_splits", "chain_burns", "ledger", "desk_advances", "coins", "coin_splits", "coin_trades", "coin_transfers"];
 
 export class EngineDb {
   readonly holder = randomBytes(6).toString("hex"); // this process, for the locks
@@ -369,6 +442,9 @@ export class EngineDb {
     readonly now: () => number = Date.now,
   ) {
     db.exec(SCHEMA);
+    // compute credit that an agent's coin paid for, beside the credit advances paid for: a column added later
+    const lots = db.prepare("PRAGMA table_info(compute_lots)").all() as { name: string }[];
+    if (!lots.some((c) => c.name === "source")) db.exec("ALTER TABLE compute_lots ADD COLUMN source TEXT NOT NULL DEFAULT 'advance'");
   }
 
   private sql(text: string): Database.Statement {

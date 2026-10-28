@@ -17,6 +17,9 @@
 //                   with this wallet paying the gas. First in every pass: somebody is waiting for it.
 //   erc8004         a settled job of an agent linked to an ERC-8004 identity: one entry written to the agent's
 //                   reputation in the standard's registry (../erc8004.ts). Last in every pass: nobody waits on it.
+//   coin_sweep      an agent's coin has gathered fees worth the gas: its splitter's sweep() collects and splits them,
+//                   and its retry() delivers a share a wallet refused (../coins.ts). Right after $FACTOR's own sweep,
+//                   so the burn share it sends to the burn pot is burned in the same pass.
 //
 // Every attempt goes the same way (attempt(), below): the lock, a last simulation of exactly the call that would
 // be sent, the gas against its cap, the gas price against its cap, then in dry mode a record of what would have
@@ -40,7 +43,7 @@ import type { ActionKind, ActionRow } from "./db.js";
 import { ponsEscrowAbi } from "./pons.js";
 
 export type SendKind = Exclude<ActionKind, "unstick">;
-export const KINDS: SendKind[] = ["relay", "sweep", "retry_split", "claim_token", "burn", "settle_job", "refund_job", "collect", "return_compute", "skim", "erc8004"];
+export const KINDS: SendKind[] = ["relay", "sweep", "coin_sweep", "retry_split", "claim_token", "burn", "settle_job", "refund_job", "collect", "return_compute", "skim", "erc8004"];
 // In dry mode nothing changes on the chain, so a trigger stays true: what would be sent is shown again this often.
 export const DRY_REPEAT_S = 1800;
 const BPS = 10_000n;
@@ -789,9 +792,19 @@ async function writeErc8004(ctx: Ctx, head: Head): Promise<string> {
   return say(ctx, "erc8004", `${did}${left ? `, ${left} more waiting` : ""}${note ? ` (${note})` : ""}`, { lastAt: wrote + shown > 0 ? head.timestamp : st.lastAt, fails: 0, nextAt: 0, tx });
 }
 
+// ---------- agent coins ----------
+
+// What an agent's coin has gathered, collected and split once it is worth the gas (../coins.ts decides; the attempt is
+// the same as every other one here).
+async function coinSweep(ctx: Ctx, head: Head): Promise<string> {
+  if (!ctx.coins) return say(ctx, "coin_sweep", "agent coins are not switched on");
+  return say(ctx, "coin_sweep", await ctx.coins.step(ctx, head, (kind, ref, call, detail, feeCap, pre) => attempt(ctx, kind, ref, call, detail, feeCap, pre)));
+}
+
 const STEPS: [SendKind, (ctx: Ctx, head: Head) => Promise<string>][] = [
   ["relay", relay],
   ["sweep", sweep],
+  ["coin_sweep", coinSweep],
   ["retry_split", retrySplit],
   ["claim_token", claimToken],
   ["burn", burn],

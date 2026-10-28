@@ -29,6 +29,9 @@
 //   GET  /v1/verified           verified owners: whether owners are checked, by which services, and what is kept (verified.ts)
 //   GET  /v1/verified/<agent>   an agent's verified owner, and the wallets that may verify it
 //   POST /v1/verified/check     the owner signs with its wallet, and Factor checks that wallet at once
+//   GET  /v1/coins?sort=fees|new   agents' coins (coins.ts); /v1/coins/about whether they are on and what a launch costs
+//   GET  /v1/coins/<id>         one coin, by its agent (address or name) or its own address
+//   POST /v1/coins/permission   the maker of an agent Factor runs asks for the agent's permission to launch its coin
 //
 // Every GET is answered from the database (the last reading of the chain, the ledger, the engine's copy of each
 // job and agent), so a burst of visitors costs the node nothing. Before the contracts are given, and whenever the
@@ -68,6 +71,7 @@ import type { Plans, PlansSummaryJson } from "./plans.js";
 import type { OpenJobs } from "./openjobs.js";
 import type { AutoApply } from "./autoapply.js";
 import type { Verified, VerifiedJson, VerifiedAbout } from "./verified.js";
+import type { CoinJson, Coins } from "./coins.js";
 
 export interface Answer {
   status: number;
@@ -118,6 +122,8 @@ export interface EngineView {
   autoapply?: AutoApply | null;
   /** verified owners (./verified.ts) */
   verified?: Verified | null;
+  /** agent coins (./coins.ts) */
+  coins?: Coins | null;
 }
 
 /** How a job came to its agent (./factorscore.ts), from the engine's links between jobs. */
@@ -227,6 +233,8 @@ export interface AgentJson {
   scoreParts: { name: string; value: string; points: number; max: number }[];
   /** its owner is verified (./verified.ts): only while checking owners is on and it passes. Never said when it does not */
   verifiedOwner?: VerifiedJson;
+  /** its own coin (./coins.ts): only while coins are on and its coin is listed */
+  coin?: { coin: string; symbol: string };
 }
 export interface EventJson { n: number; at: string; kind: string; jobId?: string; agentId?: string; text: string; amount: string; tx: string; demo?: boolean; /** the Desk's reason for an advance */ why?: string }
 export interface BurnJson { n: number; at: string; eth: number; tokens: number; tx: string }
@@ -294,6 +302,8 @@ export interface FactorState {
   autoApply: { enabled: boolean; agents: number; applied: number; perAgentHour: number };
   /** verified owners: whether owners can be checked now, by which services, and how many agents' owners are verified */
   verified: VerifiedAbout & { agents: number };
+  /** agent coins (./coins.ts): whether they are on, the launcher, how many are listed, and the newest few */
+  coins: { enabled: boolean; launcher: string | null; count: number; items: CoinJson[] };
 }
 export interface RosterJson { name: string; does: string; needs: string; delivers: string; fromEth: number; asksAModel: boolean; /** the Desk's opening file on it */ file?: { text: string; at: string } }
 // what Factor's own agents are, said the same before the launch and after it
@@ -353,6 +363,8 @@ interface Names {
   service?: (address: string) => AgentJson["service"] | null;
   /** an agent's verified owner, or null (./verified.ts) */
   verified?: (address: string) => VerifiedJson | null;
+  /** an agent's own coin, or null (./coins.ts) */
+  coin?: (address: string) => { coin: string; symbol: string } | null;
 }
 const nameOf = (names: Names, address: string | null): string => (address ? (names.profiles.get(address)?.name ?? shortAddress(address)) : "an agent");
 
@@ -370,6 +382,7 @@ export function agentJson(row: AgentRow, names: Names, nowS: number): AgentJson 
     scoreParts: scoreParts(r, nowS).map((s) => (s.name.startsWith("Fees") ? { ...s, value: ethText(s.value) } : s)),
     ...(names.desk?.("file", row.address) ? { file: names.desk("file", row.address)! } : {}),
     ...((v) => (v ? { verifiedOwner: v } : {}))(names.verified?.(row.address) ?? null),
+    ...((c) => (c ? { coin: c } : {}))(names.coin?.(row.address) ?? null),
   };
 }
 
@@ -527,6 +540,21 @@ export class EngineApi {
     if (path === "/v1/verified" || path.startsWith("/v1/verified/")) {
       if (from && this.tooMany(from, "openjobs-get", 600)) return { status: 429, body: { error: "too many requests: try again in a minute" } };
       return this.verifiedGet(this.view(), path);
+    }
+    // agents' coins: the list, what a launch needs, and one coin's page, kept a few seconds like the rest
+    if (path === "/v1/coins" || path.startsWith("/v1/coins/")) {
+      if (from && this.tooMany(from, "coins-get", 600)) return { status: 429, body: { error: "too many requests: try again in a minute" } };
+      const v = this.view();
+      const ttl = v.config.params.apiCacheMs;
+      const key = `${path}?sort=${query.get("sort") === "new" ? "new" : "fees"}`;
+      const hit = this.cache.get(key);
+      if (hit && ttl > 0 && Date.now() - hit.at < ttl) return hit.answer;
+      const answer = this.coinsGet(v, path, query);
+      if (answer && ttl > 0) {
+        if (this.cache.size > 2000) this.cache.clear();
+        this.cache.set(key, { at: Date.now(), answer });
+      }
+      return answer;
     }
     // an agent's auto-apply rules and log, kept a few seconds like the rest
     if (path.startsWith("/v1/autoapply/")) {
@@ -756,6 +784,26 @@ export class EngineApi {
   }
 
   // The owner signs, and its wallet is checked (./verified.ts).
+  // Agents' coins (./coins.ts), read from the database only.
+  private coinsGet(v: EngineView, path: string, query: URLSearchParams): Answer | null {
+    const c = v.coins;
+    const running = !!c && v.state === "running";
+    if (path === "/v1/coins/about") return ok(running ? c!.about() : { enabled: false, launcher: null });
+    if (path === "/v1/coins") return ok({ enabled: running && c!.on(), items: running ? c!.list(query.get("sort") === "new" ? "new" : "fees") : [] });
+    const m = /^\/v1\/coins\/([0-9a-zA-Z-]{3,42})$/.exec(path);
+    if (!m) return null;
+    const one = running ? c!.one(m[1]!) : null;
+    return one ? ok(one as unknown as Record<string, unknown>) : notFound("no coin is listed for that");
+  }
+
+  // The maker of an agent Factor runs asks for the agent's permission to launch its coin.
+  private async coinsPost(body: unknown, from: string): Promise<Answer> {
+    const v = this.view();
+    if (!v.coins || v.state !== "running") return { status: 503, body: { error: "the engine is not reading the chain yet" } };
+    if (this.tooMany(from, "coins", 12)) return { status: 429, body: { error: "too many requests: try again in a minute" } };
+    return v.coins.permission(body);
+  }
+
   private async verifiedPost(body: unknown, from: string): Promise<Answer> {
     const v = this.view();
     if (!v.verified || v.state !== "running") return { status: 503, body: { error: "the engine is not reading the chain yet" } };
@@ -947,6 +995,7 @@ export class EngineApi {
     if (path === "/v1/agents/make" || path === "/v1/agents/pause") return this.hostedPost(path, body, from);
     if (path === "/v1/erc8004/link") return this.erc8004Post(body, from);
     if (path === "/v1/verified/check") return this.verifiedPost(body, from);
+    if (path === "/v1/coins/permission") return this.coinsPost(body, from);
     if (path !== "/v1/agents/profile" && path !== "/v1/jobs/title" && path !== "/v1/jobs/brief" && path !== "/v1/jobs/delivery" && path !== "/v1/admin/hide" && path !== "/v1/admin/switch") return null;
     const v = this.view();
     if ((!v.profiles || v.state !== "running") && path === "/v1/agents/profile" && v.launchList && body && typeof body === "object" && !Array.isArray(body)) {
@@ -993,7 +1042,7 @@ export class EngineApi {
 
   private names(v: EngineView): Names {
     const d = v.deskMind;
-    return { desk: d ? (kind, subject) => { const n = d.latest(kind, subject); return n ? { text: n.text, at: new Date(n.at).toISOString() } : null; } : undefined, profiles: v.profiles?.all() ?? new Map(), house: new Set([...v.config.houseAgents, ...(v.house?.addresses() ?? [])]), hosted: v.house?.hostedAddresses() ?? new Map(), demoJobs: this.demoJobs(v), service: (a) => v.house?.serviceOf(a) ?? null, verified: v.verified?.on() ? (a) => v.verified!.json(a) : undefined };
+    return { desk: d ? (kind, subject) => { const n = d.latest(kind, subject); return n ? { text: n.text, at: new Date(n.at).toISOString() } : null; } : undefined, profiles: v.profiles?.all() ?? new Map(), house: new Set([...v.config.houseAgents, ...(v.house?.addresses() ?? [])]), hosted: v.house?.hostedAddresses() ?? new Map(), demoJobs: this.demoJobs(v), service: (a) => v.house?.serviceOf(a) ?? null, verified: v.verified?.on() ? (a) => v.verified!.json(a) : undefined, coin: v.coins?.on() ? (a) => v.coins!.badge(a) : undefined };
   }
 
   /** The jobs whose customer is Factor's own demonstration customer (./house/demo.ts). */
@@ -1086,6 +1135,8 @@ export class EngineApi {
       ...((p) => (p ? { plans: p } : {}))(this.plansOf(v, { agent: row.address })),
       // its ERC-8004 identity and the entries written to its reputation: only when one is linked
       ...((x) => (x ? { erc8004: x } : {}))(v.erc8004?.json(row.address) ?? null),
+      // its own coin: only while coins are on and its coin is listed
+      ...((x) => (x ? { coin: x } : {}))(v.coins?.on() ? v.coins.one(row.address) : null),
     });
   }
 
@@ -1301,7 +1352,10 @@ export class EngineApi {
     const autoApply = { enabled: !!v.autoapply && v.autoapply.working() && openJobs.enabled, perAgentHour: c.autoApply.perAgentHour, ...(v.autoapply && v.state === "running" ? v.autoapply.totals() : { agents: 0, applied: 0 }) };
     const verifiedOn = !!v.verified && v.state === "running" && v.verified.on();
     const verified = { ...(v.verified && verifiedOn ? v.verified.about() : { enabled: false, checks: [], needs: c.verified.needs, validDays: Math.round(c.verified.validS / 86_400), how: "", kept: "" }), agents: verifiedOn ? v.verified!.all().size : 0 };
-    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused, roster: this.rosterJson(v), hosted, pulse: pulseJson(v, 8), desk: this.deskJson(v), signups, activity, pay, subjobs, firms, plans, erc8004, openJobs, autoApply, verified };
+    const coinsOn = !!v.coins && v.state === "running" && v.coins.on();
+    const coinList = coinsOn ? v.coins!.list("new") : [];
+    const coins = { enabled: coinsOn, launcher: coinsOn ? c.coins.launcher : null, count: coinList.length, items: coinList.slice(0, 6) };
+    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused, roster: this.rosterJson(v), hosted, pulse: pulseJson(v, 8), desk: this.deskJson(v), signups, activity, pay, subjobs, firms, plans, erc8004, openJobs, autoApply, verified, coins };
     if (!r) {
       return { ...base, launched: false, stats: { advancedEth: 0, settledJobs: 0, jobs: 0, poolEth: 0, reserveEth: 0, outEth: 0, heldEth: 0, burnedTokens: 0, supplyLeft: SUPPLY, agents: 0, demoJobs: 0, lostEth: 0, poolFromTradingEth: 0 }, burn: null, agents: [], jobs: [], events: [], burns: [] };
     }
@@ -1398,6 +1452,7 @@ export class EngineApi {
       accounts: v.accounts ? { ...v.accounts.about(), note: c.accounts.note, ...v.accounts.store.totals(), gasDayWei: c.accounts.gasDayWei.toString() } : null,
       compute: v.gateway ? { ...v.gateway.about(), note: c.compute.note, ...v.gateway.store.totals(), todayMicro: v.gateway.store.spentToday(), dailyMicro: c.compute.dailyMicro, routerFloatUsd: v.gateway.float?.usd() ?? null } : null,
       rpc: v.rpc ? { ...v.rpc, lastError: v.rpc.lastError ? hostsOnly(v.rpc.lastError) : null } : null,
+      coins: v.coins ? v.coins.health() : null,
       erc8004: v.erc8004 ? { ...v.erc8004.about(), spentTodayWei: v.erc8004.spentToday().toString(), gasDayWei: c.erc8004.gasDayWei.toString(), scan: ctx.db.getJson("erc8004:scan") } : null,
       events: ctx.db.count("chain_events"),
       ledger: ctx.db.count("ledger"),

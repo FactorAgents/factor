@@ -10,6 +10,8 @@
 //   Settled / SettledAtHalf    the job repaid the pool: what is left of the lot is the agent's to keep using
 //   Refunded, the pool lost    the pool takes back what it lost, and no more, from what was not spent, as ETH
 //   Refunded, the bond paid    the agent's own bond repaid the pool: what is left of the lot is the agent's
+//   ComputePaid (a coin)       the agent's coin paid its compute share to the gateway (./coins.ts): a lot of credit
+//                              that is the agent's own from the start, paid by its coin and by no job
 //
 //   GET  /v1/compute/models             the models and what they cost here
 //   GET  /v1/compute/credit/<address>   what an agent has left
@@ -139,7 +141,7 @@ export function readCompute(env: Env, problems: string[] = []): ComputeConfig {
 
 // ---------- the books ----------
 
-export interface Lot { tx_hash: string; log_index: number; block: number; at: number; job_id: number; agent: string; wei: string; usd_micro: number | null; spent_micro: number; state: "open" | "kept" | "closed"; back_wei: string; back_tx: string | null }
+export interface Lot { tx_hash: string; log_index: number; block: number; at: number; job_id: number; agent: string; wei: string; usd_micro: number | null; spent_micro: number; state: "open" | "kept" | "closed"; back_wei: string; back_tx: string | null; source?: "advance" | "coin" }
 
 /** ETH in wei as millionths of a dollar, at a Chainlink price with 8 decimals. Rounded down: credit is never overstated. */
 export const usdMicro = (wei: bigint, ethUsd8: bigint): number => Number((wei * ethUsd8) / 10n ** 20n);
@@ -302,6 +304,22 @@ export class ComputeStore {
     const wei = BigInt(String(e.args.amount)) - BigInt(String(e.args.fee));
     const usd = ethUsd8 ? usdMicro(wei, BigInt(ethUsd8)) : null;
     this.db.q("INSERT OR IGNORE INTO compute_lots (tx_hash, log_index, block, at, job_id, agent, wei, usd_micro) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(e.tx_hash, e.log_index, e.block, e.at, Number(e.args.id), normalizeAddress(e.args.agent), wei.toString(), usd);
+  }
+
+  /**
+   * The agent's coin paid its compute share to the gateway (./coins.ts): a lot of credit that is the agent's own at
+   * once. No job stands behind it, so nothing can take it back. Written once.
+   */
+  addCoinLot(e: { tx_hash: string; log_index: number; block: number; at: number }, agent: string, wei: bigint, ethUsd8: string | null): boolean {
+    const usd = ethUsd8 ? usdMicro(wei, BigInt(ethUsd8)) : null;
+    return this.db.q("INSERT OR IGNORE INTO compute_lots (tx_hash, log_index, block, at, job_id, agent, wei, usd_micro, state, source) VALUES (?, ?, ?, ?, 0, ?, ?, ?, 'kept', 'coin')").run(e.tx_hash, e.log_index, e.block, e.at, agent, wei.toString(), usd).changes === 1;
+  }
+
+  /** What an agent's coin has paid into its compute credit, and how much of that its calls have spent, in millionths of a dollar. */
+  coinCredit(agent: string): { lots: number; wei: string; grantedMicro: number; spentMicro: number } {
+    const r = this.db.q("SELECT COUNT(*) AS n, COALESCE(SUM(usd_micro), 0) AS granted, COALESCE(SUM(spent_micro), 0) AS spent FROM compute_lots WHERE agent = ? AND source = 'coin'").get(agent) as { n: number; granted: number; spent: number };
+    const wei = (this.db.q("SELECT wei FROM compute_lots WHERE agent = ? AND source = 'coin'").all(agent) as { wei: string }[]).reduce((n, l) => n + BigInt(l.wei), 0n);
+    return { lots: r.n, wei: wei.toString(), grantedMicro: r.granted, spentMicro: r.spent };
   }
 
   /** Lots drawn while no ETH price was known are priced as soon as one is. */
@@ -576,7 +594,7 @@ export class Gateway {
     const micro = Math.max(0, this.store.balance(agent) - held);
     return {
       agent, balanceUsd: micro / 1e6, enabled: this.cfg.enabled,
-      lots: this.store.lots(agent).map((l) => ({ job: l.job_id, at: new Date(l.at * 1000).toISOString(), usd: l.usd_micro === null ? null : l.usd_micro / 1e6, spentUsd: l.spent_micro / 1e6, state: l.state })),
+      lots: this.store.lots(agent).map((l) => ({ job: l.job_id, at: new Date(l.at * 1000).toISOString(), usd: l.usd_micro === null ? null : l.usd_micro / 1e6, spentUsd: l.spent_micro / 1e6, state: l.state, ...(l.source === "coin" ? { paidBy: "coin" } : {}) })),
     };
   }
 
@@ -595,7 +613,7 @@ export class Gateway {
     // one agent's own ceiling on a day: its calls under way count at their worst
     if (this.store.agentSpentToday(agent) + held.micro + worst > cfg.agentDayMicro) return fail(429, "rate_limit_error", `An agent may spend ${usd(cfg.agentDayMicro)} a day here. The credit is kept: try again after midnight UTC.`);
     const free = this.store.balance(agent) - held.micro;
-    if (free <= 0) return fail(402, "billing_error", "This agent has no compute credit. Draw an advance as compute on a job it was hired for.");
+    if (free <= 0) return fail(402, "billing_error", "This agent has no compute credit. Draw an advance as compute on a job it was hired for, or let its coin's fees pay for it.");
     if (worst > free) return fail(402, "billing_error", `This request could cost up to ${usd(worst)} and the agent's compute credit is ${usd(free)}. Lower max_tokens, send less, or draw more as compute.`);
     this.reserved.set(agent, { micro: held.micro + worst, calls: held.calls + 1 });
     this.underWay++;

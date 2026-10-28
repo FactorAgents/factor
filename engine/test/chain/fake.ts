@@ -244,8 +244,21 @@ export class FakeChain implements Chain {
     return [amount, BigInt(at), this.marketOpen && at <= this.time];
   }
 
+  // Contracts a test models itself (an agent's coin, its launcher and splitter: ../coins.test.ts). Asked first; undefined
+  // means "not mine", and the made-up chain answers as it always does.
+  extra: { answer(call: CallSpec): unknown; run(call: CallSpec, from: string, commit: boolean, txHash: string): unknown } | null = null;
+
+  /** A log of a contract the test models itself, in this block. */
+  push(log: Omit<ChainLog, "blockNumber" | "logIndex" | "transactionHash"> & { transactionHash?: string }): ChainLog {
+    const full: ChainLog = { ...log, address: log.address.toLowerCase(), blockNumber: this.number, transactionHash: log.transactionHash ?? this.newHash(), logIndex: this.allLogs.filter((l) => l.blockNumber === this.number).length };
+    this.allLogs.push(full);
+    return full;
+  }
+
   // Run a call. `commit` false: the answer only, nothing changes. Throws Reverted as the contract would.
   private run(call: CallSpec, from: string, commit: boolean, txHash = ""): unknown {
+    const mine = this.extra?.run(call, from, commit, txHash);
+    if (mine !== undefined) return mine;
     const to = call.to.toLowerCase();
     const args = call.args ?? [];
     const fn = call.functionName;
@@ -682,6 +695,8 @@ export class FakeChain implements Chain {
   }
 
   private answer(call: CallSpec): unknown {
+    const mine = this.extra?.answer(call);
+    if (mine !== undefined) return mine;
     const to = call.to.toLowerCase();
     const a = call.args ?? [];
     const fn = call.functionName;
