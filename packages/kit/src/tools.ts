@@ -10,7 +10,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { formatEther } from "viem";
 import { z } from "zod";
-import { Factor, Refusal, toWei, type Agent, type Job } from "./index.js";
+import { Factor, Refusal, toWei, type Agent, type CoinPermission, type Job } from "./index.js";
 
 export interface Limits {
   /** the most one job may cost, in wei */
@@ -463,6 +463,89 @@ export const TOOLS: Tool[] = [
       const id = String(a.agent_id) === "none" ? null : String(a.agent_id);
       const r = await f.linkErc8004(id);
       return r.agentId === null ? "Done: no ERC-8004 identity is linked to this agent." : `Linked to ERC-8004 identity #${r.agentId}${r.via ? ` (its ${r.via === "wallet" ? "agentWallet is this wallet" : "owner is this wallet"})` : ""}. Every job this agent settles from now on is written to its reputation.`;
+    },
+  },
+  {
+    name: "factor_coins", readOnly: true, input: { sort: z.enum(["fees", "new"]).optional().describe("fees: by what each coin's fees have paid to its agent's compute (the default). new: newest first") },
+    description: "Agent coins on Factor: each agent can have one coin of its own on Pons, launched by its maker. Its trading fees pay for the agent (its compute, its maker, the $FACTOR burn and Factor); its holders are paid nothing. Each coin with its agent, its agent's Factor Score, what its fees have paid to the agent's compute, and its trading.",
+    async run(f, a) {
+      const list = await f.coins(a.sort === "new" ? { sort: "new" } : {});
+      if (!list.length) return "No agent has its coin yet, or agent coins are not switched on.";
+      return list.slice(0, 25).map((c) => `$${c.symbol} (${c.name}), the coin of ${c.agent.name} (Factor Score ${c.agent.score}): ${c.paidFor.computeUsd.toFixed(2)} dollars paid into its compute, ${c.volumeEth} ETH traded, ${c.holders} holders. ${c.pons}`).join("\n");
+    },
+  },
+  {
+    name: "factor_coin", readOnly: true, input: { id: z.string().optional().describe("The agent's name or address, or the coin's address. Left out: this wallet's own agent") },
+    description: "One agent's coin: what its fees have paid for (its agent's compute credit and what the agent spent of it on models, the $FACTOR burn, its agent's settled jobs), its trading, its holders, where it trades, and its contracts. A coin promises its holders nothing; buying one is at their own risk.",
+    async run(f, a) {
+      const c = await f.coin(typeof a.id === "string" ? a.id : undefined);
+      if (!c) return "No coin is listed for that agent.";
+      const p = c.paidFor;
+      return [
+        `$${c.symbol} (${c.name}): the coin of ${c.agent.name}, Factor Score ${c.agent.score}, ${c.agent.settled} jobs settled${c.agent.barred ? ", barred from the pool (its compute share now goes to the burn)" : ""}. Launched ${c.launchedAt.slice(0, 10)} by ${c.maker === c.agent.address ? "the agent itself" : `its maker ${c.maker}`}.`,
+        `Its fees have paid ${p.computeUsd.toFixed(2)} dollars into the agent's compute credit (${p.computeUsedUsd.toFixed(2)} spent on models so far) and ${p.burnEth} ETH to the $FACTOR burn. ${c.waitingEth} ETH waits for the next sweep.`,
+        `Trading: ${c.volumeEth} ETH in ${c.trades} trades, ${c.holders} holders, ${c.phase === "pool" ? "in its pool" : "on Pons' curve"}. Trade it at ${c.pons}`,
+        `Coin ${c.coin}, its splitter ${c.splitter}. It pays its holders nothing: buying it is at your own risk.`,
+      ].join("\n");
+    },
+  },
+  {
+    name: "factor_prepare_coin_launch", readOnly: true,
+    input: {
+      agent: z.string().describe("The agent's name or address"),
+      maker: z.string().regex(/^0x[0-9a-fA-F]{40}$/).describe("The wallet that will send the launch: the agent's maker, or the agent itself"),
+      name: z.string().optional().describe("The coin's name: the agent's own, or the first three or more of its letters. The agent's name when not given"),
+      symbol: z.string().optional().describe("The ticker: 2 to 10 capitals taken in order from the agent's name. The agent's letters when not given"),
+      first_buy: amount.optional().describe("ETH that buys the coin for the maker in the launch itself. None when not given"),
+      permission: z.string().optional().describe("The agent's signed permission for this maker, as the JSON factor_sign_coin_permission gave"),
+    },
+    description: "Make an agent's coin launch ready for its maker to sign with a wallet of its own: the exact transaction (to, value, data) and what it carries, tried against the chain first. Nothing is signed or sent. Without a permission the maker must be the agent itself; for an agent Factor runs, this says where its maker launches it on the site instead.",
+    async run(f, a) {
+      const permission = typeof a.permission === "string" ? (JSON.parse(a.permission) as CoinPermission) : undefined;
+      try {
+        const t = await f.prepareCoinLaunch({ agent: String(a.agent), maker: String(a.maker), ...(typeof a.name === "string" ? { name: a.name } : {}), ...(typeof a.symbol === "string" ? { symbol: a.symbol } : {}), ...(typeof a.first_buy === "string" ? { firstBuy: a.first_buy } : {}), ...(permission ? { permission } : {}) });
+        return [`Ready for ${t.maker} to send, on chain ${t.chainId}: $${t.symbol} (${t.name}) for agent ${t.agent}.`, `to: ${t.to}`, `value: ${t.value} wei (${eth(BigInt(t.feeWei))} ETH Pons' launch fee${t.firstBuyWei !== "0" ? ` and ${eth(BigInt(t.firstBuyWei))} ETH first buy` : ""}), plus the gas`, `data: ${t.data}`, t.deadline !== "0" ? `The permission runs out at ${new Date(Number(t.deadline) * 1000).toISOString()}.` : ""].filter(Boolean).join("\n");
+      } catch (e) {
+        if (e instanceof Refusal && e.code === "no_permission") return `${e.message}`;
+        throw e;
+      }
+    },
+  },
+  {
+    name: "factor_sign_coin_permission", readOnly: false,
+    input: {
+      maker: z.string().regex(/^0x[0-9a-fA-F]{40}$/).describe("The maker's wallet: the one that will launch the coin"),
+      name: z.string().optional().describe("The coin's name. The agent's own when not given"),
+      symbol: z.string().optional().describe("The ticker. The agent's letters when not given"),
+      valid_minutes: z.number().int().min(5).max(10080).optional().describe("How long the maker has to launch with it. 60 when not given"),
+    },
+    description: "As an agent: sign the permission for a maker to launch this agent's coin, with its name and ticker. A signature, not a transaction, and it costs nothing. Only that maker can use it, once, and only with these words. Give the JSON it answers to the maker. Ask the user first.",
+    async run(f, a) {
+      need(f);
+      const p = await f.signCoinPermission({ maker: String(a.maker), ...(typeof a.name === "string" ? { name: a.name } : {}), ...(typeof a.symbol === "string" ? { symbol: a.symbol } : {}), ...(typeof a.valid_minutes === "number" ? { validMinutes: a.valid_minutes } : {}) });
+      return `Signed: ${p.maker} may launch $${p.symbol} (${p.name}) for this agent until ${new Date(Number(p.deadline) * 1000).toISOString()}. Give the maker this permission:\n${JSON.stringify(p)}`;
+    },
+  },
+  {
+    name: "factor_launch_coin", readOnly: false,
+    input: {
+      agent: z.string().optional().describe("The agent whose coin it is, by name or address. Left out: this wallet is the agent and launches its own"),
+      name: z.string().optional().describe("The coin's name: the agent's own, or the first three or more of its letters. The agent's name when not given"),
+      symbol: z.string().optional().describe("The ticker: 2 to 10 capitals taken in order from the agent's name. The agent's letters when not given"),
+      first_buy: amount.optional().describe("ETH that buys the coin for the maker in the launch itself, before anybody else can trade. None when not given"),
+      maker: z.string().regex(/^0x[0-9a-fA-F]{40}$/).optional().describe("When this wallet is the agent: the wallet its maker's share goes to. This wallet when not given"),
+      permission: z.string().optional().describe("The agent's signed permission for this wallet, as JSON. Not needed for an agent Factor runs, whose maker this wallet is"),
+    },
+    description: "Launch an agent's own coin on Pons, one per agent, ever: paired with ETH, a 3% tax on every trade, its fees paid to a splitter nobody can change that pays the agent's compute, its maker, the $FACTOR burn and Factor. It SPENDS ETH from this wallet: Pons' launch fee, the gas and the first buy. Confirm the agent, the name, the ticker and the first buy with the user first. The coin promises its holders nothing.",
+    async run(f, a, spending) {
+      need(f);
+      const firstBuy = typeof a.first_buy === "string" ? toWei(a.first_buy) : 0n;
+      // what leaves the wallet: the first buy, and Pons' fee (about 0.0005 ETH), held to the day's cap
+      spending?.check(firstBuy + 500_000_000_000_000n, false);
+      const permission = typeof a.permission === "string" ? (JSON.parse(a.permission) as CoinPermission) : undefined;
+      const r = await f.launchCoin({ ...(typeof a.agent === "string" ? { agent: a.agent } : {}), ...(typeof a.name === "string" ? { name: a.name } : {}), ...(typeof a.symbol === "string" ? { symbol: a.symbol } : {}), ...(firstBuy ? { firstBuy } : {}), ...(typeof a.maker === "string" ? { maker: a.maker } : {}), ...(permission ? { permission } : {}) });
+      spending?.add(firstBuy + 500_000_000_000_000n);
+      return `Launched${r.coin ? ` ${r.coin}` : ""}: ${r.explorer}. Its page: ${r.url}. From its first trade, its fees pay for the agent's compute.`;
     },
   },
   {

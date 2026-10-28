@@ -24,7 +24,7 @@ import { rulesMessage as engineRules } from "../../../engine/src/autoapply.js";
 import { applyMessage as engineApply, closeMessage as engineClose, openJobIdOf as engineOpenJobId, postMessage as enginePost, withdrawMessage as engineWithdraw } from "../../../engine/src/openjobs.js";
 import { verifyOwnerMessage } from "../src/index.js";
 import { verifyMessage as engineVerify } from "../../../engine/src/verified.js";
-import { AGENTS, DESK, JOB, KEY, state, stub, type Stub } from "./stub.js";
+import { AGENTS, COIN_LAUNCHER, DESK, JOB, KEY, state, stub, type Stub } from "./stub.js";
 
 let s: Stub;
 beforeAll(async () => { s = await stub(); });
@@ -349,11 +349,11 @@ describe("the assistant's caps", () => {
 
 describe("the tools", () => {
   it("have a name, a description and an input each, and say which of them send something", () => {
-    expect(TOOLS.map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_hire", "factor_accept", "factor_reject", "factor_set_title", "factor_register", "factor_set_profile", "factor_bond", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_ask_model", "factor_draw", "factor_deliver", "factor_decline", "factor_sign_up", "factor_create_pay_link", "factor_pay_link_info", "factor_pay_link", "factor_pay_x402", "factor_hire_for_job", "factor_job_tree", "factor_reject_sub_jobs", "factor_record", "factor_erc8004", "factor_link_erc8004", "factor_verified_owner", "factor_verify_owner", "factor_firms", "factor_firm_record", "factor_hire_firm", "factor_plan", "factor_subscribe", "factor_pay_month", "factor_stop_plan", "factor_draw_next_month", "factor_open_jobs", "factor_open_job", "factor_post_job", "factor_apply_to_job", "factor_bid", "factor_withdraw_offer", "factor_offers", "factor_pick_agent", "factor_close_job", "factor_auto_apply", "factor_set_auto_apply", "factor_auto_apply_now"]);
+    expect(TOOLS.map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_hire", "factor_accept", "factor_reject", "factor_set_title", "factor_register", "factor_set_profile", "factor_bond", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_ask_model", "factor_draw", "factor_deliver", "factor_decline", "factor_sign_up", "factor_create_pay_link", "factor_pay_link_info", "factor_pay_link", "factor_pay_x402", "factor_hire_for_job", "factor_job_tree", "factor_reject_sub_jobs", "factor_record", "factor_erc8004", "factor_link_erc8004", "factor_coins", "factor_coin", "factor_prepare_coin_launch", "factor_sign_coin_permission", "factor_launch_coin", "factor_verified_owner", "factor_verify_owner", "factor_firms", "factor_firm_record", "factor_hire_firm", "factor_plan", "factor_subscribe", "factor_pay_month", "factor_stop_plan", "factor_draw_next_month", "factor_open_jobs", "factor_open_job", "factor_post_job", "factor_apply_to_job", "factor_bid", "factor_withdraw_offer", "factor_offers", "factor_pick_agent", "factor_close_job", "factor_auto_apply", "factor_set_auto_apply", "factor_auto_apply_now"]);
     for (const t of TOOLS) expect(t.description.length, t.name).toBeGreaterThan(40);
-    expect(TOOLS.filter((t) => t.readOnly).map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_pay_link_info", "factor_job_tree", "factor_record", "factor_erc8004", "factor_verified_owner", "factor_firms", "factor_firm_record", "factor_plan", "factor_open_jobs", "factor_open_job", "factor_offers", "factor_auto_apply"]);
+    expect(TOOLS.filter((t) => t.readOnly).map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_pay_link_info", "factor_job_tree", "factor_record", "factor_erc8004", "factor_coins", "factor_coin", "factor_prepare_coin_launch", "factor_verified_owner", "factor_firms", "factor_firm_record", "factor_plan", "factor_open_jobs", "factor_open_job", "factor_offers", "factor_auto_apply"]);
     // the ones that spend or cannot be undone say so in capitals, where an assistant will not miss it
-    for (const name of ["factor_hire", "factor_reject", "factor_bond", "factor_pay_link", "factor_pay_x402", "factor_hire_for_job", "factor_reject_sub_jobs", "factor_hire_firm", "factor_subscribe", "factor_pay_month", "factor_pick_agent"]) expect(TOOLS.find((t) => t.name === name)!.description).toMatch(/SPENDS ETH|SETTLES AT HALF/);
+    for (const name of ["factor_launch_coin", "factor_hire", "factor_reject", "factor_bond", "factor_pay_link", "factor_pay_x402", "factor_hire_for_job", "factor_reject_sub_jobs", "factor_hire_firm", "factor_subscribe", "factor_pay_month", "factor_pick_agent"]) expect(TOOLS.find((t) => t.name === name)!.description).toMatch(/SPENDS ETH|SETTLES AT HALF/);
   });
 
   it("answer in words", async () => {
@@ -1069,5 +1069,75 @@ describe("verified owners", () => {
     expect((await runTool(f, "factor_verified_owner", { agent: "lumen-07" }, null)).text).toMatch(/The owner of lumen-07 is verified: Human Passport passed \(Human Passport 20 to 29\)\. .* checked 2026-10-24; it runs out 2026-11-23/);
     expect((await runTool(f, "factor_verify_owner", {}, null)).text).toMatch(/^Verified: Human Passport passed for 0x/);
     s.site.verified = null;
+  });
+});
+
+describe("agent coins", () => {
+  afterEach(() => { s.site.coins = []; s.site.coin = null; s.site.coinsAbout = { enabled: false, launcher: null }; });
+  const coin = { agent: { address: AGENTS[1]!.address, name: "page-smith", named: true, score: 580, settled: 4, barred: false, house: true, hosted: false }, coin: "0x00000000000000000000000000000000000c0101", name: "Page Smith", symbol: "SMITH", splitter: "0x00000000000000000000000000000000000c0102", curve: "0x00000000000000000000000000000000000c0103", maker: "0x00000000000000000000000000000000000000c1", bySignature: true, launchedAt: "2026-10-28T09:00:00.000Z", tx: "0xabc", openingBuyEth: 0.01, listed: true, phase: "curve", pons: "https://ponsfamily.com/launchpad/0x00000000000000000000000000000000000c0101", paidFor: { computeEth: 0.0148, computeUsd: 35.12, computeUsedUsd: 4.2, burnEth: 0.0074, coinsBurned: 0, jobsSettled: 4 }, waitingEth: 0.0002, volumeEth: 1.5, trades: 2, buys: 1, holders: 2 };
+
+  it("keeps the engine's name rule, words and permission to the letter", async () => {
+    const { coinAskMessage: engineAsk, coinDescription: engineDescription, coinNameProblem: engineRule, permissionTypedData: enginePermission, suggestCoin: engineSuggest } = await import("../../../engine/src/coins.js");
+    const { coinAskMessage, coinDescription, coinNameProblem, coinPermissionTypedData, suggestCoin } = await import("../src/index.js");
+    for (const [agent, name, symbol] of [["page-smith", "Page Smith", "SMITH"], ["page-smith", "Moon", "MOON"], ["claude-helper", "Claude Helper", "CH"], ["page-smith", "Page", "HTIMS"], [null, "X", "Y"]] as const) expect(coinNameProblem(agent, name, symbol)).toBe(engineRule(agent, name, symbol));
+    expect(suggestCoin("lumen-07")).toEqual(engineSuggest("lumen-07"));
+    expect(coinDescription("Lumen 07")).toBe(engineDescription("Lumen 07"));
+    const words = { agent: AGENTS[0]!.address, maker: "0x00000000000000000000000000000000000000c1", name: "Lumen 07", symbol: "LUMEN", at: 1_790_000_000 };
+    expect(coinAskMessage(words)).toBe(engineAsk(words));
+    const p = { chainId: 4663, launcher: COIN_LAUNCHER, agent: words.agent, maker: words.maker, name: words.name, symbol: words.symbol, logo: "https://factoragents.fun/api/v1/coins/logo/x", description: "d", nonce: 3n, deadline: 99n };
+    expect(coinPermissionTypedData(p)).toEqual(enginePermission(p));
+  });
+
+  it("reads the coins and one coin, and its tools say them in words with the coin's own risk", async () => {
+    const f = await connect();
+    s.site.coins = [coin];
+    s.site.coin = coin;
+    expect((await f.coins()).map((c) => c.symbol)).toEqual(["SMITH"]);
+    expect((await f.coin("page-smith"))?.paidFor.computeUsd).toBe(35.12);
+    expect((await runTool(f, "factor_coins", {}, null)).text).toBe("$SMITH (Page Smith), the coin of page-smith (Factor Score 580): 35.12 dollars paid into its compute, 1.5 ETH traded, 2 holders. https://ponsfamily.com/launchpad/0x00000000000000000000000000000000000c0101");
+    const one = (await runTool(f, "factor_coin", { id: "page-smith" }, null)).text;
+    expect(one).toMatch(/have paid 35\.12 dollars into the agent's compute credit \(4\.20 spent on models so far\)/);
+    expect(one).toMatch(/at your own risk/);
+    expect(one).not.toMatch(/\b(40|20)\s?%/);
+    s.site.coin = null;
+    expect((await runTool(f, "factor_coin", { id: "lumen-07" }, null)).text).toBe("No coin is listed for that agent.");
+  });
+
+  it("refuses to sign or launch while coins are off, and a name that breaks the rule before anything is signed", async () => {
+    const f = await connect({ privateKey: KEY });
+    expect((await refusal(f.launchCoin())).code).toBe("coins_off");
+    expect((await refusal(f.signCoinPermission({ maker: AGENTS[0]!.address }))).code).toBe("coins_off");
+    s.site.coinsAbout = { enabled: true, launcher: COIN_LAUNCHER, site: "https://factoragents.fun" };
+    const posts = s.posts.length;
+    expect((await refusal(f.launchCoin({ agent: "page-smith", name: "Moon Rocket", symbol: "MOON" }))).message).toMatch(/carries the agent's name/);
+    expect(s.posts.length).toBe(posts);
+  });
+
+  it("signs an agent's permission for its maker as the launcher checks it, and asks Factor for the permission of an agent it runs", async () => {
+    const { privateKeyToAccount } = await import("viem/accounts");
+    const { recoverTypedDataAddress } = await import("viem");
+    const { permissionTypedData: enginePermission } = await import("../../../engine/src/coins.js");
+    s.site.coinsAbout = { enabled: true, launcher: COIN_LAUNCHER, site: "https://factoragents.fun" };
+    const me = privateKeyToAccount(KEY).address.toLowerCase();
+    s.site.state = state({ agents: [...AGENTS, { ...AGENTS[0]!, id: me, address: me, name: "lumen-08" }] });
+    const f = await connect({ privateKey: KEY });
+    const p = await f.signCoinPermission({ maker: AGENTS[0]!.address });
+    expect(p).toMatchObject({ agent: me, maker: AGENTS[0]!.address, name: "Lumen 08", symbol: "LUMEN08", nonce: "0", launcher: COIN_LAUNCHER });
+    const signer = await recoverTypedDataAddress({ ...enginePermission({ chainId: 4663, launcher: COIN_LAUNCHER, agent: me, maker: p.maker, name: p.name, symbol: p.symbol, logo: p.logo, description: p.description, nonce: 0n, deadline: BigInt(p.deadline) }), signature: p.signature });
+    expect(signer.toLowerCase()).toBe(me);
+    // as the maker of an agent Factor runs: the ask goes to Factor, signed by this wallet, and then the launch is tried
+    const r = await refusal(f.launchCoin({ agent: "page-smith" }));
+    const ask = s.posts.at(-1)!;
+    expect(ask.path).toBe("/coins/permission");
+    const b = ask.body as { agent: string; maker: string; name: string; symbol: string; at: number; signature: `0x${string}` };
+    expect(b).toMatchObject({ agent: AGENTS[1]!.address, maker: me, name: "Page Smith", symbol: "PAGESMITH" });
+    const { coinAskMessage: engineAsk } = await import("../../../engine/src/coins.js");
+    expect((await recoverMessageAddress({ message: engineAsk(b), signature: b.signature })).toLowerCase()).toBe(me);
+    // the made-up node cannot run a launch: refused in words, and nothing sent
+    expect(r.code).toBe("launcher_refused");
+    const prepared = await refusal(f.prepareCoinLaunch({ agent: "page-smith", maker: AGENTS[0]!.address }));
+    expect(prepared.code).toBe("no_permission");
+    expect(prepared.message).toMatch(/\/agents\/page-smith#coin/);
+    s.site.state = state();
   });
 });

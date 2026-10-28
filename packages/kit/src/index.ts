@@ -15,13 +15,15 @@
 //   - with `gasless: true` the key needs no ETH at all. It acts through a Factor account, a small contract that
 //     obeys this key and nobody else: the key signs what the account should do, and Factor sends it and pays the
 //     gas. Factor cannot sign for the account, move what is in it, or change what was signed.
-import { createPublicClient, createWalletClient, decodeEventLog, defineChain, encodeFunctionData, formatEther, http, keccak256, parseEther, toHex, type Abi, type Account, type Hex, type PublicClient, type WalletClient } from "viem";
+import { BaseError, ContractFunctionRevertedError, createPublicClient, createWalletClient, decodeEventLog, defineChain, encodeFunctionData, formatEther, http, keccak256, parseEther, toHex, type Abi, type Account, type Hex, type PublicClient, type WalletClient } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { factorAccountAbi } from "./abi/FactorAccount.js";
 import { factorAccountsAbi } from "./abi/FactorAccounts.js";
 import { factorDeskAbi } from "./abi/FactorDesk.js";
+import { agentCoinLauncherAbi } from "./abi/AgentCoinLauncher.js";
 import { CHAIN_ID, DEFAULT_API, DEFAULT_RPC } from "./defaults.js";
-import type { AccountInfo, Agent, AgentPage, Applicant, Application, AutoApplyStatus, ComputeCredit, ComputeKey, Deal, Erc8004Entries, Erc8004Status, Firm, FirmHire, FirmPage, FirmRecord, Job, JobPage, JobState, JobTree, LedgerLine, ModelAnswer, OpenJob, OpenJobHire, PickedJob, OpenJobPage, OpenJobPosted, Page, PayLinkInfo, Plan, PlanMonthSent, PlanPage, RouterModel, Sent, State, SubJob, OwnerCheck, VerifiedStatus } from "./types.js";
+import type { AccountInfo, Agent, AgentPage, Applicant, Application, AutoApplyStatus, ComputeCredit, ComputeKey, Deal, Erc8004Entries, Erc8004Status, Firm, FirmHire, FirmPage, FirmRecord, Job, JobPage, JobState, JobTree, LedgerLine, ModelAnswer, OpenJob, OpenJobHire, PickedJob, OpenJobPage, OpenJobPosted, Page, PayLinkInfo, Plan, PlanMonthSent, PlanPage, RouterModel, Sent, State, SubJob, OwnerCheck, VerifiedStatus, Coin, CoinsAbout, CoinLaunched, CoinLaunchTx } from "./types.js";
+import { coinAskMessage, coinDescription, coinLogo, coinNameProblem, coinPermissionTypedData, suggestCoin, type CoinPermission } from "./coins.js";
 import { MONTH_S, PLAN_TITLE_MOST, planMessage, stopPlanMessage, type PlanText } from "./plans.js";
 import { FIRM_SLUG, firmHireMessage, firmMessage, joinMessage, leaveMessage, slugOf } from "./firms.js";
 import { hireMessage, type HirePlan } from "./subjobs.js";
@@ -41,6 +43,8 @@ export { hireMessage, planIdOf } from "./subjobs.js";
 export { firmHireMessage, firmMessage, joinMessage, leaveMessage, slugOf } from "./firms.js";
 export { MONTH_S, monthlyPlanId, planMessage, stopPlanMessage } from "./plans.js";
 export { verifyOwnerMessage } from "./verified.js";
+export { coinAskMessage, coinDescription, coinLogo, coinNameProblem, coinPermissionTypedData, suggestCoin } from "./coins.js";
+export type { CoinPermission } from "./coins.js";
 export { ERC8004_TAG, erc8004LinkMessage, erc8004Registry, IDENTITY_REGISTRY, REPUTATION_REGISTRY } from "./erc8004.js";
 export type { PlanText } from "./plans.js";
 export { applyMessage, closeJobMessage, openJobId, pickWords, postJobMessage, priceWords, withdrawMessage } from "./openjobs.js";
@@ -1412,6 +1416,187 @@ export class Factor {
     return b;
   }
 
+  // ---------- agent coins ----------
+
+  /** Every listed agent coin: by what its fees have paid to its agent's compute (the default), or newest first. */
+  async coins(o: { sort?: "fees" | "new" } = {}): Promise<Coin[]> {
+    return (await read<{ items: Coin[] }>(this.api, `/coins${o.sort === "new" ? "?sort=new" : ""}`))?.items ?? [];
+  }
+
+  /**
+   * One agent's coin, by the agent's name or address or the coin's own address: what its fees have paid for (its
+   * agent's compute, the $FACTOR burn), its trading and its holders. null: none is listed. Left out: this wallet's agent.
+   */
+  async coin(id?: string): Promise<Coin | null> {
+    const who = id ?? this.mine();
+    if (!/^[0-9a-zA-Z-]{3,42}$/.test(who)) throw new Refusal("Give the agent's name or address, or the coin's address.", "bad_agent");
+    return read<Coin>(this.api, `/coins/${who}`);
+  }
+
+  /** Where an agent's maker launches its coin on the site, with a wallet. */
+  coinLaunchLink(agent: string): string {
+    return `${this.site()}/agents/${agent}#coin`;
+  }
+
+  /**
+   * As an agent: sign the permission for `maker` to launch this agent's coin with these words. A signature, not a
+   * transaction, and no money. The maker sends it with launchCoin({ agent, permission }) within `validMinutes` (60).
+   * The name and the ticker are the agent's own by default. cancelCoinPermissions() takes back every one given.
+   */
+  async signCoinPermission(o: { maker: string; name?: string; symbol?: string; validMinutes?: number }): Promise<CoinPermission> {
+    const agent = this.mine();
+    if (!this.account?.signTypedData) throw new Refusal("This key cannot sign typed data.", "read_only");
+    if (!/^0x[0-9a-fA-F]{40}$/.test(o.maker)) throw new Refusal("Give the maker's wallet address.", "bad_address");
+    const maker = o.maker.toLowerCase();
+    const { launcher, site } = await this.launcher();
+    const words = await this.coinWords(agent, o.name, o.symbol, site);
+    const [nonce, block] = await Promise.all([this.pub.readContract({ address: launcher, abi: LAUNCHER, functionName: "nonces", args: [agent] }) as Promise<bigint>, this.pub.getBlock()]);
+    const minutes = Math.min(Math.max(o.validMinutes ?? 60, 5), 7 * 24 * 60);
+    const deadline = block.timestamp + BigInt(Math.round(minutes * 60));
+    const signature = await this.account.signTypedData(coinPermissionTypedData({ chainId: this.chainId, launcher, agent, maker, ...words, nonce, deadline }));
+    return { agent, maker, ...words, nonce: nonce.toString(), deadline: deadline.toString(), signature, launcher };
+  }
+
+  /** As an agent: take back every permission this agent has signed for a launch of its coin. One transaction. */
+  async cancelCoinPermissions(): Promise<Sent> {
+    this.mine();
+    const { launcher } = await this.launcher();
+    return this.sent(await this.callLauncher(launcher, "bumpNonce", [], 0n));
+  }
+
+  /**
+   * Launch an agent's coin on Pons. As the agent itself (leave `agent` out): it launches its own, and `maker` (this
+   * wallet when left out) is the wallet its maker's share goes to. As its maker: give `agent`, and either the
+   * `permission` the agent signed, or nothing for an agent Factor runs (made on the site, or Factor's own), whose
+   * permission Factor signs once this wallet has signed the ask. One coin per agent, ever.
+   *
+   * It costs Pons' launch fee and the gas, and `firstBuy` (ETH, optional) buys the coin for the maker in the launch
+   * itself, before anybody else can trade. The name and the ticker are the agent's own by default, and are checked
+   * against the rule before anything is signed or sent.
+   */
+  async launchCoin(o: { agent?: string; name?: string; symbol?: string; firstBuy?: Amount; maker?: string; permission?: CoinPermission } = {}): Promise<CoinLaunched> {
+    const me = this.mine();
+    const agent = o.agent ? await this.agentAddress(o.agent) : me;
+    const { launcher, fee, site } = await this.launcher();
+    let maker: string, deadline = 0n, sig: Hex = "0x", words: { name: string; symbol: string; logo: string; description: string };
+    if (agent === me) {
+      if (o.maker !== undefined && !/^0x[0-9a-fA-F]{40}$/.test(o.maker)) throw new Refusal("Give the maker's wallet address.", "bad_address");
+      maker = (o.maker ?? me).toLowerCase();
+      words = await this.coinWords(agent, o.name, o.symbol, site);
+    } else {
+      maker = me;
+      let p = o.permission;
+      if (p) {
+        if (p.agent.toLowerCase() !== agent || p.maker.toLowerCase() !== me) throw new Refusal("That permission is for another agent or another maker.", "bad_permission");
+        if (p.launcher.toLowerCase() !== launcher) throw new Refusal("That permission is for another launcher.", "bad_permission");
+      } else {
+        // an agent Factor runs: this wallet signs the ask, and Factor signs the agent's permission for it
+        const w = await this.coinWords(agent, o.name, o.symbol, site);
+        const at = await this.clock();
+        const signature = await this.sign(coinAskMessage({ agent, maker: me, name: w.name, symbol: w.symbol, at }));
+        p = await this.ask<CoinPermission>("/coins/permission", { agent, maker: me, name: w.name, symbol: w.symbol, at, signature });
+      }
+      words = { name: p.name, symbol: p.symbol, logo: p.logo, description: p.description };
+      deadline = BigInt(p.deadline);
+      sig = p.signature;
+    }
+    const value = fee + (o.firstBuy === undefined ? 0n : toWei(o.firstBuy));
+    const params = { ...words, socials: { twitter: "", telegram: "", discord: "", website: "", farcaster: "" }, creatorFeeRecipient: "0x0000000000000000000000000000000000000000" as Hex, creatorTaxBps: 0, buybackEnabled: false, expectedEconomics: `0x${"0".repeat(64)}` as Hex, salt: keccak256(toHex(`${agent}:${Date.now()}`)) };
+    const sent = await this.callLauncher(launcher, "launch", [agent, maker, params, 0n, deadline, sig], value);
+    let coin: string | null = null;
+    for (const log of sent.receipt.logs as { address: string; topics: Hex[]; data: Hex }[]) {
+      if (log.address.toLowerCase() !== launcher) continue;
+      try {
+        const d = decodeEventLog({ abi: LAUNCHER, topics: log.topics as [Hex, ...Hex[]], data: log.data });
+        if (d.eventName === "CoinLaunched") coin = String((d.args as unknown as { coin: string }).coin).toLowerCase();
+      } catch {
+        // another event
+      }
+    }
+    const page = await this.agent(agent).catch(() => null);
+    return { hash: sent.hash, explorer: sent.explorer, coin, url: `${site}/coins/${page?.agent.named ? page.agent.name : agent}` };
+  }
+
+  /**
+   * A launch made ready for a maker who signs it with a wallet of its own (a phone, a hardware wallet): the exact
+   * transaction, to send as it is. It needs the agent's `permission` unless `maker` is the agent itself. Nothing is
+   * signed or sent here. For an agent Factor runs, its maker launches it on the agent's page instead (coinLaunchLink).
+   */
+  async prepareCoinLaunch(o: { agent: string; maker: string; name?: string; symbol?: string; firstBuy?: Amount; permission?: CoinPermission }): Promise<CoinLaunchTx> {
+    const agent = await this.agentAddress(o.agent);
+    if (!/^0x[0-9a-fA-F]{40}$/.test(o.maker)) throw new Refusal("Give the maker's wallet address.", "bad_address");
+    const maker = o.maker.toLowerCase();
+    const { launcher, fee, site } = await this.launcher();
+    if (maker !== agent && !o.permission) throw new Refusal(`The maker needs the agent's permission: the agent signs it (signCoinPermission), or, for an agent Factor runs, the maker launches it on ${this.coinLaunchLink(o.agent)}.`, "no_permission");
+    const p = o.permission;
+    if (p && (p.agent.toLowerCase() !== agent || p.maker.toLowerCase() !== maker || p.launcher.toLowerCase() !== launcher)) throw new Refusal("That permission is for another agent, maker or launcher.", "bad_permission");
+    const words = p ? { name: p.name, symbol: p.symbol, logo: p.logo, description: p.description } : await this.coinWords(agent, o.name, o.symbol, site);
+    const firstBuy = o.firstBuy === undefined ? 0n : toWei(o.firstBuy);
+    const params = { ...words, socials: { twitter: "", telegram: "", discord: "", website: "", farcaster: "" }, creatorFeeRecipient: "0x0000000000000000000000000000000000000000" as Hex, creatorTaxBps: 0, buybackEnabled: false, expectedEconomics: `0x${"0".repeat(64)}` as Hex, salt: keccak256(toHex(`${agent}:${maker}:${words.symbol}`)) };
+    const data = encodeFunctionData({ abi: LAUNCHER, functionName: "launch", args: [agent, maker, params, 0n, BigInt(p?.deadline ?? "0"), (p?.signature ?? "0x") as Hex] });
+    try {
+      await this.pub.call({ account: maker as Hex, to: launcher, data, value: fee + firstBuy });
+    } catch (e) {
+      if (!/insufficient (funds|balance)|exceeds the balance/i.test(`${(e as { shortMessage?: string }).shortMessage} ${(e as Error).message}`)) throw new Refusal(coinWordsOf(e), "launcher_refused");
+    }
+    return { to: launcher, value: (fee + firstBuy).toString(), data, chainId: this.chainId, agent, maker, name: words.name, symbol: words.symbol, feeWei: fee.toString(), firstBuyWei: firstBuy.toString(), deadline: p?.deadline ?? "0" };
+  }
+
+  /** The launcher, on and a contract on the chain, with Pons' fee read from it. */
+  private async launcher(): Promise<{ launcher: Hex; fee: bigint; site: string }> {
+    const about = await read<CoinsAbout>(this.api, "/coins/about");
+    if (!about?.enabled || !about.launcher || !/^0x[0-9a-fA-F]{40}$/.test(about.launcher)) throw new Refusal("Agent coins are not switched on yet.", "coins_off");
+    const launcher = about.launcher.toLowerCase() as Hex;
+    const code = await this.pub.getCode({ address: launcher });
+    if (!code || code === "0x") throw new Refusal(`There is no contract at ${launcher}, where the site says coins are launched. Nothing will be sent to it.`, "no_launcher");
+    const fee = (await this.pub.readContract({ address: launcher, abi: LAUNCHER, functionName: "launchFee" })) as bigint;
+    return { launcher, fee, site: about.site ?? this.site() };
+  }
+
+  /** An agent's address, from its name or its address. */
+  private async agentAddress(id: string): Promise<string> {
+    if (/^0x[0-9a-fA-F]{40}$/.test(id)) return id.toLowerCase();
+    const a = await this.agent(id);
+    if (!a) throw new Refusal(`There is no agent ${id} on Factor.`, "no_agent");
+    return a.agent.address;
+  }
+
+  /** A coin's words for an agent: its name and ticker (the agent's own unless given), checked against the rule, its picture and its description. */
+  private async coinWords(agent: string, name: string | undefined, symbol: string | undefined, site: string): Promise<{ name: string; symbol: string; logo: string; description: string }> {
+    const page = await this.agent(agent);
+    if (!page) throw new Refusal("That wallet is not an agent on Factor.", "no_agent");
+    const own = page.agent.named ? page.agent.name : null;
+    const s = own ? suggestCoin(own) : { name: "", symbol: "" };
+    const n = (name ?? s.name).trim(), t = (symbol ?? s.symbol).trim();
+    const problem = coinNameProblem(own, n, t);
+    if (problem) throw new Refusal(sentence(problem), "bad_coin_name");
+    return { name: n, symbol: t, logo: coinLogo(site, agent), description: coinDescription(n) };
+  }
+
+  /** One call to the launcher, from this wallet or its account: tried, sent, followed until it is mined. */
+  private async callLauncher(launcher: Hex, functionName: "launch" | "bumpNonce", args: readonly unknown[], value: bigint): Promise<{ hash: Hex; explorer: string; receipt: { logs: unknown[] } }> {
+    if (!this.account || !this.wallet) throw new Refusal("This Factor was connected without a key: it can only read.", "read_only");
+    if (this.via) {
+      try {
+        await this.pub.simulateContract({ address: launcher, abi: LAUNCHER, functionName, args, account: this.via, value } as never);
+      } catch (e) {
+        if (/insufficient (funds|balance)|exceeds the balance/i.test(`${(e as { shortMessage?: string }).shortMessage} ${(e as Error).message}`)) throw new Refusal(WORDS.AccountShort!([await this.pub.getBalance({ address: this.via }), value]), "account_short");
+        throw new Refusal(coinWordsOf(e), "launcher_refused");
+      }
+      return this.order([{ to: launcher, value, data: encodeFunctionData({ abi: LAUNCHER, functionName, args } as never) }]);
+    }
+    let hash: Hex;
+    try {
+      const { request } = await this.pub.simulateContract({ address: launcher, abi: LAUNCHER, functionName, args, account: this.account, value } as never);
+      hash = await this.wallet.writeContract(request as never);
+    } catch (e) {
+      throw e instanceof Refusal ? e : new Refusal(coinWordsOf(e), "launcher_refused");
+    }
+    const receipt = await this.pub.waitForTransactionReceipt({ hash, timeout: 180_000 });
+    if (receipt.status !== "success") throw new Refusal(`The transaction ${hash} was mined and the launcher refused it. Nothing changed but the gas.`, "reverted");
+    return { hash, explorer: `${this.explorer}/tx/${hash}`, receipt };
+  }
+
   // ---------- ERC-8004 ----------
 
   /**
@@ -1698,6 +1883,28 @@ function subjobOf(body: Record<string, unknown>, forJob?: number): Pick<Deal, "s
 function sortOffers(list: Applicant[], by: "score" | "price" | "fast"): Applicant[] {
   const v = (a: Applicant): bigint => (by === "price" ? BigInt(a.offer?.priceWei ?? "0") : by === "fast" ? BigInt(a.offer?.dueHours ?? 0) : 0n);
   return [...list].sort((x, y) => (x.offer?.ended ? 1 : 0) - (y.offer?.ended ? 1 : 0) || (v(x) < v(y) ? -1 : v(x) > v(y) ? 1 : 0) || x.rank - y.rank);
+}
+
+const LAUNCHER = agentCoinLauncherAbi as Abi;
+// The launcher's own refusals, in plain words: a few share a name with an account's, and mean something else here.
+const COIN_WORDS: Record<string, (a: readonly unknown[]) => string> = {
+  NotAllowed: () => "Only the agent itself, or its maker with the agent's permission, can launch its coin.",
+  Expired: () => "The agent's permission ran out before it was sent. Ask for a new one.",
+  BadSignature: () => "The agent's permission is not for this launch: another maker, other words, or one the agent took back.",
+  NotRegistered: () => "That wallet is not an agent on the desk.",
+  Barred: () => "An agent that did not repay the pool cannot launch a coin.",
+  AlreadyLaunched: () => "This agent has its coin already: one coin per agent, ever.",
+  LaunchFeeShort: (a) => `Pons' launch fee is ${formatEther(BigInt(String(a[0])))} ETH: send at least that.`,
+  RefundFailed: () => "The maker's wallet would not take back the ETH the curve could not use.",
+  NotPonsLaunch: () => "Pons did not launch the coin as it was asked to. Nothing changed.",
+};
+function coinWordsOf(e: unknown): string {
+  if (e instanceof Refusal) return e.message;
+  if (e instanceof BaseError) {
+    const hit = e.walk((x) => x instanceof ContractFunctionRevertedError);
+    if (hit instanceof ContractFunctionRevertedError && hit.data?.errorName && COIN_WORDS[hit.data.errorName]) return COIN_WORDS[hit.data.errorName]!((hit.data.args ?? []) as readonly unknown[]);
+  }
+  return explain(e);
 }
 
 const sentence = (text: string): string => { const t = text.charAt(0).toUpperCase() + text.slice(1); return /[.!?]$/.test(t) ? t : `${t}.`; };

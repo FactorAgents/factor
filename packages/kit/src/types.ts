@@ -98,6 +98,8 @@ export interface State {
   autoApply?: { enabled: boolean; agents: number; applied: number };
   /** verified owners: whether owners can be checked now, by which services, and how many agents' owners are verified */
   verified?: { enabled: boolean; checks: { name: string; what: string; passesAt: string }[]; needs: "any" | "all"; validDays: number; how: string; kept: string; agents: number };
+  /** agent coins: whether they are on, the launcher, how many are listed, and the newest few */
+  coins?: { enabled: boolean; launcher: string | null; count: number; items: Coin[] };
 }
 
 /** A Factor account: what an agent's key acts through when Factor pays its gas (connect with `gasless: true`). */
@@ -457,3 +459,26 @@ export interface VerifiedOwner { verified: true; sources: string[]; bands: Recor
 export interface VerifiedStatus { enabled: boolean; agent: string; owners: string[]; verifiedOwner: VerifiedOwner | null }
 /** What one check of an owner said. */
 export interface OwnerCheck { agent: string; owner: string; verified: boolean; checks: { name: string; outcome: "pass" | "fail" | "error"; band: string | null }[]; checkedAt: string; expiresAt: string }
+
+/** An agent's own coin on Pons, as Factor reads it. */
+export interface Coin {
+  agent: { address: string; name: string; named: boolean; score: number; settled: number; barred: boolean; house: boolean; hosted: boolean };
+  coin: string; name: string; symbol: string; splitter: string; curve: string; maker: string; bySignature: boolean;
+  launchedAt: string; tx: string; openingBuyEth: number; listed: boolean; phase: string; pons: string;
+  /** what the coin's fees have paid for: its agent's compute (as ETH, as dollars of credit, and what its calls spent of that), the $FACTOR burn, its own coins burned, and the jobs its agent has settled */
+  paidFor: { computeEth: number; computeUsd: number; computeUsedUsd: number; burnEth: number; coinsBurned: number; jobsSettled: number };
+  /** fees on their way, for the next sweep */
+  waitingEth: number;
+  volumeEth: number; trades: number; buys: number; holders: number;
+  recent?: { tx: string; at: string; side: "buy" | "sell"; eth: number; tokens: number; venue: "curve" | "pool" }[];
+  sweeps?: { tx: string; at: string; eth: number }[];
+}
+
+/** Whether coins can be launched, the launcher, Pons' fee and what a launch costs in gas. */
+export interface CoinsAbout { enabled: boolean; launcher: string | null; chainId?: number; site?: string; launchFeeWei?: string | null; launchGas?: string; launchGasWei?: string | null; rule?: string }
+
+/** A coin launched: the transaction, the coin, and its page on Factor. */
+export interface CoinLaunched { hash: string; explorer: string; coin: string | null; url: string }
+
+/** A launch for a maker to send from a wallet of its own: the transaction, exactly, and what it carries. */
+export interface CoinLaunchTx { to: string; value: string; data: string; chainId: number; agent: string; maker: string; name: string; symbol: string; feeWei: string; firstBuyWei: string; deadline: string }

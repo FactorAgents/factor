@@ -2,9 +2,13 @@
 // refuses before it would send anything, and what its tools say. The real thing is scripts/e2e.ts.
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import { toFunctionSelector } from "viem";
 import type { Agent, Job, State } from "../src/types.js";
 
 export const DESK = "0x00000000000000000000000000000000000de5c0";
+export const COIN_LAUNCHER = "0x00000000000000000000000000000000000c01a1";
+const LAUNCH_FEE = toFunctionSelector("launchFee()");
+const NONCES = toFunctionSelector("nonces(address)");
 export const KEY = "0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6"; // one of anvil's public test keys
 
 const agent = (name: string, address: string, score: number, over: Partial<Agent> = {}): Agent => ({
@@ -28,10 +32,10 @@ export function state(over: Partial<State> = {}): State {
   };
 }
 
-export interface Stub { api: string; rpc: string; site: { state: State; refuse: number | null; payInfo: ((token: string) => { status: number; body: unknown }) | null; x402: { status: number; body: unknown } | null; record: unknown; jobExtra: Record<string, unknown>; tree: unknown; firms: unknown[]; firm: unknown; firmRecord: unknown; plan: unknown; plans: unknown[]; erc8004: unknown; openJob: unknown; openJobs: unknown[]; autoApply: unknown; verified: unknown }; node: { chainId: number; code: string; calls: string[] }; posts: { path: string; body: unknown; auth?: string }[]; close(): Promise<void> }
+export interface Stub { api: string; rpc: string; site: { coins: unknown[]; coin: unknown; coinsAbout: unknown; state: State; refuse: number | null; payInfo: ((token: string) => { status: number; body: unknown }) | null; x402: { status: number; body: unknown } | null; record: unknown; jobExtra: Record<string, unknown>; tree: unknown; firms: unknown[]; firm: unknown; firmRecord: unknown; plan: unknown; plans: unknown[]; erc8004: unknown; openJob: unknown; openJobs: unknown[]; autoApply: unknown; verified: unknown }; node: { chainId: number; code: string; calls: string[] }; posts: { path: string; body: unknown; auth?: string }[]; close(): Promise<void> }
 
 export async function stub(): Promise<Stub> {
-  const site = { state: state(), refuse: null as number | null, payInfo: null as Stub["site"]["payInfo"], x402: null as Stub["site"]["x402"], record: null as unknown, jobExtra: {} as Record<string, unknown>, tree: null as unknown, firms: [] as unknown[], firm: null as unknown, firmRecord: null as unknown, plan: null as unknown, plans: [] as unknown[], erc8004: null as unknown, openJob: null as unknown, openJobs: [] as unknown[], autoApply: null as unknown, verified: null as unknown };
+  const site = { coins: [] as unknown[], coin: null as unknown, coinsAbout: { enabled: false, launcher: null } as unknown, state: state(), refuse: null as number | null, payInfo: null as Stub["site"]["payInfo"], x402: null as Stub["site"]["x402"], record: null as unknown, jobExtra: {} as Record<string, unknown>, tree: null as unknown, firms: [] as unknown[], firm: null as unknown, firmRecord: null as unknown, plan: null as unknown, plans: [] as unknown[], erc8004: null as unknown, openJob: null as unknown, openJobs: [] as unknown[], autoApply: null as unknown, verified: null as unknown };
   const node = { chainId: 4663, code: "0x6080", calls: [] as string[] };
   const posts: { path: string; body: unknown; auth?: string }[] = [];
   const json = (res: import("node:http").ServerResponse, status: number, body: unknown) => { res.writeHead(status, { "content-type": "application/json" }); res.end(JSON.stringify(body)); };
@@ -61,6 +65,8 @@ export async function stub(): Promise<Stub> {
       if (path === "/openjobs/withdraw") return json(res, 200, { ok: true, open: (posts.at(-1)!.body as { open: string }).open, withdrawn: true });
       // verified owners: the owner checked as the engine would answer, Human Passport passing
       if (path === "/verified/check") { const b = posts.at(-1)!.body as { agent: string; owner: string }; return json(res, 200, { ok: true, agent: b.agent, owner: b.owner, verified: true, checks: [{ name: "Human Passport", outcome: "pass", band: "20 to 29" }, { name: "Talent Protocol", outcome: "fail", band: "no record" }], checkedAt: "2026-10-24T09:00:00.000Z", expiresAt: "2026-11-23T09:00:00.000Z" }); }
+      // agent coins: the permission Factor signs for an agent it runs, as the engine would answer it
+      if (path === "/coins/permission") { const b = posts.at(-1)!.body as { agent: string; maker: string; name: string; symbol: string }; return json(res, 200, { agent: b.agent, maker: b.maker, name: b.name, symbol: b.symbol, logo: `https://factoragents.fun/api/v1/coins/logo/${b.agent}`, description: "d", nonce: "0", deadline: "4102444800", signature: `0x${"5e".repeat(65)}`, launcher: COIN_LAUNCHER, chainId: 4663 }); }
       if (path === "/erc8004/link") { const b = posts.at(-1)!.body as { agentId: string | null }; return json(res, 200, { ok: true, agentId: b.agentId, ...(b.agentId ? { via: "wallet" } : {}) }); }
       if (path === "/firms/form") { const b = posts.at(-1)!.body as { slug: string; members: string[] }; return json(res, 200, { ok: true, firm: b.slug, edited: false, invited: b.members }); }
       return json(res, 200, path === "/compute/key" ? { key: "fck_a-key-from-the-stub-0123456789ab", expiresAt: "2099-01-01T00:00:00.000Z", agent: (posts.at(-1)!.body as { address: string }).address } : { ok: true });
@@ -79,6 +85,9 @@ export async function stub(): Promise<Stub> {
       { id: "deepseek/deepseek-chat", object: "model", owned_by: "deepseek", name: "DeepSeek V3", context_length: 128_000, pricing: { inUsd: 0.2625, outUsd: 0.84 } },
     ] });
     if (path === "/firms") return json(res, 200, { enabled: true, items: site.firms });
+    if (path === "/coins") return json(res, 200, { enabled: true, items: site.coins });
+    if (path === "/coins/about") return json(res, 200, site.coinsAbout);
+    if (path.startsWith("/coins/")) return site.coin ? json(res, 200, site.coin) : json(res, 404, { error: "no coin is listed for that" });
     if (path.startsWith("/verified/")) return site.verified ? json(res, 200, site.verified) : json(res, 200, { enabled: false, owners: [], verifiedOwner: null });
     if (path.startsWith("/erc8004/")) return site.erc8004 ? json(res, 200, site.erc8004) : json(res, 404, { error: "no such agent" });
     if (path === "/plans") return json(res, 200, { enabled: true, items: site.plans });
@@ -104,7 +113,10 @@ export async function stub(): Promise<Stub> {
     const one = (c: { id: number; method: string }) => {
       node.calls.push(c.method);
       const block = { number: "0x10", hash: `0x${"11".repeat(32)}`, parentHash: `0x${"10".repeat(32)}`, timestamp: `0x${Math.floor(Date.now() / 1000).toString(16)}`, gasLimit: "0x1c9c380", gasUsed: "0x0", baseFeePerGas: "0x1", transactions: [], miner: `0x${"00".repeat(20)}`, extraData: "0x", logsBloom: `0x${"00".repeat(256)}`, nonce: "0x0000000000000000", difficulty: "0x0", sha3Uncles: `0x${"00".repeat(32)}`, size: "0x1", stateRoot: `0x${"00".repeat(32)}`, receiptsRoot: `0x${"00".repeat(32)}`, transactionsRoot: `0x${"00".repeat(32)}`, uncles: [], mixHash: `0x${"00".repeat(32)}` };
-      const result = c.method === "eth_chainId" ? `0x${node.chainId.toString(16)}` : c.method === "eth_getCode" ? node.code : c.method === "eth_blockNumber" ? "0x10" : c.method === "eth_getBlockByNumber" ? block : null;
+      // the coin launcher's two reads: Pons' launch fee (0.0005 ETH) and an agent's permission number (0)
+      const data = (c as { params?: [{ data?: string; input?: string }] }).params?.[0]?.data ?? (c as { params?: [{ input?: string }] }).params?.[0]?.input ?? "";
+      const call = c.method === "eth_call" ? (data.startsWith(LAUNCH_FEE) ? `0x${(5n * 10n ** 14n).toString(16).padStart(64, "0")}` : data.startsWith(NONCES) ? `0x${"0".repeat(64)}` : null) : null;
+      const result = c.method === "eth_chainId" ? `0x${node.chainId.toString(16)}` : c.method === "eth_getCode" ? node.code : c.method === "eth_blockNumber" ? "0x10" : c.method === "eth_getBlockByNumber" ? block : call;
       return result === null ? { jsonrpc: "2.0", id: c.id, error: { code: -32601, message: `the stub node does not do ${c.method}` } } : { jsonrpc: "2.0", id: c.id, result };
     };
     json(res, 200, Array.isArray(call) ? call.map(one) : one(call));
