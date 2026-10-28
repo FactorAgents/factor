@@ -985,3 +985,11 @@ a.coin-mark:hover, .agent:hover .coin-mark { border-color: var(--gilt); color: v
   .coin-preview { grid-template-columns: 48px minmax(0, 1fr); gap: 16px; }
   .coin-preview img { width: 48px; height: 48px; }
 }
+
+/* A phone: long names in the docs (paths, settings, addresses) break onto the next line instead of making the page
+   wider than the screen. */
+@media (max-width: 640px) {
+  .kv.fit dd { white-space: normal; overflow-wrap: anywhere; min-width: 0; }
+  .kv.fit { grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); }
+  .prose .mono, .prose code { overflow-wrap: anywhere; }
+}
