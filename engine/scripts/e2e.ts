@@ -5,7 +5,9 @@
 //   npm run e2e -- --stay  the fork and the engine are left running so the site can read it (FACTOR_ENGINE_URL)
 //   npm run e2e -- --stop  stops what --stay left running
 //   npm run e2e -- --bare  only the fork, the contracts, the engine and a launched, traded token, left running:
-//                          what the site's own run through a browser starts from (web/scripts/flows.mjs)
+//                          what the site's own run through a browser starts from (web/scripts/flows.mjs). With
+//                          E2E_COINS=on the coin launcher is deployed too, by contracts/deploy-coins.sh, and the
+//                          engine runs with AGENT_COINS=on (what packages/kit/scripts/coins-e2e.ts starts from)
 //
 // What it does, in order:
 //   1  starts anvil as a fork of the chain's head and takes anvil's own built-in test accounts as the admin, the
@@ -210,7 +212,7 @@ async function main(): Promise<void> {
   const modelLog = openSync(join(WORK, "model.log"), "a");
   spawn(join(ENGINE, "node_modules", ".bin", "tsx"), ["scripts/stub-model.ts", String(MODEL_PORT), MODEL_KEY], { cwd: ENGINE, stdio: ["ignore", modelLog, modelLog], detached: true }).unref();
   // forge writes a small record of each script run into contracts/cache; what this run puts there is taken away again
-  const records = ["Deploy.s.sol", "Launch.s.sol"].map((f) => join(CONTRACTS, "cache", f));
+  const records = ["Deploy.s.sol", "Launch.s.sol", "DeployCoins.s.sol"].map((f) => join(CONTRACTS, "cache", f));
   const hadRecords = records.map((f) => existsSync(f));
 
   step("1  anvil, as a fork of Robinhood Chain's head, on 127.0.0.1 only");
@@ -268,11 +270,29 @@ async function main(): Promise<void> {
     const failedSoFar = checks.filter((c) => !c.ok);
     records.forEach((f, i) => { if (!hadRecords[i]) rmSync(f, { recursive: true, force: true }); });
     if (failedSoFar.length) throw new Error(`${failedSoFar.length} check(s) failed before the desk was ready`);
+    // agents' coins: the launcher, deployed by the repo's own one-command script against this fork (its dry run says
+    // what the deploy and one coin's launch cost; on a fork it sends from the fork's own unlocked wallet, no key),
+    // read back by the script's own check, and the engine told of it
+    let coins: Record<string, string> = {};
+    let launcher: string | null = null;
+    if (process.env.E2E_COINS === "on") {
+      const forkEnv = join(CONTRACTS, "broadcast", "factor.fork.env");
+      mkdirSync(join(CONTRACTS, "broadcast"), { recursive: true });
+      writeFileSync(forkEnv, [...Object.entries(addresses).map(([k, v]) => `${k}=${v}`), `FACTOR_DEPLOY_BLOCK=${deployBlock}`, `FACTOR_TOKEN=${token}`, ""].join("\n"));
+      const r = spawnSync("zsh", [join(CONTRACTS, "deploy-coins.sh"), ADMIN], { cwd: CONTRACTS, encoding: "utf8", timeout: 600_000, env: { ...process.env, FACTOR_RPC: RPC, PATH: `${FOUNDRY}:${process.env.PATH}` } });
+      writeFileSync(join(WORK, "deploy-coins.log"), `${r.stdout}${r.stderr}`);
+      const written = readFileSync(forkEnv, "utf8");
+      launcher = /FACTOR_COIN_LAUNCHER=(0x[0-9a-fA-F]{40})/.exec(written)?.[1] ?? null;
+      const from = /FACTOR_COIN_LAUNCHER_BLOCK=(\d+)/.exec(written)?.[1] ?? null;
+      check("the coin launcher is deployed by contracts/deploy-coins.sh, which says what it costs and reads it back wired", r.status === 0 && !!launcher && !!from && r.stdout.includes("OK: the coin launcher is wired") && r.stdout.includes("one coin's launch"), launcher ?? (r.stdout + r.stderr).split("\n").slice(-8).join(" | "));
+      if (!launcher || !from) throw new Error("the coin launcher was not deployed");
+      coins = { AGENT_COINS: "on", FACTOR_COIN_LAUNCHER: launcher, FACTOR_COIN_LAUNCHER_BLOCK: from, COINS_CHECK_EVERY_S: "4", COINS_SWEEP_EVERY_S: "20", COINS_MIN_SWEEP_WEI: "100000000000000", COINS_SITE_URL: "https://factoragents.fun" };
+    }
     // what the kit's and the site's runs start from has Factor's own agents on it too
     await stopPort(ENGINE_PORT);
-    startEngine(dataDir, envFile, HOUSE);
+    startEngine(dataDir, envFile, { ...HOUSE, ...coins });
     await waitFor("the house agents to be on the desk", async () => (await state()).agents.filter((a) => a.house && a.named).length === SERVICES.length, 400_000);
-    writeFileSync(join(WORK, "bare.json"), JSON.stringify({ rpc: RPC, api: API, desk, splitter, burnPot, token, accounts: accountsAt, keys, adminKey: ADMIN_KEY, model: `http://127.0.0.1:${MODEL_PORT}` }, null, 2));
+    writeFileSync(join(WORK, "bare.json"), JSON.stringify({ rpc: RPC, api: API, desk, splitter, burnPot, token, accounts: accountsAt, keys, adminKey: ADMIN_KEY, model: `http://127.0.0.1:${MODEL_PORT}`, launcher, dataDir, envFile }, null, 2));
     console.log(`\nLeft running: the fork on ${RPC}, the engine on ${API}, the pool holding ${eth(pool0)} ETH. Written to ${join(WORK, "bare.json")}.`);
     console.log("Stop them with: npm run e2e -- --stop");
     return;
