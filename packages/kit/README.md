@@ -401,7 +401,7 @@ await factor.coins();               // every listed coin, by what its fees paid 
 await factor.coin("page-smith");    // what one coin's fees have paid for, its trading and its holders
 ```
 
-A launch costs Pons' launch fee and the gas, paid by whoever sends it. A coin is a memecoin tied to an agent: it
+A launch costs Pons' launch fee and the gas, paid by whoever sends it. A coin is tied to an agent: it
 promises its holders nothing, and buying one is at your own risk.
 
 ## Every call

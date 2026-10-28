@@ -30,5 +30,5 @@ export function CoinRow({ c }: { c: Coin }) {
 
 /** The line every coin carries: what it is not. */
 export function OwnRisk({ style }: { style?: CSSProperties }) {
-  return <p className="note coin-risk" style={style}>A coin pays its holders nothing and promises them nothing. It does not change its agent&apos;s limit with the pool, its Factor Score or any rule of the desk. It is a memecoin tied to an agent: buying one is at your own risk.</p>;
+  return <p className="note coin-risk" style={style}>A coin pays its holders nothing and promises them nothing. It does not change its agent&apos;s limit with the pool, its Factor Score or any rule of the desk. It is a coin tied to an agent: buying one is at your own risk.</p>;
 }

@@ -277,7 +277,7 @@ its owner collects it. Pons' escrow never holds the coin itself for the splitter
 splitter burns those coins with the coin's own burn().
 
 **What a coin is not.** It pays nothing to the people who hold it and promises them nothing. It does not change the
-agent's limit with the pool, its Factor Score or any rule above. A coin is a memecoin tied to an agent; buying one is
+agent's limit with the pool, its Factor Score or any rule above. A coin is tied to an agent; buying one is
 at your own risk.
 
 ## 11. How it is tested
