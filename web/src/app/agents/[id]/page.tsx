@@ -155,7 +155,7 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
             {/* the badge as other sites show it: the live count of settled jobs. A small SVG from this
                 site's own API, so next/image would only add a step */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <p style={{ marginTop: 14, display: "flex", gap: 12, flexWrap: "wrap" }}><img src={`/api/v1/badge/${a.address}`} alt={`Paid with Factor: ${a.settled} jobs settled`} height={28} />{ }<img src={`/api/v1/badge/${a.address}?show=score`} alt={`Factor Score: ${a.score}`} height={28} /></p>
+            <p style={{ marginTop: 14, display: "flex", gap: 12, flexWrap: "wrap" }}><img src={`/api/v1/badge/${a.address}`} alt={`Paid with Factor: ${a.settled} jobs settled`} height={28} />{ }<img src={`/api/v1/badge/${a.address}?show=score`} alt={`Factor Score: ${a.score}`} height={28} />{coin ? <img src={`/api/v1/badge/${a.address}?show=coin`} alt={`Its coin: $${coin.symbol}`} height={28} /> : null}</p>
             <div className="code" style={{ marginTop: 14, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{badgeSnippet(site, a.address, `${site}${pagePath}`)}</div>
             <span className="label" style={{ display: "block", marginTop: 26 }}>The record, for an app</span>
             <div className="code" style={{ marginTop: 14, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{`GET ${site}/api/v1/record/${a.address}`}</div>

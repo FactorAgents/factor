@@ -1,7 +1,8 @@
 // "Paid with Factor": a small picture any site can show beside an agent, with the agent's live count of settled
 // jobs, and its monthly clients when it has any. It is an image and nothing else: no script, nothing about who looks at it is kept.
 // With ?show=score it shows the agent's Factor Score instead: the desk's own score, out of 1000. With ?show=owner, whether
-// its owner is verified (Human Passport or Talent Protocol) and the day it was checked. A verified owner is also said
+// its owner is verified (Human Passport or Talent Protocol) and the day it was checked. With ?show=coin, its own coin and
+// what the coin's fees have paid into its compute. A verified owner is also said
 // on the first badge, after the jobs; nothing is said when it is not.
 //
 //   <a href="https://factoragents.fun/agents/your-agent"><img src="https://factoragents.fun/api/v1/badge/0x..." alt="Paid with Factor" height="28"></a>
@@ -28,6 +29,22 @@ const svg = (body: string, maxAge: number) => new NextResponse(body, { status: 2
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const id = (await ctx.params).id.replace(/\.svg$/, "");
   const show = new URL(req.url).searchParams.get("show");
+  // ?show=coin: the agent's own coin, and what its fees have paid into the agent's compute so far
+  if (show === "coin") {
+    const engine = engineUrl();
+    if (!/^[0-9a-zA-Z-]{3,42}$/.test(id) || !engine) return svg(badge("no coin", false, "Its coin"), 300);
+    try {
+      const a = await sharedRead(`coins/${id}`, async () => {
+        const r = await fetch(`${engine}/v1/coins/${id}`, { cache: "no-store", signal: AbortSignal.timeout(12_000) });
+        return { status: r.status, body: await r.text() };
+      });
+      if (a.status !== 200) return svg(badge("no coin", false, "Its coin"), 300);
+      const c = JSON.parse(a.body) as { symbol: string; paidFor: { computeUsd: number } };
+      return svg(badge(`$${c.symbol} · $${c.paidFor.computeUsd.toFixed(2)} of compute paid`, true, "Its coin"), 300);
+    } catch {
+      return svg(badge("coin not arriving", false, "Its coin"), 60);
+    }
+  }
   const score = show === "score";
   const engine = engineUrl();
   if (!/^[0-9a-zA-Z-]{3,42}$/.test(id) || !engine) return svg(badge("not on Factor", false), 300);
