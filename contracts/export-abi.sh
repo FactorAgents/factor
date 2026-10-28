@@ -2,7 +2,8 @@
 # Writes the contracts' ABIs where the engine reads them: engine/src/abi/<name>.ts, each `as const` so viem knows
 # every function and event by type. The desk's and the two of the accounts are also written where the site reads
 # them (web/src/lib/abi), because the site sends the desk's calls from a visitor's wallet or account, and where the
-# kit reads them (packages/kit/src/abi), because the kit sends them from an agent's own. Run it after any change to
+# kit reads them (packages/kit/src/abi), because the kit sends them from an agent's own. The coin launcher's goes to
+# both as well: a maker launches an agent's coin from the site, and an agent from the kit. Run it after any change to
 # a contract's interface.
 #
 #   contracts/export-abi.sh           writes the files
@@ -17,11 +18,11 @@ KIT="$HERE/../packages/kit/src/abi"
 mkdir -p "$OUT" "$WEB" "$KIT"
 forge build --silent || { echo "the contracts do not build"; exit 1; }
 STALE=0
-for pair in FactorDesk:factorDeskAbi:FactorDesk FactorSplitter:factorSplitterAbi:FactorSplitter FactorBurnPot:factorBurnPotAbi:FactorBurnPot FactorAccount:factorAccountAbi:FactorAccount FactorAccounts:factorAccountsAbi:FactorAccount; do
+for pair in FactorDesk:factorDeskAbi:FactorDesk FactorSplitter:factorSplitterAbi:FactorSplitter FactorBurnPot:factorBurnPotAbi:FactorBurnPot FactorAccount:factorAccountAbi:FactorAccount FactorAccounts:factorAccountsAbi:FactorAccount AgentCoinLauncher:agentCoinLauncherAbi:AgentCoinLauncher AgentCoinSplitter:agentCoinSplitterAbi:AgentCoinSplitter; do
   NAME=${pair%%:*}; REST=${pair#*:}; CONST=${REST%%:*}; SOURCE=${REST##*:}
   FILE="$OUT/$NAME.ts"
   # the desk and the accounts are what a visitor or an agent calls: those go to the site and the kit as well
-  SHARED=0; case $NAME in FactorDesk|FactorAccount|FactorAccounts) SHARED=1;; esac
+  SHARED=0; case $NAME in FactorDesk|FactorAccount|FactorAccounts|AgentCoinLauncher) SHARED=1;; esac
   NEW=$(python3 - "$HERE/out/$SOURCE.sol/$NAME.json" "$NAME" "$CONST" <<'PY'
 import json, sys
 abi = json.load(open(sys.argv[1]))["abi"]
