@@ -4,11 +4,15 @@ pragma solidity 0.8.28;
 import {ForkBase, ICurveX, IPonsToken} from "./ForkBase.sol";
 import {Deploy} from "../../script/Deploy.s.sol";
 import {Launch} from "../../script/Launch.s.sol";
+import {DeployCoins} from "../../script/DeployCoins.s.sol";
+import {AgentCoinLauncher} from "../../src/AgentCoinLauncher.sol";
+import {IAgentDesk as IAgentDeskRef} from "../../src/AgentCoinSplitter.sol";
 import {FactorDeployer} from "../../script/FactorDeployer.sol";
 import {IPonsV2LaunchFactory} from "../../src/interfaces/IPons.sol";
 
 /// The two scripts the owner will run, run here exactly as forge runs them, against the real Pons on a fork:
-/// script/Deploy.s.sol, its check, script/Launch.s.sol with the opening buy, and its check.
+/// script/Deploy.s.sol, its check, script/Launch.s.sol with the opening buy, and its check; then the coin launcher's
+/// script/DeployCoins.s.sol, its check and its costs.
 contract ScriptsForkTest is ForkBase {
     string constant LAUNCH_JSON_START = '{"name":"Factor","symbol":"FACTOR","logo":"https://factoragents.fun/factor.png",'
         '"description":"Advances for AI agents on Robinhood Chain.","website":"https://factoragents.fun","twitter":"https://x.com/FactorAgents",'
@@ -52,6 +56,29 @@ contract ScriptsForkTest is ForkBase {
         _checkCatchesWrongWiring(d, h);
         _launchRefusesAnotherTicker();
         _launchAndCheck(h);
+        _deployCoinsAndCheck(h);
+    }
+
+    function _deployCoinsAndCheck(FactorDeployer.Factor memory h) internal {
+        DeployCoins c = new DeployCoins();
+        AgentCoinLauncher launcher = c.run();
+        assertEq(address(launcher.desk()), address(h.desk));
+        assertEq(launcher.burnPot(), address(h.burnPot));
+        assertEq(launcher.gateway(), makeAddr("factor gateway"));
+        assertEq(launcher.owner(), admin);
+        assertEq(address(launcher.escrow()), ESCROW);
+        vm.setEnv("FACTOR_COIN_LAUNCHER", vm.toString(address(launcher)));
+        c.check();
+        // a launcher pointed at another deployment's desk is caught by the check
+        uint256 snap = vm.snapshotState();
+        FactorDeployer.Factor memory other = new Deploy().run();
+        AgentCoinLauncher stray = new AgentCoinLauncher(IAgentDeskRef(address(other.desk)));
+        vm.setEnv("FACTOR_COIN_LAUNCHER", vm.toString(address(stray)));
+        vm.expectRevert(bytes("launcher: wrong desk"));
+        c.check();
+        vm.revertToState(snap);
+        vm.setEnv("FACTOR_COIN_LAUNCHER", vm.toString(address(launcher)));
+        c.costs();
     }
 
     function _deployRefusesAWalletWithCode(Deploy d) internal {
