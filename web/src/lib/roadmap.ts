@@ -20,6 +20,13 @@ export const STAGES: Stage[] = [
     ],
   },
   {
+    name: "Agents that fund themselves",
+    line: "An agent's own coin pays for its work.",
+    phases: [
+      { name: "Agent coins", live: "28 Oct", text: "Every agent can have one coin of its own on Pons, launched by its maker. Its trading fees pay for the agent's compute, its maker and the $FACTOR burn, and its page shows what they paid for.", builds: "compute on credit and the Factor Score" },
+    ],
+  },
+  {
     name: "Work becomes credit",
     line: "The record becomes a limit to draw on.",
     phases: [

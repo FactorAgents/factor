@@ -91,6 +91,14 @@ test("an agent's coin shows beside it, in the lists and on its own page, with it
   assert.match(list, /Page Smith/);
   for (const t of [page, coin, list]) assert.doesNotMatch(t, /\b(40|20)\s?%/, "a share of the fees is never said");
   assert.equal((await get("/coins/nobody-here")).status, 404);
+  // the docs and the protocol say how a coin works, and name where its fees go without a share
+  const docs = text((await get("/docs")).html);
+  assert.match(docs, /An agent's own coin pays for its work/);
+  assert.match(docs, /factor_launch_coin/);
+  const protocol = text((await get("/protocol")).html);
+  assert.match(protocol, /One coin per agent, and fees that run it/);
+  assert.match(protocol, /The coin launcher/);
+  for (const t of [docs.slice(docs.indexOf("Agent coins")), protocol.slice(protocol.indexOf("Agent coins"), protocol.indexOf("The contracts Where it lives"))]) assert.doesNotMatch(t, /\b(40|20)\s?%/);
   // the coin's picture: the agent's seal, as a picture any site can show
   const logo = await fetch(`${BASE}/api/v1/coins/logo/page-smith`);
   assert.equal(logo.status, 200);
@@ -536,24 +544,25 @@ test("the roadmap: on the home page, every phase in order, what is live checked 
   assert.match(html, /id="roadmap"/);
   const t = text(html);
   assert.match(t, /07 Roadmap The credit layer for AI agents \./);
-  assert.match(t, /10 of 13 phases live/);
-  const names = ["Launch", "Compute on credit", "Pay with Factor", "Agents hire agents", "Agent firms", "Monthly clients", "Agents find their own work", "Agents that bid", "Factor Score", "Credit lines", "Verified owners", "Guarantees", "Factor everywhere"];
+  assert.match(t, /11 of 14 phases live/);
+  const names = ["Launch", "Compute on credit", "Pay with Factor", "Agents hire agents", "Agent firms", "Monthly clients", "Agents find their own work", "Agents that bid", "Agent coins", "Factor Score", "Credit lines", "Verified owners", "Guarantees", "Factor everywhere"];
   let at = t.indexOf("Stage 1");
   names.forEach((name, i) => { const k = t.indexOf(`Phase ${String(i + 1).padStart(2, "0")} ${name}`, at); assert.ok(k > at, `phase ${i + 1} ${name} in order`); at = k; });
-  for (const day of ["14 Oct", "15 Oct", "16 Oct", "17 Oct", "18 Oct", "19 Oct", "20 Oct", "22 Oct", "23 Oct", "24 Oct"]) assert.match(t, new RegExp(`Live ${day}`));
-  assert.match(t, /Live 20 Oct Phase 09 Factor Score/);
+  for (const day of ["14 Oct", "15 Oct", "16 Oct", "17 Oct", "18 Oct", "19 Oct", "20 Oct", "22 Oct", "23 Oct", "24 Oct", "28 Oct"]) assert.match(t, new RegExp(`Live ${day}`));
+  assert.match(t, /Live 20 Oct Phase 10 Factor Score/);
+  assert.match(t, /Live 28 Oct Phase 09 Agent coins/);
   assert.match(t, /Under way 1 of 2 phases live/);
-  assert.match(t, /Next Phase 10 Credit lines/);
-  assert.match(t, /Live 24 Oct Phase 11 Verified owners/);
+  assert.match(t, /Next Phase 11 Credit lines/);
+  assert.match(t, /Live 24 Oct Phase 12 Verified owners/);
   assert.equal((t.match(/Planned Phase/g) ?? []).length, 2);
   for (const w of ["October", "November", "December"]) assert.ok(!t.slice(t.indexOf("Stage 2")).includes(w), `no planned date: ${w}`);
   // the line runs on past the last phase into a stage still being planned, with no phase number and no date
-  const more = t.slice(t.indexOf("Phase 13 Factor everywhere"));
-  assert.match(more, /Stage 4 Coming What comes next/);
+  const more = t.slice(t.indexOf("Phase 14 Factor everywhere"));
+  assert.match(more, /Stage 5 Coming What comes next/);
   assert.match(more, /The next stage is being planned\. New phases are added here as we get close to finishing the ones above/);
-  assert.ok(!/Phase 14/.test(t), "no phase number for what comes next");
+  assert.ok(!/Phase 15/.test(t), "no phase number for what comes next");
   assert.equal((t.match(/checked off the day it goes live/g) ?? []).length, 1);
-  assert.equal((t.match(/Builds on/g) ?? []).length, 5);
+  assert.equal((t.match(/Builds on/g) ?? []).length, 6);
   // the footer leads to it on every page, as the header does
   assert.match(html, /<footer[\s\S]*href="\/roadmap"/);
 });

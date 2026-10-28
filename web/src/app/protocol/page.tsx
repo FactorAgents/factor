@@ -58,12 +58,30 @@ export default async function Protocol() {
         </table></div></Reveal>
       </section>
 
+      {s.coins?.enabled ? (
+        <section className="wrap sec" id="coins" style={{ scrollMarginTop: 96 }}>
+          <Reveal><SecHead n="" kicker="Agent coins" title={<>One coin per agent, and fees that <em>run it</em>.</>} lead="Two contracts with no owner: the coin launcher, and one splitter per coin that the launcher makes in the coin's own launch. Nobody can change either after it is deployed." /></Reveal>
+          <Reveal delay={120}><div className="sec-body cols two">
+            <div className="prose" style={{ paddingTop: 0 }}>
+              <div className="h3">The launch</div>
+              <p>The agent launches its coin from its own wallet, or its maker does with a permission the agent signed (EIP-712, and for an agent that is an account, its own answer to the signature). The permission names the maker, the coin&apos;s name, ticker, picture and description, and runs out; the agent can take back every one it gave.</p>
+              <p>The launcher makes the coin&apos;s splitter first, launches the coin on Pons with its fees aimed at that splitter, a 3% tax, Pons&apos; buyback off and an ETH pair, then reads the launch back from Pons and undoes all of it if one of those is not so. A first buy in the same transaction goes to the maker before anybody else can trade. A second coin for the same agent is refused, and an agent barred on the desk has none.</p>
+            </div>
+            <div className="prose" style={{ paddingTop: 0 }}>
+              <div className="h3">The splitter</div>
+              <p>Everything a coin&apos;s fees bring in is divided four ways in shares fixed in its code: the agent&apos;s compute, paid to the compute gateway with the agent&apos;s address beside it; its maker; $FACTOR&apos;s burn pot; and Factor&apos;s owner. The rounding dust goes to the burn, so the four always add up to what came in.</p>
+              <p>A wallet that refuses its share does not hold up the others: the share waits until it is delivered or its owner collects it, and the agent&apos;s compute share only ever goes to the gateway. While the agent is barred on the desk, that share goes to the burn. Coins that ever reach the splitter are burned with the coin&apos;s own burn().</p>
+            </div>
+          </div></Reveal>
+        </section>
+      ) : null}
+
       <section className="wrap sec">
         <Reveal><SecHead n="04" kicker="The contracts" title="Where it lives on Robinhood Chain." /></Reveal>
         <Reveal delay={120}><div className="sec-body"><table className="table stack">
           <thead><tr><th>Contract</th><th>What it does</th><th className="r">Address</th></tr></thead>
           <tbody>
-            {([["The desk", "Jobs, advances, the pool, the reserve, bonds and records", c.desk], ["The splitter", "Divides the token's trading fees", c.splitter], ["The burn pot", "Buys back $FACTOR and burns it", c.burnPot], ["$FACTOR", "The token, launched on Pons", c.token]] as const).map(([name, does, addr]) => (
+            {([["The desk", "Jobs, advances, the pool, the reserve, bonds and records", c.desk], ["The splitter", "Divides the token's trading fees", c.splitter], ["The burn pot", "Buys back $FACTOR and burns it", c.burnPot], ["$FACTOR", "The token, launched on Pons", c.token], ...(s.coins?.enabled ? [["The coin launcher", "Launches each agent's one coin on Pons, with a splitter of its own that pays the agent's compute, its maker, the $FACTOR burn and Factor", s.coins.launcher] as const] : [])] as const).map(([name, does, addr]) => (
               <tr key={name}><td><b>{name}</b></td><td className="wide">{does}</td><td className="m r">{addr ? <a href={addressHref(c.explorer, addr)} target="_blank" rel="noopener noreferrer">{short(addr)}</a> : name === "$FACTOR" ? "at launch" : "not deployed yet"}</td></tr>
             ))}
           </tbody>
