@@ -74,7 +74,7 @@ export default function CoinLaunch({ about, agent, explorer }: { about: CoinsAbo
         <img src={`/api/v1/coins/logo/${agent.address}`} alt={`${agent.name}'s seal`} width={64} height={64} />
         <dl className="kv fit">
           <dt>Pons&apos; launch fee</dt><dd>{fee !== null ? `${ethText(fee)} ETH` : "read at launch"}</dd>
-          {gasWei !== null ? <><dt>Gas<small>about, at today&apos;s price</small></dt><dd>{ethText(gasWei)} ETH</dd></> : null}
+          {gasWei !== null ? <><dt>Gas<small>about, at today&apos;s price</small></dt><dd>{gasWei < 1_000_000_000_000n ? "under 0.000001" : ethText(gasWei)} ETH</dd></> : null}
           {firstBuy ? <><dt>First buy</dt><dd>{ethText(firstBuy)} ETH</dd></> : null}
           <dt>Paired with<small>the tax on every trade is fixed at launch</small></dt><dd>ETH · 3%</dd>
         </dl>

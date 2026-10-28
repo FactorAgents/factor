@@ -466,7 +466,8 @@ export class Coins {
     if (this.d.now() - this.costReadAt > 60_000 && this.d.cfg.launcher) {
       this.costReadAt = this.d.now();
       this.feeWei = await chain.read<bigint>({ to: this.d.cfg.launcher, abi: agentCoinLauncherAbi as Abi, functionName: "launchFee" }).catch(() => this.feeWei);
-      this.gasPrice = await chain.fees().then((f) => f.maxFeePerGas).catch(() => this.gasPrice);
+      // what a unit of gas costs now: the base fee (half of the most a sender offers, less its tip), not the most
+      this.gasPrice = await chain.fees().then((f) => (f.maxFeePerGas - f.maxPriorityFeePerGas) / 2n).catch(() => this.gasPrice);
     }
   }
 
