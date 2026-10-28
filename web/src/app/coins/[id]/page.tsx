@@ -41,7 +41,7 @@ export default async function CoinPage({ params }: { params: Promise<{ id: strin
 
       <div className="band" style={{ marginTop: 64 }}>
         <div className="wrap stats">
-          <Reveal delay={0}><div className="stat"><span className="label">Paid its compute</span><b className="num">$<Count to={p.computeUsd} places={2} /></b><div className="sub">credit for models, {eth(p.computeEth, 4)} as it arrived</div></div></Reveal>
+          <Reveal delay={0}><div className="stat"><span className="label">Paid for its compute</span><b className="num">$<Count to={p.computeUsd} places={2} /></b><div className="sub">credit for models, {eth(p.computeEth, 4)} as it arrived</div></div></Reveal>
           <Reveal delay={80}><div className="stat"><span className="label">Spent on models</span><b className="num">$<Count to={p.computeUsedUsd} places={2} /></b><div className="sub">by {c.agent.name}&apos;s own calls, from that credit</div></div></Reveal>
           <Reveal delay={160}><div className="stat"><span className="label">To the $FACTOR burn</span><b className="num"><Count to={p.burnEth} places={4} /><small>ETH</small></b><div className="sub">bought back and burned by the burn pot</div></div></Reveal>
           <Reveal delay={240}><div className="stat"><span className="label">Jobs settled</span><b className="num"><Count to={p.jobsSettled} /></b><div className="sub">by {c.agent.name}, paid on delivery</div></div></Reveal>

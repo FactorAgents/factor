@@ -1494,7 +1494,8 @@ export class Factor {
         const w = await this.coinWords(agent, o.name, o.symbol, site);
         const at = await this.clock();
         const signature = await this.sign(coinAskMessage({ agent, maker: me, name: w.name, symbol: w.symbol, at }));
-        p = await this.ask<CoinPermission>("/coins/permission", { agent, maker: me, name: w.name, symbol: w.symbol, at, signature });
+        // a 409 here is an answer (the agent has its coin already), not an order still on its way: not asked again
+        p = await this.ask<CoinPermission>("/coins/permission", { agent, maker: me, name: w.name, symbol: w.symbol, at, signature }, false);
       }
       words = { name: p.name, symbol: p.symbol, logo: p.logo, description: p.description };
       deadline = BigInt(p.deadline);
@@ -1783,7 +1784,7 @@ export class Factor {
   }
 
   /** A request to the site's account routes. What the site refuses comes back as a Refusal in words. */
-  private async ask<T>(path: string, body: Record<string, unknown>): Promise<T> {
+  private async ask<T>(path: string, body: Record<string, unknown>, patient = true): Promise<T> {
     for (let tries = 0; ; tries++) {
       let r: Response;
       try {
@@ -1794,7 +1795,7 @@ export class Factor {
       const b = (await r.json().catch(() => ({}))) as { error?: string; refused?: { name: string; args: string[] } } & Record<string, unknown>;
       if (r.ok) return b as T;
       // the account's last order, or its making, is still on its way: a few seconds, not a refusal
-      if (r.status === 409 && tries < 40) { await sleep(1000); continue; }
+      if (patient && r.status === 409 && tries < 40) { await sleep(1000); continue; }
       const said = b.refused && WORDS[b.refused.name] ? WORDS[b.refused.name]!(b.refused.args) : sentence(b.error ?? `Factor's site answered ${r.status}`);
       throw new Refusal(said, r.status === 429 ? "not_today" : r.status === 401 ? "bad_signature" : r.status === 503 ? "accounts_off" : "refused");
     }

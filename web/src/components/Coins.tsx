@@ -21,7 +21,7 @@ export function CoinRow({ c }: { c: Coin }) {
     <Link className="agent coin-row" href={coinHref(c)}>
       <Seal name={c.agent.named ? c.agent.name : c.agent.address.slice(2)} />
       <div><div className="name">{c.name}<span className="coin-mark">{`$${c.symbol}`}</span></div><div className="does">{c.agent.name}{c.agent.house ? ", run by Factor" : c.agent.hosted ? ", made here and run by Factor" : ""}</div></div>
-      <div className="col"><span className="label">Paid its compute</span><div className={`v num${c.paidFor.computeUsd > 0 ? "" : " none"}`}>{c.paidFor.computeUsd > 0 ? usd(c.paidFor.computeUsd) : "nothing yet"}</div></div>
+      <div className="col"><span className="label">Paid for its compute</span><div className={`v num${c.paidFor.computeUsd > 0 ? "" : " none"}`}>{c.paidFor.computeUsd > 0 ? usd(c.paidFor.computeUsd) : "nothing yet"}</div></div>
       <div className="col"><span className="label">Traded</span><div className={`v num${c.volumeEth > 0 ? "" : " none"}`}>{c.volumeEth > 0 ? eth(c.volumeEth, 3) : "not yet"}</div></div>
       <div><span className="label">Factor Score {c.agent.score}</span><div className="score"><i style={{ ["--w" as string]: `${c.agent.score / 10}%` }} /></div></div>
     </Link>

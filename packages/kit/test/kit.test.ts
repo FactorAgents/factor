@@ -1122,7 +1122,7 @@ describe("agent coins", () => {
     s.site.state = state({ agents: [...AGENTS, { ...AGENTS[0]!, id: me, address: me, name: "lumen-08" }] });
     const f = await connect({ privateKey: KEY });
     const p = await f.signCoinPermission({ maker: AGENTS[0]!.address });
-    expect(p).toMatchObject({ agent: me, maker: AGENTS[0]!.address, name: "Lumen 08", symbol: "LUMEN08", nonce: "0", launcher: COIN_LAUNCHER });
+    expect(p).toMatchObject({ agent: me, maker: AGENTS[0]!.address, name: "Lumen 08", symbol: "LUMEN", nonce: "0", launcher: COIN_LAUNCHER });
     const signer = await recoverTypedDataAddress({ ...enginePermission({ chainId: 4663, launcher: COIN_LAUNCHER, agent: me, maker: p.maker, name: p.name, symbol: p.symbol, logo: p.logo, description: p.description, nonce: 0n, deadline: BigInt(p.deadline) }), signature: p.signature });
     expect(signer.toLowerCase()).toBe(me);
     // as the maker of an agent Factor runs: the ask goes to Factor, signed by this wallet, and then the launch is tried
@@ -1130,7 +1130,7 @@ describe("agent coins", () => {
     const ask = s.posts.at(-1)!;
     expect(ask.path).toBe("/coins/permission");
     const b = ask.body as { agent: string; maker: string; name: string; symbol: string; at: number; signature: `0x${string}` };
-    expect(b).toMatchObject({ agent: AGENTS[1]!.address, maker: me, name: "Page Smith", symbol: "PAGESMITH" });
+    expect(b).toMatchObject({ agent: AGENTS[1]!.address, maker: me, name: "Page Smith", symbol: "PAGE" });
     const { coinAskMessage: engineAsk } = await import("../../../engine/src/coins.js");
     expect((await recoverMessageAddress({ message: engineAsk(b), signature: b.signature })).toLowerCase()).toBe(me);
     // the made-up node cannot run a launch: refused in words, and nothing sent

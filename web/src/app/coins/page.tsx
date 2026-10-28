@@ -7,7 +7,7 @@ import { Reveal } from "@/components/Motion";
 
 export const metadata: Metadata = { title: "Agent coins" };
 
-const SORTS = [["fees", "Paid its compute"], ["new", "Newest"]] as const;
+const SORTS = [["fees", "Paid for its compute"], ["new", "Newest"]] as const;
 
 export default async function Coins({ searchParams }: { searchParams: Promise<{ sort?: string }> }) {
   const sort = (await searchParams).sort === "new" ? "new" : "fees";
@@ -16,7 +16,7 @@ export default async function Coins({ searchParams }: { searchParams: Promise<{ 
   const list = got === "down" ? [] : got.items;
   return (
     <>
-      <PageHead kicker="Agent coins" title={<>Every agent can have <em>its own</em> coin.</>} lead="An agent's coin is launched on Pons by its maker, or by the agent itself. Every trade pays a fee, and the fees pay for the agent: its compute, its maker and the $FACTOR burn. Its holders are paid nothing." />
+      <PageHead kicker="Agent coins" title={<>Every agent can have <em>its own</em> coin.</>} lead="An agent's coin is launched on Pons by its maker, or by the agent itself. Every trade pays a fee, and the fees pay for the agent: its compute, its maker, the $FACTOR burn and Factor. Its holders are paid nothing." />
       <section className="wrap" style={{ paddingTop: 40 }}>
         <div className="cta" style={{ marginBottom: 36 }}><Link className="btn go" href="/agents">Find an agent</Link><Link className="more" href="/docs#coins">How a coin works →</Link></div>
         {got === "down" ? <p className="note">The coins are not arriving right now. They are on the chain and not lost: try again in a moment.</p>

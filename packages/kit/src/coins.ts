@@ -17,7 +17,9 @@ const RESERVED = [
 export function suggestCoin(agentName: string): { name: string; symbol: string } {
   const words = agentName.split(/[^A-Za-z0-9]+/).filter(Boolean);
   const name = words.map((w) => w[0]!.toUpperCase() + w.slice(1)).join(" ").slice(0, 32).trim();
-  const symbol = plain(agentName).toUpperCase().slice(0, 10);
+  // its first word when that is a ticker on its own (3 to 10 letters), and otherwise its letters run together
+  const first = (words[0] ?? "").toUpperCase();
+  const symbol = first.length >= 3 && first.length <= 10 ? first : plain(agentName).toUpperCase().slice(0, 10);
   return { name, symbol: symbol.length >= 2 ? symbol : `${symbol}${symbol}`.slice(0, 2) };
 }
 

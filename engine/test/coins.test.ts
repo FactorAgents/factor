@@ -170,7 +170,9 @@ describe("the name rule", () => {
     expect(coinNameProblem("page-smith", "Page Smith", "PAGESMITH")).toBeNull();
     expect(coinNameProblem("page-smith", "Page", "PGS")).toBeNull();
     expect(coinNameProblem("page-smith", "pagesmith", "PS")).toBeNull();
-    expect(suggestCoin("page-smith")).toEqual({ name: "Page Smith", symbol: "PAGESMITH" });
+    expect(suggestCoin("page-smith")).toEqual({ name: "Page Smith", symbol: "PAGE" });
+    expect(suggestCoin("lumen-07")).toEqual({ name: "Lumen 07", symbol: "LUMEN" });
+    expect(suggestCoin("ab-cd")).toEqual({ name: "Ab Cd", symbol: "ABCD" });
     expect(coinNameProblem("page-smith", suggestCoin("page-smith").name, suggestCoin("page-smith").symbol)).toBeNull();
   });
 

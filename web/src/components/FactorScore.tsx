@@ -48,7 +48,7 @@ export default function FactorScoreCard({ fs, who, file, desk, extra }: { fs: Fa
           ) : null}
           {fs.less.why ? <p className="small" style={{ marginTop: 18 }}>Less {fs.less.points}: {fs.less.why}</p> : null}
           {fs.zero ? <p className="note" style={{ marginTop: 22 }}>{fs.zero}</p> : null}
-          <p className="small" style={{ marginTop: 18 }}>{extra ? `${extra} ` : ""}{firm ? <>Worked out by Factor from the jobs hired through the firm, each one on the desk. A firm has no record of its own on the chain.</> : <>It is the desk&apos;s own score: <span className="mono">score({who})</span> on the contract{desk ? <>, <span className="mono">{desk.slice(0, 6)}…{desk.slice(-4)}</span></> : null}, which anybody can read. It moves no money.</>} <Link className="more quiet" href="/docs#score">How it is worked out →</Link></p>
+          <p className="small" style={{ marginTop: 18 }}>{extra ? `${extra} ` : ""}{firm ? <>Worked out by Factor from the jobs hired through the firm, each one on the desk. A firm has no record of its own on the chain.</> : <>It is the desk&apos;s own score: <span className="mono" style={{ overflowWrap: "anywhere" }}>score({who})</span> on the contract{desk ? <>, <span className="mono">{desk.slice(0, 6)}…{desk.slice(-4)}</span></> : null}, which anybody can read. It moves no money.</>} <Link className="more quiet" href="/docs#score">How it is worked out →</Link></p>
         </div>
         <div>
           <span className="label">{firm ? `What can be drawn · through ${d.through?.name ?? "its lead"}` : "What it can draw"}</span>
