@@ -9,6 +9,7 @@ import {FactorAccount, FactorAccounts} from "../../src/FactorAccount.sol";
 import {FactorBurnPot} from "../../src/FactorBurnPot.sol";
 import {IPonsV2FeeEscrow, IPonsV2LaunchFactory} from "../../src/interfaces/IPons.sol";
 import {IPoolManager, PoolKey} from "../../src/interfaces/IPoolManager.sol";
+import {Vm} from "forge-std/Vm.sol";
 
 interface IDeskRegister {
     function register() external;
@@ -234,6 +235,68 @@ contract AgentCoinsForkTest is ForkBase {
         uint256 gw = GATEWAY.balance;
         assertEq(splitter.sweep(), owed);
         assertEq(GATEWAY.balance - gw, (owed * 4000) / 10_000);
+    }
+
+    // The logs the engine reads a coin's trading from (engine/src/coins.ts), by their first topic: a buy and a sell
+    // on the curve (who, for whom; then ETH in or tokens in, tokens or ETH out, Pons' base fee, the tax), and a
+    // swap in the pool after graduation (Uniswap v4's Swap, with the pool's id as its second topic).
+    bytes32 constant CURVE_BUY = 0xec36bf571f136799e8dc0b0b8bea4b04d8bd3d43de838aab0d5fc21d4cbfc455;
+    bytes32 constant CURVE_SELL = 0x8113d738abdcb6b38357e9d53a54a7157861a09031b453651f0fe7fe151f59df;
+    bytes32 constant POOL_SWAP = keccak256("Swap(bytes32,address,int128,int128,uint160,uint128,int24,uint24)");
+
+    function _one(Vm.Log[] memory logs, address emitter, bytes32 topic) internal pure returns (Vm.Log memory found) {
+        uint256 n;
+        for (uint256 i = 0; i < logs.length; ++i) {
+            if (logs[i].emitter == emitter && logs[i].topics[0] == topic) {
+                found = logs[i];
+                n++;
+            }
+        }
+        require(n == 1, "not exactly one such log");
+    }
+
+    function test_fork_theTradeLogsTheEngineReads() public {
+        _launch(0);
+        vm.warp(t0 + 10);
+        vm.recordLogs();
+        vm.prank(buyer);
+        uint256 got = curve.buy{value: 1 ether}(1 ether, 0, buyer);
+        Vm.Log memory b = _one(vm.getRecordedLogs(), address(curve), CURVE_BUY);
+        (uint256 ethIn, uint256 tokensOut, uint256 base, uint256 tax) =
+            abi.decode(b.data, (uint256, uint256, uint256, uint256));
+        assertEq(ethIn, 1 ether);
+        assertEq(tokensOut, got);
+        assertEq(base, 0.01 ether);
+        assertEq(tax, 0.03 ether);
+        assertEq(address(uint160(uint256(b.topics[2]))), buyer, "for whom");
+
+        vm.startPrank(buyer);
+        coin.approve(address(curve), got);
+        vm.recordLogs();
+        uint256 back = curve.sell(got / 2, 0, buyer);
+        vm.stopPrank();
+        Vm.Log memory sl = _one(vm.getRecordedLogs(), address(curve), CURVE_SELL);
+        (uint256 tokensIn, uint256 ethOut,,) = abi.decode(sl.data, (uint256, uint256, uint256, uint256));
+        assertEq(tokensIn, got / 2);
+        assertEq(ethOut, back, "the ETH the seller received");
+
+        _graduate(address(coin), address(curve), buyer);
+        IPonsV2LaunchFactory.LaunchedToken memory info = _pons().getLaunchedToken(address(coin));
+        PoolKey memory key = PoolKey({
+            currency0: address(0),
+            currency1: address(coin),
+            fee: info.poolFee,
+            tickSpacing: info.tickSpacing,
+            hooks: HOOK
+        });
+        PoolSwapper swapper = new PoolSwapper(IPoolManager(POOL_MANAGER), key);
+        vm.deal(address(swapper), 1 ether);
+        vm.recordLogs();
+        swapper.buy(0.5 ether);
+        Vm.Log memory sw = _one(vm.getRecordedLogs(), POOL_MANAGER, POOL_SWAP);
+        assertEq(sw.topics[1], keccak256(abi.encode(key)), "the pool's id");
+        (int128 amount0,,,,,) = abi.decode(sw.data, (int128, int128, uint160, uint128, int24, uint24));
+        assertLt(amount0, 0, "ETH into the pool");
     }
 
     /// A credit in the coin itself in Pons' real escrow: claimed and burned, and the coin's supply falls by that.
