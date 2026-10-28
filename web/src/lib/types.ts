@@ -127,6 +127,21 @@ export interface Agent {
   scoreParts: ScorePart[];
   /** its owner is verified: only while owners are checked and it passes. Nothing is said when it does not */
   verifiedOwner?: VerifiedOwner;
+  /** its own coin: only while coins are on and its coin is listed */
+  coin?: { coin: string; symbol: string };
+}
+
+/** An agent's own coin on Pons, as the engine reads it (engine/src/coins.ts, CoinJson). */
+export interface Coin {
+  agent: { address: string; name: string; named: boolean; score: number; settled: number; barred: boolean; house: boolean; hosted: boolean };
+  coin: string; name: string; symbol: string; splitter: string; curve: string; maker: string; bySignature: boolean;
+  launchedAt: string; tx: string; openingBuyEth: number; listed: boolean; phase: string; pons: string;
+  /** what the coin's fees have paid for: its agent's compute (as ETH, as dollars of credit, and what its calls spent of that), the $FACTOR burn, its own coins burned, and the jobs its agent has settled */
+  paidFor: { computeEth: number; computeUsd: number; computeUsedUsd: number; burnEth: number; coinsBurned: number; jobsSettled: number };
+  waitingEth: number;
+  volumeEth: number; trades: number; buys: number; holders: number;
+  recent?: { tx: string; at: string; side: "buy" | "sell"; eth: number; tokens: number; venue: "curve" | "pool" }[];
+  sweeps?: { tx: string; at: string; eth: number }[];
 }
 
 /** An agent signed up for the launch: made on the site, or with a wallet of its own. */
@@ -171,7 +186,7 @@ export interface Params {
 /** Compute credit: whether it can be spent yet, and the models with what a million tokens costs here, in dollars. */
 export interface Compute { enabled: boolean; markupPct: number; maxTokens: number; models: { id: string; inUsd: number; outUsd: number }[]; router?: { enabled: boolean; models: number }; limits?: { callUsd: number; agentDayUsd: number } }
 /** What an agent has left to spend on models, and the advances it came from. */
-export interface Credit { agent: string; balanceUsd: number; enabled: boolean; lots: { job: number; at: string; usd: number | null; spentUsd: number; state: "open" | "kept" | "closed" }[] }
+export interface Credit { agent: string; balanceUsd: number; enabled: boolean; lots: { job: number; at: string; usd: number | null; spentUsd: number; state: "open" | "kept" | "closed"; /** paid by the agent's own coin, not by an advance on a job */ paidBy?: "coin" }[] }
 
 export interface FactorState {
   /** engine: read from the chain. sample: made-up figures for building the site. none: no engine was given. */
@@ -223,6 +238,8 @@ export interface FactorState {
   autoApply?: { enabled: boolean; agents: number; applied: number; perAgentHour?: number };
   /** verified owners: whether owners can be checked now, by which services, and how many agents' owners are verified */
   verified?: VerifiedAbout;
+  /** agent coins: whether they are on, the launcher, how many are listed, and the newest few */
+  coins?: { enabled: boolean; launcher: string | null; count: number; items: Coin[] };
 }
 
 /** One of a firm's agents and its part of the firm's work: the lead's is the firm's jobs, a member's the sub-jobs it took under them. */
@@ -296,7 +313,7 @@ export interface Erc8004 {
   links: { registry: string };
 }
 /** One agent with what the page about it shows. */
-export interface AgentPage { agent: Agent; /** its Factor Score: the desk's number, the parts, the income behind it, what it can draw */ factorScore?: FactorScore; jobs: Job[]; events: LedgerEvent[]; hiring?: Hiring; /** the firms it leads, belongs to or is invited to */ firms?: { slug: string; name: string; house: boolean; role: "lead" | "member" | "invited" }[]; /** its monthly clients, when it has any plan */ plans?: PlansSummary; /** its ERC-8004 identity and the entries written to it, when one is linked */ erc8004?: Erc8004 }
+export interface AgentPage { agent: Agent; /** its Factor Score: the desk's number, the parts, the income behind it, what it can draw */ factorScore?: FactorScore; jobs: Job[]; events: LedgerEvent[]; hiring?: Hiring; /** the firms it leads, belongs to or is invited to */ firms?: { slug: string; name: string; house: boolean; role: "lead" | "member" | "invited" }[]; /** its monthly clients, when it has any plan */ plans?: PlansSummary; /** its ERC-8004 identity and the entries written to it, when one is linked */ erc8004?: Erc8004; /** its own coin, when it has one listed */ coin?: Coin }
 
 /** One job in a chain of work: the customer's job at depth 0, the jobs its agent hired for at 1, and so on. */
 export interface TreeNode {

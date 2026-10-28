@@ -1,7 +1,7 @@
 // Sample figures, in exactly the engine's shape, so every page can be built, looked at and tested with no chain
 // behind it. Nothing here is real. It is shown only when FACTOR_SAMPLE=1 (see data.ts): a site with no engine shows
 // an empty desk, never these.
-import type { Advance, Agent, AgentPage, Applicant, AutoApplyStatus, Burn, Draw, FactorScore, FactorState, Firm, FirmPage, IncomeLine, IncomeSource, Job, JobPage, LedgerEvent, OpenJob, OpenJobList, OpenJobPage, Page, Params, Plan, PlanPage, PlansSummary, ScorePart } from "./types";
+import type { Advance, Agent, AgentPage, Applicant, AutoApplyStatus, Burn, Coin, Draw, FactorScore, FactorState, Firm, FirmPage, IncomeLine, IncomeSource, Job, JobPage, LedgerEvent, OpenJob, OpenJobList, OpenJobPage, Page, Params, Plan, PlanPage, PlansSummary, ScorePart } from "./types";
 
 // the rulebook's numbers (docs/RULEBOOK.md, section 9)
 const params: Params = { advanceMaxPct: 50, advanceFeePct: 1, jobFeePct: 2, graceHours: 12, reviewHours: 24, rejectedPct: 50, reserveMinPct: 20, minJobEth: 0.001 };
@@ -274,6 +274,30 @@ export function sampleAutoApply(id: string): AutoApplyStatus | null {
   };
 }
 
+// Two agents with a coin of their own: what each coin's fees have paid for, made up like everything here.
+const coin = (name: string, symbol: string, n: number, computeEth: number, volumeEth: number, holders: number, minutes: number): Coin => {
+  const a = agents.find((x) => x.name === name)!;
+  return {
+    agent: { address: a.address, name: a.name, named: true, score: a.score, settled: a.settled, barred: a.barred, house: a.house, hosted: false },
+    coin: A(900 + n), name: name.split("-").map((w) => w[0]!.toUpperCase() + w.slice(1)).join(" "), symbol, splitter: A(950 + n), curve: A(980 + n), maker: a.house ? A(5) : a.address, bySignature: a.house,
+    launchedAt: at(minutes), tx: TX(900 + n), openingBuyEth: 0.01, listed: true, phase: "curve", pons: "https://ponsfamily.com/launchpad",
+    paidFor: { computeEth: computeEth, computeUsd: round(computeEth * 2516), computeUsedUsd: round(computeEth * 2516 * 0.41), burnEth: round(computeEth / 2), coinsBurned: 0, jobsSettled: a.settled },
+    waitingEth: 0.00042, volumeEth, trades: Math.round(volumeEth * 61), buys: Math.round(volumeEth * 38), holders,
+    recent: [0, 1, 2, 3].map((i) => ({ tx: TX(700 + n * 10 + i), at: at(minutes / 6 + i * 17), side: i % 3 === 1 ? "sell" as const : "buy" as const, eth: round(0.012 + i * 0.004), tokens: 410_000 - i * 37_000, venue: "curve" as const })),
+    sweeps: [0, 1].map((i) => ({ tx: TX(800 + n * 10 + i), at: at(minutes / 3 + i * 300), eth: round(computeEth / 1.6 - i * 0.001) })),
+  };
+};
+const coins: Coin[] = [coin("page-smith", "SMITH", 1, 0.0148, 1.84, 37, 2900), coin("lumen-07", "LUMEN", 2, 0.0061, 0.71, 19, 1200)];
+for (const c of coins) { const a = agents.find((x) => x.address === c.agent.address); if (a) a.coin = { coin: c.coin, symbol: c.symbol }; }
+/** The sample's coins, by what their fees have paid to their agents' compute, or newest first. */
+export function sampleCoins(sort: "fees" | "new" = "fees"): { enabled: boolean; items: Coin[] } {
+  return { enabled: true, items: [...coins].sort(sort === "new" ? (a, b) => (a.launchedAt < b.launchedAt ? 1 : -1) : (a, b) => b.paidFor.computeEth - a.paidFor.computeEth) };
+}
+export function sampleCoin(id: string): Coin | null {
+  const a = find(id);
+  return coins.find((c) => c.agent.address === a?.address || c.coin === id.toLowerCase()) ?? null;
+}
+
 export function sampleState(): FactorState {
   const settled = jobs.filter((j) => j.state === "settled").length;
   return {
@@ -294,13 +318,15 @@ export function sampleState(): FactorState {
     // the sample has no engine: its open jobs are shown, and nothing can be posted or applied for from it
     openJobs: { enabled: false, maxApplicants: 20, open: openJobs.length, applicants: openJobs.reduce((n, o) => n + o.count, 0), hired: 0 },
     autoApply: { enabled: false, agents: 1, applied: 1, perAgentHour: 6 },
+    // the sample has no engine: its coins are shown, and nothing can be launched from it
+    coins: { enabled: true, launcher: null, count: coins.length, items: sampleCoins("new").items },
   };
 }
 
 const find = (id: string): Agent | undefined => agents.find((a) => a.address === id.toLowerCase() || (a.named && a.name === id.toLowerCase()));
 export function sampleAgent(id: string): AgentPage | null {
   const a = find(id);
-  return a ? { agent: a, factorScore: sampleScore(a, SETTLED_BY[a.name] ?? {}), jobs: jobs.filter((j) => j.agentId === a.address), events: events.filter((x) => x.agentId === a.address), ...(a.name === "quill-02" ? { plans: planSummary() } : {}), ...(a.name === "lumen-07" ? { erc8004: sampleErc8004(a.address) } : {}) } : null;
+  return a ? { agent: a, factorScore: sampleScore(a, SETTLED_BY[a.name] ?? {}), jobs: jobs.filter((j) => j.agentId === a.address), events: events.filter((x) => x.agentId === a.address), ...(a.name === "quill-02" ? { plans: planSummary() } : {}), ...(a.name === "lumen-07" ? { erc8004: sampleErc8004(a.address) } : {}), ...((c) => (c ? { coin: c } : {}))(sampleCoin(a.address)) } : null;
 }
 /** The sample's one agent with an ERC-8004 identity: an entry for each of its settled jobs. */
 function sampleErc8004(address: string): NonNullable<AgentPage["erc8004"]> {

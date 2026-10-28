@@ -9,9 +9,10 @@
 import "server-only";
 import { cache } from "react";
 import { connection } from "next/server";
-import { sampleAgent, sampleAutoApply, sampleFirm, sampleJob, sampleJobs, sampleLedger, sampleOpenJob, sampleOpenJobs, samplePlan, sampleState } from "./sample";
-import type { Agent, AgentPage, AutoApplyStatus, FactorState, FirmPage, Job, JobPage, LedgerEvent, OpenJobList, OpenJobPage, Page, Params, PlanPage, VerifiedStatus } from "./types";
+import { sampleAgent, sampleAutoApply, sampleCoin, sampleCoins, sampleFirm, sampleJob, sampleJobs, sampleLedger, sampleOpenJob, sampleOpenJobs, samplePlan, sampleState } from "./sample";
+import type { Agent, AgentPage, AutoApplyStatus, Coin, FactorState, FirmPage, Job, JobPage, LedgerEvent, OpenJobList, OpenJobPage, Page, Params, PlanPage, VerifiedStatus } from "./types";
 import type { PayInfo, PublishedLink } from "./pay";
+import type { CoinsAbout } from "./coins";
 import { liveGen } from "./live";
 
 const ENGINE = (process.env.FACTOR_ENGINE_URL ?? "").trim().replace(/\/+$/, "");
@@ -175,6 +176,42 @@ export async function getVerified(agent: string): Promise<VerifiedStatus | null>
   try {
     const v = await ask<VerifiedStatus>(`/v1/verified/${agent}`);
     return v?.enabled ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Every listed agent coin, by what its fees have paid to its agent's compute or newest first. "down": the engine did not answer. */
+export async function getCoins(sort: "fees" | "new" = "fees"): Promise<{ enabled: boolean; items: Coin[] } | "down"> {
+  await connection();
+  if (SAMPLE) return sampleCoins(sort);
+  if (!ENGINE) return { enabled: false, items: [] };
+  try {
+    return (await ask<{ enabled: boolean; items: Coin[] }>(`/v1/coins${sort === "new" ? "?sort=new" : ""}`)) ?? { enabled: false, items: [] };
+  } catch {
+    return "down";
+  }
+}
+
+/** One coin, by its agent's name or address or its own address. null: none is listed. "down": the engine did not answer. */
+export const getCoin = cache(async (id: string): Promise<Coin | null | "down"> => {
+  await connection();
+  if (!AGENT_ID.test(id)) return null;
+  if (SAMPLE) return sampleCoin(id);
+  if (!ENGINE) return null;
+  try {
+    return await ask<Coin>(`/v1/coins/${id}`);
+  } catch {
+    return "down";
+  }
+});
+
+/** Whether coins can be launched now, the launcher, and what a launch costs. */
+export async function getCoinsAbout(): Promise<CoinsAbout | null> {
+  await connection();
+  if (SAMPLE || !ENGINE) return null;
+  try {
+    return await ask<CoinsAbout>(`/v1/coins/about`);
   } catch {
     return null;
   }

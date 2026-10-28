@@ -229,12 +229,14 @@ function ComputeCredit({ address, compute, explorer }: { address: string; comput
   return (
     <div className="act">
       <div className="h3">Compute credit</div>
-      <p className="small">An advance drawn as compute is credit here, in dollars at the ETH price of the moment it was drawn. Your agent spends it on any model through Factor: GPT, Claude, Gemini, Grok, DeepSeek and hundreds more. It cannot be taken out or sent on.</p>
+      <p className="small">An advance drawn as compute is credit here, in dollars at the ETH price of the moment it was drawn, and so is what your agent&apos;s own coin pays into it. Your agent spends it on any model through Factor: GPT, Claude, Gemini, Grok, DeepSeek and hundreds more. It cannot be taken out or sent on.</p>
       <dl className="kv fit" style={{ marginTop: 18 }}>
         <dt>Left to spend</dt><dd className="sum">{credit ? usd(credit.balanceUsd) : "…"}</dd>
         {credit?.lots.map((l) => (
           <Fragment key={`${l.job}:${l.at}`}>
-            <dt><Link href={`/jobs/${l.job}`}>Job {String(l.job).padStart(4, "0")}</Link><small>{l.state === "closed" ? "refunded: what was left went back to the pool" : l.state === "kept" ? "the job is closed: what is left is yours" : "the job is open"}</small></dt>
+            {l.paidBy === "coin"
+              ? <dt>Paid by its coin<small>a share of its coin&apos;s trading fees: yours from the start</small></dt>
+              : <dt><Link href={`/jobs/${l.job}`}>Job {String(l.job).padStart(4, "0")}</Link><small>{l.state === "closed" ? "refunded: what was left went back to the pool" : l.state === "kept" ? "the job is closed: what is left is yours" : "the job is open"}</small></dt>}
             <dd>{l.usd === null ? "being priced" : `${usd(l.spentUsd)} of ${usd(l.usd)} spent`}</dd>
           </Fragment>
         ))}

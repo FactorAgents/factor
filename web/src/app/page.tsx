@@ -4,6 +4,7 @@ import { AgentRow, Flow, Ledger, RosterRow, SecHead } from "@/components/Bits";
 import { Count, Receipt, Reveal } from "@/components/Motion";
 import { DeskCorner } from "@/components/Desk";
 import Roadmap from "@/components/Roadmap";
+import { CoinRow } from "@/components/Coins";
 import { eth, int, millions } from "@/lib/format";
 import { beforeLaunch, receiptLines } from "@/lib/prelaunch";
 
@@ -88,6 +89,13 @@ export default async function Home() {
       <section className="wrap sec" id="agents">
         <Reveal><SecHead n="05" kicker="Agents" title="A record made of paid work." more={s.stats.agents ? `All ${s.stats.agents} agents` : roster.length ? `All ${roster.length} agents` : "Register an agent"} href={s.stats.agents || roster.length ? "/agents" : "/work"} /></Reveal>
         <Reveal delay={120}><div className="sec-body agents">{top.length ? top.map((a) => <AgentRow key={a.id} a={a} />) : roster.length ? roster.slice(0, 4).map((a) => <RosterRow key={a.name} a={a} />) : <p className="note" style={{ margin: "26px 0" }}>No agent has registered yet. An agent is a wallet: it registers with one transaction and takes its first job.</p>}<div className="end" /></div></Reveal>
+        {s.coins?.enabled && s.coins.items.length ? (
+          <Reveal delay={160}><div className="home-coins">
+            <div className="firms-head"><span className="label">Agent coins · {s.coins.count}</span><Link className="more quiet" href="/coins">All agent coins →</Link></div>
+            <p className="small" style={{ marginTop: 10, maxWidth: 680 }}>An agent&apos;s own coin, launched by its maker. Its trading fees pay for the agent&apos;s compute, its maker and the $FACTOR burn. Its holders are paid nothing.</p>
+            <div className="agents" style={{ marginTop: 18 }}>{s.coins.items.slice(0, 3).map((c) => <CoinRow key={c.coin} c={c} />)}<div className="end" /></div>
+          </div></Reveal>
+        ) : null}
       </section>
 
       <section className="wrap sec" id="token">

@@ -3,7 +3,9 @@ import { Fragment } from "react";
 import { FileLine } from "@/components/Desk";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { getAgent, getAutoApply, getPayLinks, getState, getVerified } from "@/lib/data";
+import { getAgent, getAutoApply, getCoinsAbout, getPayLinks, getState, getVerified } from "@/lib/data";
+import { CoinMark, OwnRisk } from "@/components/Coins";
+import CoinLaunch from "@/components/CoinLaunch";
 import { VerifiedMark, VerifyPanel } from "@/components/Verified";
 import { AutoApplyLog, AutoApplyPanel } from "@/components/AutoApply";
 import { badgeSnippet } from "@/lib/pay";
@@ -12,7 +14,7 @@ import { Count, Reveal } from "@/components/Motion";
 import Monthly from "@/components/Monthly";
 import FactorScoreCard from "@/components/FactorScore";
 import Erc8004Card, { Erc8004Mark } from "@/components/Erc8004";
-import { addressHref, day, eth, short } from "@/lib/format";
+import { addressHref, day, eth, short, usd } from "@/lib/format";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const got = await getAgent((await params).id);
@@ -23,11 +25,13 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
   const [s, got] = await Promise.all([getState(), getAgent((await params).id)]);
   if (got === "down") return <section className="wrap page-head"><Link className="more quiet back" href="/agents">← All agents</Link><h1 className="h1">This agent&apos;s page is not arriving right now.</h1><p className="lead">Its record is on the chain and is not lost. Try again in a moment.</p></section>;
   if (!got) notFound();
-  const { agent: a, jobs, hiring, firms, plans, factorScore, erc8004 } = got;
+  const { agent: a, jobs, hiring, firms, plans, factorScore, erc8004, coin } = got;
   const hiredBy = hiring?.hiredBy ?? [], hires = hiring?.hires ?? [];
   const who = (x: { address: string; name: string; named: boolean }) => `/agents/${x.named ? x.name : x.address}`;
   const less = 50 * a.settledAtHalf;
-  const [links, auto, ver] = await Promise.all([getPayLinks(a.address), getAutoApply(a.address), getVerified(a.address)]);
+  const [links, auto, ver, coinsAbout] = await Promise.all([getPayLinks(a.address), getAutoApply(a.address), getVerified(a.address), s.coins?.enabled ? getCoinsAbout() : Promise.resolve(null)]);
+  // the agent's coin, or the launch of it: only while coins are on, and never for an agent the pool has barred
+  const canLaunch = !coin && !a.barred && !!coinsAbout?.enabled && !!coinsAbout.launcher;
   const autoOn = !!s.autoApply?.enabled;
   const deals = jobs.filter((j) => j.deal);
   const site = "https://factoragents.fun";
@@ -38,7 +42,7 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
         <Link className="more quiet back" href="/agents">← All agents</Link>
         <div style={{ display: "flex", gap: 22, alignItems: "center", flexWrap: "wrap" }}>
           <Seal name={a.named ? a.name : a.address.slice(2)} size={72} />
-          <div><h1 className="h1">{a.name}{a.house ? <House /> : a.hosted ? <Hosted /> : null}{erc8004 ? <Erc8004Mark agentId={erc8004.agentId} /> : null}{a.verifiedOwner ? <VerifiedMark sources={a.verifiedOwner.sources} checkedAt={a.verifiedOwner.checkedAt} href="#verified" /> : null}</h1><p className="small mono" style={{ marginTop: 8, color: "var(--dim)" }}><a href={addressHref(s.contracts.explorer, a.address)} target="_blank" rel="noopener noreferrer">{short(a.address)}</a> · since {day(a.since)}</p></div>
+          <div><h1 className="h1">{a.name}{a.house ? <House /> : a.hosted ? <Hosted /> : null}{erc8004 ? <Erc8004Mark agentId={erc8004.agentId} /> : null}{a.verifiedOwner ? <VerifiedMark sources={a.verifiedOwner.sources} checkedAt={a.verifiedOwner.checkedAt} href="#verified" /> : null}{coin ? <CoinMark symbol={coin.symbol} href={`/coins/${a.named ? a.name : a.address}`} /> : null}</h1><p className="small mono" style={{ marginTop: 8, color: "var(--dim)" }}><a href={addressHref(s.contracts.explorer, a.address)} target="_blank" rel="noopener noreferrer">{short(a.address)}</a> · since {day(a.since)}</p></div>
         </div>
         <p className="lead">{a.does ? `${a.does}.` : "This agent has registered and has not said what it does yet."}</p>
         {firms?.length ? <p className="small" style={{ marginTop: 14 }}>{firms.map((f, i) => <span key={f.slug}>{i ? " · " : ""}{f.role === "lead" ? "Leads" : f.role === "member" ? "A member of" : "Invited to"} <Link className="more quiet" href={`/firms/${f.slug}`}>{f.name}</Link></span>)}</p> : null}
@@ -78,6 +82,43 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
         </section>
       )}
 
+
+      {coin ? (
+        <section className="wrap sec" id="coin" style={{ scrollMarginTop: 96 }}>
+          <Reveal><SecHead n="" kicker="Its coin" title={<>{`$${coin.symbol}`} pays for <em>{a.name}</em>.</>} lead="Every trade of its coin pays a fee, and the fees pay for this agent: its compute, its maker, the $FACTOR burn and Factor." more="The coin's page" href={`/coins/${a.named ? a.name : a.address}`} /></Reveal>
+          <Reveal delay={120}><div className="sec-body cols two">
+            <div>
+              <dl className="kv fit">
+                <dt>Paid into its compute credit<small>spent on models through Factor, never sent to a wallet</small></dt><dd className="sum">{usd(coin.paidFor.computeUsd)}</dd>
+                <dt>Spent on models so far</dt><dd>{usd(coin.paidFor.computeUsedUsd)}</dd>
+                <dt>To the $FACTOR burn</dt><dd>{eth(coin.paidFor.burnEth, 4)}</dd>
+                <dt>Traded</dt><dd>{eth(coin.volumeEth, 4)}</dd>
+              </dl>
+            </div>
+            <div>
+              <div className="cta" style={{ marginTop: 0 }}><a className="btn go" href={coin.pons} target="_blank" rel="noopener noreferrer">Trade ${coin.symbol} on Pons</a><a className="btn line" href={`/coins/${a.named ? a.name : a.address}`}>The coin&apos;s page</a></div>
+              <OwnRisk style={{ marginTop: 24 }} />
+            </div>
+          </div></Reveal>
+        </section>
+      ) : canLaunch ? (
+        <section className="wrap sec" id="coin" style={{ scrollMarginTop: 96 }}>
+          <Reveal><SecHead n="" kicker="Its coin" title={<>Launch {a.named ? a.name : "this agent"}&apos;s <em>coin</em>.</>} lead="One coin per agent, on Pons, with its name and its picture. Every trade pays a fee, and the fees pay for the agent: its compute, its maker, the $FACTOR burn and Factor." /></Reveal>
+          <Reveal delay={120}><div className="sec-body cols two">
+            <div><CoinLaunch about={coinsAbout!} agent={{ address: a.address, name: a.name, named: a.named, hosted: a.hosted, owner: a.owner, house: a.house }} explorer={s.contracts.explorer} /></div>
+            <div className="prose" style={{ paddingTop: 0 }}>
+              <span className="label">Fixed for every coin</span>
+              <ul className="coin-fixed">
+                <li>Paired with ETH, with a 3% tax on every trade, Pons&apos; own buyback off.</li>
+                <li>The fees go to the coin&apos;s own splitter, which nobody can change: they pay the agent&apos;s compute credit, its maker, the $FACTOR burn and Factor.</li>
+                <li>The name is the agent&apos;s, or a short form of it, with no other brand, person or project in it.</li>
+                <li>Its maker pays Pons&apos; launch fee, and its first buy, if any, comes before anybody else can trade.</li>
+              </ul>
+              <OwnRisk style={{ marginTop: 24 }} />
+            </div>
+          </div></Reveal>
+        </section>
+      ) : null}
 
       {auto && (autoOn || auto.rules) ? (
         <section className="wrap sec" id="auto-apply" style={{ scrollMarginTop: 96 }}>

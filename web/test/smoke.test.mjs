@@ -11,8 +11,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { createServer } from "node:http";
 
 const PORT = Number(process.env.SMOKE_PORT) || 3611, BASE = `http://127.0.0.1:${PORT}`, BARE = `http://127.0.0.1:${PORT + 1}`;
-const PAGES = ["/", "/ledger", "/ledger?show=burned", "/agents", "/agents/lumen-07", "/jobs/0412", "/jobs/0406", "/jobs/0404", "/jobs/0403", "/hire", "/hire?agent=page-smith", "/work", "/protocol", "/token", "/burn", "/docs", "/log", "/security", "/pay", "/firms/night-desk", "/hire?firm=night-desk", "/plans/0x5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a", "/open-jobs", "/open-jobs/0x0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b"];
-const NAV = ["/ledger", "/agents", "/open-jobs", "/hire", "/work", "/protocol", "/token", "/burn", "/docs", "/roadmap"];
+const PAGES = ["/", "/ledger", "/ledger?show=burned", "/agents", "/agents/lumen-07", "/jobs/0412", "/jobs/0406", "/jobs/0404", "/jobs/0403", "/hire", "/hire?agent=page-smith", "/work", "/protocol", "/token", "/burn", "/docs", "/log", "/security", "/pay", "/firms/night-desk", "/hire?firm=night-desk", "/plans/0x5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a", "/open-jobs", "/open-jobs/0x0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b", "/coins", "/coins?sort=new", "/coins/page-smith"];
+const NAV = ["/ledger", "/agents", "/coins", "/open-jobs", "/hire", "/work", "/protocol", "/token", "/burn", "/docs", "/roadmap"];
 // Words the copy does not use: no long dash, no promise of gain. A list kept beside this file and out of the repo
 // (forbidden.local.json, pairs of pattern and flags) adds to them on the machine it is on.
 const LOCAL = new URL("./forbidden.local.json", import.meta.url);
@@ -75,6 +75,26 @@ test("a house agent is marked as one wherever it shows, and an agent that did no
   assert.match(bad, /did not repay an advance/);
   // a barred agent draws nothing, and is not told "yet"
   assert.match(bad, /Can draw nothing (?!yet)/);
+});
+
+test("an agent's coin shows beside it, in the lists and on its own page, with its own risk and nothing about shares", async () => {
+  const page = text((await get("/agents/page-smith")).html);
+  assert.match(page, /\$SMITH/);
+  assert.match(page, /pays for page-smith/);
+  assert.match(text((await get("/agents")).html), /\$LUMEN/);
+  assert.match(text((await get("/")).html), /Agent coins · 2/);
+  const coin = text((await get("/coins/page-smith")).html);
+  assert.match(coin, /Trade on Pons/);
+  assert.match(coin, /its compute, its maker, the \$FACTOR burn and Factor/);
+  assert.match(coin, /at your own risk/);
+  const list = text((await get("/coins")).html);
+  assert.match(list, /Page Smith/);
+  for (const t of [page, coin, list]) assert.doesNotMatch(t, /\b(40|20)\s?%/, "a share of the fees is never said");
+  assert.equal((await get("/coins/nobody-here")).status, 404);
+  // the coin's picture: the agent's seal, as a picture any site can show
+  const logo = await fetch(`${BASE}/api/v1/coins/logo/page-smith`);
+  assert.equal(logo.status, 200);
+  assert.match(logo.headers.get("content-type") ?? "", /image\/png/);
 });
 
 test("a job's bill adds up", async () => {
