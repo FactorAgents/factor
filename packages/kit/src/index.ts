@@ -21,8 +21,11 @@ import { factorAccountAbi } from "./abi/FactorAccount.js";
 import { factorAccountsAbi } from "./abi/FactorAccounts.js";
 import { factorDeskAbi } from "./abi/FactorDesk.js";
 import { agentCoinLauncherAbi } from "./abi/AgentCoinLauncher.js";
+import { factorLineAbi } from "./abi/FactorLine.js";
+import { factorLineAccountAbi } from "./abi/FactorLineAccount.js";
+import { drawParts, lineWordsOf } from "./lines.js";
 import { CHAIN_ID, DEFAULT_API, DEFAULT_RPC } from "./defaults.js";
-import type { AccountInfo, Agent, AgentPage, Applicant, Application, AutoApplyStatus, ComputeCredit, ComputeKey, Deal, Erc8004Entries, Erc8004Status, Firm, FirmHire, FirmPage, FirmRecord, Job, JobPage, JobState, JobTree, LedgerLine, ModelAnswer, OpenJob, OpenJobHire, PickedJob, OpenJobPage, OpenJobPosted, Page, PayLinkInfo, Plan, PlanMonthSent, PlanPage, RouterModel, Sent, State, SubJob, OwnerCheck, VerifiedStatus, Coin, CoinsAbout, CoinLaunched, CoinLaunchTx } from "./types.js";
+import type { AccountInfo, Agent, AgentPage, Applicant, Application, AutoApplyStatus, ComputeCredit, ComputeKey, Deal, Erc8004Entries, Erc8004Status, Firm, FirmHire, FirmPage, FirmRecord, Job, JobPage, JobState, JobTree, LedgerLine, ModelAnswer, OpenJob, OpenJobHire, PickedJob, OpenJobPage, OpenJobPosted, Page, PayLinkInfo, Plan, PlanMonthSent, PlanPage, RouterModel, Sent, State, SubJob, OwnerCheck, VerifiedStatus, Coin, CoinsAbout, CoinLaunched, CoinLaunchTx, CreditLine, LinesAbout, LineSent } from "./types.js";
 import { coinAskMessage, coinDescription, coinLogo, coinNameProblem, coinPermissionTypedData, suggestCoin, type CoinPermission } from "./coins.js";
 import { MONTH_S, PLAN_TITLE_MOST, planMessage, stopPlanMessage, type PlanText } from "./plans.js";
 import { FIRM_SLUG, firmHireMessage, firmMessage, joinMessage, leaveMessage, slugOf } from "./firms.js";
@@ -45,6 +48,7 @@ export { MONTH_S, monthlyPlanId, planMessage, stopPlanMessage } from "./plans.js
 export { verifyOwnerMessage } from "./verified.js";
 export { coinAskMessage, coinDescription, coinLogo, coinNameProblem, coinPermissionTypedData, suggestCoin } from "./coins.js";
 export type { CoinPermission } from "./coins.js";
+export { drawParts, LINE_WORDS } from "./lines.js";
 export { ERC8004_TAG, erc8004LinkMessage, erc8004Registry, IDENTITY_REGISTRY, REPUTATION_REGISTRY } from "./erc8004.js";
 export type { PlanText } from "./plans.js";
 export { applyMessage, closeJobMessage, openJobId, pickWords, postJobMessage, priceWords, withdrawMessage } from "./openjobs.js";
@@ -361,6 +365,9 @@ export class Factor {
     this.mine();
     // credit nobody can spend helps no job: while no model is served, nothing is drawn as compute
     if (from === "compute" && !(await this.state()).compute?.enabled) throw new Refusal('Compute credit is not switched on yet. Draw from "pool" or "early" instead.', "compute_off");
+    // a job locked for this agent's line account is drawn on through it, held to what the line leaves
+    const acct = await this.lineAccountForJob(jobId);
+    if (acct) return this.sent(await this.callLine(acct, LINE_ACCOUNT, "drawAdvance", [...args], 0n));
     return this.sent(await this.send("draw", [...args]));
   }
 
@@ -461,7 +468,10 @@ export class Factor {
     if (typeof work !== "string" || work.trim().length < 1) throw new Refusal("Give what was delivered, or the link to it.", "no_work");
     if (o.show && work.length > 200_000) throw new Refusal("Work shown on the job's page is 200,000 characters at most. Deliver a link to it, or do not show it.", "too_long");
     const proof = proofOf(work);
-    const sent = this.sent(await this.send("deliver", [BigInt(whole(jobId)), proof]));
+    this.mine();
+    // a job locked for this agent's line account is delivered through it
+    const acct = await this.lineAccountForJob(jobId);
+    const sent = this.sent(acct ? await this.callLine(acct, LINE_ACCOUNT, "deliver", [BigInt(whole(jobId)), proof], 0n) : await this.send("deliver", [BigInt(whole(jobId)), proof]));
     let shown = false;
     if (o.show) {
       // the site takes it only because its fingerprint is the proof that is on the chain now. A delivery that could
@@ -478,6 +488,9 @@ export class Factor {
 
   /** Say no to a job, before drawing on it. The customer has everything back and the agent's record is not marked. */
   async decline(jobId: number): Promise<Sent> {
+    this.mine();
+    const acct = await this.lineAccountForJob(jobId);
+    if (acct) return this.sent(await this.callLine(acct, LINE_ACCOUNT, "decline", [BigInt(whole(jobId))], 0n));
     return this.sent(await this.send("decline", [BigInt(whole(jobId))]));
   }
 
@@ -488,10 +501,13 @@ export class Factor {
    */
   async *jobsForMe(o: { open?: boolean; pollMs?: number; signal?: AbortSignal } = {}): AsyncGenerator<Job> {
     const me = this.mine();
+    // with a credit line, new jobs are locked for its line account: those are this agent's too
+    const account = await this.line(me).then((l) => (l && l.key === me ? l.account : null)).catch(() => null);
     let seen = 0;
     let first = true;
     while (!o.signal?.aborted) {
-      const mine = (await this.jobs({ agent: me, limit: 50 }).catch(() => [] as Job[])).sort((a, b) => a.n - b.n);
+      const both = await Promise.all([me, ...(account ? [account] : [])].map((agent) => this.jobs({ agent, limit: 50 }).catch(() => [] as Job[])));
+      const mine = both.flat().sort((a, b) => a.n - b.n);
       if (first && !o.open) seen = mine.reduce((m, j) => Math.max(m, j.n), 0);
       for (const j of mine) {
         if (j.n <= seen) continue;
@@ -1598,6 +1614,179 @@ export class Factor {
     return { hash, explorer: `${this.explorer}/tx/${hash}`, receipt };
   }
 
+  // ---------- credit lines ----------
+
+  /** Credit lines: whether they are on, the line contract, the rules, the line pool, and every line. */
+  async lines(): Promise<LinesAbout & { items: CreditLine[] }> {
+    const r = await read<LinesAbout & { items: CreditLine[] }>(this.api, "/lines");
+    return r ?? { enabled: false, contract: null, chainId: this.chainId, rules: { feePct: 2, burnPct: 1, poolPct: 1, dueDays: 30, defaultDays: 30, minDrawEth: 0.0001, poolOutMaxPct: 80 }, pool: null, lines: 0, owing: 0, items: [] };
+  }
+
+  /**
+   * One credit line, by its agent's name or address or its line account's address: what it owes and when, what it can
+   * draw now, its limit, what its line account holds, its record and what happened on it. null: no line. Left out:
+   * this wallet's own.
+   */
+  async line(id?: string): Promise<CreditLine | null> {
+    const who = id ?? this.mine();
+    if (!/^[0-9a-zA-Z-]{3,42}$/.test(who)) throw new Refusal("Give the agent's name or address, or its line account's address.", "bad_agent");
+    return (await read<{ line: CreditLine }>(this.api, `/lines/${who}`))?.line ?? null;
+  }
+
+  /**
+   * Open this agent's credit line, once. This wallet must be a registered agent on the desk and not barred there. It
+   * makes the agent a line account, which registers on the desk in the same transaction and is the agent's desk address
+   * for new jobs from then on: customers lock jobs for it, and everything paid into it repays the line first.
+   */
+  async openLine(): Promise<LineSent> {
+    this.mine();
+    const line = await this.lineContract();
+    const sent = await this.callLine(line, LINE, "open", [], 0n);
+    return this.lineSent(line, sent);
+  }
+
+  /**
+   * Add to the bond at this agent's line account: its own ETH, which raises the line's limit by as much. It cannot be
+   * taken out while the line owes anything, and it pays the line first if the line is never repaid.
+   */
+  async bondLine(amount: Amount): Promise<LineSent> {
+    const line = await this.lineContract();
+    const account = await this.myLineAccount(line);
+    const sent = await this.callLine(account, LINE_ACCOUNT, "addBond", [0n], toWei(amount));
+    return this.lineSent(line, sent);
+  }
+
+  /**
+   * Draw on this agent's line: as ETH to this wallet (the default), or `as: "compute"`, paid to Factor's compute
+   * gateway as compute credit for models, never to a wallet. No job is needed. 2% of the draw is its fee (1% buys back
+   * and burns $FACTOR, 1% goes back into the line pool); the whole draw is owed, due 30 days after the draw that
+   * opened the debt.
+   */
+  async drawLine(amount: Amount, o: { as?: "cash" | "compute" } = {}): Promise<LineSent & { receivedEth: string; feeEth: string }> {
+    const compute = o.as === "compute";
+    if (o.as !== undefined && o.as !== "cash" && o.as !== "compute") throw new Refusal('Draw "as": "cash" or "compute".', "bad_kind");
+    const wei = toWei(amount);
+    if (compute && !(await this.state()).compute?.enabled) throw new Refusal('Compute credit is not switched on yet. Draw as "cash" instead.', "compute_off");
+    const line = await this.lineContract();
+    const sent = await this.callLine(line, LINE, "draw", [wei, compute], 0n);
+    const parts = drawParts(wei);
+    return { ...(await this.lineSent(line, sent)), receivedEth: ethText(parts.net), feeEth: ethText(parts.fee) };
+  }
+
+  /**
+   * Repay a line: this agent's own (left out), or any line by its agent or account. `amount` (all that is owed when
+   * left out) goes straight to the line. Income into the line account repays it by itself; this is for sooner.
+   */
+  async repayLine(amount?: Amount, o: { line?: string } = {}): Promise<LineSent> {
+    this.mine();
+    const line = await this.lineContract();
+    const account = o.line ? await this.lineAccountOf(line, o.line) : await this.myLineAccount(line);
+    const owed = (await this.pub.readContract({ address: line, abi: LINE, functionName: "debtOf", args: [account] })) as bigint;
+    if (owed === 0n) throw new Refusal("That line owes nothing.", "nothing_owed");
+    const value = amount === undefined ? owed : toWei(amount);
+    if (value > owed) throw new Refusal(`The line owes ${ethText(owed)} ETH. Repay that much at most.`, "over_debt");
+    const sent = await this.callLine(line, LINE, "repay", [account], value);
+    return this.lineSent(line, sent, account);
+  }
+
+  /**
+   * Take ETH out of this agent's line account: to this wallet, or `to`. It pays the line first, and only what is left
+   * once nothing is owed can leave. `amount`: all of what is free when left out.
+   */
+  async withdrawFromLine(amount?: Amount, o: { to?: string } = {}): Promise<LineSent & { tookEth: string }> {
+    const me = this.mine();
+    if (o.to !== undefined && !/^0x[0-9a-fA-F]{40}$/.test(o.to)) throw new Refusal("Give the address the ETH should go to.", "bad_address");
+    const line = await this.lineContract();
+    const account = await this.myLineAccount(line);
+    const [balance, owed] = await Promise.all([this.pub.getBalance({ address: account }), this.pub.readContract({ address: line, abi: LINE, functionName: "debtOf", args: [account] }) as Promise<bigint>]);
+    const free = balance > owed ? balance - owed : 0n;
+    const value = amount === undefined ? free : toWei(amount);
+    if (value === 0n || value > free) throw new Refusal(free === 0n ? (owed > 0n ? `The line is owed ${ethText(owed)} ETH and the account holds ${ethText(balance)} ETH: nothing is free yet.` : "The line account holds nothing.") : `${ethText(free)} ETH is free in the line account.`, "not_free");
+    const sent = await this.callLine(account, LINE_ACCOUNT, "withdraw", [(o.to ?? me).toLowerCase(), value], 0n);
+    return { ...(await this.lineSent(line, sent)), tookEth: ethText(value) };
+  }
+
+  /** Anyone: pay a line what its line account holds, up to what it owes. This agent's own when left out. */
+  async sweepLine(o: { line?: string } = {}): Promise<LineSent> {
+    const line = await this.lineContract();
+    const account = o.line ? await this.lineAccountOf(line, o.line) : await this.myLineAccount(line);
+    const sent = await this.callLine(account, LINE_ACCOUNT, "sweep", [], 0n);
+    return this.lineSent(line, sent, account);
+  }
+
+  /** The line contract, on and a contract on the chain. */
+  private async lineContract(): Promise<Hex> {
+    const about = await read<LinesAbout>(this.api, "/lines/about");
+    if (!about?.enabled || !about.contract || !/^0x[0-9a-fA-F]{40}$/.test(about.contract)) throw new Refusal("Credit lines are not switched on yet.", "lines_off");
+    const line = about.contract.toLowerCase() as Hex;
+    const code = await this.pub.getCode({ address: line });
+    if (!code || code === "0x") throw new Refusal(`There is no contract at ${line}, where the site says lines are. Nothing will be sent to it.`, "no_line_contract");
+    return line;
+  }
+
+  /** This wallet's line account, read from the line contract. */
+  private async myLineAccount(line: Hex): Promise<Hex> {
+    const account = ((await this.pub.readContract({ address: line, abi: LINE, functionName: "accountOf", args: [this.mine()] })) as string).toLowerCase() as Hex;
+    if (/^0x0{40}$/.test(account)) throw new Refusal("This wallet has no credit line yet. Open one first (openLine).", "no_line");
+    return account;
+  }
+
+  /** A line account from an agent's name or address, or the account's own address. */
+  private async lineAccountOf(line: Hex, id: string): Promise<Hex> {
+    if (/^0x[0-9a-fA-F]{40}$/.test(id)) {
+      const a = id.toLowerCase() as Hex;
+      const key = ((await this.pub.readContract({ address: line, abi: LINE, functionName: "keyOf", args: [a] })) as string).toLowerCase();
+      if (!/^0x0{40}$/.test(key)) return a;
+      const acct = ((await this.pub.readContract({ address: line, abi: LINE, functionName: "accountOf", args: [a] })) as string).toLowerCase() as Hex;
+      if (!/^0x0{40}$/.test(acct)) return acct;
+      throw new Refusal("That address has no credit line.", "no_line");
+    }
+    const l = await this.line(id);
+    if (!l) throw new Refusal(`${id} has no credit line.`, "no_line");
+    return l.account.toLowerCase() as Hex;
+  }
+
+  /** The line account a job on the desk is locked for, when it is this wallet's: its desk calls then go through it. */
+  private async lineAccountForJob(jobId: number): Promise<Hex | null> {
+    const about = await read<LinesAbout>(this.api, "/lines/about").catch(() => null);
+    if (!about?.enabled || !about.contract) return null;
+    const job = (await this.pub.readContract({ address: this.desk, abi: ABI, functionName: "job", args: [BigInt(whole(jobId))] })) as { agent: string };
+    const agent = job.agent.toLowerCase();
+    if (agent === this.mine()) return null;
+    const key = ((await this.pub.readContract({ address: about.contract as Hex, abi: LINE, functionName: "keyOf", args: [agent] })) as string).toLowerCase();
+    return key === this.mine() ? (agent as Hex) : null;
+  }
+
+  private async lineSent(line: Hex, sent: { hash: Hex; explorer: string }, account?: Hex): Promise<LineSent> {
+    const acct = account ?? (await this.myLineAccount(line));
+    const owed = (await this.pub.readContract({ address: line, abi: LINE, functionName: "debtOf", args: [acct] })) as bigint;
+    return { hash: sent.hash, explorer: sent.explorer, account: acct, debtEth: ethText(owed) };
+  }
+
+  /** One call to the line contract or a line account, from this wallet or its Factor account: tried, sent, followed until it is mined. */
+  private async callLine(to: Hex, abi: Abi, functionName: string, args: readonly unknown[], value: bigint): Promise<{ hash: Hex; explorer: string; receipt: { logs: unknown[] } }> {
+    if (!this.account || !this.wallet) throw new Refusal("This Factor was connected without a key: it can only read.", "read_only");
+    if (this.via) {
+      try {
+        await this.pub.simulateContract({ address: to, abi, functionName, args, account: this.via, value } as never);
+      } catch (e) {
+        if (/insufficient (funds|balance)|exceeds the balance/i.test(`${(e as { shortMessage?: string }).shortMessage} ${(e as Error).message}`)) throw new Refusal(WORDS.AccountShort!([await this.pub.getBalance({ address: this.via }), value]), "account_short");
+        throw new Refusal(lineWordsOf(e), "line_refused");
+      }
+      return this.order([{ to, value, data: encodeFunctionData({ abi, functionName, args } as never) }]);
+    }
+    let hash: Hex;
+    try {
+      const { request } = await this.pub.simulateContract({ address: to, abi, functionName, args, account: this.account, value } as never);
+      hash = await this.wallet.writeContract(request as never);
+    } catch (e) {
+      throw e instanceof Refusal ? e : new Refusal(lineWordsOf(e), "line_refused");
+    }
+    const receipt = await this.pub.waitForTransactionReceipt({ hash, timeout: 180_000 });
+    if (receipt.status !== "success") throw new Refusal(`The transaction ${hash} was mined and refused. Nothing changed but the gas.`, "reverted");
+    return { hash, explorer: `${this.explorer}/tx/${hash}`, receipt };
+  }
+
   // ---------- ERC-8004 ----------
 
   /**
@@ -1887,6 +2076,8 @@ function sortOffers(list: Applicant[], by: "score" | "price" | "fast"): Applican
 }
 
 const LAUNCHER = agentCoinLauncherAbi as Abi;
+const LINE = factorLineAbi as Abi;
+const LINE_ACCOUNT = factorLineAccountAbi as Abi;
 // The launcher's own refusals, in plain words: a few share a name with an account's, and mean something else here.
 const COIN_WORDS: Record<string, (a: readonly unknown[]) => string> = {
   NotAllowed: () => "Only the agent itself, or its maker with the agent's permission, can launch its coin.",

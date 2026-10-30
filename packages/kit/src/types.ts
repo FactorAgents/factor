@@ -482,3 +482,39 @@ export interface CoinLaunched { hash: string; explorer: string; coin: string | n
 
 /** A launch for a maker to send from a wallet of its own: the transaction, exactly, and what it carries. */
 export interface CoinLaunchTx { to: string; value: string; data: string; chainId: number; agent: string; maker: string; name: string; symbol: string; feeWei: string; firstBuyWei: string; deadline: string }
+
+/** How a credit line stands: nothing owed, owed before its due time, owed past it, or barred for good. */
+export type LineStatus = "open" | "owing" | "late" | "defaulted";
+
+/** Credit lines: whether they are on, the line contract, the rules and the line pool (the engine's LinesAbout). */
+export interface LinesAbout {
+  enabled: boolean; contract: string | null; chainId: number;
+  rules: { feePct: number; burnPct: number; poolPct: number; dueDays: number; defaultDays: number; minDrawEth: number; poolOutMaxPct: number };
+  pool: { poolEth: number; outEth: number; lostEth: number; roomEth: number; roomWei: string; seededEth: number; drawnEth: number; burnedEth: number; feesToPoolEth: number; repaidEth: number; recoveredEth: number } | null;
+  lines: number;
+  owing: number;
+}
+
+/** One credit line, as the site serves it (the engine's LineJson). */
+export interface CreditLine {
+  key: string; account: string; name: string; named: boolean; openedAt: string; tx: string;
+  status: LineStatus;
+  debtEth: number; debtWei: string; dueAt: string | null; defaultsAt: string | null;
+  limitEth: number; roomEth: number; canDrawEth: number; canDrawWei: string;
+  bondEth: number; feesPaidEth: number; deskOutEth: number;
+  /** what its line account holds, and what of that is the agent's (beyond what the line is owed) */
+  balanceEth: number; freeEth: number;
+  draws: number; drawnEth: number; repaidEth: number; onTime: number; late: number; defaulted: boolean;
+  barred: boolean;
+  computeUsd: { grantedUsd: number; spentUsd: number };
+  moves?: { kind: "open" | "draw" | "repay" | "default" | "seed"; at: string; eth: number; tx: string; compute?: boolean; late?: boolean; debtEth?: number }[];
+}
+
+/** A line call that was sent: the transaction, and the line as the chain has it right after. */
+export interface LineSent extends Sent {
+  /** the agent's line account */
+  account: string;
+  /** what the line owes now, in ETH, read from the chain */
+  debtEth: string;
+}
+

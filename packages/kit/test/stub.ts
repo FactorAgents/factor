@@ -32,10 +32,10 @@ export function state(over: Partial<State> = {}): State {
   };
 }
 
-export interface Stub { api: string; rpc: string; site: { coins: unknown[]; coin: unknown; coinsAbout: unknown; state: State; refuse: number | null; payInfo: ((token: string) => { status: number; body: unknown }) | null; x402: { status: number; body: unknown } | null; record: unknown; jobExtra: Record<string, unknown>; tree: unknown; firms: unknown[]; firm: unknown; firmRecord: unknown; plan: unknown; plans: unknown[]; erc8004: unknown; openJob: unknown; openJobs: unknown[]; autoApply: unknown; verified: unknown }; node: { chainId: number; code: string; calls: string[] }; posts: { path: string; body: unknown; auth?: string }[]; close(): Promise<void> }
+export interface Stub { api: string; rpc: string; site: { coins: unknown[]; coin: unknown; coinsAbout: unknown; state: State; refuse: number | null; payInfo: ((token: string) => { status: number; body: unknown }) | null; x402: { status: number; body: unknown } | null; record: unknown; jobExtra: Record<string, unknown>; tree: unknown; firms: unknown[]; firm: unknown; firmRecord: unknown; plan: unknown; plans: unknown[]; erc8004: unknown; openJob: unknown; openJobs: unknown[]; autoApply: unknown; verified: unknown; line: unknown; linesAbout: unknown }; node: { chainId: number; code: string; calls: string[] }; posts: { path: string; body: unknown; auth?: string }[]; close(): Promise<void> }
 
 export async function stub(): Promise<Stub> {
-  const site = { coins: [] as unknown[], coin: null as unknown, coinsAbout: { enabled: false, launcher: null } as unknown, state: state(), refuse: null as number | null, payInfo: null as Stub["site"]["payInfo"], x402: null as Stub["site"]["x402"], record: null as unknown, jobExtra: {} as Record<string, unknown>, tree: null as unknown, firms: [] as unknown[], firm: null as unknown, firmRecord: null as unknown, plan: null as unknown, plans: [] as unknown[], erc8004: null as unknown, openJob: null as unknown, openJobs: [] as unknown[], autoApply: null as unknown, verified: null as unknown };
+  const site = { coins: [] as unknown[], coin: null as unknown, coinsAbout: { enabled: false, launcher: null } as unknown, state: state(), refuse: null as number | null, payInfo: null as Stub["site"]["payInfo"], x402: null as Stub["site"]["x402"], record: null as unknown, jobExtra: {} as Record<string, unknown>, tree: null as unknown, firms: [] as unknown[], firm: null as unknown, firmRecord: null as unknown, plan: null as unknown, plans: [] as unknown[], erc8004: null as unknown, openJob: null as unknown, openJobs: [] as unknown[], autoApply: null as unknown, verified: null as unknown, line: null as unknown, linesAbout: { enabled: false, contract: null, chainId: 4663, rules: { feePct: 2, burnPct: 1, poolPct: 1, dueDays: 30, defaultDays: 30, minDrawEth: 0.0001, poolOutMaxPct: 80 }, pool: null, lines: 0, owing: 0 } as unknown };
   const node = { chainId: 4663, code: "0x6080", calls: [] as string[] };
   const posts: { path: string; body: unknown; auth?: string }[] = [];
   const json = (res: import("node:http").ServerResponse, status: number, body: unknown) => { res.writeHead(status, { "content-type": "application/json" }); res.end(JSON.stringify(body)); };
@@ -86,6 +86,10 @@ export async function stub(): Promise<Stub> {
     ] });
     if (path === "/firms") return json(res, 200, { enabled: true, items: site.firms });
     if (path === "/coins") return json(res, 200, { enabled: true, items: site.coins });
+    // credit lines: the rules and the pool, and one line as the engine answers it
+    if (path === "/lines/about") return json(res, 200, site.linesAbout);
+    if (path === "/lines") return json(res, 200, { ...(site.linesAbout as object), items: site.line ? [site.line] : [] });
+    if (path.startsWith("/lines/")) return site.line ? json(res, 200, { line: site.line }) : json(res, 404, { error: "no such line" });
     if (path === "/coins/about") return json(res, 200, site.coinsAbout);
     if (path.startsWith("/coins/")) return site.coin ? json(res, 200, site.coin) : json(res, 404, { error: "no coin is listed for that" });
     if (path.startsWith("/verified/")) return site.verified ? json(res, 200, site.verified) : json(res, 200, { enabled: false, owners: [], verifiedOwner: null });

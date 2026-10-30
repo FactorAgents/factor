@@ -3,7 +3,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { factorDeskAbi } from "../src/abi/FactorDesk.js";
 import { briefMessage, computeKeyMessage, Factor, orderTypedData, profileMessage, proofOf, Refusal, titleMessage, toWei, type FactorOptions } from "../src/index.js";
 import { orderTypedData as engineOrder } from "../../../engine/src/accounts.js";
@@ -349,11 +349,11 @@ describe("the assistant's caps", () => {
 
 describe("the tools", () => {
   it("have a name, a description and an input each, and say which of them send something", () => {
-    expect(TOOLS.map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_hire", "factor_accept", "factor_reject", "factor_set_title", "factor_register", "factor_set_profile", "factor_bond", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_ask_model", "factor_draw", "factor_deliver", "factor_decline", "factor_sign_up", "factor_create_pay_link", "factor_pay_link_info", "factor_pay_link", "factor_pay_x402", "factor_hire_for_job", "factor_job_tree", "factor_reject_sub_jobs", "factor_record", "factor_erc8004", "factor_link_erc8004", "factor_coins", "factor_coin", "factor_prepare_coin_launch", "factor_sign_coin_permission", "factor_launch_coin", "factor_verified_owner", "factor_verify_owner", "factor_firms", "factor_firm_record", "factor_hire_firm", "factor_plan", "factor_subscribe", "factor_pay_month", "factor_stop_plan", "factor_draw_next_month", "factor_open_jobs", "factor_open_job", "factor_post_job", "factor_apply_to_job", "factor_bid", "factor_withdraw_offer", "factor_offers", "factor_pick_agent", "factor_close_job", "factor_auto_apply", "factor_set_auto_apply", "factor_auto_apply_now"]);
+    expect(TOOLS.map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_hire", "factor_accept", "factor_reject", "factor_set_title", "factor_register", "factor_set_profile", "factor_bond", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_ask_model", "factor_draw", "factor_deliver", "factor_decline", "factor_sign_up", "factor_create_pay_link", "factor_pay_link_info", "factor_pay_link", "factor_pay_x402", "factor_hire_for_job", "factor_job_tree", "factor_reject_sub_jobs", "factor_record", "factor_erc8004", "factor_link_erc8004", "factor_coins", "factor_coin", "factor_prepare_coin_launch", "factor_sign_coin_permission", "factor_launch_coin", "factor_line", "factor_open_line", "factor_draw_line", "factor_repay_line", "factor_withdraw_from_line", "factor_verified_owner", "factor_verify_owner", "factor_firms", "factor_firm_record", "factor_hire_firm", "factor_plan", "factor_subscribe", "factor_pay_month", "factor_stop_plan", "factor_draw_next_month", "factor_open_jobs", "factor_open_job", "factor_post_job", "factor_apply_to_job", "factor_bid", "factor_withdraw_offer", "factor_offers", "factor_pick_agent", "factor_close_job", "factor_auto_apply", "factor_set_auto_apply", "factor_auto_apply_now"]);
     for (const t of TOOLS) expect(t.description.length, t.name).toBeGreaterThan(40);
-    expect(TOOLS.filter((t) => t.readOnly).map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_pay_link_info", "factor_job_tree", "factor_record", "factor_erc8004", "factor_coins", "factor_coin", "factor_prepare_coin_launch", "factor_verified_owner", "factor_firms", "factor_firm_record", "factor_plan", "factor_open_jobs", "factor_open_job", "factor_offers", "factor_auto_apply"]);
+    expect(TOOLS.filter((t) => t.readOnly).map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_pay_link_info", "factor_job_tree", "factor_record", "factor_erc8004", "factor_coins", "factor_coin", "factor_prepare_coin_launch", "factor_line", "factor_verified_owner", "factor_firms", "factor_firm_record", "factor_plan", "factor_open_jobs", "factor_open_job", "factor_offers", "factor_auto_apply"]);
     // the ones that spend or cannot be undone say so in capitals, where an assistant will not miss it
-    for (const name of ["factor_launch_coin", "factor_hire", "factor_reject", "factor_bond", "factor_pay_link", "factor_pay_x402", "factor_hire_for_job", "factor_reject_sub_jobs", "factor_hire_firm", "factor_subscribe", "factor_pay_month", "factor_pick_agent"]) expect(TOOLS.find((t) => t.name === name)!.description).toMatch(/SPENDS ETH|SETTLES AT HALF/);
+    for (const name of ["factor_launch_coin", "factor_hire", "factor_reject", "factor_bond", "factor_pay_link", "factor_pay_x402", "factor_hire_for_job", "factor_reject_sub_jobs", "factor_hire_firm", "factor_subscribe", "factor_pay_month", "factor_pick_agent", "factor_repay_line"]) expect(TOOLS.find((t) => t.name === name)!.description).toMatch(/SPENDS ETH|SETTLES AT HALF/);
   });
 
   it("answer in words", async () => {
@@ -1069,6 +1069,54 @@ describe("verified owners", () => {
     expect((await runTool(f, "factor_verified_owner", { agent: "lumen-07" }, null)).text).toMatch(/The owner of lumen-07 is verified: Human Passport passed \(Human Passport 20 to 29\)\. .* checked 2026-10-24; it runs out 2026-11-23/);
     expect((await runTool(f, "factor_verify_owner", {}, null)).text).toMatch(/^Verified: Human Passport passed for 0x/);
     s.site.verified = null;
+  });
+});
+
+describe("credit lines", () => {
+  const LINE = {
+    key: AGENTS[0].address, account: "0x00000000000000000000000000000000000ac171", name: "lumen-07", named: true, openedAt: "2026-10-20T00:00:00.000Z", tx: "0xabc", status: "owing",
+    debtEth: 0.006, debtWei: "6000000000000000", dueAt: "2026-11-19T00:00:00.000Z", defaultsAt: "2026-12-19T00:00:00.000Z", limitEth: 0.0222, roomEth: 0.0162, canDrawEth: 0.0162, canDrawWei: "16200000000000000",
+    bondEth: 0.01, feesPaidEth: 0.0122, deskOutEth: 0, balanceEth: 0.001, freeEth: 0, draws: 2, drawnEth: 0.01, repaidEth: 0.004, onTime: 1, late: 0, defaulted: false, barred: false, computeUsd: { grantedUsd: 9.8, spentUsd: 3.1 },
+  };
+  const OFF = { enabled: false, contract: null, chainId: 4663, rules: { feePct: 2, burnPct: 1, poolPct: 1, dueDays: 30, defaultDays: 30, minDrawEth: 0.0001, poolOutMaxPct: 80 }, pool: null, lines: 0, owing: 0 };
+  const reset = () => { s.site.line = null; s.site.linesAbout = OFF; s.site.state = state(); };
+  beforeEach(reset);
+  afterAll(reset);
+
+  it("reads a line by its agent or account, and says when there is none", async () => {
+    const f = await connect();
+    expect(await f.line("lumen-07")).toBeNull();
+    s.site.line = LINE;
+    expect((await f.line("lumen-07"))!.debtEth).toBe(0.006);
+    expect((await f.lines()).items).toHaveLength(1);
+    await expect(f.line("not an id!")).rejects.toThrow(/name or address/);
+  });
+
+  it("refuses to open, draw or repay while lines are off, before anything is signed", async () => {
+    const f = await connect({ privateKey: KEY });
+    expect((await refusal(f.openLine())).code).toBe("lines_off");
+    expect((await refusal(f.drawLine("0.001"))).code).toBe("lines_off");
+    expect((await refusal(f.repayLine())).code).toBe("lines_off");
+    expect((await refusal(f.drawLine("0.001", { as: "credit" as never }))).code).toBe("bad_kind");
+    expect(s.node.calls.filter((c) => c === "eth_sendRawTransaction")).toHaveLength(0);
+  });
+
+  it("does not draw as compute while compute credit is off", async () => {
+    s.site.state = state({ compute: { enabled: false, markupPct: 5, maxTokens: 16_000, models: [] } });
+    const f = await connect({ privateKey: KEY });
+    expect((await refusal(f.drawLine("0.001", { as: "compute" }))).code).toBe("compute_off");
+  });
+
+  it("tells an assistant how a line stands, and how to open one when there is none", async () => {
+    const f = await connect();
+    expect((await runTool(f, "factor_line", { id: "lumen-07" }, null)).text).toBe("Credit lines are not switched on yet.");
+    s.site.linesAbout = { ...(s.site.linesAbout as object), enabled: true, contract: "0x00000000000000000000000000000000001114e0" };
+    expect((await runTool(f, "factor_line", { id: "page-smith" }, null)).text).toMatch(/No credit line for page-smith\. A registered agent opens one with factor_open_line/);
+    s.site.line = LINE;
+    const said = (await runTool(f, "factor_line", { id: "lumen-07" }, null)).text;
+    expect(said).toMatch(/owes 0\.006 ETH, due 2026-11-19/);
+    expect(said).toMatch(/Can draw 0\.0162 ETH now/);
+    expect(said).toMatch(/repaid in full 1 time\(s\) on time and 0 late/);
   });
 });
 

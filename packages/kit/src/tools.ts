@@ -549,6 +549,74 @@ export const TOOLS: Tool[] = [
     },
   },
   {
+    name: "factor_line", readOnly: true, input: { id: z.string().optional().describe("The agent's name or address, or its line account's address. Left out: this wallet's own line") },
+    description: "A credit line on Factor: credit with no job behind it, drawn as ETH or as compute and repaid from the agent's next income. What the line owes and when it is due, what it can draw now, its limit (the bond and the job fees at its line account, counted once with the desk), what its line account holds and what of that is free, its record of repayments on time and late, and the rules. With no line: whether lines are open and how to open one.",
+    async run(f, a) {
+      const l = await f.line(typeof a.id === "string" ? a.id : undefined);
+      if (!l) {
+        const about = await f.lines();
+        if (!about.enabled) return "Credit lines are not switched on yet.";
+        return `No credit line${typeof a.id === "string" ? ` for ${a.id}` : " for this wallet"}. A registered agent opens one with factor_open_line: it gets a line account, its desk address for new jobs, and can draw up to the bond and the job fees at that account. A draw pays a ${about.rules.feePct}% fee (${about.rules.burnPct}% to the $FACTOR burn, ${about.rules.poolPct}% back into the line pool), and is due ${about.rules.dueDays} days after the draw that opens a debt.`;
+      }
+      return [
+        `${l.name}'s credit line: ${l.status === "defaulted" ? "never repaid, barred from lines for good" : l.status === "late" ? `LATE, owes ${l.debtEth} ETH, was due ${l.dueAt}; it cannot draw until it is repaid${l.defaultsAt ? `, and if still owed after ${l.defaultsAt} its bond pays and it is barred for good` : ""}` : l.status === "owing" ? `owes ${l.debtEth} ETH, due ${l.dueAt}` : "owes nothing"}.`,
+        `Can draw ${l.canDrawEth} ETH now. Limit ${l.limitEth} ETH (bond ${l.bondEth} ETH and job fees ${l.feesPaidEth} ETH at its line account${l.deskOutEth ? `, less ${l.deskOutEth} ETH the desk has advanced it` : ""}).${l.barred ? " Barred on the desk: its line lends nothing." : ""}`,
+        `Its line account ${l.account} holds ${l.balanceEth} ETH, ${l.freeEth} ETH of it free to take out. New jobs are locked for that address.`,
+        `Record: drawn ${l.draws} times (${l.drawnEth} ETH), repaid in full ${l.onTime} time(s) on time and ${l.late} late.${l.computeUsd.grantedUsd ? ` Drawn as compute: ${l.computeUsd.grantedUsd.toFixed(2)} dollars of credit, ${l.computeUsd.spentUsd.toFixed(2)} spent.` : ""}`,
+      ].join("\n");
+    },
+  },
+  {
+    name: "factor_open_line", readOnly: false, input: {},
+    description: "Open this agent's credit line, once: it gets a line account that registers on the desk and is its desk address for new jobs from then on, and everything paid into that account repays the line first. Costs only the gas. The wallet must be a registered agent that is not barred.",
+    async run(f) {
+      need(f);
+      const r = await f.openLine();
+      return `The line is open: ${r.explorer}. Its line account is ${r.account}: new jobs are locked for that address, and its bond (factor_line shows the limit) is added with the kit's bondLine.`;
+    },
+  },
+  {
+    name: "factor_draw_line", readOnly: false,
+    input: {
+      amount: amount.describe('ETH to draw, as text, like "0.004". The whole of it is owed'),
+      as: z.enum(["cash", "compute"]).optional().describe("cash: ETH to this wallet (the default). compute: credit for models through Factor, never sent to a wallet"),
+    },
+    description: "Draw on this agent's credit line, with no job behind it: as ETH to this wallet, or as compute credit for models. 2% of the draw is its fee (1% buys back and burns $FACTOR, 1% goes back into the line pool); the whole amount is owed, due 30 days after the draw that opened the debt, and repaid first from everything paid into the line account. Confirm the amount with the user first: it is a debt.",
+    async run(f, a) {
+      need(f);
+      const r = await f.drawLine(String(a.amount), { as: a.as === "compute" ? "compute" : "cash" });
+      return `Drawn: ${r.receivedEth} ETH ${a.as === "compute" ? "became compute credit" : "is in this wallet"} (fee ${r.feeEth} ETH). The line owes ${r.debtEth} ETH. ${r.explorer}`;
+    },
+  },
+  {
+    name: "factor_repay_line", readOnly: false,
+    input: {
+      amount: amount.optional().describe("ETH to repay, as text. All that is owed when left out"),
+      line: z.string().optional().describe("Another agent's line, by its name or address or its line account. This wallet's own when left out"),
+    },
+    description: "Repay a credit line now, from this wallet: this agent's own, or any line. Income into the line account repays it by itself; this is for sooner, or to keep a line from being late. It SPENDS ETH from this wallet, held to the day's cap.",
+    async run(f, a, spending) {
+      need(f);
+      const l = await f.line(typeof a.line === "string" ? a.line : undefined);
+      if (!l) return "There is no such line.";
+      const value = typeof a.amount === "string" ? toWei(a.amount) : BigInt(l.debtWei);
+      spending?.check(value, false);
+      const r = await f.repayLine(typeof a.amount === "string" ? a.amount : undefined, typeof a.line === "string" ? { line: a.line } : {});
+      spending?.add(value);
+      return `Repaid ${formatEther(value)} ETH: the line owes ${r.debtEth} ETH now. ${r.explorer}`;
+    },
+  },
+  {
+    name: "factor_withdraw_from_line", readOnly: false,
+    input: { amount: amount.optional().describe("ETH to take out, as text. All that is free when left out") },
+    description: "Take ETH out of this agent's line account, to this wallet: what its jobs paid into it, beyond what the line is owed. It pays the line first; nothing leaves while anything is owed.",
+    async run(f, a) {
+      need(f);
+      const r = await f.withdrawFromLine(typeof a.amount === "string" ? a.amount : undefined);
+      return `Took out ${r.tookEth} ETH. The line owes ${r.debtEth} ETH. ${r.explorer}`;
+    },
+  },
+  {
     name: "factor_verified_owner", readOnly: true, input: { agent: z.string().optional().describe("The agent's name or address. Left out: this wallet's own") },
     description: "Whether an agent's owner is verified on Factor: the wallet that runs the agent passed Human Passport (a real person holds it) or Talent Protocol (a builder's record), which check passed, a band of the score, and when it was checked and runs out. Only the outcome is kept. It changes no score, no limit and nothing on the chain. Also says where the owner verifies.",
     async run(f, a) {
