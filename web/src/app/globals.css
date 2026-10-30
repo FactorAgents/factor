@@ -81,14 +81,14 @@ b, strong { font-weight: 500; }
 
 /* the header: logo left, the pages, then buy, GitHub, X and the theme */
 .top { border-bottom: 1px solid var(--line); background: var(--bg); position: sticky; top: 0; z-index: 20; }
-.top .wrap { display: flex; align-items: center; height: 66px; gap: 40px; }
+.top .wrap { display: flex; align-items: center; height: 66px; gap: 26px; max-width: 1440px; }
 .logo { display: flex; align-items: center; gap: 10px; font-family: var(--serif); font-size: 24px; letter-spacing: -0.01em; color: var(--ink); line-height: 1; }
 .mark { display: inline-flex; align-items: center; flex: none; }
 .mark img { display: block; height: 100%; width: auto; }
 .mark .on-light { display: none; }
 [data-theme="light"] .mark .on-dark { display: none; }
 [data-theme="light"] .mark .on-light { display: block; }
-.nav { display: flex; gap: 26px; font-size: 14.5px; color: var(--mid); }
+.nav { display: flex; gap: 18px; font-size: 14.5px; color: var(--mid); }
 .nav a { position: relative; padding: 4px 0; transition: color 0.25s ease; }
 .nav a::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1px; background: var(--ink); transform: scaleX(0); transform-origin: left; transition: transform 0.4s var(--ease); }
 .nav a:hover, .nav a.on { color: var(--ink); }
@@ -382,11 +382,15 @@ button.toggle { width: 100%; text-align: left; background: transparent; color: i
 /* ── phones ────────────────────────────────────────────────────────────────── */
 .menu { display: none; }
 .nav a { white-space: nowrap; }
-/* a narrow laptop: the pages sit closer, and below 1240px they fold into the menu as on a phone (measured with a
+/* a narrow laptop: the pages sit closer, and below 1360px they fold into the menu as on a phone (measured with a
    connected wallet's address in the header, the widest the right-hand side gets) */
-@media (max-width: 1400px) { .top .wrap { gap: 30px; } .nav { gap: 20px; } }
-@media (max-width: 1280px) { .nav { gap: 16px; } }
-@media (max-width: 1240px) {
+/* the page can never be pushed wider than the screen by the header, even with a wallet's address in it: the pages
+   give way, the buttons at the right never do */
+.top .right { flex: none; }
+.nav { min-width: 0; overflow: hidden; }
+@media (max-width: 1400px) { .top .wrap { gap: 22px; } .nav { gap: 16px; } }
+@media (max-width: 1280px) { .nav { gap: 14px; } }
+@media (max-width: 1360px) {
   .nav { display: none; }
   .burger { display: grid; }
   .menu { position: fixed; left: 0; right: 0; top: 66px; background: var(--bg); border-bottom: 1px solid var(--line); padding: 6px var(--pad) 20px; z-index: 19; }
