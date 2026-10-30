@@ -72,6 +72,7 @@ import type { OpenJobs } from "./openjobs.js";
 import type { AutoApply } from "./autoapply.js";
 import type { Verified, VerifiedJson, VerifiedAbout } from "./verified.js";
 import type { CoinJson, Coins } from "./coins.js";
+import type { LineBadge, Lines, LinesAbout } from "./lines.js";
 
 export interface Answer {
   status: number;
@@ -124,6 +125,8 @@ export interface EngineView {
   verified?: Verified | null;
   /** agent coins (./coins.ts) */
   coins?: Coins | null;
+  /** credit lines (./lines.ts) */
+  lines?: Lines | null;
 }
 
 /** How a job came to its agent (./factorscore.ts), from the engine's links between jobs. */
@@ -235,6 +238,8 @@ export interface AgentJson {
   verifiedOwner?: VerifiedJson;
   /** its own coin (./coins.ts): only while coins are on and its coin is listed */
   coin?: { coin: string; symbol: string };
+  /** its credit line (./lines.ts): only while lines are on and it has one. Its score is then both sides' together */
+  line?: { role: "key" | "account"; key: string; account: string; status: LineBadge["status"] };
 }
 export interface EventJson { n: number; at: string; kind: string; jobId?: string; agentId?: string; text: string; amount: string; tx: string; demo?: boolean; /** the Desk's reason for an advance */ why?: string }
 export interface BurnJson { n: number; at: string; eth: number; tokens: number; tx: string }
@@ -304,6 +309,8 @@ export interface FactorState {
   verified: VerifiedAbout & { agents: number };
   /** agent coins (./coins.ts): whether they are on, the launcher, how many are listed, and the newest few */
   coins: { enabled: boolean; launcher: string | null; count: number; items: CoinJson[] };
+  /** credit lines (./lines.ts): whether they are on, the contract, the rules, the line pool and how many lines */
+  lines: LinesAbout;
 }
 export interface RosterJson { name: string; does: string; needs: string; delivers: string; fromEth: number; asksAModel: boolean; /** the Desk's opening file on it */ file?: { text: string; at: string } }
 // what Factor's own agents are, said the same before the launch and after it
@@ -365,12 +372,16 @@ interface Names {
   verified?: (address: string) => VerifiedJson | null;
   /** an agent's own coin, or null (./coins.ts) */
   coin?: (address: string) => { coin: string; symbol: string } | null;
+  /** an agent's credit line, or null (./lines.ts) */
+  line?: (address: string) => LineBadge | null;
 }
 const nameOf = (names: Names, address: string | null): string => (address ? (names.profiles.get(address)?.name ?? shortAddress(address)) : "an agent");
 
 export function agentJson(row: AgentRow, names: Names, nowS: number): AgentJson {
   const r = row.record;
-  const p = names.profiles.get(row.address);
+  // a line account goes by its key's name: it is the same agent's desk address (./lines.ts)
+  const lb = names.line?.(row.address) ?? null;
+  const p = names.profiles.get(row.address) ?? (lb?.role === "account" ? names.profiles.get(lb.key) : undefined);
   return {
     id: row.address, name: p?.name ?? shortAddress(row.address), named: !!p, address: row.address, house: names.house.has(row.address), does: p?.does ?? "", since: iso(row.registered_at),
     ...(names.hosted?.has(row.address) ? { hosted: true, owner: names.hosted.get(row.address)! } : {}),
@@ -378,11 +389,12 @@ export function agentJson(row: AgentRow, names: Names, nowS: number): AgentJson 
     settled: r.settled, settledAtHalf: r.settledAtHalf, notDelivered: r.notDelivered, unanswered: r.unanswered, customers: r.customers,
     onTimePct: r.settled ? Math.round((r.onTime * 100) / r.settled) : 0,
     volumeEth: eth(r.volume), feesPaidEth: eth(r.feesPaid), bondEth: eth(r.bond), drawnEth: eth(r.advancedNow), limitEth: eth(limitOf(r)), canDrawEth: eth(canDrawOf(r)),
-    advancesRepaid: r.advancesRepaid, advancesMissed: r.advancesNotRepaid + r.earlyKept, barred: r.barred, score: scoreOf(r, nowS),
+    advancesRepaid: r.advancesRepaid, advancesMissed: r.advancesNotRepaid + r.earlyKept, barred: r.barred, score: lb?.score ?? scoreOf(r, nowS),
     scoreParts: scoreParts(r, nowS).map((s) => (s.name.startsWith("Fees") ? { ...s, value: ethText(s.value) } : s)),
     ...(names.desk?.("file", row.address) ? { file: names.desk("file", row.address)! } : {}),
     ...((v) => (v ? { verifiedOwner: v } : {}))(names.verified?.(row.address) ?? null),
     ...((c) => (c ? { coin: c } : {}))(names.coin?.(row.address) ?? null),
+    ...(lb ? { line: { role: lb.role, key: lb.key, account: lb.account, status: lb.status } } : {}),
   };
 }
 
@@ -553,6 +565,20 @@ export class EngineApi {
       if (answer && ttl > 0) {
         if (this.cache.size > 2000) this.cache.clear();
         this.cache.set(key, { at: Date.now(), answer });
+      }
+      return answer;
+    }
+    // credit lines: the pool and the rules, every line, and one line, kept a few seconds like the rest
+    if (path === "/v1/lines" || path.startsWith("/v1/lines/")) {
+      if (from && this.tooMany(from, "lines-get", 600)) return { status: 429, body: { error: "too many requests: try again in a minute" } };
+      const v = this.view();
+      const ttl = v.config.params.apiCacheMs;
+      const hit = this.cache.get(path);
+      if (hit && ttl > 0 && Date.now() - hit.at < ttl) return hit.answer;
+      const answer = this.linesGet(v, path);
+      if (answer && ttl > 0) {
+        if (this.cache.size > 2000) this.cache.clear();
+        this.cache.set(path, { at: Date.now(), answer });
       }
       return answer;
     }
@@ -784,6 +810,24 @@ export class EngineApi {
   }
 
   // The owner signs, and its wallet is checked (./verified.ts).
+  // Credit lines (./lines.ts), read from the database only.
+  private linesGet(v: EngineView, path: string): Answer | null {
+    const l = v.lines;
+    const running = !!l && v.state === "running";
+    if (path === "/v1/lines/about") return ok({ ...this.linesAbout(v) });
+    if (path === "/v1/lines") return ok({ ...this.linesAbout(v), items: running ? l!.list() : [] });
+    const m = /^\/v1\/lines\/([0-9a-zA-Z-]{3,42})$/.exec(path);
+    if (!m) return null;
+    const one = running ? l!.one(m[1]!) : null;
+    return one ? ok({ line: one }) : notFound("no such line");
+  }
+
+  private linesAbout(v: EngineView): LinesAbout {
+    const l = v.lines;
+    if (l && v.state === "running") return l.about();
+    return { enabled: false, contract: null, chainId: v.config.chainId, rules: { feePct: 2, burnPct: 1, poolPct: 1, dueDays: 30, defaultDays: 30, minDrawEth: 0.0001, poolOutMaxPct: 80 }, pool: null, lines: 0, owing: 0 };
+  }
+
   // Agents' coins (./coins.ts), read from the database only.
   private coinsGet(v: EngineView, path: string, query: URLSearchParams): Answer | null {
     const c = v.coins;
@@ -1042,7 +1086,7 @@ export class EngineApi {
 
   private names(v: EngineView): Names {
     const d = v.deskMind;
-    return { desk: d ? (kind, subject) => { const n = d.latest(kind, subject); return n ? { text: n.text, at: new Date(n.at).toISOString() } : null; } : undefined, profiles: v.profiles?.all() ?? new Map(), house: new Set([...v.config.houseAgents, ...(v.house?.addresses() ?? [])]), hosted: v.house?.hostedAddresses() ?? new Map(), demoJobs: this.demoJobs(v), service: (a) => v.house?.serviceOf(a) ?? null, verified: v.verified?.on() ? (a) => v.verified!.json(a) : undefined, coin: v.coins?.on() ? (a) => v.coins!.badge(a) : undefined };
+    return { desk: d ? (kind, subject) => { const n = d.latest(kind, subject); return n ? { text: n.text, at: new Date(n.at).toISOString() } : null; } : undefined, profiles: v.profiles?.all() ?? new Map(), house: new Set([...v.config.houseAgents, ...(v.house?.addresses() ?? [])]), hosted: v.house?.hostedAddresses() ?? new Map(), demoJobs: this.demoJobs(v), service: (a) => v.house?.serviceOf(a) ?? null, verified: v.verified?.on() ? (a) => v.verified!.json(a) : undefined, coin: v.coins?.on() ? (a) => v.coins!.badge(a) : undefined, line: v.lines?.on() ? (a) => v.lines!.badge(a) : undefined };
   }
 
   /** The jobs whose customer is Factor's own demonstration customer (./house/demo.ts). */
@@ -1137,6 +1181,8 @@ export class EngineApi {
       ...((x) => (x ? { erc8004: x } : {}))(v.erc8004?.json(row.address) ?? null),
       // its own coin: only while coins are on and its coin is listed
       ...((x) => (x ? { coin: x } : {}))(v.coins?.on() ? v.coins.one(row.address) : null),
+      // its credit line, from its key's side or its line account's: only while lines are on and it has one
+      ...((x) => (x ? { line: x } : {}))(v.lines?.on() ? v.lines.one(row.address) : null),
     });
   }
 
@@ -1155,17 +1201,22 @@ export class EngineApi {
    */
   private factorScoreOf(v: EngineView, r: { ctx: Ctx; snap: Snapshot; store: DeskStore }, row: AgentRow): FactorScoreJson {
     const db = r.ctx.db;
-    const jobs = db.q("SELECT id, state, customer, price, fee, closed_at, early, from_pool FROM desk_jobs WHERE agent = ? AND state IN (?, ?)").all(row.address, STATE.settled, STATE.half) as ScoreJob[];
+    // with a credit line the key's and the line account's records are one agent's (./lines.ts)
+    const merged = v.lines?.on() ? v.lines.mergedRecord(row.address) : null;
+    const marks = merged ? v.lines!.lineMarks(row.address) : null;
+    const both = merged ? [merged.key, merged.account] : [row.address];
+    const jobs = db.q(`SELECT id, state, customer, price, fee, closed_at, early, from_pool FROM desk_jobs WHERE agent IN (${both.map(() => "?").join(", ")}) AND state IN (?, ?)`).all(...both, STATE.settled, STATE.half) as ScoreJob[];
     // each job once, under the first way that fits it
     const income = incomeOf(jobs, (id): IncomeSource => sourceOf(v, row.address, id));
     const distinct = new Set(jobs.map((j) => j.customer)).size;
     const out = v.subjobs ? (db.q("SELECT s.price, d.state FROM subjobs s LEFT JOIN desk_jobs d ON d.id = s.job_id WHERE s.hirer = ?").all(row.address) as { price: string; state: number | null }[]) : [];
     const value = out.reduce((n, x) => n + BigInt(x.price), 0n);
     return factorScore({
-      kind: "agent", record: row.record, nowS: this.chainNow(v, r.snap), distinctCustomers: distinct, income,
+      kind: "agent", record: merged?.record ?? row.record, nowS: this.chainNow(v, r.snap), distinctCustomers: distinct, income,
       hired: { parts: out.length, settled: out.filter((x) => x.state === STATE.settled || x.state === STATE.half).length, valueWei: value.toString(), valueEth: eth(value) },
       draw: drawOf(row.record, income),
-      check: `score(${row.address}) on the desk, ${r.ctx.addr.desk}`,
+      check: merged ? `score(${merged.key}) and score(${merged.account}) on the desk, ${r.ctx.addr.desk}, as one record, with the line's marks from ${v.config.lines.line}` : `score(${row.address}) on the desk, ${r.ctx.addr.desk}`,
+      ...(merged && marks ? { line: { other: merged.key === row.address ? merged.account : merged.key, role: merged.key === row.address ? ("key" as const) : ("account" as const), ...marks } } : {}),
       // a trust factor shown beside the number: never part of it, of the limit, or of anything on the chain
       ...(v.verified?.on() ? { verifiedOwner: v.verified.json(row.address) } : {}),
     });
@@ -1355,7 +1406,8 @@ export class EngineApi {
     const coinsOn = !!v.coins && v.state === "running" && v.coins.on();
     const coinList = coinsOn ? v.coins!.list("new") : [];
     const coins = { enabled: coinsOn, launcher: coinsOn ? c.coins.launcher : null, count: coinList.length, items: coinList.slice(0, 6) };
-    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused, roster: this.rosterJson(v), hosted, pulse: pulseJson(v, 8), desk: this.deskJson(v), signups, activity, pay, subjobs, firms, plans, erc8004, openJobs, autoApply, verified, coins };
+    const lines = this.linesAbout(v);
+    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused, roster: this.rosterJson(v), hosted, pulse: pulseJson(v, 8), desk: this.deskJson(v), signups, activity, pay, subjobs, firms, plans, erc8004, openJobs, autoApply, verified, coins, lines };
     if (!r) {
       return { ...base, launched: false, stats: { advancedEth: 0, settledJobs: 0, jobs: 0, poolEth: 0, reserveEth: 0, outEth: 0, heldEth: 0, burnedTokens: 0, supplyLeft: SUPPLY, agents: 0, demoJobs: 0, lostEth: 0, poolFromTradingEth: 0 }, burn: null, agents: [], jobs: [], events: [], burns: [] };
     }
@@ -1453,6 +1505,7 @@ export class EngineApi {
       compute: v.gateway ? { ...v.gateway.about(), note: c.compute.note, ...v.gateway.store.totals(), todayMicro: v.gateway.store.spentToday(), dailyMicro: c.compute.dailyMicro, routerFloatUsd: v.gateway.float?.usd() ?? null } : null,
       rpc: v.rpc ? { ...v.rpc, lastError: v.rpc.lastError ? hostsOnly(v.rpc.lastError) : null } : null,
       coins: v.coins ? v.coins.health() : null,
+      lines: v.lines ? v.lines.health() : null,
       erc8004: v.erc8004 ? { ...v.erc8004.about(), spentTodayWei: v.erc8004.spentToday().toString(), gasDayWei: c.erc8004.gasDayWei.toString(), scan: ctx.db.getJson("erc8004:scan") } : null,
       events: ctx.db.count("chain_events"),
       ledger: ctx.db.count("ledger"),

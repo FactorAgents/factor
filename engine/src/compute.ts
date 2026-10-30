@@ -12,6 +12,9 @@
 //   Refunded, the bond paid    the agent's own bond repaid the pool: what is left of the lot is the agent's
 //   ComputePaid (a coin)       the agent's coin paid its compute share to the gateway (./coins.ts): a lot of credit
 //                              that is the agent's own from the start, paid by its coin and by no job
+//   Drawn (a line, as compute) a draw on a credit line paid to the gateway (./lines.ts): a lot of credit for the line's
+//                              key, kept when the line is repaid in full; if the line defaults, the line pool takes
+//                              back what it lost from what was not spent, and that ETH goes to the line contract
 //
 //   GET  /v1/compute/models             the models and what they cost here
 //   GET  /v1/compute/credit/<address>   what an agent has left
@@ -141,7 +144,7 @@ export function readCompute(env: Env, problems: string[] = []): ComputeConfig {
 
 // ---------- the books ----------
 
-export interface Lot { tx_hash: string; log_index: number; block: number; at: number; job_id: number; agent: string; wei: string; usd_micro: number | null; spent_micro: number; state: "open" | "kept" | "closed"; back_wei: string; back_tx: string | null; source?: "advance" | "coin" }
+export interface Lot { tx_hash: string; log_index: number; block: number; at: number; job_id: number; agent: string; wei: string; usd_micro: number | null; spent_micro: number; state: "open" | "kept" | "closed"; back_wei: string; back_tx: string | null; source?: "advance" | "coin" | "line"; line?: string | null }
 
 /** ETH in wei as millionths of a dollar, at a Chainlink price with 8 decimals. Rounded down: credit is never overstated. */
 export const usdMicro = (wei: bigint, ethUsd8: bigint): number => Number((wei * ethUsd8) / 10n ** 20n);
@@ -322,6 +325,32 @@ export class ComputeStore {
     return { lots: r.n, wei: wei.toString(), grantedMicro: r.granted, spentMicro: r.spent };
   }
 
+  /**
+   * A draw on a credit line, as compute (./lines.ts): a lot of credit for the line's key, open until the line is repaid
+   * in full. `wei` is what reached the gateway. Written once.
+   */
+  addLineLot(e: { tx_hash: string; log_index: number; block: number; at: number }, key: string, account: string, wei: bigint, ethUsd8: string | null): boolean {
+    const usd = ethUsd8 ? usdMicro(wei, BigInt(ethUsd8)) : null;
+    return this.db.q("INSERT OR IGNORE INTO compute_lots (tx_hash, log_index, block, at, job_id, agent, wei, usd_micro, state, source, line) VALUES (?, ?, ?, ?, 0, ?, ?, ?, 'open', 'line', ?)").run(e.tx_hash, e.log_index, e.block, e.at, key, wei.toString(), usd, account).changes === 1;
+  }
+
+  /** The line was repaid in full: what is left of its credit is the agent's own. */
+  keepLine(account: string): void {
+    this.db.q("UPDATE compute_lots SET state = 'kept' WHERE line = ? AND state = 'open'").run(account);
+  }
+
+  /** The line defaulted: the line pool takes back what it lost, and no more, from the line's credit not spent. */
+  closeLine(account: string, lost: bigint): void {
+    const lots = this.db.q("SELECT * FROM compute_lots WHERE line = ? AND state = 'open' ORDER BY block, log_index").all(account) as Lot[];
+    this.closeLots(lots, lost);
+  }
+
+  /** What a line's draws as compute became, and what its calls spent of it, in dollars. */
+  lineCredit(account: string): { grantedUsd: number; spentUsd: number } {
+    const r = this.db.q("SELECT COALESCE(SUM(usd_micro), 0) AS granted, COALESCE(SUM(spent_micro), 0) AS spent FROM compute_lots WHERE line = ?").get(account) as { granted: number; spent: number };
+    return { grantedUsd: r.granted / 1e6, spentUsd: r.spent / 1e6 };
+  }
+
   /** Lots drawn while no ETH price was known are priced as soon as one is. */
   priceWaiting(ethUsd8: string | null): number {
     if (!ethUsd8) return 0;
@@ -333,7 +362,7 @@ export class ComputeStore {
 
   /** The job settled: it repaid the pool, so what is left of its credit is the agent's own. */
   keep(jobId: number): void {
-    this.db.q("UPDATE compute_lots SET state = 'kept' WHERE job_id = ? AND state = 'open'").run(jobId);
+    this.db.q("UPDATE compute_lots SET state = 'kept' WHERE job_id = ? AND state = 'open' AND source != 'line'").run(jobId);
   }
 
   /**
@@ -341,7 +370,11 @@ export class ComputeStore {
    * the job's credit that was not spent: that much of the credit is gone, and the ETH is marked to go back.
    */
   close(jobId: number, lost: bigint): void {
-    const lots = this.db.q("SELECT * FROM compute_lots WHERE job_id = ? AND state = 'open' ORDER BY block, log_index").all(jobId) as Lot[];
+    const lots = this.db.q("SELECT * FROM compute_lots WHERE job_id = ? AND state = 'open' AND source != 'line' ORDER BY block, log_index").all(jobId) as Lot[];
+    this.closeLots(lots, lost);
+  }
+
+  private closeLots(lots: Lot[], lost: bigint): void {
     let left = lost;
     for (const l of lots) {
       const wei = BigInt(l.wei);
@@ -386,9 +419,15 @@ export class ComputeStore {
     );
   }
 
-  /** ETH the gateway holds that the pool took back from lots, and has not been sent to the pool yet. */
+  /** ETH the gateway holds that the desk's pool took back from lots, and has not been sent to the desk yet. */
   owedToPool(): { wei: bigint; lots: { tx_hash: string; log_index: number }[] } {
-    const lots = this.db.q("SELECT tx_hash, log_index, back_wei FROM compute_lots WHERE back_tx IS NULL AND back_wei != '0'").all() as { tx_hash: string; log_index: number; back_wei: string }[];
+    const lots = this.db.q("SELECT tx_hash, log_index, back_wei FROM compute_lots WHERE back_tx IS NULL AND back_wei != '0' AND source != 'line'").all() as { tx_hash: string; log_index: number; back_wei: string }[];
+    return { wei: lots.reduce((n, l) => n + BigInt(l.back_wei), 0n), lots };
+  }
+
+  /** The same for the line pool: what defaulted lines took back from their compute credit, not yet sent to the line contract. */
+  owedToLine(): { wei: bigint; lots: { tx_hash: string; log_index: number }[] } {
+    const lots = this.db.q("SELECT tx_hash, log_index, back_wei FROM compute_lots WHERE back_tx IS NULL AND back_wei != '0' AND source = 'line'").all() as { tx_hash: string; log_index: number; back_wei: string }[];
     return { wei: lots.reduce((n, l) => n + BigInt(l.back_wei), 0n), lots };
   }
 
@@ -594,7 +633,7 @@ export class Gateway {
     const micro = Math.max(0, this.store.balance(agent) - held);
     return {
       agent, balanceUsd: micro / 1e6, enabled: this.cfg.enabled,
-      lots: this.store.lots(agent).map((l) => ({ job: l.job_id, at: new Date(l.at * 1000).toISOString(), usd: l.usd_micro === null ? null : l.usd_micro / 1e6, spentUsd: l.spent_micro / 1e6, state: l.state, ...(l.source === "coin" ? { paidBy: "coin" } : {}) })),
+      lots: this.store.lots(agent).map((l) => ({ job: l.job_id, at: new Date(l.at * 1000).toISOString(), usd: l.usd_micro === null ? null : l.usd_micro / 1e6, spentUsd: l.spent_micro / 1e6, state: l.state, ...(l.source === "coin" ? { paidBy: "coin" } : l.source === "line" ? { paidBy: "line" } : {}) })),
     };
   }
 

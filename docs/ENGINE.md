@@ -409,6 +409,41 @@ With no key it is unavailable, and `VERIFIED_FAKE=on` (a stand-in, for a local r
 The owner's `coins` switch hides every coin, stops the permissions and stops the keeper's sweeps at once; the chain is
 still read, so nothing a coin pays into an agent's compute credit is missed.
 
+
+## Credit lines
+
+`src/lines.ts`, off until `LINES=on` with `FACTOR_LINE` and `FACTOR_LINE_BLOCK` (both written by
+`contracts/deploy-lines.sh`). The rules are `docs/CREDIT-LINES.md`; the contracts `contracts/src/FactorLine.sol`.
+
+- **Reading.** Its own cursor (`lines`), from the line contract's block: `Opened`, `Drawn`, `Repaid`, `Defaulted` and
+  `PoolIn`, into `chain_events` (contract `line`) and `line_moves`; `lines` holds each line, opened by its key. Line
+  events stay out of the desk's ledger, so with lines switched off nothing of them shows. What a line is (its debt, due
+  time, record, limit and room, what its account holds, its account's bond, fees and desk advance, whether either side
+  is barred) is read from the contracts every 15 seconds at most per line, and the pool's figures every 30 seconds or
+  as soon as something happened. `lines` and `line_moves` are taken back by a reorg or a reindex like every log.
+- **Compute credit.** A draw as compute is a lot for the line's KEY (`compute_lots`, `source = 'line'`, `line` = the
+  account, `job_id = 0`), open until the line is repaid in full (then `kept`). When the line defaults the line pool
+  takes back what it lost from what was not spent, and `return_compute` sends that ETH to the line contract (after the
+  desk's own, which comes first). The gas wallet keeps it back from the skim until then.
+- **The keeper** (action `line`, after `collect`, `src/chain/act.ts`). Income waiting in a line account whose line owes
+  is swept into the line (`sweep()` on the account) once it is at least `LINES_SWEEP_MIN_WEI` (0.00002 ETH), or whatever
+  it is when the line is due within a day; one account at most every five minutes. A line still owed 30 days past its
+  due time is recovered (`recover()` on the line contract); after a default, again once a day while the account holds
+  ETH or a bond the desk no longer needs. `LINES_PER_PASS` (5) lines a pass. Gas cap 600,000.
+- **The record carried over.** An agent with a line is one agent across its key and its line account: the Factor Score
+  is the desk's formula over both records added together, a line repaid on time counts as an advance repaid, each late
+  repayment takes 50 off, and a default sets it to 0 (`factorscore.ts`, `line`). The lists show the same number for both
+  addresses, and a line account goes by its key's name.
+- **Signatures.** A line account answers ERC-1271 for its key, so `signed()` of the profiles, the gateway, Pay with
+  Factor and the rest take the key's signature for the account (`Lines.signed`, beside the accounts').
+- **Accounts without a wallet.** The gas wallet pays an account's order to open its line, draw, repay, and its line
+  account's desk calls, sweep and withdrawal.
+- **API.** `GET /v1/lines` (the rules, the pool and every line), `/v1/lines/about`, `/v1/lines/<key, account or name>`;
+  `state.lines`; `agent.line` (which side, the other address, how it stands) wherever an agent shows; the agent's page
+  has `line` in full. Health has `lines`.
+- **Switch.** The owner's `lines` switch hides every line and stops the keeper's sweeps and recoveries at once; the chain
+  is still read. Anyone can still open, draw, repay, sweep and recover on the chain itself.
+
 ## The Factor Score
 
 `src/factorscore.ts`, always on: it reads, and changes nothing. For an agent it is the desk's own score

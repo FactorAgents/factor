@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS engine_locks (name TEXT PRIMARY KEY, holder TEXT NOT 
 -- Everything the engine sent, would have sent (dry), or could not send: what, why, and how it ended.
 CREATE TABLE IF NOT EXISTS engine_actions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  kind TEXT NOT NULL,                -- sweep, claim_token, burn, settle_job, refund_job, collect, return_compute, erc8004, unstick
+  kind TEXT NOT NULL,                -- sweep, claim_token, burn, settle_job, refund_job, collect, return_compute, erc8004, line, unstick
   ref TEXT NOT NULL DEFAULT '',
   mode TEXT NOT NULL,                -- dry or live
   status TEXT NOT NULL,              -- dry, signed, sent, done, failed, replaced
@@ -185,7 +185,7 @@ CREATE TABLE IF NOT EXISTS compute_lots (
   state TEXT NOT NULL DEFAULT 'open',-- open: the job is not closed. kept: the agent's own. closed: all taken back
   back_wei TEXT NOT NULL DEFAULT '0',-- unspent ETH the pool took back when the job was refunded at a loss
   back_tx TEXT,
-  source TEXT NOT NULL DEFAULT 'advance', -- advance: a compute advance on a job. coin: the agent's coin paid it (../coins.ts)
+  source TEXT NOT NULL DEFAULT 'advance', -- advance: a compute advance on a job. coin: the agent's coin paid it (../coins.ts). line: a draw on a credit line (../lines.ts)
   PRIMARY KEY (tx_hash, log_index)
 );
 CREATE INDEX IF NOT EXISTS compute_lots_agent ON compute_lots (agent, block);
@@ -390,6 +390,34 @@ CREATE TABLE IF NOT EXISTS coin_transfers (
 );
 CREATE INDEX IF NOT EXISTS coin_transfers_agent ON coin_transfers (agent);
 CREATE INDEX IF NOT EXISTS coin_transfers_block ON coin_transfers (block);
+-- Credit lines (../lines.ts): each line the line contract opened, as its Opened log says it, and what is read of it
+-- since (its debt, due time, record, limit and room, what its account holds), as JSON.
+CREATE TABLE IF NOT EXISTS lines (
+  account TEXT PRIMARY KEY,
+  key TEXT NOT NULL UNIQUE,
+  block INTEGER NOT NULL,
+  at INTEGER NOT NULL,
+  tx_hash TEXT NOT NULL,
+  state TEXT NOT NULL DEFAULT '{}',
+  state_at INTEGER NOT NULL DEFAULT 0,  -- ms: 0 marks it to be read again
+  swept_at INTEGER NOT NULL DEFAULT 0,  -- the chain's time of the keeper's last sweep of its account
+  recovered_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS lines_block ON lines (block);
+-- Each move on a line: opened, a draw, a repayment, a default, and ETH into the line pool (account null).
+CREATE TABLE IF NOT EXISTS line_moves (
+  tx_hash TEXT NOT NULL,
+  log_index INTEGER NOT NULL,
+  block INTEGER NOT NULL,
+  at INTEGER NOT NULL,
+  account TEXT,
+  kind TEXT NOT NULL,                -- open, draw, repay, default, seed
+  amount TEXT NOT NULL,
+  extra TEXT NOT NULL DEFAULT '{}',  -- JSON: a draw's kind and fee parts and due time, a repayment's debt left and lateness
+  PRIMARY KEY (tx_hash, log_index)
+);
+CREATE INDEX IF NOT EXISTS line_moves_account ON line_moves (account, block);
+CREATE INDEX IF NOT EXISTS line_moves_block ON line_moves (block);
 CREATE TABLE IF NOT EXISTS job_titles (
   job_id INTEGER PRIMARY KEY,
   title TEXT NOT NULL,
@@ -399,7 +427,7 @@ CREATE TABLE IF NOT EXISTS job_titles (
 );
 `;
 
-export type ActionKind = "sweep" | "retry_split" | "claim_token" | "burn" | "settle_job" | "refund_job" | "collect" | "return_compute" | "skim" | "relay" | "erc8004" | "coin_sweep" | "unstick";
+export type ActionKind = "sweep" | "retry_split" | "claim_token" | "burn" | "settle_job" | "refund_job" | "collect" | "return_compute" | "skim" | "relay" | "erc8004" | "coin_sweep" | "line" | "unstick";
 export type ActionStatus = "dry" | "signed" | "sent" | "done" | "failed" | "replaced";
 
 export interface ActionRow {
@@ -431,7 +459,7 @@ export interface EventRow {
 }
 
 // The tables a stretch of blocks writes to, all keyed by block: what a reorg or a reindex takes back.
-const BY_BLOCK = ["chain_events", "chain_splits", "chain_burns", "ledger", "desk_advances", "coins", "coin_splits", "coin_trades", "coin_transfers"];
+const BY_BLOCK = ["chain_events", "chain_splits", "chain_burns", "ledger", "desk_advances", "coins", "coin_splits", "coin_trades", "coin_transfers", "lines", "line_moves"];
 
 export class EngineDb {
   readonly holder = randomBytes(6).toString("hex"); // this process, for the locks
@@ -445,6 +473,8 @@ export class EngineDb {
     // compute credit that an agent's coin paid for, beside the credit advances paid for: a column added later
     const lots = db.prepare("PRAGMA table_info(compute_lots)").all() as { name: string }[];
     if (!lots.some((c) => c.name === "source")) db.exec("ALTER TABLE compute_lots ADD COLUMN source TEXT NOT NULL DEFAULT 'advance'");
+    // and credit a credit line's draw as compute paid for (../lines.ts): the line's account, added later still
+    if (!lots.some((c) => c.name === "line")) db.exec("ALTER TABLE compute_lots ADD COLUMN line TEXT");
   }
 
   private sql(text: string): Database.Statement {

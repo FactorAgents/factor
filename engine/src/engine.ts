@@ -45,6 +45,7 @@ import { recordSigner, type RecordSigner } from "./record.js";
 import { Erc8004 } from "./erc8004.js";
 import { providersOf, Verified, type Provider } from "./verified.js";
 import { Coins } from "./coins.js";
+import { Lines } from "./lines.js";
 import { DeskStore } from "./desk.js";
 import { scoreOf } from "./score.js";
 import { sourceOf } from "./api.js";
@@ -124,6 +125,8 @@ export class Engine {
   verified: Verified | null = null;
   /** agent coins (./coins.ts): every agent's own coin on Pons, read, swept and credited to its compute */
   coins: Coins | null = null;
+  /** credit lines (./lines.ts): credit with no job behind it, read, swept, recovered and credited to compute */
+  lines: Lines | null = null;
   /** the splitter's admin, read at the boot check: Factor's own wallet, which sets the rules of Factor's own agents */
   private splitterAdmin: string | null = null;
   /** the key that signs agents' records for other apps (./record.ts), or null */
@@ -186,7 +189,7 @@ export class Engine {
     for (const [name, l] of this.loops) loops[name] = { lastRunAt: l.lastRunAt, lastOkAt: l.lastOkAt, runs: l.runs, failures: l.failures, waitMs: l.waitMs, backingOff: l.backingOff };
     return {
       config: this.config, state: this.state, problems: this.problems, warnings: this.warnings, lastError: this.lastError, loops, ctx: this.ctx, rpc: this.chain?.health() ?? null, now: this.now,
-      links: { pons: link(this.env.FACTOR_PONS_URL), github: link(this.env.FACTOR_GITHUB_URL), x: link(this.env.FACTOR_X_URL) }, dataDirSet: !!this.env.FACTOR_DATA_DIR?.trim(), profiles: this.profiles, gateway: this.gateway, accounts: this.accounts, house: this.house, demo: this.demo, pulse: this.pulse, deskMind: this.deskMind, launchList: this.launchList, activity: this.activity, matcher: this.matcher, pay: this.pay, subjobs: this.subjobs, recordSigner: this.recordSigner, firms: this.firms, plans: this.plans, erc8004: this.erc8004, openjobs: this.openjobs, autoapply: this.autoapply, verified: this.verified, coins: this.coins,
+      links: { pons: link(this.env.FACTOR_PONS_URL), github: link(this.env.FACTOR_GITHUB_URL), x: link(this.env.FACTOR_X_URL) }, dataDirSet: !!this.env.FACTOR_DATA_DIR?.trim(), profiles: this.profiles, gateway: this.gateway, accounts: this.accounts, house: this.house, demo: this.demo, pulse: this.pulse, deskMind: this.deskMind, launchList: this.launchList, activity: this.activity, matcher: this.matcher, pay: this.pay, subjobs: this.subjobs, recordSigner: this.recordSigner, firms: this.firms, plans: this.plans, erc8004: this.erc8004, openjobs: this.openjobs, autoapply: this.autoapply, verified: this.verified, coins: this.coins, lines: this.lines,
     };
   }
 
@@ -324,7 +327,7 @@ export class Engine {
       params: c.params,
       chainId: c.chainId,
       explorer: c.explorer,
-      addr: { splitter: c.splitter, burnPot: c.burnPot, desk: c.desk, accounts: c.accounts.factory, skimTo: c.skimTo },
+      addr: { splitter: c.splitter, burnPot: c.burnPot, desk: c.desk, accounts: c.accounts.factory, skimTo: c.skimTo, line: c.lines.enabled ? c.lines.line : null },
       accounts: c.accounts,
       deployBlock: c.deployBlock,
       chain: this.chain,
@@ -346,7 +349,8 @@ export class Engine {
     if (off.length) this.log(`[engine] STOPPED by the owner: ${off.join(", ")}. Turn one back with POST /v1/admin/switch.`);
     // accounts for people without a wallet: orders are taken only while there is a gas wallet to send them from
     this.accounts = new Accounts(c.accounts, this.ctx.db, this.chain, c.desk, () => this.ctx?.mode === "live" && !!this.ctx.signer && this.state === "running", () => this.kick("act"), this.log);
-    const accountSigned = (address: string, message: string, signature: unknown) => this.accounts!.signed(address, message, signature);
+    // an account for somebody without a wallet answers for its keys, and a credit line's account for its key (./lines.ts)
+    const accountSigned = async (address: string, message: string, signature: unknown) => (await this.accounts!.signed(address, message, signature)) || (!!this.lines && (await this.lines.signed(address, message, signature)));
     this.profiles = new Profiles(this.ctx.db, this.now, accountSigned);
     const db = this.ctx.db;
     // the chain's time now: the last block read, and the seconds since
@@ -488,6 +492,16 @@ export class Engine {
       },
     });
     this.ctx.coins = this.coins;
+    // credit lines: made whether or not they are on, and read nothing until LINES=on and the line contract is given
+    this.lines = new Lines({
+      cfg: c.lines, db, chain: this.chain, chainId: c.chainId, desk: c.desk, nowS, now: this.now, log: this.log,
+      names: () => this.profiles!.all(),
+      record: (address) => new DeskStore(db).agent(address)?.record ?? null,
+    });
+    this.ctx.lines = this.lines;
+    this.accounts.lines = () => (this.lines?.reading() ? { line: c.lines.line!, accountOf: (key: string) => this.lines!.byKey(key)?.account ?? null } : null);
+    if (c.lines.enabled && c.lines.note) this.log(`[lines] NOT ON: ${c.lines.note}`);
+    else if (c.lines.enabled) this.log(`[lines] on: credit lines are read from ${c.lines.line}; the keeper sweeps income into a line that owes and recovers a line 30 days past due`);
     if (c.coins.enabled && c.coins.note) this.log(`[coins] NOT ON: ${c.coins.note}`);
     else if (c.coins.enabled) this.log(`[coins] on: agents' coins are read from the launcher ${c.coins.launcher}, and a coin's fees are swept once they are worth ${c.coins.gasMultiple} times the gas`);
     const checks = this.verified.sources();
@@ -676,6 +690,11 @@ export class Engine {
     if (this.coins?.reading()) {
       await this.coins.watch(this.ctx, pass.head);
       await this.coins.refresh();
+    }
+    // credit lines: their logs, then what is read of them (./lines.ts)
+    if (this.lines?.reading()) {
+      if ((await this.lines.watch(this.ctx, pass.head)).length && this.api) this.api.forget();
+      await this.lines.refresh();
     }
     // an open job whose rule is the best Factor Score is picked as soon as its moment has come (./openjobs.ts)
     try { this.openjobs?.pickDue(); } catch (e) { this.log(`[openjobs] picking failed: ${e instanceof Error ? e.message : String(e)}`); }

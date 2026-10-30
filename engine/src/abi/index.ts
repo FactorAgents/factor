@@ -7,4 +7,6 @@ export { factorAccountsAbi } from "./FactorAccounts.js";
 export { factorTokenAbi } from "./token.js";
 export { agentCoinLauncherAbi } from "./AgentCoinLauncher.js";
 export { agentCoinSplitterAbi } from "./AgentCoinSplitter.js";
+export { factorLineAbi } from "./FactorLine.js";
+export { factorLineAccountAbi } from "./FactorLineAccount.js";
 export { erc8004IdentityAbi, erc8004ReputationAbi, multicall3Abi } from "./Erc8004.js";

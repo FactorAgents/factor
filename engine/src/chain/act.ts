@@ -20,6 +20,9 @@
 //   coin_sweep      an agent's coin has gathered fees worth the gas: its splitter's sweep() collects and splits them,
 //                   and its retry() delivers a share a wallet refused (../coins.ts). Right after $FACTOR's own sweep,
 //                   so the burn share it sends to the burn pot is burned in the same pass.
+//   line            income waiting in a line account whose credit line owes: the account's sweep() pays the line; and a
+//                   line still owed 30 days past its due time: the line contract's recover() (../lines.ts). Unspent
+//                   compute credit of a line that defaulted goes back to the line contract with return_compute.
 //
 // Every attempt goes the same way (attempt(), below): the lock, a last simulation of exactly the call that would
 // be sent, the gas against its cap, the gas price against its cap, then in dry mode a record of what would have
@@ -43,7 +46,7 @@ import type { ActionKind, ActionRow } from "./db.js";
 import { ponsEscrowAbi } from "./pons.js";
 
 export type SendKind = Exclude<ActionKind, "unstick">;
-export const KINDS: SendKind[] = ["relay", "sweep", "coin_sweep", "retry_split", "claim_token", "burn", "settle_job", "refund_job", "collect", "return_compute", "skim", "erc8004"];
+export const KINDS: SendKind[] = ["relay", "sweep", "coin_sweep", "retry_split", "claim_token", "burn", "settle_job", "refund_job", "collect", "line", "return_compute", "skim", "erc8004"];
 // In dry mode nothing changes on the chain, so a trigger stays true: what would be sent is shown again this often.
 export const DRY_REPEAT_S = 1800;
 const BPS = 10_000n;
@@ -540,7 +543,12 @@ async function returnCompute(ctx: Ctx, head: Head): Promise<string> {
     else if (!r && ctx.db.openActions().some((a) => a.tx_hash === pending.hash)) return say(ctx, "return_compute", "the ETH going back to the pool is on its way");
     ctx.db.unset("return_compute:pending");
   }
-  const owed = store.owedToPool();
+  // the desk's pool first; then the line pool, for credit lines that defaulted (../lines.ts): plain ETH sent to the line
+  // contract is its pool's
+  const toDesk = store.owedToPool();
+  const toLine = toDesk.wei === 0n && ctx.addr.line ? store.owedToLine() : { wei: 0n, lots: [] };
+  const owed = toDesk.wei > 0n ? toDesk : toLine;
+  const dest = toDesk.wei > 0n ? ctx.addr.desk : (ctx.addr.line ?? ctx.addr.desk);
   if (owed.wei === 0n) return say(ctx, "return_compute", "no unspent compute credit is waiting to go back to the pool", { fails: 0, nextAt: 0 });
   // only the gateway's own wallet holds that ETH: with another wallet's key there is nothing to send it from
   if (ctx.facts.gateway && ctx.facts.bot && ctx.facts.gateway !== ctx.facts.bot) return say(ctx, "return_compute", `${eth(owed.wei)} ETH of unspent compute credit is owed to the pool, and the gas wallet is not the desk's gateway (${ctx.facts.gateway}): its owner sends it to the desk by hand`);
@@ -549,12 +557,12 @@ async function returnCompute(ctx: Ctx, head: Head): Promise<string> {
   if (!from) return say(ctx, "return_compute", "the gas wallet's address is not known yet");
   if (!ctx.db.lock("return_compute", p.lockMs)) return say(ctx, "return_compute", "another attempt holds the lock");
   try {
-    const pay: Pay = { to: ctx.addr.desk, value: owed.wei };
+    const pay: Pay = { to: dest, value: owed.wei };
     const [estimate, fees] = await Promise.all([ctx.chain.estimateGas(null, from, pay), ctx.chain.fees()]);
     const gas = (estimate * (BPS + BigInt(p.gasHeadroomBps))) / BPS;
     if (gas > p.gasCaps.return_compute) return failed(ctx, "return_compute", `it would need ${gas} gas, over the cap of ${p.gasCaps.return_compute}`, 600, 6 * 3600);
     if (fees.maxFeePerGas > p.maxGasWei) return say(ctx, "return_compute", `gas is at ${gwei(fees.maxFeePerGas)} gwei, over the cap of ${gwei(p.maxGasWei)}: waiting for it to fall`);
-    const detail = text({ toPool: owed.wei, lots: owed.lots.length, gasLimit: gas, maxFeePerGas: fees.maxFeePerGas });
+    const detail = text({ toPool: owed.wei, to: dest, lots: owed.lots.length, gasLimit: gas, maxFeePerGas: fees.maxFeePerGas });
     if (ctx.mode !== "live" || !ctx.signer) {
       ctx.db.addAction({ kind: "return_compute", mode: "dry", status: "dry", detail, gasLimit: gas, maxFeeWei: fees.maxFeePerGas });
       ctx.log(`[dry] would send ${eth(owed.wei)} ETH of unspent compute credit back to the pool`);
@@ -652,7 +660,7 @@ async function skim(ctx: Ctx, head: Head): Promise<string> {
   if (to === from) return say(ctx, "skim", "ENGINE_SKIM_TO is the gas wallet itself: there is nowhere to send to");
   const store = new ComputeStore(ctx.db);
   // what it keeps: gas money, what still backs credit whose job could yet be refunded, and what is owed to the pool
-  const keep = p.skimKeepWei + store.backingWei() + store.owedToPool().wei;
+  const keep = p.skimKeepWei + store.backingWei() + store.owedToPool().wei + store.owedToLine().wei;
   const balance = await ctx.chain.balance(from);
   const surplus = balance > keep ? balance - keep : 0n;
   if (surplus < p.skimMinWei) return say(ctx, "skim", `the gas wallet holds ${eth(balance)} ETH and keeps ${eth(keep)}: nothing worth sending on`, { lastAt: head.timestamp, fails: 0, nextAt: 0 });
@@ -801,6 +809,15 @@ async function coinSweep(ctx: Ctx, head: Head): Promise<string> {
   return say(ctx, "coin_sweep", await ctx.coins.step(ctx, head, (kind, ref, call, detail, feeCap, pre) => attempt(ctx, kind, ref, call, detail, feeCap, pre)));
 }
 
+// ---------- credit lines ----------
+
+// Income waiting in a line account whose line owes, swept into the line; a line still owed 30 days past due, recovered
+// (../lines.ts decides; the attempt is the same as every other one here).
+async function lineStep(ctx: Ctx, head: Head): Promise<string> {
+  if (!ctx.lines) return say(ctx, "line", "credit lines are not switched on");
+  return say(ctx, "line", await ctx.lines.step(ctx, head, (kind, ref, call, detail, feeCap) => attempt(ctx, kind, ref, call, detail, feeCap)));
+}
+
 const STEPS: [SendKind, (ctx: Ctx, head: Head) => Promise<string>][] = [
   ["relay", relay],
   ["sweep", sweep],
@@ -811,6 +828,7 @@ const STEPS: [SendKind, (ctx: Ctx, head: Head) => Promise<string>][] = [
   ["settle_job", settleJobs],
   ["refund_job", refundJobs],
   ["collect", collect],
+  ["line", lineStep],
   ["return_compute", returnCompute],
   ["skim", skim],
   ["erc8004", writeErc8004],

@@ -99,6 +99,12 @@ export interface FactorScoreJson {
   /** where to check it: for an agent, the desk's own call */
   check: string;
   /**
+   * Its credit line (./lines.ts), when it has one: its key's and its line account's records count as one (the parts
+   * above are both together), a line repaid on time counts as an advance repaid, each late repayment takes 50 off, and
+   * a default sets the score to 0. `other` is the address on the line's other side.
+   */
+  line?: { other: string; role: "key" | "account"; onTime: number; late: number; defaulted: boolean; points: number; why: string };
+  /**
    * A trust factor shown beside the score, and never part of it: whether the agent's owner is verified (./verified.ts).
    * It changes no point, no limit and nothing on the chain. Present only while checking owners is on; null: not verified.
    */
@@ -241,15 +247,26 @@ export function factorScore(o: {
   draw: DrawJson;
   check: string;
   verifiedOwner?: FactorScoreJson["verifiedOwner"];
+  /** its credit line's marks (./lines.ts), and the address on the line's other side */
+  line?: { other: string; role: "key" | "account"; onTime: number; late: number; defaulted: boolean };
 }): FactorScoreJson {
-  const score = scoreOf(o.record, o.nowS);
-  const parts = partsWithWhy(o.record, o.nowS, { kind: o.kind, distinctCustomers: o.distinctCustomers });
-  const zero = zeroOf(o.record, o.kind);
-  const lessPts = o.record.settledAtHalf * 50;
+  // a line repaid on time counts as an advance repaid
+  const record = o.line ? { ...o.record, advancesRepaid: o.record.advancesRepaid + o.line.onTime } : o.record;
+  const lateLess = o.line && !o.line.defaulted ? o.line.late * 50 : 0;
+  const base = scoreOf(record, o.nowS);
+  const score = o.line?.defaulted ? 0 : Math.max(0, base - lateLess);
+  const parts = partsWithWhy(record, o.nowS, { kind: o.kind, distinctCustomers: o.distinctCustomers });
+  if (o.line && o.line.onTime > 0) {
+    const repaid = parts.find((p) => p.key === "repaid");
+    if (repaid) repaid.why = `${n(o.record.advancesRepaid, "advance")} from the pool paid back by its jobs, and its credit line repaid on time ${n(o.line.onTime, "time")}. 10 points each, up to 100.`;
+  }
+  const zero = o.line?.defaulted ? "It did not repay its credit line: the line defaulted. Its score is 0 and it can never open another line." : zeroOf(record, o.kind);
+  const lessPts = record.settledAtHalf * 50;
   return {
     score, of: 1000, kind: o.kind, summary: summaryOf(score, parts, zero), parts,
-    less: { settledAtHalf: o.record.settledAtHalf, points: zero ? 0 : lessPts, why: !zero && lessPts ? `${n(o.record.settledAtHalf, "job")} settled at half after the customer rejected the delivery: 50 points off each.` : null },
+    less: { settledAtHalf: record.settledAtHalf, points: zero ? 0 : lessPts, why: !zero && lessPts ? `${n(record.settledAtHalf, "job")} settled at half after the customer rejected the delivery: 50 points off each.` : null },
     zero, income: o.income, hired: o.hired, draw: o.draw, check: o.check,
+    ...(o.line ? { line: { ...o.line, points: zero ? 0 : -lateLess, why: o.line.defaulted ? "Its credit line defaulted." : o.line.late ? `Its credit line was repaid late ${n(o.line.late, "time")}: 50 points off each.` : o.line.onTime ? "Its credit line has always been repaid on time." : "Its credit line has not been repaid in full yet." } } : {}),
     ...(o.verifiedOwner !== undefined ? { verifiedOwner: o.verifiedOwner } : {}),
   };
 }

@@ -4,6 +4,7 @@
 import type { AccountsConfig } from "../accounts.js";
 import type { Erc8004 } from "../erc8004.js";
 import type { Coins } from "../coins.js";
+import type { Lines } from "../lines.js";
 import type { Chain, Signer } from "./chain.js";
 import type { EngineMode, EngineParams } from "./config.js";
 import type { EngineDb } from "./db.js";
@@ -16,6 +17,8 @@ export interface Addresses {
   accounts?: string | null;
   // a wallet of the owner's that the gas wallet's surplus is sent on to, when one is named
   skimTo?: string | null;
+  // the credit line contract, when lines are read (../lines.ts)
+  line?: string | null;
 }
 
 // What the engine learns from the chain and keeps for the life of the process. The token is never cached as
@@ -51,6 +54,7 @@ export interface Ctx {
   accounts?: AccountsConfig; // what the gas wallet pays for on accounts, and how much
   erc8004?: Erc8004 | null; // settled jobs written to the agents' ERC-8004 reputation (../erc8004.ts)
   coins?: Coins | null; // agent coins: read, swept and credited (../coins.ts)
+  lines?: Lines | null; // credit lines: read, swept, recovered and credited (../lines.ts)
 }
 
 // The chain as the engine last read it. Amounts are wei in text; times are unix seconds unless they say ms.
