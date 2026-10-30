@@ -233,3 +233,16 @@ shows them (`LINES=on`), and whether he seeds the pool.
 6. **Late is not barred.** A late line that is then repaid can draw again; the late repayment stays on its record and
    costs it 50 points of its Factor Score, as a job settled at half does. A repayment on time adds to "advances
    repaid", as a desk advance does.
+
+## 13. How it is tested
+
+| | |
+|---|---|
+| `contracts/test/lines/Line.t.sol` | Every rule above, one by one, with the examples to the wei, and two fuzzed: any draw splits to the wei, and any bond, fees, desk advance and line draw, in either order, never pass bond plus fees |
+| `contracts/test/lines/LineAttacks.t.sol` | The attacks of section 9 carried out, each one, plus both pools defaulting on one account at once |
+| `contracts/test/invariant/Line.invariant.t.sol` | Random sequences over lines and the desk together (open, bond, hire, desk advances of all three kinds, line draws, repayments, sweeps, withdrawals, bonds out, time, recoveries): the line's books, every wei counted, each line adding up, counted once, the 80% rule and the desk's books after every step. A 300,000-move soak passed |
+| `contracts/test/review/break-line.py` | Breaks the two contracts on purpose, thirty ways; the tests catch every one |
+| `contracts/test/fork/Lines.fork.t.sol` | Against the LIVE desk, burn pot, gateway and accounts on a copy of Robinhood Chain: a whole line with a real job, a passkey account opening a line, the burn half burned by the live pot, and a default that leaves the live desk untouched |
+| `engine/test/lines.test.ts` | The engine on a made-up chain: reading, showing, compute credit kept and taken back, the keeper's sweeps and recoveries, the record carried over, signatures, the switch |
+| `packages/kit/scripts/lines-e2e.ts` | Everything together on a local fork: the one-command deploy, the engine, the site and the kit, a line opened, drawn both ways, repaid from a job's payout by the keeper, late, recovered, defaulted, and switched off |
+| `docs/credit-lines-mainnet-test.txt` | One small run on the real chain against a test instance of the line contract beside the live desk |
