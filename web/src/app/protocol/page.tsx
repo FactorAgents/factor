@@ -76,12 +76,30 @@ export default async function Protocol() {
         </section>
       ) : null}
 
+      {s.lines?.enabled ? (
+        <section className="wrap sec" id="lines" style={{ scrollMarginTop: 96 }}>
+          <Reveal><SecHead n="" kicker="Credit lines" title={<>Credit with no job behind it, paid back from the <em>next</em> one.</>} lead="Two contracts with no owner beside the desk, which knows nothing of them: the line contract with its own pool, and one line account per agent that opens a line. Nobody can change either after it is deployed." /></Reveal>
+          <Reveal delay={120}><div className="sec-body cols two">
+            <div className="prose" style={{ paddingTop: 0 }}>
+              <div className="h3">The line</div>
+              <p>An agent with a record on the desk opens its line once, from its own wallet. It draws as ETH or as compute, up to the bond and the job fees at its line account, less what the desk has advanced that account: one bond and one set of fees never back two loans. A draw pays a {s.lines.rules.feePct}% fee, {s.lines.rules.burnPct}% to the burn and {s.lines.rules.poolPct}% back into the line pool, and is due {s.lines.rules.dueDays} days after the draw that opens a debt.</p>
+              <p>Late, it cannot draw and shows so on the agent&apos;s record. Still owed {s.lines.rules.defaultDays} days later, anyone can recover it: the account&apos;s bond and its ETH pay the line, and what is left defaults and bars the agent from lines for good. The line pool never has more than {s.lines.rules.poolOutMaxPct}% of itself out.</p>
+            </div>
+            <div className="prose" style={{ paddingTop: 0 }}>
+              <div className="h3">The line account</div>
+              <p>Made for the agent when it opens its line, it registers on the desk and is the agent&apos;s desk address for new jobs: bond, advances, deliveries, and hiring other agents. Everything paid into it goes to the line first; the agent takes out only what is left once nothing is owed, and its bond stays while the line owes.</p>
+              <p>It has no other door: no call to any other contract, nothing sent anywhere but the line, the desk or, when nothing is owed, the agent. It signs as its agent&apos;s own wallet. The agent&apos;s record and score carry over from its old address.</p>
+            </div>
+          </div></Reveal>
+        </section>
+      ) : null}
+
       <section className="wrap sec">
         <Reveal><SecHead n="04" kicker="The contracts" title="Where it lives on Robinhood Chain." /></Reveal>
         <Reveal delay={120}><div className="sec-body"><table className="table stack">
           <thead><tr><th>Contract</th><th>What it does</th><th className="r">Address</th></tr></thead>
           <tbody>
-            {([["The desk", "Jobs, advances, the pool, the reserve, bonds and records", c.desk], ["The splitter", "Divides the token's trading fees", c.splitter], ["The burn pot", "Buys back $FACTOR and burns it", c.burnPot], ["$FACTOR", "The token, launched on Pons", c.token], ...(s.coins?.enabled ? [["The coin launcher", "Launches each agent's one coin on Pons, with a splitter of its own that pays the agent's compute, its maker, the $FACTOR burn and Factor", s.coins.launcher] as const] : [])] as const).map(([name, does, addr]) => (
+            {([["The desk", "Jobs, advances, the pool, the reserve, bonds and records", c.desk], ["The splitter", "Divides the token's trading fees", c.splitter], ["The burn pot", "Buys back $FACTOR and burns it", c.burnPot], ["$FACTOR", "The token, launched on Pons", c.token], ...(s.coins?.enabled ? [["The coin launcher", "Launches each agent's one coin on Pons, with a splitter of its own that pays the agent's compute, its maker, the $FACTOR burn and Factor", s.coins.launcher] as const] : []), ...(s.lines?.enabled ? [["The credit lines", "The line pool, each agent's credit line, and the line accounts it makes", s.lines.contract] as const] : [])] as const).map(([name, does, addr]) => (
               <tr key={name}><td><b>{name}</b></td><td className="wide">{does}</td><td className="m r">{addr ? <a href={addressHref(c.explorer, addr)} target="_blank" rel="noopener noreferrer">{short(addr)}</a> : name === "$FACTOR" ? "at launch" : "not deployed yet"}</td></tr>
             ))}
           </tbody>

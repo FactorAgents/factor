@@ -81,6 +81,8 @@ export interface FactorScore {
   check: string;
   /** a trust factor beside the score, never part of it: present while owners are checked; null when its owner is not verified */
   verifiedOwner?: VerifiedOwner | null;
+  /** its credit line's marks, when it has one: the key's and the line account's records count as one */
+  line?: { other: string; role: "key" | "account"; onTime: number; late: number; defaulted: boolean; points: number; why: string };
 }
 
 /**
@@ -129,6 +131,34 @@ export interface Agent {
   verifiedOwner?: VerifiedOwner;
   /** its own coin: only while coins are on and its coin is listed */
   coin?: { coin: string; symbol: string };
+  /** its credit line: which side of it this address is, while lines are on and it has one */
+  line?: { role: "key" | "account"; key: string; account: string; status: LineStatus };
+}
+
+/** How a credit line stands: nothing owed, owed before its due time, owed past it, or barred for good. */
+export type LineStatus = "open" | "owing" | "late" | "defaulted";
+
+/** Credit lines (engine/src/lines.ts, LinesAbout): whether they are on, the contract, the rules and the line pool. */
+export interface LinesAbout {
+  enabled: boolean; contract: string | null; chainId: number;
+  rules: { feePct: number; burnPct: number; poolPct: number; dueDays: number; defaultDays: number; minDrawEth: number; poolOutMaxPct: number };
+  pool: { poolEth: number; outEth: number; lostEth: number; roomEth: number; roomWei: string; seededEth: number; drawnEth: number; burnedEth: number; feesToPoolEth: number; repaidEth: number; recoveredEth: number } | null;
+  lines: number;
+  owing: number;
+}
+
+/** One credit line (engine/src/lines.ts, LineJson). */
+export interface CreditLine {
+  key: string; account: string; name: string; named: boolean; openedAt: string; tx: string;
+  status: LineStatus;
+  debtEth: number; debtWei: string; dueAt: string | null; defaultsAt: string | null;
+  limitEth: number; roomEth: number; canDrawEth: number; canDrawWei: string;
+  bondEth: number; feesPaidEth: number; deskOutEth: number;
+  balanceEth: number; freeEth: number;
+  draws: number; drawnEth: number; repaidEth: number; onTime: number; late: number; defaulted: boolean;
+  barred: boolean;
+  computeUsd: { grantedUsd: number; spentUsd: number };
+  moves?: { kind: "open" | "draw" | "repay" | "default" | "seed"; at: string; eth: number; tx: string; compute?: boolean; late?: boolean; debtEth?: number }[];
 }
 
 /** An agent's own coin on Pons, as the engine reads it (engine/src/coins.ts, CoinJson). */
@@ -186,7 +216,7 @@ export interface Params {
 /** Compute credit: whether it can be spent yet, and the models with what a million tokens costs here, in dollars. */
 export interface Compute { enabled: boolean; markupPct: number; maxTokens: number; models: { id: string; inUsd: number; outUsd: number }[]; router?: { enabled: boolean; models: number }; limits?: { callUsd: number; agentDayUsd: number } }
 /** What an agent has left to spend on models, and the advances it came from. */
-export interface Credit { agent: string; balanceUsd: number; enabled: boolean; lots: { job: number; at: string; usd: number | null; spentUsd: number; state: "open" | "kept" | "closed"; /** paid by the agent's own coin, not by an advance on a job */ paidBy?: "coin" }[] }
+export interface Credit { agent: string; balanceUsd: number; enabled: boolean; lots: { job: number; at: string; usd: number | null; spentUsd: number; state: "open" | "kept" | "closed"; /** paid by the agent's own coin or a draw on its credit line, not by an advance on a job */ paidBy?: "coin" | "line" }[] }
 
 export interface FactorState {
   /** engine: read from the chain. sample: made-up figures for building the site. none: no engine was given. */
@@ -240,6 +270,8 @@ export interface FactorState {
   verified?: VerifiedAbout;
   /** agent coins: whether they are on, the launcher, how many are listed, and the newest few */
   coins?: { enabled: boolean; launcher: string | null; count: number; items: Coin[] };
+  /** credit lines: whether they are on, the contract, the rules, the line pool and how many lines */
+  lines?: LinesAbout;
 }
 
 /** One of a firm's agents and its part of the firm's work: the lead's is the firm's jobs, a member's the sub-jobs it took under them. */
@@ -313,7 +345,7 @@ export interface Erc8004 {
   links: { registry: string };
 }
 /** One agent with what the page about it shows. */
-export interface AgentPage { agent: Agent; /** its Factor Score: the desk's number, the parts, the income behind it, what it can draw */ factorScore?: FactorScore; jobs: Job[]; events: LedgerEvent[]; hiring?: Hiring; /** the firms it leads, belongs to or is invited to */ firms?: { slug: string; name: string; house: boolean; role: "lead" | "member" | "invited" }[]; /** its monthly clients, when it has any plan */ plans?: PlansSummary; /** its ERC-8004 identity and the entries written to it, when one is linked */ erc8004?: Erc8004; /** its own coin, when it has one listed */ coin?: Coin }
+export interface AgentPage { agent: Agent; /** its Factor Score: the desk's number, the parts, the income behind it, what it can draw */ factorScore?: FactorScore; jobs: Job[]; events: LedgerEvent[]; hiring?: Hiring; /** the firms it leads, belongs to or is invited to */ firms?: { slug: string; name: string; house: boolean; role: "lead" | "member" | "invited" }[]; /** its monthly clients, when it has any plan */ plans?: PlansSummary; /** its ERC-8004 identity and the entries written to it, when one is linked */ erc8004?: Erc8004; /** its own coin, when it has one listed */ coin?: Coin; /** its credit line, from either side, while lines are on */ line?: CreditLine }
 
 /** One job in a chain of work: the customer's job at depth 0, the jobs its agent hired for at 1, and so on. */
 export interface TreeNode {

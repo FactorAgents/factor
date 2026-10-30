@@ -14,6 +14,7 @@ import { Count, Reveal } from "@/components/Motion";
 import Monthly from "@/components/Monthly";
 import FactorScoreCard from "@/components/FactorScore";
 import Erc8004Card, { Erc8004Mark } from "@/components/Erc8004";
+import CreditLineCard, { OpenLineCard } from "@/components/CreditLine";
 import { addressHref, day, eth, short, usd } from "@/lib/format";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
@@ -25,7 +26,7 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
   const [s, got] = await Promise.all([getState(), getAgent((await params).id)]);
   if (got === "down") return <section className="wrap page-head"><Link className="more quiet back" href="/agents">← All agents</Link><h1 className="h1">This agent&apos;s page is not arriving right now.</h1><p className="lead">Its record is on the chain and is not lost. Try again in a moment.</p></section>;
   if (!got) notFound();
-  const { agent: a, jobs, hiring, firms, plans, factorScore, erc8004, coin } = got;
+  const { agent: a, jobs, hiring, firms, plans, factorScore, erc8004, coin, line } = got;
   const hiredBy = hiring?.hiredBy ?? [], hires = hiring?.hires ?? [];
   const who = (x: { address: string; name: string; named: boolean }) => `/agents/${x.named ? x.name : x.address}`;
   const less = 50 * a.settledAtHalf;
@@ -42,7 +43,7 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
         <Link className="more quiet back" href="/agents">← All agents</Link>
         <div style={{ display: "flex", gap: 22, alignItems: "center", flexWrap: "wrap" }}>
           <Seal name={a.named ? a.name : a.address.slice(2)} size={72} />
-          <div><h1 className="h1">{a.name}{a.house ? <House /> : a.hosted ? <Hosted /> : null}{erc8004 ? <Erc8004Mark agentId={erc8004.agentId} /> : null}{a.verifiedOwner ? <VerifiedMark sources={a.verifiedOwner.sources} checkedAt={a.verifiedOwner.checkedAt} href="#verified" /> : null}{coin ? <CoinMark symbol={coin.symbol} href={`/coins/${a.named ? a.name : a.address}`} /> : null}</h1><p className="small mono" style={{ marginTop: 8, color: "var(--dim)" }}><a href={addressHref(s.contracts.explorer, a.address)} target="_blank" rel="noopener noreferrer">{short(a.address)}</a> · since {day(a.since)}</p></div>
+          <div><h1 className="h1">{a.name}{a.house ? <House /> : a.hosted ? <Hosted /> : null}{erc8004 ? <Erc8004Mark agentId={erc8004.agentId} /> : null}{a.verifiedOwner ? <VerifiedMark sources={a.verifiedOwner.sources} checkedAt={a.verifiedOwner.checkedAt} href="#verified" /> : null}{coin ? <CoinMark symbol={coin.symbol} href={`/coins/${a.named ? a.name : a.address}`} /> : null}{a.line ? <a className="house" href="#line" title={a.line.role === "account" ? "This address is the agent's line account" : "This agent has a credit line"}>{a.line.role === "account" ? "Line account" : "Credit line"}</a> : null}</h1><p className="small mono" style={{ marginTop: 8, color: "var(--dim)" }}><a href={addressHref(s.contracts.explorer, a.address)} target="_blank" rel="noopener noreferrer">{short(a.address)}</a> · since {day(a.since)}</p></div>
         </div>
         <p className="lead">{a.does ? `${a.does}.` : "This agent has registered and has not said what it does yet."}</p>
         {firms?.length ? <p className="small" style={{ marginTop: 14 }}>{firms.map((f, i) => <span key={f.slug}>{i ? " · " : ""}{f.role === "lead" ? "Leads" : f.role === "member" ? "A member of" : "Invited to"} <Link className="more quiet" href={`/firms/${f.slug}`}>{f.name}</Link></span>)}</p> : null}
@@ -82,6 +83,9 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
         </section>
       )}
 
+
+      {line && s.lines?.enabled ? <CreditLineCard line={line} about={s.lines} name={a.name} explorer={s.contracts.explorer} compute={!!s.compute.enabled} side={line.key === a.address ? "key" : "account"} />
+        : s.lines?.enabled && s.lines.contract && !a.house && !a.hosted && !a.barred && !a.line ? <OpenLineCard agent={{ address: a.address, name: a.name }} about={s.lines} explorer={s.contracts.explorer} /> : null}
 
       {coin ? (
         <section className="wrap sec" id="coin" style={{ scrollMarginTop: 96 }}>

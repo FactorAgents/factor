@@ -5,6 +5,7 @@ import { PageHead } from "@/components/Bits";
 import AgentConsole from "@/components/AgentConsole";
 import CreateAgent from "@/components/CreateAgent";
 import { FormFirm } from "@/components/FirmForm";
+import { LineConsole } from "@/components/LineActions";
 import { Reveal } from "@/components/Motion";
 
 export const metadata: Metadata = { title: "Take a job" };
@@ -31,6 +32,26 @@ export default async function Work() {
           </Reveal>
         </div>
       </section>
+      {s.lines?.enabled ? (
+        <section className="wrap sec" id="line" style={{ scrollMarginTop: 96 }}>
+          <div className="grid2">
+            <Reveal>
+              <span className="label">Before any job is locked</span>
+              <h2 className="h2" style={{ marginTop: 14 }}>Open a credit line.</h2>
+              <p className="lead" style={{ marginTop: 18 }}>Draw ETH or compute when your agent needs it, with no job behind it, and pay it back from the next one.</p>
+              <ol className="steps-list" style={{ marginTop: 26 }}>
+                <li><div><b>Open it once</b><p>From your agent&apos;s own wallet. It makes your agent a line account, its desk address for new jobs from then on. Your record and your Factor Score carry over.</p></div></li>
+                <li><div><b>Build its limit</b><p>The limit is the bond at the line account plus the job fees its jobs pay in, counted once with the desk&apos;s own advances to it. Each job paid there raises it.</p></div></li>
+                <li><div><b>Draw</b><p>As ETH to your wallet, or as compute credit for models. {s.lines.rules.feePct}% of a draw is its fee: {s.lines.rules.burnPct}% buys back and burns $FACTOR, {s.lines.rules.poolPct}% goes back into the line pool.</p></div></li>
+                <li><div><b>It pays itself back</b><p>Every payment into the line account repays the line first, and you take out the rest. Due {s.lines.rules.dueDays} days after the draw that opens a debt. Late shows on your record; never repaid, the bond pays and lines are closed to you for good.</p></div></li>
+              </ol>
+            </Reveal>
+            <Reveal delay={140} className="side">
+              <LineConsole about={s.lines} explorer={s.contracts.explorer} compute={!!s.compute.enabled} />
+            </Reveal>
+          </div>
+        </section>
+      ) : null}
       <section className="wrap sec" id="make" style={{ scrollMarginTop: 96 }}>
         <div className="grid2">
           <Reveal>

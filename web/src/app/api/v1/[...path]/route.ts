@@ -6,10 +6,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { callerOf } from "@/lib/caller";
 import { engineUrl, sampleMode } from "@/lib/data";
-import { sampleAgent, sampleAutoApply, sampleCoin, sampleCoins, sampleFirm, sampleJob, sampleJobs, sampleLedger, sampleOpenJob, sampleOpenJobs, samplePlan, sampleState } from "@/lib/sample";
+import { sampleAgent, sampleAutoApply, sampleCoin, sampleCoins, sampleLine, sampleLines, sampleFirm, sampleJob, sampleJobs, sampleLedger, sampleOpenJob, sampleOpenJobs, samplePlan, sampleState } from "@/lib/sample";
 import { answerBody, answerHeaders, sharedRead } from "@/lib/shared";
 
-const READS = /^(state|pulse|desk|agents|agents\/made\/0x[0-9a-fA-F]{40}|agents\/[0-9a-zA-Z-]{3,42}|jobs|jobs\/\d{1,9}|jobs\/\d{1,9}\/tree|ledger|burns|accounts\/0x[0-9a-fA-F]{40}|accounts\/relay\/0x[0-9a-f]{64}|accounts\/by-credential\/0x[0-9a-f]{2,2046}|pay\/link\/[A-Za-z0-9_-]{20,6000}\.[A-Za-z0-9_-]{80,3000}|pay\/links\/0x[0-9a-fA-F]{40}|firms|firms\/[a-z0-9-]{3,32}|plans|plans\/0x[0-9a-f]{64}|erc8004|erc8004\/[0-9a-zA-Z-]{3,42}|openjobs|openjobs\/0x[0-9a-f]{64}|autoapply\/[0-9a-zA-Z-]{3,42}|verified|verified\/[0-9a-zA-Z-]{3,42}|coins|coins\/about|coins\/[0-9a-zA-Z-]{3,42})$/;
+const READS = /^(state|pulse|desk|agents|agents\/made\/0x[0-9a-fA-F]{40}|agents\/[0-9a-zA-Z-]{3,42}|jobs|jobs\/\d{1,9}|jobs\/\d{1,9}\/tree|ledger|burns|accounts\/0x[0-9a-fA-F]{40}|accounts\/relay\/0x[0-9a-f]{64}|accounts\/by-credential\/0x[0-9a-f]{2,2046}|pay\/link\/[A-Za-z0-9_-]{20,6000}\.[A-Za-z0-9_-]{80,3000}|pay\/links\/0x[0-9a-fA-F]{40}|firms|firms\/[a-z0-9-]{3,32}|plans|plans\/0x[0-9a-f]{64}|erc8004|erc8004\/[0-9a-zA-Z-]{3,42}|openjobs|openjobs\/0x[0-9a-f]{64}|autoapply\/[0-9a-zA-Z-]{3,42}|verified|verified\/[0-9a-zA-Z-]{3,42}|coins|coins\/about|coins\/[0-9a-zA-Z-]{3,42}|lines|lines\/about|lines\/[0-9a-zA-Z-]{3,42})$/;
 // two things a wallet signs, what an account without a wallet asks of the engine (lib/passkey.ts), a job paid
 // through a Pay with Factor link (lib/pay.ts), an agent hiring another for part of its job (lib/subjobs.ts), and a
 // firm formed, joined, left or hired (lib/firms.ts), and a monthly plan signed, a month of it linked, or a plan stopped
@@ -48,6 +48,8 @@ function fromSample(path: string, q: URLSearchParams): unknown {
   if (path === "coins") return sampleCoins(q.get("sort") === "new" ? "new" : "fees");
   if (path.startsWith("coins/") && path !== "coins/about") return sampleCoin(path.slice(6));
   if (path === "coins/about") return { enabled: false, launcher: null };
+  if (path === "lines" || path === "lines/about") return { ...sampleState().lines, items: path === "lines" ? sampleLines() : undefined };
+  if (path.startsWith("lines/")) return ((l) => (l ? { line: l } : null))(sampleLine(path.slice(6)));
   return null;
 }
 

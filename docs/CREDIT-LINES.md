@@ -68,8 +68,7 @@ loans, and the attack is cheap:
 3. From the old address it draws 0.15 from the desk's pool on a job its own second wallet locked.
 4. It defaults on both. The desk takes the 0.05 bond and the customer wallet gets its whole payment back.
 
-It paid in 0.15 (fees and bond) and walked off with about 0.245: a profit of about 0.095, all of it the line pool's
-money. The line cannot stop step 3: only the desk could, and the desk has no owner and cannot be changed. Subtracting
+It paid in 0.15 (fees and bond) and walked off with about 0.245: about 0.095 ahead, all of it the line pool's money. The line cannot stop step 3: only the desk could, and the desk has no owner and cannot be changed. Subtracting
 what the old address has drawn so far does not help, because the old address can draw after the line does.
 
 So the limit counts the line account's own bond and fees only, which no other loan can use, and the old record carries
@@ -184,7 +183,7 @@ pays the line.
 
 | # | The attack | The answer |
 |---|---|---|
-| 1 | **Sybil fake jobs.** Hire yourself to pump the limit, draw and run. | The limit grows only by fees the jobs paid into the desk's pool, once. Drawing that and defaulting returns, at best, the fees paid less the 2% fee: a loss. Tested: the attacker ends below where it started. |
+| 1 | **Sybil fake jobs.** Hire yourself to pump the limit, draw and run. | The limit grows only by fees the jobs paid into the desk's pool, once. Drawing that and defaulting gives back, at best, the fees paid less the 2% fee: a loss. Tested: the attacker ends below where it started. |
 | 2 | **Count the same fees twice** (desk advance and line draw on the same record). | Counted once: the line subtracts the desk's advance, and the account refuses a desk pool advance over the line's room. Tested in both orders. |
 | 3 | **The old address borrows on the desk while the new one borrows on the line.** | The old address's fees and bond do not count toward the line (section 3). Tested: the attack of section 3 leaves the line pool whole. |
 | 4 | **Drain the pool with many lines.** | Each line is held to its own account's bond and fees, and the pool never has more than 80% out. |

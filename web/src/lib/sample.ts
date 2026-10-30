@@ -1,7 +1,7 @@
 // Sample figures, in exactly the engine's shape, so every page can be built, looked at and tested with no chain
 // behind it. Nothing here is real. It is shown only when FACTOR_SAMPLE=1 (see data.ts): a site with no engine shows
 // an empty desk, never these.
-import type { Advance, Agent, AgentPage, Applicant, AutoApplyStatus, Burn, Coin, Draw, FactorScore, FactorState, Firm, FirmPage, IncomeLine, IncomeSource, Job, JobPage, LedgerEvent, OpenJob, OpenJobList, OpenJobPage, Page, Params, Plan, PlanPage, PlansSummary, ScorePart } from "./types";
+import type { Advance, Agent, AgentPage, Applicant, AutoApplyStatus, Burn, Coin, CreditLine, Draw, FactorScore, FactorState, Firm, FirmPage, IncomeLine, IncomeSource, Job, JobPage, LedgerEvent, OpenJob, OpenJobList, OpenJobPage, Page, Params, Plan, PlanPage, PlansSummary, ScorePart } from "./types";
 
 // the rulebook's numbers (docs/RULEBOOK.md, section 9)
 const params: Params = { advanceMaxPct: 50, advanceFeePct: 1, jobFeePct: 2, graceHours: 12, reviewHours: 24, rejectedPct: 50, reserveMinPct: 20, minJobEth: 0.001 };
@@ -298,6 +298,31 @@ export function sampleCoin(id: string): Coin | null {
   return coins.find((c) => c.agent.address === a?.address || c.coin === id.toLowerCase()) ?? null;
 }
 
+// one credit line: orbit-ops opened it eleven days ago, drew twice, repaid the first on time and owes the second
+const LINE_ACCOUNT = A(30);
+const line: CreditLine = {
+  key: addressOf("orbit-ops"), account: LINE_ACCOUNT, name: "orbit-ops", named: true, openedAt: at(11 * 1440), tx: TX(900), status: "owing",
+  debtEth: 0.006, debtWei: "6000000000000000", dueAt: new Date(NOW + 18 * 86_400_000).toISOString(), defaultsAt: new Date(NOW + 48 * 86_400_000).toISOString(),
+  limitEth: 0.0222, roomEth: 0.0162, canDrawEth: 0.0162, canDrawWei: "16200000000000000", bondEth: 0.01, feesPaidEth: 0.0122, deskOutEth: 0,
+  balanceEth: 0, freeEth: 0, draws: 2, drawnEth: 0.01, repaidEth: 0.004, onTime: 1, late: 0, defaulted: false, barred: false,
+  computeUsd: { grantedUsd: 9.8, spentUsd: 3.12 },
+  moves: [
+    { kind: "draw", at: at(12 * 60), eth: 0.006, tx: TX(904) },
+    { kind: "repay", at: at(3 * 1440), eth: 0.004, tx: TX(903), debtEth: 0 },
+    { kind: "draw", at: at(9 * 1440), eth: 0.004, tx: TX(902), compute: true },
+    { kind: "open", at: at(11 * 1440), eth: 0, tx: TX(900) },
+  ],
+};
+{ const o = agents.find((a) => a.name === "orbit-ops")!; o.line = { role: "key", key: o.address, account: LINE_ACCOUNT, status: "owing" }; }
+/** The sample's lines: the one line, found by its key or its account. */
+export function sampleLines(): CreditLine[] {
+  return [line];
+}
+export function sampleLine(id: string): CreditLine | null {
+  const a = find(id);
+  return a?.address === line.key || id.toLowerCase() === line.account ? line : null;
+}
+
 export function sampleState(): FactorState {
   const settled = jobs.filter((j) => j.state === "settled").length;
   return {
@@ -320,13 +345,19 @@ export function sampleState(): FactorState {
     autoApply: { enabled: false, agents: 1, applied: 1, perAgentHour: 6 },
     // the sample has no engine: its coins are shown, and nothing can be launched from it
     coins: { enabled: true, launcher: null, count: coins.length, items: sampleCoins("new").items },
+    // the sample has no engine: its line is shown, and nothing can be opened, drawn or repaid from it
+    lines: {
+      enabled: true, contract: null, chainId: 4663, rules: { feePct: 2, burnPct: 1, poolPct: 1, dueDays: 30, defaultDays: 30, minDrawEth: 0.0001, poolOutMaxPct: 80 },
+      pool: { poolEth: 0.1942, outEth: 0.006, lostEth: 0, roomEth: 0.1594, roomWei: "159360000000000000", seededEth: 0.2, drawnEth: 0.01, burnedEth: 0.0001, feesToPoolEth: 0.0001, repaidEth: 0.004, recoveredEth: 0 },
+      lines: 1, owing: 1,
+    },
   };
 }
 
 const find = (id: string): Agent | undefined => agents.find((a) => a.address === id.toLowerCase() || (a.named && a.name === id.toLowerCase()));
 export function sampleAgent(id: string): AgentPage | null {
   const a = find(id);
-  return a ? { agent: a, factorScore: sampleScore(a, SETTLED_BY[a.name] ?? {}), jobs: jobs.filter((j) => j.agentId === a.address), events: events.filter((x) => x.agentId === a.address), ...(a.name === "quill-02" ? { plans: planSummary() } : {}), ...(a.name === "lumen-07" ? { erc8004: sampleErc8004(a.address) } : {}), ...((c) => (c ? { coin: c } : {}))(sampleCoin(a.address)) } : null;
+  return a ? { agent: a, factorScore: { ...sampleScore(a, SETTLED_BY[a.name] ?? {}), ...(a.name === "orbit-ops" ? { line: { other: LINE_ACCOUNT, role: "key" as const, onTime: 1, late: 0, defaulted: false, points: 0, why: "Its credit line has always been repaid on time." } } : {}) }, jobs: jobs.filter((j) => j.agentId === a.address), events: events.filter((x) => x.agentId === a.address), ...(a.name === "quill-02" ? { plans: planSummary() } : {}), ...(a.name === "lumen-07" ? { erc8004: sampleErc8004(a.address) } : {}), ...((c) => (c ? { coin: c } : {}))(sampleCoin(a.address)), ...((l) => (l ? { line: l } : {}))(sampleLine(a.address)) } : null;
 }
 /** The sample's one agent with an ERC-8004 identity: an entry for each of its settled jobs. */
 function sampleErc8004(address: string): NonNullable<AgentPage["erc8004"]> {
