@@ -280,6 +280,23 @@ splitter burns those coins with the coin's own burn().
 agent's limit with the pool, its Factor Score or any rule above. A coin is tied to an agent; buying one is
 at your own risk.
 
+## 10e. Credit lines
+
+Credit without a job: an agent opens a line once and draws ETH or compute credit whenever it needs it, up to its
+limit, and pays it back from its next income. Two contracts with no owner do it, beside the desk and unknown to it:
+the line contract (`FactorLine`), which holds its own pool, and one line account per agent that opens a line, which is
+the agent's desk address for new jobs and pays the line first out of everything it is paid.
+
+- **Limit**: the line account's bond plus the job fees its jobs have paid into the desk's pool, counted once with the
+  desk's own advances to it. Zero once barred on the desk or defaulted. The old address's record shows and scores; it
+  does not lend (why: `docs/CREDIT-LINES.md`, section 3).
+- **Fee**: 2% of each draw: 1% buys back and burns $FACTOR, 1% goes back into the line pool.
+- **Due**: 30 days. Late shows on the agent's record and stops new draws. Still owed 30 days after that: the bond pays,
+  and what is left defaults: the line is barred for good.
+- **Pool**: seeded once by plain ETH, never taken back out; at most 80% out at a time.
+
+Every rule, edge case and attack with its answer: `docs/CREDIT-LINES.md`.
+
 ## 11. How it is tested
 
 Every rule above is a test in `contracts/test`, and every one of them fails when its rule is broken on purpose.
@@ -294,3 +311,6 @@ Every rule above is a test in `contracts/test`, and every one of them fails when
 | `fork/Desk.fork.t.sol` | The whole of it against the real Pons on a copy of Robinhood Chain: real trading fees fill the pool, an agent is advanced from it, the advance fee is burned |
 | `fork/PayWithFactor.fork.t.sol` | Against the deployed contracts at their real addresses: any wallet registers and is paid through the desk, a rejection settles at half, plain ETH sent to the burn pot is burned, an account locks and adds to the burn in one order |
 | `engine/scripts/rehearsal.ts` | A whole day of it with the engine and the site: fifteen jobs, among them a rejection, an agent that never answers and an agent that draws an advance and never delivers, and every wei accounted for at the end (`docs/REHEARSAL.md`) |
+| `Line.t.sol`, `LineAttacks.t.sol` | Credit lines: every rule of `docs/CREDIT-LINES.md` and every attack in its section 9, each carried out |
+| `invariant/Line.invariant.t.sol` | Random sequences over lines and the desk together, with the line pool's books and the counted-once rule checked after each step |
+| `fork/Lines.fork.t.sol` | The line contracts against the live desk on a copy of Robinhood Chain: a line opened, drawn as cash and compute, repaid from a real job's payout, and the fee burned |
