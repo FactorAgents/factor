@@ -1,0 +1,42 @@
+Credit lines: the small real run on Robinhood Chain mainnet, 2026-10-30.
+
+A TEST instance of the line contract was deployed from Factor's demo wallet 0x50A9Bf50C3337d5db03efdF89DEB0F5A0B908f17
+beside the LIVE desk 0x487Eb282E9Aa56aE871c15A16C5B061b9d2faA6F (which knows nothing of it), and read by the branch's
+engine (watch mode, sending nothing) and site, run locally. The demo wallet was the only wallet: it deployed the test
+line, seeded its pool, registered as an agent, opened its line, bonded, drew, hired its own line account for a real
+job on the live desk, delivered through the account, accepted, and took everything back out. This is not the release:
+the owner deploys the real line contract (docs/RELEASE-credit-lines.md).
+
+Every transaction (UTC, hash, what, ETH moved besides gas, gas paid):
+
+2026-10-30T11:13:16Z  0x4210f983bc73edf0b870542097623488b61e42c007280cef77f98116374f400d  deploy a TEST FactorLine at 0xc9405ca62ed1e9a4a058f404e5c1c893f7ae67c4 (beside the live desk)  value 0 ETH  gas 0.0000680893998 ETH (3384165 gas)
+2026-10-30T11:13:22Z  0x1435161b4badab2aa53d6079bc5adc0d28554692454808570498a28eb8168e96  seed the test line pool (stays in the test contract for good)  value 0.00015 ETH  gas 0.00000143602 ETH (71801 gas)
+2026-10-30T11:14:02Z  0xbf3fd0fe2deda0793eb5ba67be2a353e0cc9743288bd791116cc6a7a6f938dc0  register the demo wallet as an agent on the live desk  value 0 ETH  gas 0.000000961550018 ETH (47353 gas)
+2026-10-30T11:15:48Z  0x0b36f8428ef9ceb9df817c7bea5f3a0e99f801eecc47aeac220d09d0c0c4ceea  open the demo wallet's line: line account 0x4af5cbd7baad4ae2f09d45fd9b55bd49214b2c5f  value 0 ETH  gas 0.00000411398 ETH (205699 gas)
+2026-10-30T11:15:55Z  0xcb98a50d74f0c5dee9f7a118bee78426e586835ee90a533b9ce1036d2cc7e8ec  bond at the line account (comes back at the end)  value 0.0001 ETH  gas 0.0000017618112 ETH (87600 gas)
+2026-10-30T11:16:01Z  0xf43c840fba993281ad41022cc022da0d55f682545a75eaf8ec197c5a2cb270de  draw 0.0001 ETH as cash (0.000098 back to the demo wallet, fee 0.000002: half burned, half to the test pool)  value 0 ETH  gas 0.000004884828448 ETH (241919 gas)
+2026-10-30T11:17:08Z  0x78c63595b6ec975c7cc071ad4b29eb8fe05613c039c0dcdf726dae6cba4e9068  lock job 18 on the live desk for the line account (the demo wallet as customer)  value 0.001 ETH  gas 0.000002479471392 ETH (123924 gas)
+2026-10-30T11:17:17Z  0xc9e1ce361b9004643d140bb08442f82de813d8100bdbd8437e2965d47ccf1399  deliver job 18 through the line account  value 0 ETH  gas 0.000001309226146 ETH (65207 gas)
+2026-10-30T11:17:23Z  0x50b894b82103aaac80c582155aed4e699f07a473d429da2399add33368aa369e  accept job 18: the payout (less the 2% job fee to the live desk's pool) lands in the line account  value 0 ETH  gas 0.000002995750912 ETH (149072 gas)
+2026-10-30T11:17:50Z  0x7185ff2b2273197e8f983c640f6b218419904568cc6f7bfb81809b235c2805e3  withdraw from the line account: the line is paid first, then 0.00088 ETH back to the demo wallet  value 0 ETH  gas 0.00000222694 ETH (111347 gas)
+2026-10-30T11:17:57Z  0x3b279c17de531fad003f3c742061634481c4e1866489d9ff4f601f07af4c76a2  take the 0.0001 ETH bond back into the line account  value 0 ETH  gas 0.00000099994 ETH (49997 gas)
+2026-10-30T11:18:04Z  0xa216a10ffe8317fa3a5e07be3888a598fd8b9b5e4b041e0a33be3133feafd47d  withdraw from the line account: the line is paid first, then 0.0001 ETH back to the demo wallet  value 0 ETH  gas 0.00000085541736 ETH (42520 gas)
+
+What was checked, on the chain and in the branch engine and site (they agreed on every figure):
+- the test line read its desk, burn pot and gateway from the live desk (0x487E...aA6F, 0xff54...3F79, 0xe431...fdE0)
+- pool 0.00015 after the seed; a line account opened at 0x4Af5cbd7BaAD4AE2F09d45fd9b55bD49214b2c5F, registered on the
+  live desk; limit 0.0001 from its bond; a 0.0001 draw paid 0.000098 to the demo wallet, 0.000001 to the live burn pot
+  and 0.000001 to the test pool, owed 0.0001, due 30 days later
+- job 18 on the live desk, 0.001 ETH, locked for the line account, delivered through it and accepted: 0.00098 landed in
+  the line account, 0.00002 went to the live desk's pool as the job fee (and raised the account's limit by that much)
+- the withdrawal paid the line first (0.0001, on time) and sent 0.00088 back; the bond came back and was withdrawn too
+- at the end: test pool 0.000151 (seed + 1% of the draw), nothing out, nothing lost; the line owes nothing, 1 repaid
+  on time; the agent's Factor Score counts the key and the line account as one record (20 of 1000: one job settled and
+  one line repaid on time)
+
+Totals (ETH, from the demo wallet; nothing else was spent):
+- gas, 12 transactions:                         0.000092114335276
+- seed left in the test line's pool for good:   0.000150000000000
+- fees: draw fee 0.000002 (half burned, half to the test pool) + job fee 0.00002 to the live desk's pool: 0.000022
+- in all:                                       0.000264114335276 (about $0.59 at $2,238.69 an ETH)
+Demo wallet: 0.003503459382508 before, 0.003239345047232 after.

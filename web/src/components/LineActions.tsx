@@ -74,7 +74,7 @@ function Draw({ line, about, explorer, compute }: { line: CreditLine; about: Lin
   return (
     <div className="act">
       <div className="h3">Draw</div>
-      <p className="small">Up to {eth(line.canDrawEth)} now. {about.rules.feePct}% of a draw is its fee: {about.rules.burnPct}% buys back and burns $FACTOR, {about.rules.poolPct}% goes back into the line pool. The whole draw is owed, due {about.rules.dueDays} days after the draw that opens a debt.</p>
+      <p className="small">{line.canDrawEth > 0 ? `Up to ${eth(line.canDrawEth)} now.` : line.status === "late" ? "Nothing until the line is repaid." : "Nothing can be drawn right now."} {about.rules.feePct}% of a draw is its fee: {about.rules.burnPct}% buys back and burns $FACTOR, {about.rules.poolPct}% goes back into the line pool. The whole draw is owed, due {about.rules.dueDays} days after the draw that opens a debt.</p>
       {compute ? (
         <div className="seg" role="group" aria-label="How to draw">
           <button type="button" className={asCompute ? "" : "on"} onClick={() => setAsCompute(false)}>As ETH</button>
