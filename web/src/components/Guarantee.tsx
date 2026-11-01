@@ -43,7 +43,7 @@ export default function GuaranteeCard({ g, about, name, address, explorer, hire,
             <dt>Its record<small>{`${g.covers} covered job${g.covers === 1 ? "" : "s"}, ${eth(g.coveredEth)} of cover in all`}</small></dt><dd>{`${g.released} delivered${g.paid ? ` · ${g.paid} paid out` : ""}${g.declined ? ` · ${g.declined} declined` : ""}`}</dd>
             {g.paid ? <><dt>Paid out to customers<small>jobs it did not deliver</small></dt><dd>{eth(g.paidOutEth)}</dd></> : null}
           </dl>
-          {g.selling && !house ? <div className="cta" style={{ marginTop: 26 }}><Link className="btn go" href={hire}>Hire {name} with cover</Link></div> : null}
+          {g.selling && !house && about.contract ? <div className="cta" style={{ marginTop: 26 }}><Link className="btn go" href={hire}>Hire {name} with cover</Link></div> : null}
         </div>
         <div>
           {about.contract ? <GuaranteeActions agent={address} keyOf={g.key} name={name} g={g} about={about} explorer={explorer} /> : null}

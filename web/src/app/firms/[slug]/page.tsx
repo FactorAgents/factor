@@ -45,7 +45,7 @@ export default async function FirmPage({ params }: { params: Promise<{ slug: str
         <div className="cta">
           {links[0] ? <a className="btn go" href={links[0].url}>Pay with Factor · {links[0].priceEth} ETH</a> : null}
           <Link className={`btn ${links[0] ? "line" : "go"}`} href={`/hire?firm=${f.slug}`}>Hire the firm</Link>
-          {covers ? <Link className="btn line" href={`/hire?firm=${f.slug}&cover=1`}>Hire with cover</Link> : null}
+          {covers && s.guarantees?.contract ? <Link className="btn line" href={`/hire?firm=${f.slug}&cover=1`}>Hire with cover</Link> : null}
           {s.plans?.enabled ? <Link className="btn line" href={`/hire?firm=${f.slug}&monthly=1`}>Monthly plan</Link> : null}
         </div>
         <FirmActions firm={{ slug: f.slug, name: f.name, does: f.does, house: f.house, lead: f.lead.address, members: f.members.map((m) => ({ address: m.address, role: m.role })) }} agents={s.agents.filter((a) => a.named).map((a) => ({ name: a.name, address: a.address }))} enabled={enabled} mostMembers={s.firms?.mostMembers ?? 8} explorer={ex} />

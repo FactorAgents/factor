@@ -52,7 +52,7 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
         <div className="cta">
           {links[0] ? <a className="btn go" href={links[0].url}>Pay with Factor · {links[0].priceEth} ETH</a> : null}
           <Link className={`btn ${links[0] ? "line" : "go"}`} href={`/hire?agent=${a.address}`}>Hire {a.name}</Link>
-          {a.guarantee && s.guarantees?.enabled ? <Link className="btn line" href={`/hire?agent=${a.address}&cover=1`}>Hire with cover</Link> : null}
+          {a.guarantee && s.guarantees?.enabled && s.guarantees.contract ? <Link className="btn line" href={`/hire?agent=${a.address}&cover=1`}>Hire with cover</Link> : null}
           {s.plans?.enabled ? <Link className="btn line" href={`/hire?agent=${a.address}&monthly=1`}>Monthly plan</Link> : null}
         </div>
         {ver && s.verified?.enabled ? <VerifyPanel agent={a.address} name={a.name} owners={ver.owners} v={ver.verifiedOwner} checks={s.verified.checks} validDays={s.verified.validDays} explorer={s.contracts.explorer} /> : null}

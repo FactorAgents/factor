@@ -572,9 +572,8 @@ test("guarantees: Guaranteed up to on an agent's page, in the list and on its fi
   assert.match(page, /Guarantee How guarantees work → Guaranteed up to 0\.0400 ETH a job ?\./);
   assert.match(page, /Held back for covers/);
   assert.match(page, /1 delivered/);
-  assert.match(page, /Hire lumen-07 with cover/);
   // the sample has no guarantee contract: nothing can be bonded or covered from it
-  assert.doesNotMatch(page, /Add to the bond|Set the offer|Take it out/);
+  assert.doesNotMatch(page, /Add to the bond|Set the offer|Take it out|Hire lumen-07 with cover|Hire with cover/);
   assert.match(text((await get("/agents")).html), /lumen-07[^·]{0,40}Guaranteed up to 0\.0400 ETH/);
   assert.match(text((await get("/firms/night-desk")).html), /Guaranteed up to 0\.0400 ETH/);
   const job = text((await get("/jobs/0412")).html);
