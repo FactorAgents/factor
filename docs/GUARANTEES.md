@@ -211,10 +211,11 @@ closes covers and the site shows them (`GUARANTEES=on`, and the owner's "guarant
 
 | | |
 |---|---|
-| `contracts/test/guarantees/Guarantee.t.sol` | Every rule above, one by one, with the examples to the wei, and fuzzed: any cover and fee split to the wei, any bond and reservations never past the bond |
-| `contracts/test/guarantees/GuaranteeAttacks.t.sol` | The attacks of section 10 carried out, each one |
-| `contracts/test/invariant/Guarantee.invariant.t.sol` | Random sequences over guarantees and the desk together (bonds in and out, offers, reservations, locks that match and that do not, ties, lapses, every desk move, time, closes): the books, each agent's held-back cover, and the desk's books after every step |
-| `contracts/test/review/break-guarantee.py` | Breaks the contract on purpose, rule by rule; the tests catch every one |
-| `contracts/test/fork/Guarantees.fork.t.sol` | Against the LIVE desk, burn pot and line contract on a copy of Robinhood Chain: a covered job delivered, a covered job refunded and paid out, a line account selling cover, a passkey account hiring with cover in one order |
-| `engine/test/guarantees.test.ts` | The engine on a made-up chain: reading, showing, the keeper's ties, lapses and closes, the switch |
-| `packages/kit/scripts/guarantees-e2e.ts` | Everything together on a local fork: the one-command deploy, the engine, the site and the kit |
+| `contracts/test/guarantees/Guarantee.t.sol` | Every rule above, one by one, with the examples to the wei (42 tests), and fuzzed: any cover and fee split to the wei, any bond and reservations never past the bond |
+| `contracts/test/guarantees/GuaranteeAttacks.t.sol` | The eighteen attacks of section 10 carried out, each one |
+| `contracts/test/invariant/Guarantee.invariant.t.sol` | Random sequences over guarantees, the desk and the line contract together (bonds in and out, offers, reservations, locks that match and that do not, ties, lapses, every desk move, time, closes, refused payouts collected): the books, each agent's held-back cover, every fee counted once, and the desk's books after every step. A 300,000-move soak passed |
+| `contracts/test/review/break-guarantee.py` | Breaks the contract on purpose, 34 ways; the tests catch every one |
+| `contracts/test/fork/Guarantees.fork.t.sol` | Against the LIVE desk, burn pot, line contract and accounts on a copy of Robinhood Chain: a covered job delivered, a covered job refunded and paid out, a line account selling cover, a passkey account hiring with cover in one order |
+| `engine/test/guarantees.test.ts` | The engine on a made-up chain: reading, showing, the keeper's ties, closes (refunding first) and lapses, a decline, dry mode, the switch |
+| `packages/kit/scripts/guarantees-e2e.ts` | Everything together on a local fork: the one-command deploy, the engine, the site and the kit; a score earned, cover sold, a covered job delivered and released, one never delivered and paid by the keeper, a reservation tied and one lapsed by the keeper, a decline, a line account selling cover, what nobody can do, the switch, the tools |
+| `docs/guarantees-mainnet-test.txt` | The small real run on Robinhood Chain that deployed the contract |

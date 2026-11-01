@@ -176,13 +176,21 @@ export async function hireWithCover(p: Provider, o: { passkey: boolean; guarante
   if (r2.status !== "0x1") throw new Refusal(r2.reason ?? "The lock was mined and refused. The cover is reserved for an hour; nothing else changed.");
   const job = lockedJob(r2, o.desk);
   o.on("tying");
-  let tied = false;
-  try {
-    const tie = encodeFunctionData({ abi: GUARANTEE_ABI, functionName: "bind", args: [BigInt(coverId ?? 0), BigInt(job ?? 0)] });
-    await ethCall(p, o.guarantee, tie, o.from);
-    tied = (await waitFor(p, await sendTx(p, { from: o.from, to: o.guarantee, data: tie }))).status === "0x1";
-  } catch {
-    // Factor ties it within the hour
+  // Factor's keeper may have tied it already, as soon as it saw the lock: then nothing more is asked of the wallet
+  const tiedNow = async (): Promise<boolean> => {
+    const data = await ethCall(p, o.guarantee, encodeFunctionData({ abi: GUARANTEE_ABI, functionName: "coverOf", args: [BigInt(job ?? 0)] }));
+    return (decodeFunctionResult({ abi: GUARANTEE_ABI, functionName: "coverOf", data: data as Hex }) as bigint) === BigInt(coverId ?? -1);
+  };
+  let tied = await tiedNow().catch(() => false);
+  if (!tied) {
+    try {
+      const tie = encodeFunctionData({ abi: GUARANTEE_ABI, functionName: "bind", args: [BigInt(coverId ?? 0), BigInt(job ?? 0)] });
+      await ethCall(p, o.guarantee, tie, o.from);
+      tied = (await waitFor(p, await sendTx(p, { from: o.from, to: o.guarantee, data: tie }))).status === "0x1";
+    } catch {
+      // tied by the keeper in the meantime, or Factor ties it within the hour
+      tied = await tiedNow().catch(() => false);
+    }
   }
   // what goes beside it (a month's share to the burn pot): after the job is locked, so it never stands in the job's way
   let extraTx: string | null = null;

@@ -9,7 +9,10 @@
 //                          E2E_COINS=on the coin launcher is deployed too, by contracts/deploy-coins.sh, and the
 //                          engine runs with AGENT_COINS=on (what packages/kit/scripts/coins-e2e.ts starts from). With
 //                          E2E_LINES=on the line contract is deployed too, by contracts/deploy-lines.sh, and the
-//                          engine runs with LINES=on (what packages/kit/scripts/lines-e2e.ts starts from)
+//                          engine runs with LINES=on (what packages/kit/scripts/lines-e2e.ts starts from). With
+//                          E2E_GUARANTEES=on (and E2E_LINES=on) the guarantee contract is deployed too, by
+//                          contracts/deploy-guarantees.sh, and the engine runs with GUARANTEES=on (what
+//                          packages/kit/scripts/guarantees-e2e.ts starts from)
 //
 // What it does, in order:
 //   1  starts anvil as a fork of the chain's head and takes anvil's own built-in test accounts as the admin, the
@@ -308,11 +311,27 @@ async function main(): Promise<void> {
       if (!line || !from) throw new Error("the line contract was not deployed");
       lines = { LINES: "on", FACTOR_LINE: line, FACTOR_LINE_BLOCK: from, LINES_SWEEP_MIN_WEI: "10000000000000" };
     }
+    // guarantees: the guarantee contract, deployed by the repo's own one-command script against this fork (beside the
+    // desk and the line contract above), read back by its own check, and the engine told of it
+    let guarantees: Record<string, string> = {};
+    let guarantee: string | null = null;
+    if (process.env.E2E_GUARANTEES === "on") {
+      if (!line) throw new Error("E2E_GUARANTEES=on needs E2E_LINES=on: the guarantee contract is given the line contract");
+      const forkEnv = join(CONTRACTS, "broadcast", "factor.fork.env");
+      const r = spawnSync("zsh", [join(CONTRACTS, "deploy-guarantees.sh"), ADMIN], { cwd: CONTRACTS, encoding: "utf8", timeout: 900_000, env: { ...process.env, FACTOR_RPC: RPC, PATH: `${FOUNDRY}:${process.env.PATH}` } });
+      writeFileSync(join(WORK, "deploy-guarantees.log"), `${r.stdout}${r.stderr}`);
+      const written = readFileSync(forkEnv, "utf8");
+      guarantee = /FACTOR_GUARANTEE=(0x[0-9a-fA-F]{40})/.exec(written)?.[1] ?? null;
+      const from = /FACTOR_GUARANTEE_BLOCK=(\d+)/.exec(written)?.[1] ?? null;
+      check("the guarantee contract is deployed by contracts/deploy-guarantees.sh, which says what each call costs and reads it back wired", r.status === 0 && !!guarantee && !!from && r.stdout.includes("OK: the guarantee contract is wired") && r.stdout.includes("reserving cover"), guarantee ?? (r.stdout + r.stderr).split("\n").slice(-8).join(" | "));
+      if (!guarantee || !from) throw new Error("the guarantee contract was not deployed");
+      guarantees = { GUARANTEES: "on", FACTOR_GUARANTEE: guarantee, FACTOR_GUARANTEE_BLOCK: from };
+    }
     // what the kit's and the site's runs start from has Factor's own agents on it too
     await stopPort(ENGINE_PORT);
-    startEngine(dataDir, envFile, { ...HOUSE, ...coins, ...lines });
+    startEngine(dataDir, envFile, { ...HOUSE, ...coins, ...lines, ...guarantees });
     await waitFor("the house agents to be on the desk", async () => (await state()).agents.filter((a) => a.house && a.named).length === SERVICES.length, 400_000);
-    writeFileSync(join(WORK, "bare.json"), JSON.stringify({ rpc: RPC, api: API, desk, splitter, burnPot, token, accounts: accountsAt, keys, adminKey: ADMIN_KEY, model: `http://127.0.0.1:${MODEL_PORT}`, launcher, line, dataDir, envFile }, null, 2));
+    writeFileSync(join(WORK, "bare.json"), JSON.stringify({ rpc: RPC, api: API, desk, splitter, burnPot, token, accounts: accountsAt, keys, adminKey: ADMIN_KEY, model: `http://127.0.0.1:${MODEL_PORT}`, launcher, line, guarantee, dataDir, envFile }, null, 2));
     console.log(`\nLeft running: the fork on ${RPC}, the engine on ${API}, the pool holding ${eth(pool0)} ETH. Written to ${join(WORK, "bare.json")}.`);
     console.log("Stop them with: npm run e2e -- --stop");
     return;

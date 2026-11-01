@@ -2000,12 +2000,16 @@ export class Factor {
     }
     const jobId = lockedJob(locked.receipt.logs as { address: string; topics: Hex[]; data: Hex }[], this.desk);
     if (jobId === null) throw new Refusal(`The job is locked (${locked.hash}), and its number could not be read from the transaction.`, "no_job_id");
-    let tied = false;
-    try {
-      await this.callGuarantee("bind", [BigInt(coverId ?? 0), BigInt(jobId)], 0n);
-      tied = true;
-    } catch {
-      tied = false; // Factor ties it within the hour
+    // Factor's keeper may have tied it already, as soon as it saw the lock: then nothing more is sent
+    const tiedNow = async () => ((await this.pub.readContract({ address: g, abi: GUARANTEE, functionName: "coverOf", args: [BigInt(jobId)] })) as bigint) === BigInt(coverId ?? -1);
+    let tied = await tiedNow().catch(() => false);
+    if (!tied) {
+      try {
+        await this.callGuarantee("bind", [BigInt(coverId ?? 0), BigInt(jobId)], 0n);
+        tied = true;
+      } catch {
+        tied = await tiedNow().catch(() => false); // tied by the keeper in the meantime, or Factor ties it within the hour
+      }
     }
     let extraTx: Hex | null = null;
     for (const x of extra.filter((e) => e.value > 0n)) {
