@@ -25,6 +25,10 @@
 //
 // "verifiedOwner" (./verified.ts) is the outcome of checking the agent's owner wallet with Human Passport and Talent
 // Protocol: verified, by which, a band of each score and the date. Outside the attestation: it is not the desk's.
+//
+// "guarantee" (./guarantees.ts) is the agent's guarantee bond, its offer of cover and its record of covers (tied,
+// delivered, paid out to customers, declined): read from the guarantee contract, where anyone can read it, and outside
+// the attestation like the rest above.
 
 import { concat, formatEther, hashTypedData, keccak256, toHex, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
@@ -33,6 +37,7 @@ import { scoreOf } from "./score.js";
 import type { FactorScoreJson } from "./factorscore.js";
 import type { Erc8004Json } from "./erc8004.js";
 import type { VerifiedJson } from "./verified.js";
+import type { AgentGuaranteeJson } from "./guarantees.js";
 import { takeHouseSeed } from "./house/house.js";
 import type { EngineDb } from "./chain/db.js";
 
@@ -125,6 +130,8 @@ export interface RecordJson {
   erc8004: Erc8004Json | null;
   /** its owner is verified (./verified.ts): the outcome only, outside the attestation. Present while checking owners is on; null: not verified */
   verifiedOwner?: VerifiedJson | null;
+  /** its guarantee (./guarantees.ts): what cover it sells and its record of covers, outside the attestation. Present while guarantees are on and it has had one */
+  guarantee?: { upToEth: number; sharePct: number; bondEth: number; covers: number; delivered: number; paidOut: number; paidOutEth: number; declined: number };
   page: string;
   badge: string;
   attestation: { signer: string; signature: Hex; digest: Hex; message: RecordMessage; issuedAt: string; expiresAt: string } | null;
@@ -145,6 +152,7 @@ export async function recordOf(o: {
   factorScore?: FactorScoreJson | null;
   erc8004?: Erc8004Json | null;
   verifiedOwner?: VerifiedJson | null;
+  guarantee?: AgentGuaranteeJson | null;
 }): Promise<RecordJson> {
   const r: AgentRecord = o.row.record;
   const { byState, distinct } = jobCounts(o.db, o.row.address);
@@ -176,6 +184,7 @@ export async function recordOf(o: {
     factorScore: o.factorScore ?? null,
     erc8004: o.erc8004 ?? null,
     ...(o.verifiedOwner !== undefined ? { verifiedOwner: o.verifiedOwner } : {}),
+    ...(o.guarantee ? { guarantee: { upToEth: o.guarantee.selling ? o.guarantee.upToEth : 0, sharePct: o.guarantee.sharePct, bondEth: o.guarantee.bondEth, covers: o.guarantee.covers, delivered: o.guarantee.released, paidOut: o.guarantee.paid, paidOutEth: o.guarantee.paidOutEth, declined: o.guarantee.declined } } : {}),
     page: `${o.site}/agents/${path}`, badge: `${o.site}/api/v1/badge/${o.row.address}`,
     attestation,
   };

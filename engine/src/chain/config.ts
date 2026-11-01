@@ -21,6 +21,7 @@ import { readAutoApply, type AutoApplyConfig } from "../autoapply.js";
 import { readVerified, type VerifiedConfig } from "../verified.js";
 import { readCoins, type CoinsConfig } from "../coins.js";
 import { readLines, type LinesConfig } from "../lines.js";
+import { readGuarantees, type GuaranteesConfig } from "../guarantees.js";
 
 // the chain the token lives on, written down once
 export const CHAIN = { id: 4663, name: "Robinhood Chain", rpcUrl: "https://rpc.mainnet.chain.robinhood.com", explorer: "https://robinhoodchain.blockscout.com" } as const;
@@ -49,7 +50,7 @@ export interface EngineParams {
   burnRetryS: number; // ENGINE_BURN_RETRY_S
   maxGasWei: bigint; // ENGINE_MAX_GAS_GWEI: the most the engine pays per unit of gas
   unstickMaxGasWei: bigint; // ENGINE_UNSTICK_MAX_GAS_GWEI: the same for replacing a transaction that is stuck
-  gasCaps: { sweep: bigint; claim_token: bigint; burn: bigint; settle_job: bigint; refund_job: bigint; collect: bigint; return_compute: bigint; relay: bigint; retry_split: bigint; skim: bigint; erc8004: bigint; coin_sweep: bigint; line: bigint };
+  gasCaps: { sweep: bigint; claim_token: bigint; burn: bigint; settle_job: bigint; refund_job: bigint; collect: bigint; return_compute: bigint; relay: bigint; retry_split: bigint; skim: bigint; erc8004: bigint; coin_sweep: bigint; line: bigint; guarantee: bigint };
   jobsPerPass: number; // ENGINE_JOBS_PER_PASS: jobs the engine settles or refunds in one pass at most
   deskReadsPerPass: number; // ENGINE_DESK_READS_PER_PASS: jobs and agents read back from the desk in one pass at most
   gasHeadroomBps: number; // on top of the node's estimate
@@ -76,7 +77,7 @@ export const DEFAULTS: EngineParams = {
   burnRetryS: 120,
   maxGasWei: 2n * GWEI,
   unstickMaxGasWei: 20n * GWEI,
-  gasCaps: { sweep: 700_000n, claim_token: 400_000n, burn: 900_000n, settle_job: 600_000n, refund_job: 500_000n, collect: 200_000n, return_compute: 150_000n, relay: 1_500_000n, retry_split: 400_000n, skim: 100_000n, erc8004: 500_000n, coin_sweep: 800_000n, line: 600_000n },
+  gasCaps: { sweep: 700_000n, claim_token: 400_000n, burn: 900_000n, settle_job: 600_000n, refund_job: 500_000n, collect: 200_000n, return_compute: 150_000n, relay: 1_500_000n, retry_split: 400_000n, skim: 100_000n, erc8004: 500_000n, coin_sweep: 800_000n, line: 600_000n, guarantee: 600_000n },
   jobsPerPass: 5,
   deskReadsPerPass: 200,
   gasHeadroomBps: 2500,
@@ -145,6 +146,8 @@ export interface EngineConfig {
   coins: CoinsConfig;
   // credit lines (../lines.ts): whether lines are read, shown, swept and recovered, and the line contract
   lines: LinesConfig;
+  // guarantees (../guarantees.ts): whether guarantees are read and shown, and covers tied, closed and let lapse
+  guarantees: GuaranteesConfig;
 }
 
 // A factor.env-style file: NAME=value lines. What the environment already says wins.
@@ -320,6 +323,8 @@ export function readConfig(processEnv: Env = process.env): EngineConfig {
   const coins = readCoins(env, problems);
   const lines = readLines(env, problems);
   if (lines.line && (lines.line === desk || lines.line === splitter || lines.line === burnPot)) problems.push("FACTOR_LINE is the same address as another of the contracts");
+  const guarantees = readGuarantees(env, problems);
+  if (guarantees.guarantee && [desk, splitter, burnPot, lines.line].includes(guarantees.guarantee)) problems.push("FACTOR_GUARANTEE is the same address as another of the contracts");
   if (accounts.factory && (accounts.factory === desk || accounts.factory === splitter || accounts.factory === burnPot)) problems.push("FACTOR_ACCOUNTS is the same address as another of the contracts");
   const rawAdmin = env.ENGINE_ADMIN_KEY?.trim() ?? "";
   if (rawAdmin && rawAdmin.length < 24) problems.push("ENGINE_ADMIN_KEY must be at least 24 characters");
@@ -360,6 +365,7 @@ export function readConfig(processEnv: Env = process.env): EngineConfig {
     verified,
     coins,
     lines,
+    guarantees,
   };
 }
 

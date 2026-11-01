@@ -46,6 +46,7 @@ import { Erc8004 } from "./erc8004.js";
 import { providersOf, Verified, type Provider } from "./verified.js";
 import { Coins } from "./coins.js";
 import { Lines } from "./lines.js";
+import { Guarantees } from "./guarantees.js";
 import { DeskStore } from "./desk.js";
 import { scoreOf } from "./score.js";
 import { sourceOf } from "./api.js";
@@ -127,6 +128,8 @@ export class Engine {
   coins: Coins | null = null;
   /** credit lines (./lines.ts): credit with no job behind it, read, swept, recovered and credited to compute */
   lines: Lines | null = null;
+  /** guarantees (./guarantees.ts): agents' guarantee bonds and the covers they sell, read, tied, closed and let lapse */
+  guarantees: Guarantees | null = null;
   /** the splitter's admin, read at the boot check: Factor's own wallet, which sets the rules of Factor's own agents */
   private splitterAdmin: string | null = null;
   /** the key that signs agents' records for other apps (./record.ts), or null */
@@ -189,7 +192,7 @@ export class Engine {
     for (const [name, l] of this.loops) loops[name] = { lastRunAt: l.lastRunAt, lastOkAt: l.lastOkAt, runs: l.runs, failures: l.failures, waitMs: l.waitMs, backingOff: l.backingOff };
     return {
       config: this.config, state: this.state, problems: this.problems, warnings: this.warnings, lastError: this.lastError, loops, ctx: this.ctx, rpc: this.chain?.health() ?? null, now: this.now,
-      links: { pons: link(this.env.FACTOR_PONS_URL), github: link(this.env.FACTOR_GITHUB_URL), x: link(this.env.FACTOR_X_URL) }, dataDirSet: !!this.env.FACTOR_DATA_DIR?.trim(), profiles: this.profiles, gateway: this.gateway, accounts: this.accounts, house: this.house, demo: this.demo, pulse: this.pulse, deskMind: this.deskMind, launchList: this.launchList, activity: this.activity, matcher: this.matcher, pay: this.pay, subjobs: this.subjobs, recordSigner: this.recordSigner, firms: this.firms, plans: this.plans, erc8004: this.erc8004, openjobs: this.openjobs, autoapply: this.autoapply, verified: this.verified, coins: this.coins, lines: this.lines,
+      links: { pons: link(this.env.FACTOR_PONS_URL), github: link(this.env.FACTOR_GITHUB_URL), x: link(this.env.FACTOR_X_URL) }, dataDirSet: !!this.env.FACTOR_DATA_DIR?.trim(), profiles: this.profiles, gateway: this.gateway, accounts: this.accounts, house: this.house, demo: this.demo, pulse: this.pulse, deskMind: this.deskMind, launchList: this.launchList, activity: this.activity, matcher: this.matcher, pay: this.pay, subjobs: this.subjobs, recordSigner: this.recordSigner, firms: this.firms, plans: this.plans, erc8004: this.erc8004, openjobs: this.openjobs, autoapply: this.autoapply, verified: this.verified, coins: this.coins, lines: this.lines, guarantees: this.guarantees,
     };
   }
 
@@ -327,7 +330,7 @@ export class Engine {
       params: c.params,
       chainId: c.chainId,
       explorer: c.explorer,
-      addr: { splitter: c.splitter, burnPot: c.burnPot, desk: c.desk, accounts: c.accounts.factory, skimTo: c.skimTo, line: c.lines.enabled ? c.lines.line : null },
+      addr: { splitter: c.splitter, burnPot: c.burnPot, desk: c.desk, accounts: c.accounts.factory, skimTo: c.skimTo, line: c.lines.enabled ? c.lines.line : null, guarantee: c.guarantees.enabled ? c.guarantees.guarantee : null },
       accounts: c.accounts,
       deployBlock: c.deployBlock,
       chain: this.chain,
@@ -431,6 +434,11 @@ export class Engine {
       signed: async (address, message, signature) => this.profiles!.signed(address, message, signature),
       sourceOf: (agent, id) => sourceOf(this.view(), agent, id),
       sameHand: (a, b) => this.subjobs!.sameHand(a, b),
+      coverOf: (job) => {
+        const g = this.guarantees;
+        const cv = g?.reading() ? g.coverOfJob(job) : null;
+        return cv && cv.state !== "lapsed" ? { coverWei: cv.amount, contract: c.guarantees.guarantee! } : null;
+      },
       log: this.log,
     });
     this.ctx.erc8004 = this.erc8004;
@@ -502,6 +510,12 @@ export class Engine {
     this.accounts.lines = () => (this.lines?.reading() ? { line: c.lines.line!, accountOf: (key: string) => this.lines!.byKey(key)?.account ?? null } : null);
     if (c.lines.enabled && c.lines.note) this.log(`[lines] NOT ON: ${c.lines.note}`);
     else if (c.lines.enabled) this.log(`[lines] on: credit lines are read from ${c.lines.line}; the keeper sweeps income into a line that owes and recovers a line 30 days past due`);
+    // guarantees: made whether or not they are on, and read nothing until GUARANTEES=on and the contract is given
+    this.guarantees = new Guarantees({ cfg: c.guarantees, db, chain: this.chain, chainId: c.chainId, nowS, now: this.now, log: this.log, names: () => this.profiles!.all() });
+    this.ctx.guarantees = this.guarantees;
+    this.accounts.guarantee = () => (this.guarantees?.reading() ? c.guarantees.guarantee : null);
+    if (c.guarantees.enabled && c.guarantees.note) this.log(`[guarantees] NOT ON: ${c.guarantees.note}`);
+    else if (c.guarantees.enabled) this.log(`[guarantees] on: guarantees are read from ${c.guarantees.guarantee}; the keeper ties covers to their jobs, pays a cover when its job is refunded, releases it when the job settles, and lets an untied reservation lapse`);
     if (c.coins.enabled && c.coins.note) this.log(`[coins] NOT ON: ${c.coins.note}`);
     else if (c.coins.enabled) this.log(`[coins] on: agents' coins are read from the launcher ${c.coins.launcher}, and a coin's fees are swept once they are worth ${c.coins.gasMultiple} times the gas`);
     const checks = this.verified.sources();
@@ -695,6 +709,11 @@ export class Engine {
     if (this.lines?.reading()) {
       if ((await this.lines.watch(this.ctx, pass.head)).length && this.api) this.api.forget();
       await this.lines.refresh();
+    }
+    // guarantees: their logs, then what is read of them (./guarantees.ts)
+    if (this.guarantees?.reading()) {
+      if ((await this.guarantees.watch(this.ctx, pass.head)).length && this.api) this.api.forget();
+      await this.guarantees.refresh();
     }
     // an open job whose rule is the best Factor Score is picked as soon as its moment has come (./openjobs.ts)
     try { this.openjobs?.pickDue(); } catch (e) { this.log(`[openjobs] picking failed: ${e instanceof Error ? e.message : String(e)}`); }

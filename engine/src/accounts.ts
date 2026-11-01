@@ -24,7 +24,7 @@
 
 import { createHash, randomBytes } from "node:crypto";
 import { decodeEventLog, decodeFunctionData, encodeAbiParameters, encodeFunctionData, hashMessage, keccak256, toFunctionSelector, type Abi, type AbiFunction, type Hex } from "viem";
-import { factorAccountAbi, factorAccountsAbi, factorDeskAbi, factorLineAbi, factorLineAccountAbi } from "./abi/index.js";
+import { factorAccountAbi, factorAccountsAbi, factorDeskAbi, factorGuaranteeAbi, factorLineAbi, factorLineAccountAbi } from "./abi/index.js";
 import { normalizeAddress } from "./chain/address.js";
 import { nodeBusy, reason, revertOf, type Chain, type ChainLog, type Receipt } from "./chain/chain.js";
 import type { EngineDb } from "./chain/db.js";
@@ -213,7 +213,9 @@ const ACCOUNT_PAID = selectorsOf(ACCOUNT, ["addKey", "removeKey"]);
 // account what an agent does there on the desk, and taking its ETH out
 const LINE_PAID = selectorsOf(factorLineAbi as Abi, ["open", "draw", "repay"]);
 const LINE_ACCOUNT_PAID = selectorsOf(factorLineAccountAbi as Abi, ["addBond", "takeBond", "drawAdvance", "deliver", "decline", "lock", "accept", "reject", "withdraw", "sweep", "collect"]);
-const ERRORS = [...DESK, ...ACCOUNT, ...(factorLineAbi as Abi), ...(factorLineAccountAbi as Abi)].filter((x) => x.type === "error") as Abi;
+// guarantees (../guarantees.ts): a customer hiring with cover (reserve, tie), an agent's bond and offer, and closing
+const GUARANTEE_PAID = selectorsOf(factorGuaranteeAbi as Abi, ["reserve", "bind", "bindLatest", "lapse", "close", "addBond", "takeBond", "setOffer"]);
+const ERRORS = [...DESK, ...ACCOUNT, ...(factorLineAbi as Abi), ...(factorLineAccountAbi as Abi), ...(factorGuaranteeAbi as Abi)].filter((x) => x.type === "error") as Abi;
 const ERC1271_VALID = "0x1626ba7e";
 
 export interface Refused { status: number; error: string; refused?: { name: string; args: string[] } }
@@ -246,6 +248,8 @@ export class Accounts {
   private addresses = new Map<string, string>();
   /** the credit line contract and the line account of a key, while lines are read (../lines.ts): set by the engine */
   lines: (() => { line: string; accountOf: (key: string) => string | null } | null) | null = null;
+  /** the guarantee contract, while guarantees are read (../guarantees.ts): set by the engine */
+  guarantee: (() => string | null) | null = null;
 
   constructor(
     readonly cfg: AccountsConfig,
@@ -280,6 +284,8 @@ export class Accounts {
         if (!DESK_PAID.has(selector)) return "Factor pays the gas for hiring, taking and closing jobs on the desk. That call is not one of them.";
       } else if (c.to === account) {
         if (c.value !== 0n || !ACCOUNT_PAID.has(selector)) return "On the account itself, Factor pays for adding and removing keys.";
+      } else if (this.guarantee?.() && c.to === this.guarantee()) {
+        if (!GUARANTEE_PAID.has(selector)) return "On the guarantee contract, Factor pays for hiring with cover, an agent's bond and offer, and closing a cover.";
       } else if (this.lines?.() && c.to === this.lines()!.line) {
         if (!LINE_PAID.has(selector)) return "On the credit line contract, Factor pays for opening a line, drawing and repaying.";
       } else if (this.lines?.() && c.to === this.lines()!.accountOf(account)) {
@@ -414,7 +420,8 @@ export class Accounts {
     const data = typeof body.data === "string" && /^0x([0-9a-fA-F]{2})*$/.test(body.data) && body.data.length <= 2 + 2 * 4096 ? (body.data as Hex) : null;
     if (!to || data === null) return no(400, "to is an address and data is hex");
     const l = this.lines?.() ?? null;
-    if (to !== this.desk && !this.store.get(to) && to !== this.cfg.factory && !(l && (to === l.line || l.accountOf(normalizeAddress(body.from) ?? "") === to))) return no(400, "only the desk and accounts are read here");
+    const gt = this.guarantee?.() ?? null;
+    if (to !== this.desk && !this.store.get(to) && to !== this.cfg.factory && !(l && (to === l.line || l.accountOf(normalizeAddress(body.from) ?? "") === to)) && !(gt && to === gt)) return no(400, "only the desk and accounts are read here");
     if (body.code === true) return { result: (await this.chain.code(to)) as Hex };
     let value = 0n;
     if (typeof body.value === "string" && /^\d{1,30}$/.test(body.value)) value = BigInt(body.value);

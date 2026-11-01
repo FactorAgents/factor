@@ -20,6 +20,10 @@
 //   coin_sweep      an agent's coin has gathered fees worth the gas: its splitter's sweep() collects and splits them,
 //                   and its retry() delivers a share a wallet refused (../coins.ts). Right after $FACTOR's own sweep,
 //                   so the burn share it sends to the burn pot is burned in the same pass.
+//   guarantee       a reservation of cover whose desk job is locked: bind(); a covered job finished on the desk or due
+//                   to be refunded or settled: close(), which refunds or settles it first and pays or releases the cover;
+//                   a reservation past its hour: lapse() (../guarantees.ts). Before the desk's own settling and refunding,
+//                   so a covered job is refunded and its cover paid in one transaction.
 //   line            income waiting in a line account whose credit line owes: the account's sweep() pays the line; and a
 //                   line still owed 30 days past its due time: the line contract's recover() (../lines.ts). Unspent
 //                   compute credit of a line that defaulted goes back to the line contract with return_compute.
@@ -46,7 +50,7 @@ import type { ActionKind, ActionRow } from "./db.js";
 import { ponsEscrowAbi } from "./pons.js";
 
 export type SendKind = Exclude<ActionKind, "unstick">;
-export const KINDS: SendKind[] = ["relay", "sweep", "coin_sweep", "retry_split", "claim_token", "burn", "settle_job", "refund_job", "collect", "line", "return_compute", "skim", "erc8004"];
+export const KINDS: SendKind[] = ["relay", "sweep", "coin_sweep", "retry_split", "claim_token", "burn", "guarantee", "settle_job", "refund_job", "collect", "line", "return_compute", "skim", "erc8004"];
 // In dry mode nothing changes on the chain, so a trigger stays true: what would be sent is shown again this often.
 export const DRY_REPEAT_S = 1800;
 const BPS = 10_000n;
@@ -809,6 +813,15 @@ async function coinSweep(ctx: Ctx, head: Head): Promise<string> {
   return say(ctx, "coin_sweep", await ctx.coins.step(ctx, head, (kind, ref, call, detail, feeCap, pre) => attempt(ctx, kind, ref, call, detail, feeCap, pre)));
 }
 
+// ---------- guarantees ----------
+
+// Covers tied to their jobs, closed (paid or released) and let lapse (../guarantees.ts decides; the attempt is the same
+// as every other one here).
+async function guaranteeStep(ctx: Ctx, head: Head): Promise<string> {
+  if (!ctx.guarantees) return say(ctx, "guarantee", "guarantees are not switched on");
+  return say(ctx, "guarantee", await ctx.guarantees.step(ctx, head, (kind, ref, call, detail, feeCap) => attempt(ctx, kind, ref, call, detail, feeCap)));
+}
+
 // ---------- credit lines ----------
 
 // Income waiting in a line account whose line owes, swept into the line; a line still owed 30 days past due, recovered
@@ -825,6 +838,7 @@ const STEPS: [SendKind, (ctx: Ctx, head: Head) => Promise<string>][] = [
   ["retry_split", retrySplit],
   ["claim_token", claimToken],
   ["burn", burn],
+  ["guarantee", guaranteeStep],
   ["settle_job", settleJobs],
   ["refund_job", refundJobs],
   ["collect", collect],

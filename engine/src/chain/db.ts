@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS engine_locks (name TEXT PRIMARY KEY, holder TEXT NOT 
 -- Everything the engine sent, would have sent (dry), or could not send: what, why, and how it ended.
 CREATE TABLE IF NOT EXISTS engine_actions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  kind TEXT NOT NULL,                -- sweep, claim_token, burn, settle_job, refund_job, collect, return_compute, erc8004, line, unstick
+  kind TEXT NOT NULL,                -- sweep, claim_token, burn, settle_job, refund_job, collect, return_compute, erc8004, line, guarantee, unstick
   ref TEXT NOT NULL DEFAULT '',
   mode TEXT NOT NULL,                -- dry or live
   status TEXT NOT NULL,              -- dry, signed, sent, done, failed, replaced
@@ -418,6 +418,61 @@ CREATE TABLE IF NOT EXISTS line_moves (
 );
 CREATE INDEX IF NOT EXISTS line_moves_account ON line_moves (account, block);
 CREATE INDEX IF NOT EXISTS line_moves_block ON line_moves (block);
+-- Guarantees (../guarantees.ts): each agent with a guarantee bond, as first seen in a log, and what is read of it since
+-- (its bond, what is held back, its offer, its record, the score the contract counts), as JSON.
+CREATE TABLE IF NOT EXISTS guarantee_bonds (
+  agent TEXT PRIMARY KEY,
+  block INTEGER NOT NULL,
+  state TEXT NOT NULL DEFAULT '{}',
+  state_at INTEGER NOT NULL DEFAULT 0   -- ms: 0 marks it to be read again
+);
+CREATE INDEX IF NOT EXISTS guarantee_bonds_block ON guarantee_bonds (block);
+-- Each cover, as its Reserved log says it, then tied (Bound) and ended (Closed).
+CREATE TABLE IF NOT EXISTS guarantee_covers (
+  id INTEGER PRIMARY KEY,
+  block INTEGER NOT NULL,
+  at INTEGER NOT NULL,
+  tx_hash TEXT NOT NULL,
+  customer TEXT NOT NULL,
+  agent TEXT NOT NULL,
+  price TEXT NOT NULL,
+  due_at INTEGER NOT NULL,
+  allow_early INTEGER NOT NULL,
+  amount TEXT NOT NULL,
+  fee TEXT NOT NULL,
+  expires_at INTEGER NOT NULL,
+  after_job INTEGER,                 -- the desk's job count at the reservation, read from the contract
+  state TEXT NOT NULL DEFAULT 'reserved', -- reserved, bound, released, paid, declined, lapsed
+  job INTEGER,
+  bound_tx TEXT,
+  bound_at INTEGER,
+  closed_tx TEXT,
+  closed_at INTEGER,
+  paid TEXT NOT NULL DEFAULT '0',    -- to the customer from the bond
+  to_agent TEXT NOT NULL DEFAULT '0',
+  burned TEXT NOT NULL DEFAULT '0',
+  fee_back TEXT NOT NULL DEFAULT '0',
+  read_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS guarantee_covers_agent ON guarantee_covers (agent, id);
+CREATE INDEX IF NOT EXISTS guarantee_covers_customer ON guarantee_covers (customer, id);
+CREATE INDEX IF NOT EXISTS guarantee_covers_job ON guarantee_covers (job);
+CREATE INDEX IF NOT EXISTS guarantee_covers_state ON guarantee_covers (state);
+CREATE INDEX IF NOT EXISTS guarantee_covers_block ON guarantee_covers (block);
+-- Each move on a guarantee: a bond in or out, an offer, a cover ended, a payout refused.
+CREATE TABLE IF NOT EXISTS guarantee_moves (
+  tx_hash TEXT NOT NULL,
+  log_index INTEGER NOT NULL,
+  block INTEGER NOT NULL,
+  at INTEGER NOT NULL,
+  agent TEXT,
+  kind TEXT NOT NULL,                -- bond, unbond, offer, released, paid, declined, lapsed, owed
+  amount TEXT NOT NULL,
+  extra TEXT NOT NULL DEFAULT '{}',
+  PRIMARY KEY (tx_hash, log_index)
+);
+CREATE INDEX IF NOT EXISTS guarantee_moves_agent ON guarantee_moves (agent, block);
+CREATE INDEX IF NOT EXISTS guarantee_moves_block ON guarantee_moves (block);
 CREATE TABLE IF NOT EXISTS job_titles (
   job_id INTEGER PRIMARY KEY,
   title TEXT NOT NULL,
@@ -427,7 +482,7 @@ CREATE TABLE IF NOT EXISTS job_titles (
 );
 `;
 
-export type ActionKind = "sweep" | "retry_split" | "claim_token" | "burn" | "settle_job" | "refund_job" | "collect" | "return_compute" | "skim" | "relay" | "erc8004" | "coin_sweep" | "line" | "unstick";
+export type ActionKind = "sweep" | "retry_split" | "claim_token" | "burn" | "settle_job" | "refund_job" | "collect" | "return_compute" | "skim" | "relay" | "erc8004" | "coin_sweep" | "line" | "guarantee" | "unstick";
 export type ActionStatus = "dry" | "signed" | "sent" | "done" | "failed" | "replaced";
 
 export interface ActionRow {
@@ -459,7 +514,7 @@ export interface EventRow {
 }
 
 // The tables a stretch of blocks writes to, all keyed by block: what a reorg or a reindex takes back.
-const BY_BLOCK = ["chain_events", "chain_splits", "chain_burns", "ledger", "desk_advances", "coins", "coin_splits", "coin_trades", "coin_transfers", "lines", "line_moves"];
+const BY_BLOCK = ["chain_events", "chain_splits", "chain_burns", "ledger", "desk_advances", "coins", "coin_splits", "coin_trades", "coin_transfers", "lines", "line_moves", "guarantee_bonds", "guarantee_covers", "guarantee_moves"];
 
 export class EngineDb {
   readonly holder = randomBytes(6).toString("hex"); // this process, for the locks

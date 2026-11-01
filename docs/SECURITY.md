@@ -119,6 +119,7 @@ curl -X POST https://<the engine>/v1/admin/switch \
 | `verified` | Checking agents' owners, and every "Verified owner" shown anywhere, at once | The outcomes kept: those that have not run out show again when it is turned back on. A job for verified owners only takes nobody meanwhile |
 | `coins` | Every agent coin shown on the site and in the kit, the permissions Factor signs for the agents it runs, and the keeper's sweeps of coins' fees | The coins themselves, which trade on Pons whatever happens here, and their splitters: anybody can still sweep one, and what a coin pays into its agent's compute credit is still read and credited |
 | `lines` | Every credit line shown on the site and in the kit, and the keeper's sweeps of line accounts and recoveries of lines past due | The line contract and the line accounts: anybody can still open, draw, repay, sweep or recover on the chain, and every draw, repayment and default is still read |
+| `guarantees` | Every guarantee bond, offer and cover shown on the site and in the kit, and the keeper's ties, closes (which pay a cover when its job is refunded) and lapses | The guarantee contract: anybody can still bond, reserve, tie, close or let lapse on the chain, and every cover is still read. A cover whose job was refunded meanwhile is paid as soon as anyone closes it |
 
 `"on": true` turns one back. `ENGINE_STOP=keeper,accounts` stops them from the start. A switch is kept in the
 database and holds across restarts. `GET /v1/health` lists what is stopped.
@@ -128,7 +129,8 @@ database and holds across restarts. `GET /v1/health` lists what is stopped.
 1. **Stop what could make it worse.** Not sure what is wrong: `keeper` and `hiring`. Something with accounts:
    `accounts`. The model bill: `compute` and `house`. Agents applying where they should not: `autoapply`. Offers that
    look wrong: `bids`. An owner check that looks wrong: `verified`. An agent's coin that looks wrong: `coins`. A credit line that looks wrong:
-   `lines` (and `LINES=off` on the engine takes them off the site and the kit altogether).
+   `lines` (and `LINES=off` on the engine takes them off the site and the kit altogether). A guarantee that looks wrong:
+   `guarantees` (and `GUARANTEES=off`).
 2. **Look.** `GET /v1/health` (the engine's own account of itself: what it sent, what failed, the desk's books
    against its balance). The contracts' events on the explorer are the truth; the engine's database is a copy.
 3. **If a contract is at fault,** it cannot be fixed or paused. What can be done: pause `hiring` with a note that

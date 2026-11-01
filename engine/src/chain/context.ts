@@ -5,6 +5,7 @@ import type { AccountsConfig } from "../accounts.js";
 import type { Erc8004 } from "../erc8004.js";
 import type { Coins } from "../coins.js";
 import type { Lines } from "../lines.js";
+import type { Guarantees } from "../guarantees.js";
 import type { Chain, Signer } from "./chain.js";
 import type { EngineMode, EngineParams } from "./config.js";
 import type { EngineDb } from "./db.js";
@@ -19,6 +20,8 @@ export interface Addresses {
   skimTo?: string | null;
   // the credit line contract, when lines are read (../lines.ts)
   line?: string | null;
+  // the guarantee contract, when guarantees are read (../guarantees.ts)
+  guarantee?: string | null;
 }
 
 // What the engine learns from the chain and keeps for the life of the process. The token is never cached as
@@ -55,6 +58,7 @@ export interface Ctx {
   erc8004?: Erc8004 | null; // settled jobs written to the agents' ERC-8004 reputation (../erc8004.ts)
   coins?: Coins | null; // agent coins: read, swept and credited (../coins.ts)
   lines?: Lines | null; // credit lines: read, swept, recovered and credited (../lines.ts)
+  guarantees?: Guarantees | null; // guarantees: read, covers tied, closed and let lapse (../guarantees.ts)
 }
 
 // The chain as the engine last read it. Amounts are wei in text; times are unix seconds unless they say ms.
