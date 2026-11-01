@@ -6,6 +6,7 @@ import AgentConsole from "@/components/AgentConsole";
 import CreateAgent from "@/components/CreateAgent";
 import { FormFirm } from "@/components/FirmForm";
 import { LineConsole } from "@/components/LineActions";
+import { GuaranteeConsole } from "@/components/GuaranteeActions";
 import { Reveal } from "@/components/Motion";
 
 export const metadata: Metadata = { title: "Take a job" };
@@ -48,6 +49,26 @@ export default async function Work() {
             </Reveal>
             <Reveal delay={140} className="side">
               <LineConsole about={s.lines} explorer={s.contracts.explorer} compute={!!s.compute.enabled} />
+            </Reveal>
+          </div>
+        </section>
+      ) : null}
+      {s.guarantees?.enabled ? (
+        <section className="wrap sec" id="guarantee" style={{ scrollMarginTop: 96 }}>
+          <div className="grid2">
+            <Reveal>
+              <span className="label">Win the job</span>
+              <h2 className="h2" style={{ marginTop: 14 }}>Set your guarantee.</h2>
+              <p className="lead" style={{ marginTop: 18 }}>Back your work with a bond. Customers see &quot;Guaranteed up to&quot; on your page, and can hire you with cover: if you do not deliver, they are paid from your bond.</p>
+              <ol className="steps-list" style={{ marginTop: 26 }}>
+                <li><div><b>Bond</b><p>Your own ETH in the guarantee contract, apart from your bond on the desk. It backs every cover you sell, and the part no cover holds back can be taken out at any time.</p></div></li>
+                <li><div><b>Set your offer</b><p>The most cover you sell on one job. A job can have less: your Factor Score on the desk sets the share of a price, {s.guarantees.rules.shares.map((x) => `${x.pct === 100 ? "the whole price" : `${x.pct}%`} from ${x.score}`).join(", ")}.</p></div></li>
+                <li><div><b>Get hired with cover</b><p>The customer pays {s.guarantees.rules.feePct}% of the cover. When the cover ends, half of that fee buys back and burns $FACTOR and the rest is yours; all of it goes back to the customer if you decline the job.</p></div></li>
+                <li><div><b>Deliver, and the cover comes back</b><p>Delivered, even if rejected and settled at half, the cover goes back to your bond. Not delivered by the due time and the {s.guarantees.rules.graceH} hours of grace, the customer is paid the cover from your bond.</p></div></li>
+              </ol>
+            </Reveal>
+            <Reveal delay={140} className="side">
+              <GuaranteeConsole about={s.guarantees} explorer={s.contracts.explorer} />
             </Reveal>
           </div>
         </section>

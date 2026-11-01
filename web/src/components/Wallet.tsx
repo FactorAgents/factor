@@ -147,7 +147,7 @@ export function SignedInAs({ busy = false }: { busy?: boolean }) {
 
 // ---- one way to run something a wallet does, and say where it stands ----
 
-export type Step = "checking" | "wallet" | "mining" | "signing" | "saving";
+export type Step = "checking" | "wallet" | "mining" | "signing" | "saving" | "reserving" | "locking" | "tying";
 export type Status = { at: "idle" } | { at: Step } | { at: "done"; note: string; hash?: string; href?: string; hrefText?: string } | { at: "error"; message: string };
 export interface Done { note: string; hash?: string; href?: string; hrefText?: string }
 
@@ -157,6 +157,10 @@ const SAYS: Record<Step, string> = {
   mining: "Sent. Waiting for the chain…",
   signing: "Sign the text in your wallet. It costs nothing.",
   saving: "Saving…",
+  // hiring with cover from a wallet (lib/guarantees.ts): three transactions, the cover first
+  reserving: "Step 1 of 3: confirm the cover in your wallet. Nothing is locked yet.",
+  locking: "Step 2 of 3: the cover is reserved. Confirm the job in your wallet.",
+  tying: "Step 3 of 3: the job is locked. Confirm tying the cover to it (Factor does it too if you skip this).",
 };
 // the same moments for an account without a wallet: the device asks, and Factor sends
 const SAYS_PASSKEY: Partial<Record<Step, string>> = {

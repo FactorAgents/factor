@@ -1,7 +1,7 @@
 // Sample figures, in exactly the engine's shape, so every page can be built, looked at and tested with no chain
 // behind it. Nothing here is real. It is shown only when FACTOR_SAMPLE=1 (see data.ts): a site with no engine shows
 // an empty desk, never these.
-import type { Advance, Agent, AgentPage, Applicant, AutoApplyStatus, Burn, Coin, CreditLine, Draw, FactorScore, FactorState, Firm, FirmPage, IncomeLine, IncomeSource, Job, JobPage, LedgerEvent, OpenJob, OpenJobList, OpenJobPage, Page, Params, Plan, PlanPage, PlansSummary, ScorePart } from "./types";
+import type { Advance, Agent, AgentGuarantee, AgentPage, Applicant, AutoApplyStatus, Burn, Coin, Cover, CreditLine, Draw, FactorScore, FactorState, Firm, FirmPage, IncomeLine, IncomeSource, Job, JobPage, LedgerEvent, OpenJob, OpenJobList, OpenJobPage, Page, Params, Plan, PlanPage, PlansSummary, ScorePart } from "./types";
 
 // the rulebook's numbers (docs/RULEBOOK.md, section 9)
 const params: Params = { advanceMaxPct: 50, advanceFeePct: 1, jobFeePct: 2, graceHours: 12, reviewHours: 24, rejectedPct: 50, reserveMinPct: 20, minJobEth: 0.001 };
@@ -208,6 +208,7 @@ export function sampleFirm(slug: string): FirmPage | null {
     record: { firm: firm.slug, jobs: { hired: 1, open: 0, delivered: 0, settled: 1, settledAtHalf: 0, declined: 0, refunded: 0 }, subJobs: { count: 0, settled: 0, toMembers: 0, toOthers: 0 }, settledEth: "0.04", customers: 1, block: 87_412_090, score: firm.score, factorScore: firmScore() },
     jobs: jobs.filter((j) => j.n === 412).map((j) => ({ ...j, firm: { slug: firm.slug, name: firm.name, house: false, part: false }, tree: null })),
     links: [],
+    guarantee: { ...guarantee, items: undefined },
   };
 }
 
@@ -323,6 +324,29 @@ export function sampleLine(id: string): CreditLine | null {
   return a?.address === line.key || id.toLowerCase() === line.account ? line : null;
 }
 
+// one guarantee: lumen-07 bonded 0.2 and sells cover up to 0.04 a job; job 0412 was hired with 0.02 of cover and
+// delivered, so the cover went back to the bond; an earlier reservation was never tied to a job and lapsed
+const shareOf = (score: number) => (score >= 800 ? 100 : score >= 600 ? 75 : score >= 400 ? 50 : score >= 200 ? 25 : 0);
+const lumen = agents.find((a) => a.name === "lumen-07")!;
+const covers: Cover[] = [
+  { id: 2, customer: A(5), agent: lumen.address, agentName: "lumen-07", named: true, priceEth: 0.04, coverEth: 0.02, coverWei: "20000000000000000", feeEth: 0.0002, dueAt: at(118 - 1440), allowEarly: false, state: "released", job: "0412", reservedAt: at(119), expiresAt: at(59), tx: TX(951), boundTx: TX(952), boundAt: at(118), closedTx: TX(953), closedAt: at(30), paidEth: 0, toAgentEth: 0.0001, burnedEth: 0.0001, feeBackEth: 0 },
+  { id: 1, customer: A(6), agent: lumen.address, agentName: "lumen-07", named: true, priceEth: 0.03, coverEth: 0.01, coverWei: "10000000000000000", feeEth: 0.0001, dueAt: at(300 - 1440), allowEarly: false, state: "lapsed", job: null, reservedAt: at(300), expiresAt: at(240), tx: TX(950), closedTx: TX(954), closedAt: at(238), paidEth: 0, toAgentEth: 0.00005, burnedEth: 0.00005, feeBackEth: 0 },
+];
+const guarantee: AgentGuarantee = {
+  agent: lumen.address, name: "lumen-07", named: true, key: null, bondEth: 0.2, heldEth: 0, freeEth: 0.2, offerEth: 0.04, offerWei: "40000000000000000", upToEth: 0.04, upToWei: "40000000000000000",
+  score: lumen.score, sharePct: shareOf(lumen.score), selling: shareOf(lumen.score) > 0, covers: 1, released: 1, paid: 0, declined: 0, lapsed: 1, coveredEth: 0.02, paidOutEth: 0, feesEarnedEth: 0.00015, items: covers,
+};
+lumen.guarantee = { upToEth: 0.04, sharePct: shareOf(lumen.score) };
+jobs.find((j) => j.n === 412)!.cover = { id: 2, coverEth: 0.02, feeEth: 0.0002, state: "released" };
+/** The sample's guarantees: the one agent selling cover, and its covers. */
+export function sampleGuarantees(): { agents: AgentGuarantee[]; covers: Cover[] } {
+  return { agents: [{ ...guarantee, items: undefined }], covers };
+}
+export function sampleGuarantee(id: string): AgentGuarantee | null {
+  const a = find(id);
+  return a?.address === guarantee.agent ? guarantee : null;
+}
+
 export function sampleState(): FactorState {
   const settled = jobs.filter((j) => j.state === "settled").length;
   return {
@@ -351,13 +375,19 @@ export function sampleState(): FactorState {
       pool: { poolEth: 0.1942, outEth: 0.006, lostEth: 0, roomEth: 0.1594, roomWei: "159360000000000000", seededEth: 0.2, drawnEth: 0.01, burnedEth: 0.0001, feesToPoolEth: 0.0001, repaidEth: 0.004, recoveredEth: 0 },
       lines: 1, owing: 1,
     },
+    // the sample has no engine: its guarantee is shown, and nothing can be bonded or covered from it
+    guarantees: {
+      enabled: true, contract: null, chainId: 4663,
+      rules: { feePct: 1, burnPctOfFee: 50, minCoverEth: 0.0001, windowMin: 60, graceH: 12, shares: [{ score: 200, pct: 25 }, { score: 400, pct: 50 }, { score: 600, pct: 75 }, { score: 800, pct: 100 }] },
+      totals: { bondsEth: 0.2, heldEth: 0, coveredEth: 0.02, paidEth: 0, feesEth: 0.0003, burnedEth: 0.00015, covers: 2, agents: 1 },
+    },
   };
 }
 
 const find = (id: string): Agent | undefined => agents.find((a) => a.address === id.toLowerCase() || (a.named && a.name === id.toLowerCase()));
 export function sampleAgent(id: string): AgentPage | null {
   const a = find(id);
-  return a ? { agent: a, factorScore: { ...sampleScore(a, SETTLED_BY[a.name] ?? {}), ...(a.name === "orbit-ops" ? { line: { other: LINE_ACCOUNT, role: "key" as const, onTime: 1, late: 0, defaulted: false, points: 0, why: "Its credit line has always been repaid on time." } } : {}) }, jobs: jobs.filter((j) => j.agentId === a.address), events: events.filter((x) => x.agentId === a.address), ...(a.name === "quill-02" ? { plans: planSummary() } : {}), ...(a.name === "lumen-07" ? { erc8004: sampleErc8004(a.address) } : {}), ...((c) => (c ? { coin: c } : {}))(sampleCoin(a.address)), ...((l) => (l ? { line: l } : {}))(sampleLine(a.address)) } : null;
+  return a ? { agent: a, factorScore: { ...sampleScore(a, SETTLED_BY[a.name] ?? {}), ...(a.name === "orbit-ops" ? { line: { other: LINE_ACCOUNT, role: "key" as const, onTime: 1, late: 0, defaulted: false, points: 0, why: "Its credit line has always been repaid on time." } } : {}) }, jobs: jobs.filter((j) => j.agentId === a.address), events: events.filter((x) => x.agentId === a.address), ...(a.name === "quill-02" ? { plans: planSummary() } : {}), ...(a.name === "lumen-07" ? { erc8004: sampleErc8004(a.address) } : {}), ...((c) => (c ? { coin: c } : {}))(sampleCoin(a.address)), ...((l) => (l ? { line: l } : {}))(sampleLine(a.address)), ...((g) => (g ? { guarantee: g } : {}))(sampleGuarantee(a.address)) } : null;
 }
 /** The sample's one agent with an ERC-8004 identity: an entry for each of its settled jobs. */
 function sampleErc8004(address: string): NonNullable<AgentPage["erc8004"]> {
@@ -388,7 +418,7 @@ const WORDS: Record<number, Pick<JobPage, "brief" | "work">> = {
 
 export function sampleJob(n: number): JobPage | null {
   const j = jobs.find((x) => x.n === n);
-  return j ? { job: j, agent: agents.find((a) => a.address === j.agentId) ?? null, events: events.filter((x) => x.jobId === j.id), ...(WORDS[n] ?? {}) } : null;
+  return j ? { job: j, agent: agents.find((a) => a.address === j.agentId) ?? null, events: events.filter((x) => x.jobId === j.id), ...(WORDS[n] ?? {}), ...((c) => (c ? { cover: c } : {}))(covers.find((c) => c.job === j.id)) } : null;
 }
 export function sampleLedger(limit: number, before?: number, kinds?: string[]): Page<LedgerEvent> {
   const all = events.filter((x) => (!kinds || kinds.includes(x.kind)) && (before === undefined || x.n < before));

@@ -4,13 +4,14 @@
 // with half, delivering, accepting) happens on that month's own job page, as with any job.
 import Link from "next/link";
 import { useState } from "react";
-import { canDrawOn, fromWei, KIND, Refusal, send } from "@/lib/desk";
+import { canDrawOn, fromWei, KIND, Refusal, send, toWei } from "@/lib/desk";
+import { feeFor } from "@/lib/guarantees";
 import { lockMonth, MONTH_S, stopPlan } from "@/lib/plans";
 import type { Plan } from "@/lib/types";
 import { dayTime } from "@/lib/format";
 import { engineNow, Go, SignedInAs, StatusLine, useSend, useWallet } from "./Wallet";
 
-export default function PlanActions({ plan: p, desk, burnPot, burnWei, explorer, enabled }: { plan: Plan; desk: string | null; burnPot: string | null; burnWei: string; explorer: string; enabled: boolean }) {
+export default function PlanActions({ plan: p, desk, burnPot, burnWei, explorer, enabled, cover = null }: { plan: Plan; desk: string | null; burnPot: string | null; burnWei: string; explorer: string; enabled: boolean; /** the cover the plan's agent sells, while guarantees are on: each month can be locked with it */ cover?: { guarantee: string; upToEth: number; sharePct: number; feePct: number } | null }) {
   const { address, wallet, kind } = useWallet();
   const lock = useSend();
   const stop = useSend();
@@ -22,6 +23,11 @@ export default function PlanActions({ plan: p, desk, burnPot, burnWei, explorer,
   const open = p.items.find((m) => m.state === "locked" || m.state === "advanced");
   // the month being locked: its box stays with the answer once the page moves on to the month after it
   const [locking, setLocking] = useState<number | null>(null);
+  // a month with cover: the most the agent covers on a month of this price
+  const [withCover, setWithCover] = useState(false);
+  const upTo = cover ? toWei(String(cover.upToEth)) ?? 0n : 0n;
+  const byShare = cover ? (price * BigInt(cover.sharePct)) / 100n : 0n;
+  const monthCover = byShare < upTo ? byShare : upTo;
 
   const lockNext = () => lock.run(async (on) => {
     const w = wallet();
@@ -31,9 +37,10 @@ export default function PlanActions({ plan: p, desk, burnPot, burnWei, explorer,
     // due at the end of its month, or 30 days after the lock when that is sooner: the desk's longest due time
     const at = await engineNow();
     const ends = Math.floor(Date.parse(p.startAt!) / 1000) + next.month * MONTH_S;
-    const r = await lockMonth(w, { passkey: kind === "passkey", desk, burnPot, from: address, plan: p.id, agent: p.agent.address, dueAt: Math.min(ends, at + MONTH_S - 300), early: p.early, price, burn, on });
+    const c = withCover && cover && monthCover > 0n ? { guarantee: cover.guarantee, amount: monthCover } : null;
+    const r = await lockMonth(w, { passkey: kind === "passkey", desk, burnPot, from: address, plan: p.id, agent: p.agent.address, dueAt: Math.min(ends, at + MONTH_S - 300), early: p.early, price, burn, on, cover: c });
     const id = r.job ? String(r.job).padStart(4, "0") : null;
-    return { note: r.linked ? `Month ${r.month} of ${p.months} is locked${id ? ` as job ${id}` : ""}.${r.burned ? ` ${fromWei(burn)} ETH went to the burn.` : ""}` : `The month is locked${id ? ` as job ${id}` : ""}. ${r.note ?? ""}`, hash: r.lockTx, ...(id ? { href: `/jobs/${id}`, hrefText: "Open the month's job" } : {}) };
+    return { note: r.linked ? `Month ${r.month} of ${p.months} is locked${id ? ` as job ${id}` : ""}.${r.burned ? ` ${fromWei(burn)} ETH went to the burn.` : ""}${r.covered && c ? ` Covered: ${fromWei(c.amount)} ETH from the agent's guarantee bond if it is not delivered.` : ""}` : `The month is locked${id ? ` as job ${id}` : ""}. ${r.note ?? ""}`, hash: r.lockTx, ...(id ? { href: `/jobs/${id}`, hrefText: "Open the month's job" } : {}) };
   });
 
   const stopIt = () => stop.run(async (on) => {
@@ -71,6 +78,12 @@ export default function PlanActions({ plan: p, desk, burnPot, burnWei, explorer,
         <div className="act">
           <div className="h3">Month {next.month} of {p.months}</div>
           <p className="small">{next.open ? `Lock ${fromWei(price)} ETH for ${p.firm ? p.firm.name : p.agent.name}${burn > 0n ? `, and ${fromWei(burn)} ETH that buys and burns $FACTOR` : ""}. Due ${next.dueAt ? dayTime(next.dueAt) : "a month after it is locked"}.` : `It can be locked once ${next.why?.replace(/ is not delivered yet$/, " is delivered") ?? "it opens"}${next.from ? `, or from ${dayTime(next.from)}` : ""}.`} Without it, the plan lapses on {dayTime(next.lapsesAt)}.</p>
+          {cover && monthCover > 0n && next.open ? (
+            <button type="button" className={`toggle${withCover ? "" : " off"}`} role="switch" aria-checked={withCover} onClick={() => setWithCover((v) => !v)} disabled={lock.busy} style={{ marginTop: 14 }}>
+              <i />
+              <div><b>With cover</b><span>{`${fromWei(monthCover)} ETH from the agent's guarantee bond if this month is not delivered, for a fee of ${fromWei(feeFor(monthCover))} ETH (${cover.feePct}% of the cover).`}</span></div>
+            </button>
+          ) : null}
           <div className="cta"><Go label={`Lock month ${next.month}`} busy={lock.busy || !next.open} onGo={() => void lockNext()} off={!desk ? "Nothing is live yet" : !enabled ? "Monthly plans are off for now" : null} /></div>
           <StatusLine status={lock.status} explorer={explorer} />
         </div>

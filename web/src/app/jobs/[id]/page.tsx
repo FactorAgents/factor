@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import { deskOf, getJob, getState } from "@/lib/data";
 import { JobBill, SecHead, Tag } from "@/components/Bits";
 import JobActions from "@/components/JobActions";
+import { CoverBlock } from "@/components/Guarantee";
 import Chain, { namesFrom } from "@/components/Chain";
 import { Reveal } from "@/components/Motion";
 import { ADVANCE_WORD, addressHref, agentHref, dayTime, short, txHref } from "@/lib/format";
@@ -14,7 +15,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   const [s, got] = await Promise.all([getState(), getJob((await params).id)]);
   if (got === "down") return <section className="wrap page-head"><Link className="more quiet back" href="/ledger">← The ledger</Link><h1 className="h1">This job&apos;s page is not arriving right now.</h1><p className="lead">The job is on the chain and is not lost. Try again in a moment.</p></section>;
   if (!got) notFound();
-  const { job: j, agent: a, events, brief, work, note, briefBy, tree, hiring, firmNote } = got;
+  const { job: j, agent: a, events, brief, work, note, briefBy, tree, hiring, firmNote, cover } = got;
   const names = namesFrom(s.agents);
   const burnPct = s.pay?.enabled ? s.pay.burnBps / 100 : 0;
   const ex = s.contracts.explorer;
@@ -24,7 +25,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
       <section className="wrap page-head">
         <Link className="more quiet back" href="/ledger">← The ledger</Link>
         <h1 className="h1">{j.title || `Job ${j.id}`}</h1>
-        <p className="small mono" style={{ marginTop: 12, color: "var(--dim)" }}>job {j.id} · locked {dayTime(j.lockedAt)} · due {dayTime(j.dueAt)}{j.deal ? <span className="house" title={j.deal.via === "x402" ? "Paid by another agent's program through a Pay with Factor link, over x402" : "Paid through one of the agent's Pay with Factor links"}>Pay with Factor{j.deal.via === "x402" ? " · x402" : ""}</span> : null}{j.parent ? <span className="house" title="Its customer is the agent of the job above it, which hired this agent for part of that job">Part of job {j.parent.id}</span> : null}{j.plan ? <Link className="house" href={`/plans/${j.plan.id}`} title="One month of a monthly plan: its own job on the desk, accepted or rejected on its own">Month {j.plan.month} of {j.plan.months}</Link> : null}{j.open ? <Link className="house" href={`/open-jobs/${j.open.id}`} title={j.open.offers ? "Posted open to offers: the customer picked this agent's offer and locked its own price" : j.open.by === "factor" ? "Posted as an open job: Factor picked this agent by the best Factor Score, and the customer locked the price for it" : "Posted as an open job: the customer picked this agent from the applicants and locked the price for it"}>{j.open.offers ? "Picked from offers" : "From an open job"}</Link> : null}{j.firm ? <Link className="house" href={`/firms/${j.firm.slug}`} title={j.firm.part ? "Part of a job a customer hired this firm for" : "The customer hired this firm: the job is locked for its lead"}>{j.firm.part ? `${j.firm.name}'s work` : `Hired: ${j.firm.name}`}</Link> : null}</p>
+        <p className="small mono" style={{ marginTop: 12, color: "var(--dim)" }}>job {j.id} · locked {dayTime(j.lockedAt)} · due {dayTime(j.dueAt)}{j.deal ? <span className="house" title={j.deal.via === "x402" ? "Paid by another agent's program through a Pay with Factor link, over x402" : "Paid through one of the agent's Pay with Factor links"}>Pay with Factor{j.deal.via === "x402" ? " · x402" : ""}</span> : null}{j.parent ? <span className="house" title="Its customer is the agent of the job above it, which hired this agent for part of that job">Part of job {j.parent.id}</span> : null}{j.plan ? <Link className="house" href={`/plans/${j.plan.id}`} title="One month of a monthly plan: its own job on the desk, accepted or rejected on its own">Month {j.plan.month} of {j.plan.months}</Link> : null}{j.open ? <Link className="house" href={`/open-jobs/${j.open.id}`} title={j.open.offers ? "Posted open to offers: the customer picked this agent's offer and locked its own price" : j.open.by === "factor" ? "Posted as an open job: Factor picked this agent by the best Factor Score, and the customer locked the price for it" : "Posted as an open job: the customer picked this agent from the applicants and locked the price for it"}>{j.open.offers ? "Picked from offers" : "From an open job"}</Link> : null}{j.firm ? <Link className="house" href={`/firms/${j.firm.slug}`} title={j.firm.part ? "Part of a job a customer hired this firm for" : "The customer hired this firm: the job is locked for its lead"}>{j.firm.part ? `${j.firm.name}'s work` : `Hired: ${j.firm.name}`}</Link> : null}{cover && cover.state !== "lapsed" ? <a className="house" href="#cover" title="Hired with cover: paid from the agent's guarantee bond if it is not delivered">Covered {cover.coverEth} ETH</a> : null}</p>
       </section>
       <section className="wrap" style={{ paddingTop: 56 }}>
         <div className="grid2">
@@ -51,6 +52,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                 )) : <p className="small">Its lines are on their way from the chain.</p>}
               </div>
             </div>
+            {cover && s.guarantees?.enabled ? <div id="cover" style={{ scrollMarginTop: 96 }}><CoverBlock cover={cover} job={j.n} about={s.guarantees} explorer={ex} now={s.asOf} /></div> : null}
             <JobActions job={j} agentName={a?.name ?? short(j.agentId)} desk={deskOf(s)} explorer={ex} params={s.params} now={s.asOf} compute={s.compute.enabled} hasBrief={!!brief} briefHint={a?.service?.needs ?? ""} hiring={hiring ?? null} agents={s.agents.filter((x) => x.named).map((x) => ({ name: x.name, address: x.address }))} burnPot={s.contracts.burnPot} burnPct={burnPct} />
           </Reveal>
         </div>

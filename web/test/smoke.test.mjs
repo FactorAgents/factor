@@ -11,12 +11,14 @@ import { existsSync, readFileSync } from "node:fs";
 import { createServer } from "node:http";
 
 const PORT = Number(process.env.SMOKE_PORT) || 3611, BASE = `http://127.0.0.1:${PORT}`, BARE = `http://127.0.0.1:${PORT + 1}`;
-const PAGES = ["/", "/agents/orbit-ops", "/ledger", "/ledger?show=burned", "/agents", "/agents/lumen-07", "/jobs/0412", "/jobs/0406", "/jobs/0404", "/jobs/0403", "/hire", "/hire?agent=page-smith", "/work", "/protocol", "/token", "/burn", "/docs", "/log", "/security", "/pay", "/firms/night-desk", "/hire?firm=night-desk", "/plans/0x5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a", "/open-jobs", "/open-jobs/0x0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b", "/coins", "/coins?sort=new", "/coins/page-smith"];
+const PAGES = ["/", "/agents/orbit-ops", "/ledger", "/ledger?show=burned", "/agents", "/agents/lumen-07", "/jobs/0412", "/jobs/0406", "/jobs/0404", "/jobs/0403", "/hire", "/hire?agent=page-smith", "/hire?agent=lumen-07&cover=1", "/work", "/protocol", "/token", "/burn", "/docs", "/log", "/security", "/pay", "/firms/night-desk", "/hire?firm=night-desk", "/plans/0x5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a", "/open-jobs", "/open-jobs/0x0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b", "/coins", "/coins?sort=new", "/coins/page-smith"];
 const NAV = ["/ledger", "/agents", "/coins", "/open-jobs", "/hire", "/work", "/protocol", "/token", "/burn", "/docs", "/roadmap"];
 // Words the copy does not use: no long dash, no promise of gain. A list kept beside this file and out of the repo
 // (forbidden.local.json, pairs of pattern and flags) adds to them on the machine it is on.
 const LOCAL = new URL("./forbidden.local.json", import.meta.url);
-const FORBIDDEN = [/—/, /\binvest/i, /\breturns?\b/i, /\bprofit/i, /\byield/i, /guarantee/i, ...(existsSync(LOCAL) ? JSON.parse(readFileSync(LOCAL, "utf8")).map(([p, f]) => new RegExp(p, f)) : [])];
+// "Guarantee" is the name of a feature (an agent's guarantee bond, and the cover it sells: "Guaranteed up to"), so the
+// word itself is allowed; a guarantee of any gain is not.
+const FORBIDDEN = [/—/, /\binvest/i, /\breturns?\b/i, /\bprofit/i, /\byield/i, /guarantee[sd]?\s+(of\s+)?(an?\s+|your\s+)?(returns?|profits?|gains?|income|earnings|price|pump)/i, /guaranteed\s+(to\s+)?(rise|grow|go up|earn|pay out)/i, ...(existsSync(LOCAL) ? JSON.parse(readFileSync(LOCAL, "utf8")).map(([p, f]) => new RegExp(p, f)) : [])];
 let server, bare, pushed, unpushed;
 // A stand-in for the engine's live stream (engine/src/live.ts): it says hello to each stream it is asked for, and
 // sends what a test tells it to. Everything else it answers 404, so the pages on it show an engine with no figures.
@@ -61,9 +63,7 @@ test("every page answers, with one main heading and the header that leads to the
 
 test("the copy keeps to the rules on every page", async () => {
   for (const path of PAGES) {
-    // "Guarantees", with its capital, is the name of a planned phase on the roadmap (a bond that pays the customer
-    // back when an agent does not deliver); the word is allowed as that name and nowhere else
-    const t = text((await get(path)).html).replace(/\bGuarantees\b/g, "");
+    const t = text((await get(path)).html);
     for (const re of FORBIDDEN) assert.doesNotMatch(t, re, `${path} says ${re}`);
   }
 });
@@ -566,22 +566,61 @@ test("credit lines: an agent's line on its page, its mark in the list, the work 
   assert.equal((await fetch(`${BASE}/api/v1/lines/nobody-here`)).status, 404);
 });
 
+test("guarantees: Guaranteed up to on an agent's page, in the list and on its firm, the cover on a job's page, hire with cover, the work page, the docs and the protocol; nothing to send on the sample, and no share but the fee's own", async () => {
+  const page = text((await get("/agents/lumen-07")).html);
+  assert.match(page, /Guaranteed up to 0\.0400 ETH/);
+  assert.match(page, /Guarantee How guarantees work → Guaranteed up to 0\.0400 ETH a job ?\./);
+  assert.match(page, /Held back for covers/);
+  assert.match(page, /1 delivered/);
+  assert.match(page, /Hire lumen-07 with cover/);
+  // the sample has no guarantee contract: nothing can be bonded or covered from it
+  assert.doesNotMatch(page, /Add to the bond|Set the offer|Take it out/);
+  assert.match(text((await get("/agents")).html), /lumen-07[^·]{0,40}Guaranteed up to 0\.0400 ETH/);
+  assert.match(text((await get("/firms/night-desk")).html), /Guaranteed up to 0\.0400 ETH/);
+  const job = text((await get("/jobs/0412")).html);
+  assert.match(job, /Covered 0\.02 ETH/);
+  assert.match(job, /Cover Covered from lumen-07's guarantee bond 0\.0200 ETH/);
+  assert.match(job, /Delivered/);
+  const hire = text((await get("/hire?agent=lumen-07&cover=1")).html);
+  // the sample has no guarantee contract: the form offers no cover it could not send; the steps still say what cover does
+  assert.doesNotMatch(hire, /Hire with cover/);
+  assert.match(hire, /paid the cover from the agent's guarantee bond as well/);
+  const work = text((await get("/work")).html);
+  assert.match(work, /Set your guarantee\./);
+  assert.match(work, /Guarantees are not open yet/);
+  const docs = text((await get("/docs")).html);
+  assert.match(docs, /Guarantees Hire with cover\. Paid from the bond if it is not delivered ?\./);
+  assert.match(docs, /hireWithCover/);
+  assert.match(docs, /factor_hire_with_cover/);
+  const protocol = text((await get("/protocol")).html);
+  assert.match(protocol, /Guarantees Cover on a job, held back from the agent's own bond/);
+  assert.match(protocol, /The guarantees/);
+  for (const t of [page, job, work, docs.slice(docs.indexOf("Guarantees Hire")), protocol.slice(protocol.indexOf("Guarantees Cover"))]) assert.doesNotMatch(t, /\b(70|20|40|10)\s?%/);
+  const api = await (await fetch(`${BASE}/api/v1/guarantees/agent/lumen-07`)).json();
+  assert.equal(api.guarantee.upToEth, 0.04);
+  assert.equal((await fetch(`${BASE}/api/v1/guarantees/agent/nobody-here`)).status, 404);
+});
+
 test("the roadmap: on the home page, every phase in order, what is live checked off with its day, what is planned said as a plan", async () => {
   const { html } = await get("/");
   assert.match(html, /id="roadmap"/);
   const t = text(html);
   assert.match(t, /07 Roadmap The credit layer for AI agents \./);
-  assert.match(t, /12 of 14 phases live/);
+  assert.match(t, /13 of 14 phases live/);
+  // the intro counts from the roadmap itself, so it never goes stale
+  assert.match(t, /Thirteen phases are live, the next one is planned, and more will follow\./);
+  assert.doesNotMatch(t, /Eleven phases|Twelve phases/);
   const names = ["Launch", "Compute on credit", "Pay with Factor", "Agents hire agents", "Agent firms", "Monthly clients", "Agents find their own work", "Agents that bid", "Agent coins", "Factor Score", "Credit lines", "Verified owners", "Guarantees", "Factor everywhere"];
   let at = t.indexOf("Stage 1");
   names.forEach((name, i) => { const k = t.indexOf(`Phase ${String(i + 1).padStart(2, "0")} ${name}`, at); assert.ok(k > at, `phase ${i + 1} ${name} in order`); at = k; });
-  for (const day of ["14 Oct", "15 Oct", "16 Oct", "17 Oct", "18 Oct", "19 Oct", "20 Oct", "22 Oct", "23 Oct", "24 Oct", "28 Oct", "30 Oct"]) assert.match(t, new RegExp(`Live ${day}`));
+  for (const day of ["14 Oct", "15 Oct", "16 Oct", "17 Oct", "18 Oct", "19 Oct", "20 Oct", "22 Oct", "23 Oct", "24 Oct", "28 Oct", "30 Oct", "1 Nov"]) assert.match(t, new RegExp(`Live ${day}`));
   assert.match(t, /Live 20 Oct Phase 10 Factor Score/);
   assert.match(t, /Live 28 Oct Phase 09 Agent coins/);
   assert.match(t, /Live 30 Oct Phase 11 Credit lines/);
   assert.match(t, /Live 24 Oct Phase 12 Verified owners/);
-  assert.match(t, /Next Phase 13 Guarantees/);
-  assert.equal((t.match(/Planned Phase/g) ?? []).length, 1);
+  assert.match(t, /Live 1 Nov Phase 13 Guarantees/);
+  assert.match(t, /Next Phase 14 Factor everywhere/);
+  assert.equal((t.match(/Planned Phase/g) ?? []).length, 0);
   for (const w of ["October", "November", "December"]) assert.ok(!t.slice(t.indexOf("Stage 2")).includes(w), `no planned date: ${w}`);
   // the line runs on past the last phase into a stage still being planned, with no phase number and no date
   const more = t.slice(t.indexOf("Phase 14 Factor everywhere"));

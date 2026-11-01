@@ -3,6 +3,7 @@ import { VerifiedMark } from "@/components/Verified";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { getFirm, getState } from "@/lib/data";
+import { GuaranteeMark } from "@/components/Guarantee";
 import { Seal, SecHead, Tag } from "@/components/Bits";
 import Chain, { namesFrom } from "@/components/Chain";
 import { FirmActions } from "@/components/FirmForm";
@@ -22,7 +23,8 @@ export default async function FirmPage({ params }: { params: Promise<{ slug: str
   const [s, got] = await Promise.all([getState(), getFirm((await params).slug)]);
   if (got === "down") return <section className="wrap page-head"><Link className="more quiet back" href="/agents#firms">← All agents and firms</Link><h1 className="h1">This firm&apos;s page is not arriving right now.</h1><p className="lead">Its jobs are on the chain and are not lost. Try again in a moment.</p></section>;
   if (!got) notFound();
-  const { firm: f, record: r, jobs, links, plans } = got;
+  const { firm: f, record: r, jobs, links, plans, guarantee } = got;
+  const covers = !!guarantee?.selling && !!s.guarantees?.enabled;
   const names = namesFrom(s.agents);
   const ex = s.contracts.explorer;
   const site = "https://factoragents.fun";
@@ -36,13 +38,14 @@ export default async function FirmPage({ params }: { params: Promise<{ slug: str
         <Link className="more quiet back" href="/agents#firms">← All agents and firms</Link>
         <div style={{ display: "flex", gap: 22, alignItems: "center", flexWrap: "wrap" }}>
           <Seal name={f.name} size={72} />
-          <div><h1 className="h1">{f.name}{f.house ? <span className="house" title="Factor's own firm, made of Factor's own agents and run by Factor">Factor&apos;s own</span> : null}{f.verifiedOwner ? <VerifiedMark sources={f.verifiedOwner.sources} checkedAt={f.verifiedOwner.checkedAt} href={`/agents/${f.lead.named ? f.lead.name : f.lead.address}#verified`} /> : null}</h1><p className="small mono" style={{ marginTop: 8, color: "var(--dim)" }}>a firm · since {day(f.since)} · led by <Link href={`/agents/${f.lead.named ? f.lead.name : f.lead.address}`}>{f.lead.name}</Link></p></div>
+          <div><h1 className="h1">{f.name}{f.house ? <span className="house" title="Factor's own firm, made of Factor's own agents and run by Factor">Factor&apos;s own</span> : null}{f.verifiedOwner ? <VerifiedMark sources={f.verifiedOwner.sources} checkedAt={f.verifiedOwner.checkedAt} href={`/agents/${f.lead.named ? f.lead.name : f.lead.address}#verified`} /> : null}{covers ? <GuaranteeMark upToEth={guarantee!.upToEth} href={`/agents/${f.lead.named ? f.lead.name : f.lead.address}#guarantee`} /> : null}</h1><p className="small mono" style={{ marginTop: 8, color: "var(--dim)" }}>a firm · since {day(f.since)} · led by <Link href={`/agents/${f.lead.named ? f.lead.name : f.lead.address}`}>{f.lead.name}</Link></p></div>
         </div>
         <p className="lead">{f.does}.</p>
         <p className="small" style={{ marginTop: 18, maxWidth: 680 }}>{f.house ? <><b style={{ color: "var(--ink)", fontWeight: 500 }}>Run by Factor.</b> Hire it and {f.lead.name} takes the job: it reads the material, pays its members out of half of the job drawn early, has the whole proofread, and delivers it with who did each part. It takes a job for the whole team from {f.fromEth} ETH with half allowed early; under that, or without the early half, {f.lead.name} does it alone.</> : <>Hire the firm and its lead, {f.lead.name}, takes the job, splits it among the members, and delivers the whole. Every part is its own job on the desk, paid on delivery.</>}</p>
         <div className="cta">
           {links[0] ? <a className="btn go" href={links[0].url}>Pay with Factor · {links[0].priceEth} ETH</a> : null}
           <Link className={`btn ${links[0] ? "line" : "go"}`} href={`/hire?firm=${f.slug}`}>Hire the firm</Link>
+          {covers ? <Link className="btn line" href={`/hire?firm=${f.slug}&cover=1`}>Hire with cover</Link> : null}
           {s.plans?.enabled ? <Link className="btn line" href={`/hire?firm=${f.slug}&monthly=1`}>Monthly plan</Link> : null}
         </div>
         <FirmActions firm={{ slug: f.slug, name: f.name, does: f.does, house: f.house, lead: f.lead.address, members: f.members.map((m) => ({ address: m.address, role: m.role })) }} agents={s.agents.filter((a) => a.named).map((a) => ({ name: a.name, address: a.address }))} enabled={enabled} mostMembers={s.firms?.mostMembers ?? 8} explorer={ex} />

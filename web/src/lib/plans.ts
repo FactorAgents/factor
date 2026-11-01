@@ -3,7 +3,11 @@
 // the same, to the letter, as the engine checks (engine/src/plans.ts) and the kit signs (packages/kit/src/plans.ts).
 import { formatEther, keccak256, toHex } from "viem";
 import { lockAndBurn, lockedJob, Refusal } from "./desk";
+import { hireWithCover } from "./guarantees";
 import { signText, type Provider } from "./wallet";
+
+/** Where a lock stands, as the form's status line says it (components/Wallet.tsx, Step). */
+type Step = "checking" | "wallet" | "mining" | "signing" | "saving" | "reserving" | "locking" | "tying";
 
 export interface PlanText { customer: string; agent: string; firm?: string; price: string; months: number; early: boolean; title: string; brief: string; at: number }
 
@@ -52,17 +56,26 @@ export async function signPlan(p: Provider, plan: PlanText, link?: string): Prom
  * One month locked on the desk for the plan's agent, with its share sent to the burn pot beside it, then linked to the
  * plan. The money is locked for the agent whatever happens to the link: a month Factor did not link is an ordinary job.
  */
-export async function lockMonth(p: Provider, o: { passkey: boolean; desk: string; burnPot: string | null; from: string; plan: string; agent: string; dueAt: number; early: boolean; price: bigint; burn: bigint; on: (step: "checking" | "wallet" | "mining" | "signing" | "saving") => void }): Promise<{ job: number | null; lockTx: string; month: number | null; linked: boolean; note?: string; burned: boolean }> {
+export async function lockMonth(p: Provider, o: { passkey: boolean; desk: string; burnPot: string | null; from: string; plan: string; agent: string; dueAt: number; early: boolean; price: bigint; burn: bigint; on: (step: Step) => void; /** the month hired with cover (lib/guarantees.ts): reserved first, then locked and tied */ cover?: { guarantee: string; amount: bigint } | null }): Promise<{ job: number | null; lockTx: string; month: number | null; linked: boolean; note?: string; burned: boolean; covered?: boolean }> {
   const burn = o.burnPot ? o.burn : 0n;
-  const { lockTx, burnTx, receipt } = await lockAndBurn(p, { passkey: o.passkey, desk: o.desk, from: o.from, agent: o.agent, dueAt: o.dueAt, early: o.early, price: o.price, burnPot: o.burnPot ?? "", burn, on: o.on });
-  const job = lockedJob(receipt, o.desk);
+  let lockTx: string, burnTx: string | null, job: number | null, covered = false;
+  if (o.cover) {
+    const r = await hireWithCover(p, { passkey: o.passkey, guarantee: o.cover.guarantee, desk: o.desk, from: o.from, agent: o.agent, price: o.price, dueAt: o.dueAt, early: o.early, cover: o.cover.amount, on: o.on, extra: burn > 0n && o.burnPot ? [{ to: o.burnPot, value: burn }] : [] });
+    ({ lockTx, job } = r);
+    burnTx = r.extraTx;
+    covered = true;
+  } else {
+    const l = await lockAndBurn(p, { passkey: o.passkey, desk: o.desk, from: o.from, agent: o.agent, dueAt: o.dueAt, early: o.early, price: o.price, burnPot: o.burnPot ?? "", burn, on: o.on as (step: "checking" | "wallet" | "mining") => void });
+    ({ lockTx, burnTx } = l);
+    job = lockedJob(l.receipt, o.desk);
+  }
   if (job === null) return { job: null, lockTx, month: null, linked: false, burned: false, note: "The month is locked; its job number could not be read from the transaction." };
   o.on("saving");
   try {
     const r = await askPlans<{ month: number; burned?: boolean }>("plans/month", { plan: o.plan, job, lockTx, burnTx });
-    return { job, lockTx, month: r.month, linked: true, burned: r.burned === true };
+    return { job, lockTx, month: r.month, linked: true, burned: r.burned === true, covered };
   } catch (e) {
-    return { job, lockTx, month: null, linked: false, burned: false, note: e instanceof Error ? e.message : "Factor did not answer." };
+    return { job, lockTx, month: null, linked: false, burned: false, covered, note: e instanceof Error ? e.message : "Factor did not answer." };
   }
 }
 

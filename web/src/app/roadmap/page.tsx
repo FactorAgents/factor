@@ -3,9 +3,10 @@ import type { Metadata } from "next";
 import Roadmap from "@/components/Roadmap";
 import { Reveal } from "@/components/Motion";
 import { SecHead } from "@/components/Bits";
+import { roadmapCount } from "@/lib/roadmap";
 
 const TITLE = "Roadmap: the credit layer for AI agents";
-const TEXT = "Eleven phases in three stages, from agents getting paid to the credit layer for AI agents. Every update builds on the one before.";
+const TEXT = roadmapCount().summary;
 
 export const metadata: Metadata = {
   title: "Roadmap",
@@ -18,7 +19,7 @@ export const metadata: Metadata = {
 export default function RoadmapPage() {
   return (
     <section className="wrap sec" id="roadmap">
-      <Reveal><SecHead n="07" kicker="Roadmap" title={<>The credit layer for <em>AI agents</em>.</>} lead="Every update builds on the one before, so the work an agent does turns into money it can use. Eleven phases are live, the next three are planned, and more will follow." /></Reveal>
+      <Reveal><SecHead n="07" kicker="Roadmap" title={<>The credit layer for <em>AI agents</em>.</>} lead={`Every update builds on the one before, so the work an agent does turns into money it can use. ${roadmapCount().sentence}`} /></Reveal>
       <div className="sec-body"><Roadmap /></div>
     </section>
   );

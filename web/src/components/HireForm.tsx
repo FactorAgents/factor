@@ -7,13 +7,14 @@ import { briefMessage, lockedJob, send, titleMessage, toWei, fromWei, Refusal } 
 import { signText } from "@/lib/wallet";
 import { firmHireMessage, signAndSend } from "@/lib/firms";
 import { lockMonth, MONTH_S, PLAN_TITLE_MOST, signPlan } from "@/lib/plans";
+import { feeFor, hireWithCover } from "@/lib/guarantees";
 import { STATE_TONE, STATE_WORD, eth } from "@/lib/format";
-import type { Agent, Job, Page, Params } from "@/lib/types";
+import type { Agent, GuaranteesAbout, Job, Page, Params } from "@/lib/types";
 import { engineNow, Go, saveSigned, StatusLine, useSend, useWallet } from "./Wallet";
 import MatchBox, { type Suggestion } from "./MatchBox";
 import { readEvery } from "@/lib/livebus";
 
-type Pick_ = Pick<Agent, "address" | "name" | "named" | "does" | "score" | "settled" | "house" | "service">;
+type Pick_ = Pick<Agent, "address" | "name" | "named" | "does" | "score" | "settled" | "house" | "service" | "guarantee">;
 /** A firm that can be hired: through its lead, who takes the job and splits it among the members. */
 export interface FirmPick { slug: string; name: string; does: string; house: boolean; lead: string; leadName: string; members: string[]; fromEth?: number }
 const BRIEF_MOST = 12_000;
@@ -22,7 +23,7 @@ const TITLE = /^[^<>\n\r]{3,80}$/;
 
 const MONTHS = [2, 3, 6, 12, 24];
 
-export default function HireForm({ agents, firms = [], pickedFirm = "", picked, desk, explorer, params, paused = false, monthly = null, burnPot = null, pickedMonthly = false }: { agents: Pick_[]; firms?: FirmPick[]; pickedFirm?: string; picked: string; desk: string | null; explorer: string; params: Params; paused?: boolean; /** monthly plans, while they are on: the longest plan */ monthly?: { mostMonths: number } | null; burnPot?: string | null; pickedMonthly?: boolean }) {
+export default function HireForm({ agents, firms = [], pickedFirm = "", picked, desk, explorer, params, paused = false, monthly = null, burnPot = null, pickedMonthly = false, guarantees = null, pickedCover = false }: { agents: Pick_[]; firms?: FirmPick[]; pickedFirm?: string; picked: string; desk: string | null; explorer: string; params: Params; paused?: boolean; /** monthly plans, while they are on: the longest plan */ monthly?: { mostMonths: number } | null; burnPot?: string | null; pickedMonthly?: boolean; /** guarantees, while they are on: a customer can hire an agent that sells cover with cover */ guarantees?: GuaranteesAbout | null; pickedCover?: boolean }) {
   const { address, wallet, kind } = useWallet();
   const { status, run, busy } = useSend();
   // one job, or a monthly plan: every month an ordinary job, locked month by month
@@ -46,6 +47,18 @@ export default function HireForm({ agents, firms = [], pickedFirm = "", picked, 
   const floor = firm ? (firm.fromEth ? toWei(String(firm.fromEth)) : null) : who?.service ? toWei(String(who.service.fromEth)) : null;
   const underFloor = wei !== null && floor !== null && wei < floor;
   const half = wei ? fromWei(wei / 2n) : "0";
+  // cover (lib/guarantees.ts): only for an agent that sells it, while guarantees are on
+  const gt = guarantees?.enabled && guarantees.contract ? guarantees : null;
+  const sells = !!gt && !!who?.guarantee && who.guarantee.sharePct > 0 && who.guarantee.upToEth > 0;
+  const [withCover, setWithCover] = useState(pickedCover);
+  const [coverText, setCoverText] = useState("");
+  const covered = sells && withCover;
+  const upTo = sells ? toWei(String(who!.guarantee!.upToEth)) ?? 0n : 0n;
+  const byShare = sells && wei ? (wei * BigInt(who!.guarantee!.sharePct)) / 100n : 0n;
+  const maxCover = byShare < upTo ? byShare : upTo;
+  const coverWei = coverText.trim() ? toWei(coverText) : maxCover;
+  const coverBad = covered && (coverWei === null || coverWei <= 0n || coverWei > maxCover || coverWei < (toWei(String(gt!.rules.minCoverEth)) ?? 0n));
+  const coverFee = coverWei && coverWei > 0n ? feeFor(coverWei) : 0n;
 
   const lock = () => run(async (on) => {
     const p = wallet();
@@ -61,21 +74,34 @@ export default function HireForm({ agents, firms = [], pickedFirm = "", picked, 
     // a brief Factor wrote leaves [what the customer has to add] in brackets: it is not locked until that is in
     const left = details.match(/\[[^\]\n]{2,80}\]/g);
     if (left) throw new Refusal(`Fill in ${left.slice(0, 3).join(", ")} in the brief first.`);
+    if (covered && coverBad) throw new Refusal(maxCover > 0n ? `The cover on this job is ${gt!.rules.minCoverEth} to ${fromWei(maxCover)} ETH.` : `${who.name} can cover none of this job right now.`);
+    const cover = covered && coverWei ? { guarantee: gt!.contract!, amount: coverWei } : null;
+    const coverNote = cover ? ` Covered: ${fromWei(cover.amount)} ETH from ${who.name}'s guarantee bond if it is not delivered.` : "";
     if (plan) {
       // a monthly plan: signed once (it costs nothing), then month 1 locked at once, due a month after its lock
       if (!text) throw new Refusal("Say what the agent does each month in one line: it is the plan's title.");
       if (text.length > PLAN_TITLE_MOST) throw new Refusal(`A plan's title is ${PLAN_TITLE_MOST} characters at most: each month is called "Month 2 of ${months}: ..."`);
       on("signing");
       const made = await signPlan(p, { customer: address, agent: who.address, ...(firm ? { firm: firm.slug } : {}), price: wei.toString(), months, early, title: text, brief: details, at: await engineNow() });
-      const r = await lockMonth(p, { passkey: kind === "passkey", desk, burnPot, from: address, plan: made.plan, agent: who.address, dueAt: (await engineNow()) + MONTH_S - 300, early, price: wei, burn: BigInt(made.burnWei || "0"), on });
+      const r = await lockMonth(p, { passkey: kind === "passkey", desk, burnPot, from: address, plan: made.plan, agent: who.address, dueAt: (await engineNow()) + MONTH_S - 300, early, price: wei, burn: BigInt(made.burnWei || "0"), on, cover });
       setBrief("");
       const name = firm ? firm.name : who.name;
-      return { note: r.linked ? `Month 1 of ${months} is locked for ${name}${r.job ? ` as job ${String(r.job).padStart(4, "0")}` : ""}.${r.burned ? " Its 1% went to the burn." : ""} Lock each next month on the plan's page.` : `Month 1 is locked for ${name}. ${r.note ?? ""}`, hash: r.lockTx, href: `/plans/${made.plan}`, hrefText: "Open the plan" };
+      return { note: r.linked ? `Month 1 of ${months} is locked for ${name}${r.job ? ` as job ${String(r.job).padStart(4, "0")}` : ""}.${r.burned ? " Its 1% went to the burn." : ""}${coverNote} Lock each next month on the plan's page.` : `Month 1 is locked for ${name}.${coverNote} ${r.note ?? ""}`, hash: r.lockTx, href: `/plans/${made.plan}`, hrefText: "Open the plan" };
     }
     const dueAt = (await engineNow()) + due;
-    const { hash, receipt } = await send(p, desk, address, "lock", [who.address, BigInt(dueAt), early], { value: wei, on });
-    const id = lockedJob(receipt, desk);
-    if (id === null) return { note: "The payment is locked.", hash };
+    let hash: string, id: number | null, tieNote = "";
+    if (cover) {
+      // the cover is reserved first, then the job locked on exactly its terms, then the two tied: all tried before anything is sent
+      const r = await hireWithCover(p, { passkey: kind === "passkey", guarantee: cover.guarantee, desk, from: address, agent: who.address, price: wei, dueAt, early, cover: cover.amount, on });
+      hash = r.lockTx;
+      id = r.job;
+      if (!r.tied && r.note) tieNote = ` ${r.note}`;
+    } else {
+      const s = await send(p, desk, address, "lock", [who.address, BigInt(dueAt), early], { value: wei, on });
+      hash = s.hash;
+      id = lockedJob(s.receipt, desk);
+    }
+    if (id === null) return { note: `The payment is locked.${coverNote}`, hash };
     const href = `/jobs/${String(id).padStart(4, "0")}`;
     if (firm) {
       // the job is the firm's: the customer signs that, with its title and brief, once. The money is locked for the
@@ -89,7 +115,7 @@ export default function HireForm({ agents, firms = [], pickedFirm = "", picked, 
       } catch (e) {
         return { note: `Job ${String(id).padStart(4, "0")} is locked for ${firm.leadName}. It could not be filed under ${firm.name}: ${e instanceof Error ? e.message : "Factor did not answer"}`, hash, href, hrefText: "Open the job" };
       }
-      return { note: `Job ${String(id).padStart(4, "0")} is locked for ${firm.name}. ${firm.leadName} takes it and splits it among the team.`, hash, href, hrefText: "Open the job" };
+      return { note: `Job ${String(id).padStart(4, "0")} is locked for ${firm.name}. ${firm.leadName} takes it and splits it among the team.${coverNote}${tieNote}`, hash, href, hrefText: "Open the job" };
     }
     if (details) {
       // the title and the brief are signed together, once. The money is locked whatever happens next: without the
@@ -116,7 +142,7 @@ export default function HireForm({ agents, firms = [], pickedFirm = "", picked, 
         return { note: `Job ${String(id).padStart(4, "0")} is locked. Its title was not signed: you can add it on the job's page.`, hash, href, hrefText: "Open the job" };
       }
     }
-    return { note: `Job ${String(id).padStart(4, "0")} is locked for ${who.name}.`, hash, href, hrefText: "Open the job" };
+    return { note: `Job ${String(id).padStart(4, "0")} is locked for ${who.name}.${coverNote}${tieNote}`, hash, href, hrefText: "Open the job" };
   });
 
   // "Use this" in the box above: the agent, the brief, a title and the agent's price, put into this form
@@ -186,8 +212,23 @@ export default function HireForm({ agents, firms = [], pickedFirm = "", picked, 
         <i />
         <div><b>{plan ? "Let the agent start each month with half" : "Let the agent have half early"}</b><span>{plan ? `Up to ${half} ETH of each month goes to the agent as soon as that month is locked. If it does not deliver a month, that part is not refunded. Leave this off and the agent can only be advanced by the pool, which never touches what you locked.` : `Up to ${half} ETH goes to the agent as soon as it asks. If it does not deliver, that part is not refunded. Leave this off and the agent can only be advanced by the pool, which never touches what you locked.`}</span></div>
       </button>
+      {sells ? (
+        <>
+          <button type="button" className={`toggle${withCover ? "" : " off"}`} role="switch" aria-checked={withCover} onClick={() => setWithCover((v) => !v)} disabled={busy}>
+            <i />
+            <div><b>{plan ? "Hire month 1 with cover" : "Hire with cover"}</b><span>{`${firm ? `${firm.name}'s lead, ${firm.leadName},` : who!.name} is guaranteed up to ${fromWei(upTo)} ETH a job. If ${plan ? "the month" : "the job"} is not delivered by its due time and the ${params.graceHours} hours of grace, you are paid the cover from its guarantee bond, on top of your refund. A rejected delivery pays no cover.`}</span></div>
+          </button>
+          {withCover ? (
+            <label className="field">
+              <span className="label">Cover, in ETH</span>
+              <input value={coverText} onChange={(e) => setCoverText(e.target.value)} inputMode="decimal" placeholder={maxCover > 0n ? fromWei(maxCover) : "0"} disabled={busy} aria-invalid={coverBad} />
+              <div className="hint">{maxCover > 0n ? `Up to ${fromWei(maxCover)} ETH on this job: ${who!.guarantee!.sharePct === 100 ? "the whole price" : `${who!.guarantee!.sharePct}% of the price`} at its score, never more than its free bond. The fee is ${gt!.rules.feePct}% of the cover${coverFee > 0n ? `, ${fromWei(coverFee)} ETH` : ""}, paid with it: half buys back and burns $FACTOR, the rest goes to the agent when the cover ends, and all of it comes back if the agent declines. ${kind === "passkey" ? "One confirmation: the cover, the job and the tie together." : "Three confirmations: the cover first, then the job, then the tie. Everything is checked before the first."}` : "Enter a price first."}</div>
+            </label>
+          ) : null}
+        </>
+      ) : null}
       <div className="cta" style={{ marginTop: 4 }}>
-        <Go label={plan ? `Sign the plan and lock month 1: ${wei ? fromWei(wei) : "0"} ETH` : `Lock ${wei ? fromWei(wei) : "0"} ETH${firm ? ` for ${firm.name}` : ""}`} busy={busy || wei === null || tooSmall || (underFloor && !firm) || !who} onGo={lock} off={!desk ? "Nothing is live yet" : paused ? "New jobs are paused" : null} />
+        <Go label={plan ? `Sign the plan and lock month 1: ${wei ? fromWei(wei) : "0"} ETH${covered && coverFee > 0n ? ` + ${fromWei(coverFee)} cover fee` : ""}` : `Lock ${wei ? fromWei(wei) : "0"} ETH${firm ? ` for ${firm.name}` : ""}${covered && coverFee > 0n ? ` + ${fromWei(coverFee)} cover fee` : ""}`} busy={busy || wei === null || tooSmall || (underFloor && !firm) || !who || coverBad} onGo={lock} off={!desk ? "Nothing is live yet" : paused ? "New jobs are paused" : null} />
       </div>
       <StatusLine status={status} explorer={explorer} />
     </div>

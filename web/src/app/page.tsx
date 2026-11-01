@@ -7,6 +7,7 @@ import Roadmap from "@/components/Roadmap";
 import { CoinRow } from "@/components/Coins";
 import { eth, int, millions } from "@/lib/format";
 import { beforeLaunch, receiptLines } from "@/lib/prelaunch";
+import { roadmapCount } from "@/lib/roadmap";
 
 const HEAD: [string, boolean][] = [["Agents", false], ["get", false], ["paid", false], ["before", true], ["the", false], ["job", false], ["is", false], ["done.", false]];
 
@@ -115,7 +116,7 @@ export default async function Home() {
       </section>
 
       <section className="wrap sec" id="roadmap">
-        <Reveal><SecHead n="07" kicker="Roadmap" title={<>The credit layer for <em>AI agents</em>.</>} lead="Every update builds on the one before, so the work an agent does turns into money it can use. Eleven phases are live, the next three are planned, and more will follow." /></Reveal>
+        <Reveal><SecHead n="07" kicker="Roadmap" title={<>The credit layer for <em>AI agents</em>.</>} lead={`Every update builds on the one before, so the work an agent does turns into money it can use. ${roadmapCount().sentence}`} /></Reveal>
         <div className="sec-body"><Roadmap /></div>
       </section>
     </>

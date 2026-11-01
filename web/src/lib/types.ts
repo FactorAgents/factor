@@ -49,6 +49,8 @@ export interface Job {
   plan?: { id: string; month: number; months: number };
   /** locked from an open job: the listing, how many agents applied, and who picked the agent */
   open?: { id: string; applicants: number; by: "factor" | "customer"; /** the customer picked an offer: the price locked is the agent's own */ offers?: boolean };
+  /** hired with cover: how much, the fee, and how the cover stands. Only while guarantees are on */
+  cover?: { id: number; coverEth: number; feeEth: number; state: CoverState };
 }
 
 export interface ScorePart { name: string; value: string; points: number; max: number }
@@ -133,6 +135,8 @@ export interface Agent {
   coin?: { coin: string; symbol: string };
   /** its credit line: which side of it this address is, while lines are on and it has one */
   line?: { role: "key" | "account"; key: string; account: string; status: LineStatus };
+  /** "Guaranteed up to": while guarantees are on and it sells cover, the most cover on one job and the share of a price its score allows */
+  guarantee?: { upToEth: number; sharePct: number };
 }
 
 /** How a credit line stands: nothing owed, owed before its due time, owed past it, or barred for good. */
@@ -145,6 +149,31 @@ export interface LinesAbout {
   pool: { poolEth: number; outEth: number; lostEth: number; roomEth: number; roomWei: string; seededEth: number; drawnEth: number; burnedEth: number; feesToPoolEth: number; repaidEth: number; recoveredEth: number } | null;
   lines: number;
   owing: number;
+}
+
+/** Guarantees (engine/src/guarantees.ts, GuaranteesAbout): whether they are on, the contract, the rules and the totals. */
+export interface GuaranteesAbout {
+  enabled: boolean; contract: string | null; chainId: number;
+  rules: { feePct: number; burnPctOfFee: number; minCoverEth: number; windowMin: number; graceH: number; shares: { score: number; pct: number }[] };
+  totals: { bondsEth: number; heldEth: number; coveredEth: number; paidEth: number; feesEth: number; burnedEth: number; covers: number; agents: number } | null;
+}
+/** reserved: not tied to a job yet. bound: tied. released: delivered, back to the bond. paid: not delivered, paid to the customer. declined: the agent declined, the fee went back. lapsed: never tied */
+export type CoverState = "reserved" | "bound" | "released" | "paid" | "declined" | "lapsed";
+/** One cover (engine/src/guarantees.ts, CoverJson). */
+export interface Cover {
+  id: number; customer: string; agent: string; agentName: string; named: boolean;
+  priceEth: number; coverEth: number; coverWei: string; feeEth: number; dueAt: string; allowEarly: boolean;
+  state: CoverState; job: string | null; reservedAt: string; expiresAt: string; tx: string;
+  boundTx?: string; boundAt?: string; closedTx?: string; closedAt?: string; paidEth?: number; toAgentEth?: number; burnedEth?: number; feeBackEth?: number;
+  next?: { what: "tie" | "lapse" | "pays-if-not-delivered" | "releases" | "pays"; at: string };
+}
+/** One agent's guarantee (engine/src/guarantees.ts, AgentGuaranteeJson). */
+export interface AgentGuarantee {
+  agent: string; name: string; named: boolean; key: string | null;
+  bondEth: number; heldEth: number; freeEth: number; offerEth: number; offerWei: string;
+  upToEth: number; upToWei: string; score: number; sharePct: number; selling: boolean;
+  covers: number; released: number; paid: number; declined: number; lapsed: number; coveredEth: number; paidOutEth: number; feesEarnedEth: number;
+  items?: Cover[];
 }
 
 /** One credit line (engine/src/lines.ts, LineJson). */
@@ -272,6 +301,8 @@ export interface FactorState {
   coins?: { enabled: boolean; launcher: string | null; count: number; items: Coin[] };
   /** credit lines: whether they are on, the contract, the rules, the line pool and how many lines */
   lines?: LinesAbout;
+  /** guarantees: whether they are on, the contract, the rules and the totals */
+  guarantees?: GuaranteesAbout;
 }
 
 /** One of a firm's agents and its part of the firm's work: the lead's is the firm's jobs, a member's the sub-jobs it took under them. */
@@ -309,7 +340,7 @@ export interface FirmRecord {
   factorScore?: FactorScore;
 }
 /** A firm's page: the firm, its record, its jobs (the newest with the chain of work under each), the lead's links for it. */
-export interface FirmPage { enabled: boolean; firm: Firm; record: FirmRecord; jobs: (Job & { tree?: JobTree | null })[]; links: { id: string; title: string; priceEth: string; due: number; early: boolean; exp: string; url: string; firm?: string }[]; /** its monthly clients, when it has any plan */ plans?: PlansSummary }
+export interface FirmPage { enabled: boolean; firm: Firm; record: FirmRecord; jobs: (Job & { tree?: JobTree | null })[]; links: { id: string; title: string; priceEth: string; due: number; early: boolean; exp: string; url: string; firm?: string }[]; /** its monthly clients, when it has any plan */ plans?: PlansSummary; /** the cover its lead sells, which is the cover on the firm's jobs */ guarantee?: AgentGuarantee }
 
 /** One of Factor's own agents: what it does and what it takes a job for. */
 export interface RosterAgent { name: string; does: string; needs: string; delivers: string; fromEth: number; asksAModel: boolean; /** the Desk's opening file on it */ file?: DeskFile }
@@ -345,7 +376,7 @@ export interface Erc8004 {
   links: { registry: string };
 }
 /** One agent with what the page about it shows. */
-export interface AgentPage { agent: Agent; /** its Factor Score: the desk's number, the parts, the income behind it, what it can draw */ factorScore?: FactorScore; jobs: Job[]; events: LedgerEvent[]; hiring?: Hiring; /** the firms it leads, belongs to or is invited to */ firms?: { slug: string; name: string; house: boolean; role: "lead" | "member" | "invited" }[]; /** its monthly clients, when it has any plan */ plans?: PlansSummary; /** its ERC-8004 identity and the entries written to it, when one is linked */ erc8004?: Erc8004; /** its own coin, when it has one listed */ coin?: Coin; /** its credit line, from either side, while lines are on */ line?: CreditLine }
+export interface AgentPage { agent: Agent; /** its Factor Score: the desk's number, the parts, the income behind it, what it can draw */ factorScore?: FactorScore; jobs: Job[]; events: LedgerEvent[]; hiring?: Hiring; /** the firms it leads, belongs to or is invited to */ firms?: { slug: string; name: string; house: boolean; role: "lead" | "member" | "invited" }[]; /** its monthly clients, when it has any plan */ plans?: PlansSummary; /** its ERC-8004 identity and the entries written to it, when one is linked */ erc8004?: Erc8004; /** its own coin, when it has one listed */ coin?: Coin; /** its credit line, from either side, while lines are on */ line?: CreditLine; /** its guarantee bond, offer and covers, while guarantees are on and it has had one */ guarantee?: AgentGuarantee }
 
 /** One job in a chain of work: the customer's job at depth 0, the jobs its agent hired for at 1, and so on. */
 export interface TreeNode {
@@ -378,7 +409,7 @@ export interface HireRoom { open: boolean; why?: string; freeEth: number; freeWe
  * `brief`: what the customer asked for at length. `work`: what was delivered, when its agent showed it (its
  * fingerprint is the proof on the chain). `note`: why one of Factor's own agents declined.
  */
-export interface JobPage { job: Job; agent: Agent | null; events: LedgerEvent[]; brief?: string | null; /** "agent": the brief came with the agent's Pay with Factor link, signed by the agent */ briefBy?: "agent"; work?: { kind: "text" | "html"; text: string; at: string } | null; note?: string; /** the chain of work it is part of */ tree?: JobTree; /** what its agent can still hire for it */ hiring?: HireRoom; /** how Factor's own firm went about it */ firmNote?: string }
+export interface JobPage { job: Job; agent: Agent | null; events: LedgerEvent[]; brief?: string | null; /** "agent": the brief came with the agent's Pay with Factor link, signed by the agent */ briefBy?: "agent"; work?: { kind: "text" | "html"; text: string; at: string } | null; note?: string; /** the chain of work it is part of */ tree?: JobTree; /** what its agent can still hire for it */ hiring?: HireRoom; /** how Factor's own firm went about it */ firmNote?: string; /** its cover, when it was hired with one */ cover?: Cover }
 export interface Page<T> { total: number; more: boolean; items: T[] }
 
 // ---------- monthly clients (engine/src/plans.ts) ----------

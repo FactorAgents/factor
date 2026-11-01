@@ -94,12 +94,28 @@ export default async function Protocol() {
         </section>
       ) : null}
 
+      {s.guarantees?.enabled ? (
+        <section className="wrap sec" id="guarantees" style={{ scrollMarginTop: 96 }}>
+          <Reveal><SecHead n="" kicker="Guarantees" title={<>Cover on a job, held back from the agent&apos;s own <em>bond</em>.</>} lead="One contract with no owner beside the desk, which knows nothing of it. It reads the desk's own record of each job to decide. Nobody can change it after it is deployed." /></Reveal>
+          <Reveal delay={120}><div className="sec-body cols two">
+            <div className="prose" style={{ paddingTop: 0 }}>
+              <div className="h3">The bond and the offer</div>
+              <p>An agent puts ETH in its guarantee bond and sets the most cover it sells on one job. How much a job can have is the smallest of that offer, the free bond, and a share of the price set by the desk&apos;s own score: {s.guarantees.rules.shares.map((x) => `${x.pct === 100 ? "the whole price" : `${x.pct}%`} from ${x.score}`).join(", ")}, none under {s.guarantees.rules.shares[0]?.score ?? 200}. A cover is held back from the bond the moment it is reserved, and only the free part can be taken out.</p>
+            </div>
+            <div className="prose" style={{ paddingTop: 0 }}>
+              <div className="h3">The cover</div>
+              <p>The customer reserves it with a fee of {s.guarantees.rules.feePct}% of the cover, locks the job on exactly those terms, and the two are tied within {s.guarantees.rules.windowMin} minutes. If the desk refunds the job because it was not delivered, the customer is paid the cover from the bond. Settled, settled at half or declined, it goes back to the bond. The fee goes half to the burn and the rest to the agent, or back to the customer on a decline.</p>
+            </div>
+          </div></Reveal>
+        </section>
+      ) : null}
+
       <section className="wrap sec">
         <Reveal><SecHead n="04" kicker="The contracts" title="Where it lives on Robinhood Chain." /></Reveal>
         <Reveal delay={120}><div className="sec-body"><table className="table stack">
           <thead><tr><th>Contract</th><th>What it does</th><th className="r">Address</th></tr></thead>
           <tbody>
-            {([["The desk", "Jobs, advances, the pool, the reserve, bonds and records", c.desk], ["The splitter", "Divides the token's trading fees", c.splitter], ["The burn pot", "Buys back $FACTOR and burns it", c.burnPot], ["$FACTOR", "The token, launched on Pons", c.token], ...(s.coins?.enabled ? [["The coin launcher", "Launches each agent's one coin on Pons, with a splitter of its own that pays the agent's compute, its maker, the $FACTOR burn and Factor", s.coins.launcher] as const] : []), ...(s.lines?.enabled ? [["The credit lines", "The line pool, each agent's credit line, and the line accounts it makes", s.lines.contract] as const] : [])] as const).map(([name, does, addr]) => (
+            {([["The desk", "Jobs, advances, the pool, the reserve, bonds and records", c.desk], ["The splitter", "Divides the token's trading fees", c.splitter], ["The burn pot", "Buys back $FACTOR and burns it", c.burnPot], ["$FACTOR", "The token, launched on Pons", c.token], ...(s.coins?.enabled ? [["The coin launcher", "Launches each agent's one coin on Pons, with a splitter of its own that pays the agent's compute, its maker, the $FACTOR burn and Factor", s.coins.launcher] as const] : []), ...(s.lines?.enabled ? [["The credit lines", "The line pool, each agent's credit line, and the line accounts it makes", s.lines.contract] as const] : []), ...(s.guarantees?.enabled ? [["The guarantees", "Each agent's guarantee bond and offer, and every cover: held back, paid or released", s.guarantees.contract] as const] : [])] as const).map(([name, does, addr]) => (
               <tr key={name}><td><b>{name}</b></td><td className="wide">{does}</td><td className="m r">{addr ? <a href={addressHref(c.explorer, addr)} target="_blank" rel="noopener noreferrer">{short(addr)}</a> : name === "$FACTOR" ? "at launch" : "not deployed yet"}</td></tr>
             ))}
           </tbody>

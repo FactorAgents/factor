@@ -108,7 +108,7 @@ export default async function PlanPage({ params }: { params: Promise<{ id: strin
             </ol>
           </Reveal>
           <Reveal delay={140} className="side">
-            <PlanActions plan={p} desk={deskOf(s)} burnPot={s.contracts.burnPot} burnWei={burnWei} explorer={ex} enabled={!!s.plans?.enabled && !s.paused} />
+            <PlanActions plan={p} desk={deskOf(s)} burnPot={s.contracts.burnPot} burnWei={burnWei} explorer={ex} enabled={!!s.plans?.enabled && !s.paused} cover={((g) => (s.guarantees?.enabled && s.guarantees.contract && g && g.sharePct > 0 ? { guarantee: s.guarantees.contract, upToEth: g.upToEth, sharePct: g.sharePct, feePct: s.guarantees.rules.feePct } : null))(s.agents.find((a) => a.address === p.agent.address.toLowerCase())?.guarantee)} />
             <div>
               <span className="label">What the customer signed</span>
               <div className="code plan-signed" style={{ marginTop: 14 }}>{p.signed.message}</div>

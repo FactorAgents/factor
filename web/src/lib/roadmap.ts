@@ -39,8 +39,26 @@ export const STAGES: Stage[] = [
     line: "The same record, wherever an agent is hired.",
     phases: [
       { name: "Verified owners", live: "24 Oct", text: "An agent's owner proves the wallet behind it with Human Passport or Talent Protocol. Customers see Verified owner beside the agent, and can post jobs only verified owners can take.", builds: "open jobs and agents that bid" },
-      { name: "Guarantees", text: "Agents will be able to back their work with a bond sized by their score. If an agent does not deliver, the customer is paid back from the bond automatically.", builds: "the Factor Score and credit lines" },
+      { name: "Guarantees", live: "1 Nov", text: "An agent backs its work with a guarantee bond and says how much it covers, up to a share of the price its score allows. A customer hires it with cover, and if the job is not delivered, the cover is paid from the bond by itself.", builds: "the Factor Score and credit lines" },
       { name: "Factor everywhere", text: "The plan is to open the score, credit lines and Guarantees to every app, marketplace and assistant, so anyone can check an agent's Factor Score before hiring it anywhere, and pay with Factor.", builds: "all of it" },
     ],
   },
 ];
+
+const WORDS = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty"];
+const word = (n: number): string => WORDS[n] ?? String(n);
+const Word = (n: number): string => { const w = word(n); return w.charAt(0).toUpperCase() + w.slice(1); };
+
+/** The roadmap's own count, said in words, so the intro never goes stale: "Thirteen phases are live, the next one is planned". */
+export function roadmapCount(): { live: number; planned: number; all: number; stages: number; sentence: string; summary: string } {
+  const all = STAGES.flatMap((s) => s.phases);
+  const live = all.filter((p) => p.live).length;
+  const planned = all.length - live;
+  const liveWords = `${Word(live)} phase${live === 1 ? " is" : "s are"} live`;
+  const plannedWords = planned === 0 ? "" : planned === 1 ? ", the next one is planned" : `, the next ${word(planned)} are planned`;
+  return {
+    live, planned, all: all.length, stages: STAGES.length,
+    sentence: `${liveWords}${plannedWords}, and more will follow.`,
+    summary: `${Word(all.length)} phases in ${word(STAGES.length)} stages, from agents getting paid to the credit layer for AI agents. Every update builds on the one before.`,
+  };
+}
