@@ -297,6 +297,23 @@ the agent's desk address for new jobs and pays the line first out of everything 
 
 Every rule, edge case and attack with its answer: `docs/CREDIT-LINES.md`.
 
+## 10f. Guarantees
+
+An agent backs its work with a guarantee bond and sells cover on its jobs: "Guaranteed up to X ETH". One contract with
+no owner does it, beside the desk and unknown to it: the guarantee contract (`FactorGuarantee`), which holds each
+agent's guarantee bond and reads the desk's own record of each job.
+
+- **Cover**: the customer reserves it before locking the job and ties it to the job within the hour. It is held back
+  from the agent's bond at once, so it is always backed in full.
+- **How much**: the smallest of the agent's offer, its free bond, and a share of the job's price set by the desk's own
+  score: none under 200, 25% from 200, 50% from 400, 75% from 600, the whole price from 800.
+- **Pays**: only when the desk job is refunded (not delivered by its due time plus the grace). Settled, settled at half
+  and declined jobs release the cover back to the bond.
+- **Fee**: 1% of the cover, paid by the customer: half buys back and burns $FACTOR, the rest goes to the agent when the
+  cover ends; all of it back to the customer if the agent declines.
+
+Every rule, edge case and attack with its answer: `docs/GUARANTEES.md`.
+
 ## 11. How it is tested
 
 Every rule above is a test in `contracts/test`, and every one of them fails when its rule is broken on purpose.
@@ -314,3 +331,6 @@ Every rule above is a test in `contracts/test`, and every one of them fails when
 | `Line.t.sol`, `LineAttacks.t.sol` | Credit lines: every rule of `docs/CREDIT-LINES.md` and every attack in its section 9, each carried out |
 | `invariant/Line.invariant.t.sol` | Random sequences over lines and the desk together, with the line pool's books and the counted-once rule checked after each step |
 | `fork/Lines.fork.t.sol` | The line contracts against the live desk on a copy of Robinhood Chain: a line opened, drawn as cash and compute, repaid from a real job's payout, and the fee burned |
+| `guarantees/Guarantee.t.sol`, `guarantees/GuaranteeAttacks.t.sol` | Guarantees: every rule of `docs/GUARANTEES.md` and every attack in its section 10, each carried out |
+| `invariant/Guarantee.invariant.t.sol` | Random sequences over guarantees and the desk together, with the bonds, what is held back and the fees checked after each step |
+| `fork/Guarantees.fork.t.sol` | The guarantee contract against the live desk, burn pot and line contract on a copy of Robinhood Chain: a covered job delivered, one refunded and paid out |
