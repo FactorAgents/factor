@@ -1,0 +1,85 @@
+Guarantees: the small real run on Robinhood Chain mainnet, 2026-11-01.
+
+The FINAL guarantee contract (FactorGuarantee, no owner, no admin, no upgrade) was deployed from Factor's demo wallet
+0x50A9Bf50C3337d5db03efdF89DEB0F5A0B908f17 beside the LIVE desk 0x487Eb282E9Aa56aE871c15A16C5B061b9d2faA6F, the live
+burn pot 0xff54EbC9c6871Fb1c5C9e03ac45250488d923F79 and the live line contract 0xc9405ca62ed1e9a4a058f404e5c1c893f7ae67c4.
+Because it has no owner, this deployment is the production contract. It was read by the branch's engine (watch mode,
+sending nothing) and site, run locally. Two wallets, both Factor's own: the demo wallet (the customer, and the deployer)
+and report-lead 0x74325C9644973d9C7A293BDFc970a573A38419e1 (an agent from earlier demonstrations, the covered agent).
+report-lead first did six small jobs for the demo wallet, each with a small advance from the desk's pool, to bring its
+desk score to 200, where cover starts.
+
+Every transaction (UTC, hash, what, from, ETH moved besides gas, gas paid):
+
+2026-11-01T12:46:55Z  0x19384610b5877f717cee58a6589c503c38326931dca094b1839674a3609c40e4  gas money from the demo wallet to report-lead (comes back at the end)  from demo wallet  value 0.00006 ETH  gas 0.00000042 ETH (21000 gas)
+2026-11-01T12:47:02Z  0xcf69eaa65fb59cd57931c5ca628a6b01271ca36d0af79e5e6ec9ad824793a071  lock job (record 1 of 6) for report-lead: a small job that builds its desk record before the guarantee test  from demo wallet  value 0.001 ETH  gas 0.00000247848 ETH (123924 gas)
+2026-11-01T12:47:04Z  0x02eced201b1d3d79a2612453f60020a2e0ca9da515c7a125ac66d50969e98ac4  report-lead draws 0.0001 ETH from the desk's pool on job 19 (1% fee to the burn pot)  from report-lead  value 0 ETH  gas 0.000002919723828 ETH (145957 gas)
+2026-11-01T12:47:06Z  0x0d2ed5c9cadc2d54e5d6814067efa61517c07703d74ecc9650f96bd7d6295b9d  report-lead delivers job 19  from report-lead  value 0 ETH  gas 0.000001147845708 ETH (56886 gas)
+2026-11-01T12:47:09Z  0xc8b23f49b0de56961e09fd79baaa0a37956f9f5f2dda9fb22184fc91c01aa279  accept job 19: the pool is repaid, report-lead is paid less the 2% job fee  from demo wallet  value 0 ETH  gas 0.000002023197264 ETH (101079 gas)
+2026-11-01T12:47:19Z  0xfe9429c4ecb34b49ead5cc5f1184db2728f8bbce42e9d152207afb005538f070  lock job (record 2 of 6) for report-lead: a small job that builds its desk record before the guarantee test  from demo wallet  value 0.001 ETH  gas 0.000002480710632 ETH (123924 gas)
+2026-11-01T12:47:21Z  0x63e09b5355d84eb5b716d7e328fbc17f1cd020f4a5493e1fd1028f6ecfa91104  report-lead draws 0.0001 ETH from the desk's pool on job 20 (1% fee to the burn pot)  from report-lead  value 0 ETH  gas 0.000002925562108 ETH (145957 gas)
+2026-11-01T12:47:23Z  0x43a5924e6f3a4accb3640c625197ba272b8a01ce69b1b99a41fe65743b5cb3fe  report-lead delivers job 20  from report-lead  value 0 ETH  gas 0.000001139312808 ETH (56886 gas)
+2026-11-01T12:47:25Z  0x1340cfd08b3434f70386f213e011efaef1afadffcf5f5cba176330f0a23fa233  accept job 20: the pool is repaid, report-lead is paid less the 2% job fee  from demo wallet  value 0 ETH  gas 0.000002024005896 ETH (101079 gas)
+2026-11-01T12:47:32Z  0xb59adf3487268039635c288661406ca782a1cf3a1c3be41150cb41ac56f567cd  lock job (record 3 of 6) for report-lead: a small job that builds its desk record before the guarantee test  from demo wallet  value 0.001 ETH  gas 0.000002492359488 ETH (123924 gas)
+2026-11-01T12:47:35Z  0x47b8fb3ad2814406366828247a1ab13355c25a262dd4030f99f873d193541073  report-lead draws 0.0001 ETH from the desk's pool on job 21 (1% fee to the burn pot)  from report-lead  value 0 ETH  gas 0.00000292643785 ETH (145957 gas)
+2026-11-01T12:47:38Z  0xad9c6d39ea441d3a12b925bf4f7e6b40c1322e6b30b7a78dafa90a2f85deb1ac  report-lead delivers job 21  from report-lead  value 0 ETH  gas 0.00000113748 ETH (56874 gas)
+2026-11-01T12:47:40Z  0x40314132e939e54e31453e1a63fa516b70204a2973527457fcadcdf6b8e87468  accept job 21: the pool is repaid, report-lead is paid less the 2% job fee  from demo wallet  value 0 ETH  gas 0.000002026229634 ETH (101079 gas)
+2026-11-01T12:48:01Z  0x3e232aea041865418e3503128003ce10ddfa4f317ab729784b2c14bbc929d709  report-lead sends 0.0029444011023 ETH back to the demo wallet  from report-lead  value 0.0029444011023 ETH  gas 0.000000423444 ETH (21000 gas)
+2026-11-01T12:48:08Z  0x4da6bf9189374d932877c377a0c776875927633431efeac553d0e615d13df17f  lock job (record 4 of 6) for report-lead: a small job that builds its desk record before the guarantee test  from demo wallet  value 0.001 ETH  gas 0.000002573653632 ETH (123924 gas)
+2026-11-01T12:48:11Z  0x8b528f9d501a94eb76937285d97f4d803420abe99988bd58aa12c89d81340d6e  report-lead draws 0.0001 ETH from the desk's pool on job 22 (1% fee to the burn pot)  from report-lead  value 0 ETH  gas 0.000002927605506 ETH (145957 gas)
+2026-11-01T12:48:13Z  0x2580271daf93fd240e2425cbf830c2de7670fe91ac52e13506b171625c422340  report-lead delivers job 22  from report-lead  value 0 ETH  gas 0.000001140678072 ETH (56886 gas)
+2026-11-01T12:48:15Z  0x294db19fa38c3d1a226ccdab04ab24e4ecc0eb437d881f31686bd3bbcc5e47de  accept job 22: the pool is repaid, report-lead is paid less the 2% job fee  from demo wallet  value 0 ETH  gas 0.000002026229634 ETH (101079 gas)
+2026-11-01T12:48:23Z  0x40be923d8bcb914366720dc7f2fe5409bb7b08683f95086282895c7c36697f6a  lock job (record 5 of 6) for report-lead: a small job that builds its desk record before the guarantee test  from demo wallet  value 0.001 ETH  gas 0.00000248715468 ETH (123924 gas)
+2026-11-01T12:48:26Z  0xfe3945178d4d6196ce196cb5f697585e354c678e852ad400862f212acfddccb5  report-lead draws 0.0001 ETH from the desk's pool on job 23 (1% fee to the burn pot)  from report-lead  value 0 ETH  gas 0.000002934027614 ETH (145957 gas)
+2026-11-01T12:48:28Z  0x47b733ad492d395872deb2fabc3a4266cb8b4740c0a3885ef242bf159f973768  report-lead delivers job 23  from report-lead  value 0 ETH  gas 0.000001137947544 ETH (56886 gas)
+2026-11-01T12:48:30Z  0x4787c41398a5e33f02721f5a91ff838fe257d5f4c453269200297e7f7050b0fd  accept job 23: the pool is repaid, report-lead is paid less the 2% job fee  from demo wallet  value 0 ETH  gas 0.000002024410212 ETH (101079 gas)
+2026-11-01T12:48:38Z  0x9416e93e7494677bec8c6d91fa1335822eebc54f1b991a25b496c6a1351da396  lock job (record 6 of 6) for report-lead: a small job that builds its desk record before the guarantee test  from demo wallet  value 0.001 ETH  gas 0.000002479967088 ETH (123924 gas)
+2026-11-01T12:48:41Z  0xf628e8a345cb74391004fd1e6ab290286185157340b7947a36c8990c384c0028  report-lead draws 0.0001 ETH from the desk's pool on job 24 (1% fee to the burn pot)  from report-lead  value 0 ETH  gas 0.000002923226796 ETH (145957 gas)
+2026-11-01T12:48:43Z  0xa496848c594bcabd242d6d63241e652932be5d6c2a011cc3d798928e6cf88de1  report-lead delivers job 24  from report-lead  value 0 ETH  gas 0.000001142953512 ETH (56886 gas)
+2026-11-01T12:48:45Z  0x978c86026ed5f11590b1918d97de1bac5008de12a760441a08c8f805db4544f3  accept job 24: the pool is repaid, report-lead is paid less the 2% job fee  from demo wallet  value 0 ETH  gas 0.000002032496532 ETH (101079 gas)
+2026-11-01T13:28:58Z  0x956aa8a791706c962624f0457976790c7a2249919e161dfe767f70731087651a  deploy FactorGuarantee at 0x577a00ad9b0a719c4465a3a887f969b0e377daef beside the live desk, burn pot and line contract (no owner: the production contract)  from demo wallet  value 0 ETH  gas 0.0000547085 ETH (2735425 gas)
+2026-11-01T13:29:47Z  0x484f07af1fa9e4687fedf642f9df86abafcefd16752fa1aef0b6e3e07741f39f  report-lead sends 0.002264370704956 ETH back to the demo wallet  from report-lead  value 0.002264370704956 ETH  gas 0.00000042042 ETH (21000 gas)
+2026-11-01T13:29:55Z  0x852859e4ec20e691727455d8a7c5b6ce7360f5c3bde977a007ea68ed11d29c4a  report-lead bonds 0.0006 ETH in its guarantee (comes back, less any cover it pays)  from report-lead  value 0.0006 ETH  gas 0.000001789447268 ETH (88298 gas)
+2026-11-01T13:30:03Z  0x1952ced7ce1f33763af9ebfbcf638fece36eea11ae28145a9fb35f4be39600f8  report-lead sets its offer: guaranteed up to 0.0005 ETH a job  from report-lead  value 0 ETH  gas 0.000000919129146 ETH (45851 gas)
+2026-11-01T13:30:25Z  0xec29f028b70610cfadc6ca1b8f80e95737ae03412125bbb186ac32f9578e5750  reserve 0.0005 ETH of cover from report-lead's bond, fee 0.000005 ETH (1% of the cover)  from demo wallet  value 0.000005 ETH  gas 0.000006217647774 ETH (310169 gas)
+2026-11-01T13:30:27Z  0x762786ae452916a77d61059af00c222966cdd346669be7e97b34e8ed7f305f58  lock job 25 on the live desk for report-lead, due in a day  from demo wallet  value 0.002 ETH  gas 0.000002487676128 ETH (124086 gas)
+2026-11-01T13:30:29Z  0x8d27d4084e381d1d817c02ae5f0b24e75e5ccbe1d06b1b41c86e3168760e15c3  tie cover 1 to job 25  from demo wallet  value 0 ETH  gas 0.000003381262448 ETH (168692 gas)
+2026-11-01T13:30:57Z  0xa43f6484e45c14c96c7ad5931146621d338018c09fd1c279862409010c0ff937  report-lead delivers job 25  from report-lead  value 0 ETH  gas 0.00000113712 ETH (56856 gas)
+2026-11-01T13:31:05Z  0x0761b49350a13f108e4a7f92183b419346b09204aa4b335962bafa01729aa887  accept job 25: report-lead is paid less the 2% job fee  from demo wallet  value 0 ETH  gas 0.00000189907974 ETH (94935 gas)
+2026-11-01T13:31:13Z  0x2787dc3b1f0b1aa38c47f6031e2cd01fb9a85d45fa60a4dbacb3ab77ac347251  close the cover of job 25: delivered, the cover goes back to report-lead's bond and the fee is split, half to the burn pot  from demo wallet  value 0 ETH  gas 0.000003059986032 ETH (152877 gas)
+2026-11-01T13:31:34Z  0x607c53e507c3a8198654d47d6c0d24f1f49c0fa84477e20720fb9b81b584c025  report-lead sends 0.002028232203586 ETH back to the demo wallet  from report-lead  value 0.002028232203586 ETH  gas 0.000000423111676 ETH (21086 gas)
+2026-11-01T13:31:43Z  0xbc5d95a950ba992dcbfff642dda584922a1d747b8dfcd42eec35b63a4b64c57f  reserve 0.00025 ETH of cover from report-lead's bond, fee 0.0000025 ETH (1% of the cover)  from demo wallet  value 0.0000025 ETH  gas 0.000005531562724 ETH (275971 gas)
+2026-11-01T13:31:45Z  0xc81bea4b93b0d6c4011b6c61ba0aa7178528638e1876ab83b438fdf896668b19  lock job 26 on the live desk for report-lead, due in an hour  from demo wallet  value 0.001 ETH  gas 0.000002486187096 ETH (124086 gas)
+2026-11-01T13:31:47Z  0xd40cdb8ea6ae4604d42b44d032b484f472763e3d091b8985255ad50640b4f997  tie cover 2 to job 26  from demo wallet  value 0 ETH  gas 0.000002356761792 ETH (117392 gas)
+2026-11-01T13:32:05Z  0x3e9a92340c8313daaab960bbd7ddbedcc3ad9c6378c7dc6f88585c6564cb4768  report-lead takes out the free part of its guarantee bond (what backs no cover)  from report-lead  value 0 ETH  gas 0.000000886666384 ETH (44236 gas)
+2026-11-01T13:32:12Z  0x5442da97d3cf2463dd70deb6fa9739fee17ba63dee09bd544c9deb417f0f8916  report-lead sends 0.00036869316194 ETH back to the demo wallet  from report-lead  value 0.00036869316194 ETH  gas 0.00000042174 ETH (21087 gas)
+2026-11-01T13:32:37Z  0xc1d22847e6959a8be837ba0c682cdcf681bc1a2230432589f2273b23a25a3b1f  the demo wallet adds 0.0005 ETH to report-lead's guarantee bond, so it sells cover while the film is made (comes back through report-lead)  from demo wallet  value 0.0005 ETH  gas 0.000001105104674 ETH (54209 gas)
+
+What was checked, on the chain and in the branch engine and site (they agreed on every figure):
+- the guarantee contract 0x577A00Ad9B0a719C4465A3a887F969B0E377daEF (deploy block 103418607, 2,735,425 gas) read back
+  by contracts/script/DeployGuarantees.s.sol check(): wired to the live desk, its burn pot and the live line contract;
+  fee 1%, smallest cover 0.0001, an hour to tie, the score shares 25/50/75/100% from 200/400/600/800
+- report-lead's desk score went from 98 to 218 with six small jobs (each +10 settled, +10 advance repaid); the
+  guarantee contract counted 218: a quarter of a price
+- report-lead bonded 0.0006 and offered up to 0.0005 a job: guaranteed up to 0.0005 on its page and in the list
+- job 25 (0.002) hired with 0.0005 of cover through the kit: reserved (fee 0.000005), locked, tied; delivered,
+  accepted, and its cover closed: released to the bond, 0.0000025 to report-lead and 0.0000025 to the live burn pot
+- job 26 (0.001) hired with 0.00025 of cover, due 2026-11-01 14:36:41 UTC; it will not be delivered. From
+  2026-11-02 02:36:42 UTC anyone (the engine's keeper once GUARANTEES=on is released) closes it: the live desk refunds
+  the 0.001 and the 0.00025 cover is paid to the demo wallet from report-lead's bond, in one transaction. Until then
+  0.00025 of the bond is held back for it and cannot be taken out (report-lead's attempt to take out the free part
+  took only 0.00035)
+- the demo wallet then added 0.0005 to report-lead's guarantee bond so that it sells cover while the film is made;
+  only report-lead can take it out, to its own address, and it comes back to the demo wallet from there
+
+Totals (ETH, from both wallets; nothing else was spent):
+- gas, 43 transactions:                             0.000141626542920 (demo wallet 0.000110802663100 in 23,
+                                                    report-lead 0.000030823879820 in 20); the deploy alone 0.0000547085
+- job fees to the live desk's pool (2% of 6 x 0.001 and of 0.002):  0.000160
+- advance fees to the live burn pot (1% of 6 x 0.0001):              0.000006
+- cover fees (1% of 0.0005 and of 0.00025): 0.0000075, of which half is burned (0.00000375) and half paid to
+  report-lead (Factor's own)
+- in all, gone for good:                            0.000311376542920 (about $0.70 at $2,264.09 an ETH)
+Still out and coming back: job 26's 0.001 and its 0.00025 cover (to the demo wallet when it is closed), report-lead's
+free bond 0.0005 (through report-lead), and 0.0000104 ETH on report-lead.
+Demo wallet: 0.003239345047232 before, 0.001166739556914 after. report-lead: 0.000000439312602 before, 0.00001041826 after.
