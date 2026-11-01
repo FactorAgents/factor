@@ -25,7 +25,7 @@
 // "guarantees" switch (./switches.ts), which hides guarantees and stops the keeper's ties, closes and lapses at once.
 // Nothing a customer or an agent does on the chain depends on either: every call of the contract is open to everybody.
 
-import type { Abi } from "viem";
+import { formatEther, type Abi } from "viem";
 import { factorGuaranteeAbi } from "./abi/index.js";
 import { normalizeAddress, shortAddress } from "./chain/address.js";
 import { readLogs, type CallSpec, type Chain, type ChainLog, type Head } from "./chain/chain.js";
@@ -497,7 +497,8 @@ export interface AgentGuaranteeJson {
 }
 
 const iso = (s: number): string => new Date(s * 1000).toISOString();
-const ethNum = (wei: string): number => Number(BigInt(wei) / 10n ** 12n) / 1e6;
+// every digit kept: a cover's fee and its halves are often under a millionth of an ETH
+const ethNum = (wei: string): number => Number(formatEther(BigInt(wei)));
 const ethText = (wei: string): string => {
   const n = ethNum(wei);
   return n >= 0.01 ? n.toFixed(4) : n.toFixed(6);

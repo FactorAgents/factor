@@ -332,6 +332,8 @@ a.row:hover .what b { color: var(--gilt); }
 .field input[aria-invalid="true"] { border-bottom-color: var(--bad); }
 .field input:disabled, .field select:disabled, .field textarea:disabled { opacity: 0.55; }
 button.toggle { width: 100%; text-align: left; background: transparent; color: inherit; font: inherit; cursor: pointer; border-left: 0; border-right: 0; }
+/* two switches in a row (an early half, then cover) share one hairline */
+.form > .toggle + .toggle { margin-top: -26px; border-top: 0; }
 .toggle i, .toggle i::after { transition: background 0.25s ease, border-color 0.25s ease, transform 0.3s var(--ease); }
 .toggle.off i { background: transparent; border-color: var(--line-2); }
 .toggle.off i::after { background: var(--dim); transform: translateX(-16px); }

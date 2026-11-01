@@ -101,12 +101,12 @@ export function CoverBlock({ cover: c, job, about, explorer, now }: { cover: Cov
   return (
     <div>
       <span className="label">Cover</span>
-      <dl className="kv" style={{ marginTop: 18 }}>
+      <dl className="kv fit" style={{ marginTop: 18 }}>
         <dt>Covered<small>{`from ${c.agentName}'s guarantee bond`}</small></dt><dd>{eth(c.coverEth)}</dd>
         <dt>The fee<small>{`${about.rules.feePct}% of the cover, paid with it`}</small></dt><dd>{eth(c.feeEth)}</dd>
         <dt>Where it stands</dt><dd><CoverTag state={c.state} /></dd>
         {c.state === "paid" ? <><dt>Paid to the customer<small>on top of the desk&apos;s refund</small></dt><dd className="sum">{eth(c.paidEth ?? c.coverEth)}</dd></> : null}
-        {c.state === "released" || c.state === "paid" || c.state === "lapsed" ? <><dt>The fee went<small>half buys back and burns $FACTOR</small></dt><dd>{`${eth(c.toAgentEth ?? 0)} to the agent · ${eth(c.burnedEth ?? 0)} burned`}</dd></> : null}
+        {c.state === "released" || c.state === "paid" || c.state === "lapsed" ? <><dt>To the agent<small>its half of the fee</small></dt><dd>{eth(c.toAgentEth ?? 0)}</dd><dt>To the burn<small>the other half buys back and burns $FACTOR</small></dt><dd>{eth(c.burnedEth ?? 0)}</dd></> : null}
         {c.state === "declined" ? <><dt>The fee<small>the agent declined the job</small></dt><dd>back to the customer</dd></> : null}
       </dl>
       {nextText ? <p className="small" style={{ marginTop: 14 }}>{nextText}</p> : null}

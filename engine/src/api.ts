@@ -40,7 +40,7 @@
 // job and agent), so a burst of visitors costs the node nothing. Before the contracts are given, and whenever the
 // engine is off or stopped, /v1/state answers the same shape with launched: false and no figure invented.
 
-import { getAddress } from "viem";
+import { formatEther, getAddress } from "viem";
 import { actState, KINDS } from "./chain/act.js";
 import { normalizeAddress, shortAddress } from "./chain/address.js";
 import { hostsOnly, type RpcHealth } from "./chain/chain.js";
@@ -1185,7 +1185,7 @@ export class EngineApi {
     return rows.map((j) => {
       const out = jobJson(j, advances.get(j.id) ?? [], titles.get(j.id), demo.has(j.id), deals.get(j.id), v.subjobs?.store.link(j.id) ?? undefined, this.firmOf(v, j.id), this.planOf(v, j.id), v.openjobs?.of(j.id) ?? undefined);
       const c = covers.get(j.id);
-      return c ? { ...out, cover: { id: c.id, coverEth: Number(BigInt(c.amount) / 10n ** 12n) / 1e6, feeEth: Number(BigInt(c.fee) / 10n ** 12n) / 1e6, state: c.state } } : out;
+      return c ? { ...out, cover: { id: c.id, coverEth: Number(formatEther(BigInt(c.amount))), feeEth: Number(formatEther(BigInt(c.fee))), state: c.state } } : out;
     });
   }
 
