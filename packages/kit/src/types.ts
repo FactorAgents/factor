@@ -38,6 +38,8 @@ export interface Job {
   plan?: { id: string; month: number; months: number };
   /** locked from an open job: the listing, how many agents applied, and who picked the agent */
   open?: { id: string; applicants: number; by: "factor" | "customer" };
+  /** hired with cover: how much, the fee, and how the cover stands (while guarantees are on) */
+  cover?: { id: number; coverEth: number; feeEth: number; state: CoverState };
 }
 
 export interface Agent {
@@ -67,6 +69,8 @@ export interface Agent {
   barred: boolean;
   score: number;
   scoreParts: { name: string; value: string; points: number; max: number }[];
+  /** "Guaranteed up to": while guarantees are on and it sells cover, the most cover on one job and the share of a price its score allows */
+  guarantee?: { upToEth: number; sharePct: number };
 }
 
 export interface LedgerLine { n: number; at: string; kind: string; jobId?: string; agentId?: string; text: string; amount: string; tx: string }
@@ -100,6 +104,8 @@ export interface State {
   verified?: { enabled: boolean; checks: { name: string; what: string; passesAt: string }[]; needs: "any" | "all"; validDays: number; how: string; kept: string; agents: number };
   /** agent coins: whether they are on, the launcher, how many are listed, and the newest few */
   coins?: { enabled: boolean; launcher: string | null; count: number; items: Coin[] };
+  /** guarantees: whether they are on, the contract, the rules and the totals */
+  guarantees?: GuaranteesAbout;
 }
 
 /** A Factor account: what an agent's key acts through when Factor pays its gas (connect with `gasless: true`). */
@@ -233,7 +239,7 @@ export interface FirmRecord {
 /** A firm's page: the firm, its record, its jobs with the chain of work under the newest, and its links. */
 export interface FirmPage { enabled: boolean; firm: Firm; record: FirmRecord; jobs: (Job & { tree?: JobTree | null })[]; links: { id: string; title: string; priceEth: string; due: number; early: boolean; exp: string; url: string; firm?: string }[] }
 /** A job hired through a firm (Factor.hireFirm). */
-export interface FirmHire { jobId: number; firm: string; lead: string; hash: `0x${string}`; explorer: string; jobUrl: string; filed: boolean; note?: string }
+export interface FirmHire { jobId: number; firm: string; lead: string; hash: `0x${string}`; explorer: string; jobUrl: string; filed: boolean; note?: string; /** hired with cover from the lead's bond: its number, how much, and whether it is tied to the job yet */ cover?: number | null; coverEth?: string; tied?: boolean }
 
 /** One job in a chain of work: the customer's job at depth 0, the jobs its agent hired for at 1, and so on. */
 export interface TreeNode {
@@ -372,7 +378,7 @@ export interface PlanPage { enabled: boolean; plan: Plan; jobs: Job[]; burnWei: 
 /** An agent's or a firm's monthly clients. */
 export interface PlansSummary { active: number; clients: number; monthlyEth: number; monthlyWei: string; monthsDelivered: number; monthsSettled: number; /** what the months of its plans have paid it */ paidEth: number; plans: number; items: { id: string; status: PlanStatus; customer: string; title: string; priceEth: number; months: number; locked: number; delivered: number; firm?: string }[] }
 /** A month locked by the kit: the job, the lock and its burn, and whether Factor linked it to the plan. */
-export interface PlanMonthSent { plan: `0x${string}`; month: number; months: number; jobId: number; lockTx: `0x${string}`; burnTx: `0x${string}` | null; burned: boolean; linked: boolean; note?: string; planUrl: string; jobUrl: string; explorer: string }
+export interface PlanMonthSent { plan: `0x${string}`; month: number; months: number; jobId: number; lockTx: `0x${string}`; burnTx: `0x${string}` | null; burned: boolean; linked: boolean; note?: string; planUrl: string; jobUrl: string; explorer: string; /** the month locked with cover: how much */ coverEth?: string }
 
 /** Where an open job stands: taking applications, waiting on the customer's pick or lock, locked as a job, taken down, or expired. */
 export type OpenJobStatus = "open" | "choosing" | "picked" | "hired" | "closed" | "expired";
@@ -518,3 +524,60 @@ export interface LineSent extends Sent {
   debtEth: string;
 }
 
+/** Guarantees: whether they are on, the contract, the rules and the totals (the engine's GuaranteesAbout). */
+export interface GuaranteesAbout {
+  enabled: boolean; contract: string | null; chainId: number;
+  rules: { feePct: number; burnPctOfFee: number; minCoverEth: number; windowMin: number; graceH: number; shares: { score: number; pct: number }[] };
+  totals: { bondsEth: number; heldEth: number; coveredEth: number; paidEth: number; feesEth: number; burnedEth: number; covers: number; agents: number } | null;
+}
+
+/** reserved: not tied to a job yet. bound: tied. released: delivered, back to the bond. paid: not delivered, paid to the customer. declined: the agent declined, the fee went back. lapsed: never tied */
+export type CoverState = "reserved" | "bound" | "released" | "paid" | "declined" | "lapsed";
+
+/** One cover, as the site serves it (the engine's CoverJson). */
+export interface Cover {
+  id: number; customer: string; agent: string; agentName: string; named: boolean;
+  priceEth: number; coverEth: number; coverWei: string; feeEth: number; dueAt: string; allowEarly: boolean;
+  state: CoverState; job: string | null; reservedAt: string; expiresAt: string; tx: string;
+  boundTx?: string; boundAt?: string; closedTx?: string; closedAt?: string; paidEth?: number; toAgentEth?: number; burnedEth?: number; feeBackEth?: number;
+  /** what happens next, and from when */
+  next?: { what: "tie" | "lapse" | "pays-if-not-delivered" | "releases" | "pays"; at: string };
+}
+
+/** One agent's guarantee, as the site serves it (the engine's AgentGuaranteeJson). */
+export interface AgentGuarantee {
+  agent: string; name: string; named: boolean;
+  /** the key that runs it, when the agent's address is a credit line account */
+  key: string | null;
+  bondEth: number; heldEth: number; freeEth: number; offerEth: number; offerWei: string;
+  /** "Guaranteed up to": the offer or the free bond, whichever is less; 0 while the score allows no share */
+  upToEth: number; upToWei: string;
+  /** the score the contract counts and the share of a price it allows, in percent */
+  score: number; sharePct: number; selling: boolean;
+  covers: number; released: number; paid: number; declined: number; lapsed: number; coveredEth: number; paidOutEth: number; feesEarnedEth: number;
+  items?: Cover[];
+}
+
+/** A job hired with cover: the job, its cover, and whether the two are tied yet. */
+export interface CoveredHire extends Sent {
+  jobId: number;
+  /** the cover's number on the guarantee contract */
+  cover: number | null;
+  coverEth: string;
+  feeEth: string;
+  /** tied to the job: false only when the last of a wallet's three transactions did not go; Factor ties it within the hour */
+  tied: boolean;
+  titled: boolean;
+  briefed: boolean;
+  jobUrl: string;
+  note?: string;
+}
+
+/** A guarantee call that was sent: the transaction, and the agent's guarantee as the chain has it right after. */
+export interface GuaranteeSent extends Sent {
+  /** the desk address whose guarantee it is: the wallet, or its line account */
+  agent: string;
+  bondEth: string;
+  freeEth: string;
+  offerEth: string;
+}

@@ -617,6 +617,76 @@ export const TOOLS: Tool[] = [
     },
   },
   {
+    name: "factor_guarantee", readOnly: true, input: { agent: z.string().optional().describe("The agent's name or address. Left out: this wallet's own (its line account's, when it has a credit line)") },
+    description: "An agent's guarantee on Factor: \"Guaranteed up to\" (the most cover it sells on one job), its guarantee bond, what is held back for covers that have not ended, what is free, its offer, the share of a job's price its desk score allows, and its record of covers (delivered, paid out to customers, declined). A customer hiring it with cover is paid the cover from that bond if the job is not delivered. With none: whether guarantees are open and how one is set up.",
+    async run(f, a) {
+      const g = await f.guarantee(typeof a.agent === "string" ? a.agent : undefined);
+      const about = await f.guarantees();
+      if (!about.enabled) return "Guarantees are not switched on yet.";
+      const shares = about.rules.shares.map((s) => `${s.pct}% from a score of ${s.score}`).join(", ");
+      if (!g) return `No guarantee${typeof a.agent === "string" ? ` for ${a.agent}` : " for this wallet"}. An agent sets one up with factor_set_guarantee: a bond, and the most cover it sells on one job. How much of a job's price can be covered follows its desk score: ${shares}. The customer pays ${about.rules.feePct}% of the cover; half buys back and burns $FACTOR, the rest goes to the agent when the cover ends.`;
+      return [
+        `${g.name}: ${g.selling ? `guaranteed up to ${g.upToEth} ETH a job` : g.sharePct === 0 ? `sells no cover yet (score ${g.score}; cover starts at ${about.rules.shares[0]?.score ?? 200})` : "sells no cover right now"}.`,
+        `Bond ${g.bondEth} ETH: ${g.heldEth} ETH held back for covers that have not ended, ${g.freeEth} ETH free. Offer ${g.offerEth} ETH a job. Score ${g.score}: up to ${g.sharePct}% of a job's price.${g.key ? ` A line account, run by its key ${g.key}.` : ""}`,
+        `Record: ${g.covers} covered job(s), ${g.released} delivered, ${g.paid} paid out (${g.paidOutEth} ETH to customers), ${g.declined} declined.`,
+      ].join("\n");
+    },
+  },
+  {
+    name: "factor_set_guarantee", readOnly: false,
+    input: {
+      bond: amount.optional().describe("ETH to add to the guarantee bond, as text. It backs every cover the agent sells"),
+      offer: amount.optional().describe('The most cover sold on one job, as text, like "0.02". "0" sells none'),
+      withdraw: z.union([amount, z.literal("all")]).optional().describe('ETH to take out of the bond: only the part no cover holds back. "all" for all of that'),
+      at: z.enum(["wallet", "line"]).optional().describe("Whose guarantee: this wallet's line account (the default when it has a credit line), or this wallet itself"),
+    },
+    description: "Set up this agent's guarantee: add to its bond, set the most cover it sells on one job, or take out what is free. A bond SPENDS ETH from this wallet, held to the day's cap; it is the agent's own and only the part no cover holds back can come out again. If a covered job is not delivered, its customer is paid the cover from this bond.",
+    async run(f, a, spending) {
+      need(f);
+      const said: string[] = [];
+      if (typeof a.bond === "string") {
+        const v = toWei(a.bond);
+        spending?.check(v, false);
+        const r = await f.bondGuarantee(a.bond, a.at ? { at: a.at as "wallet" | "line" } : {});
+        spending?.add(v);
+        said.push(`Bonded ${a.bond} ETH: the bond is ${r.bondEth} ETH, ${r.freeEth} ETH free. ${r.explorer}`);
+      }
+      if (typeof a.offer === "string") {
+        const r = await f.setCoverOffer(a.offer, a.at ? { at: a.at as "wallet" | "line" } : {});
+        said.push(`The offer is ${r.offerEth} ETH a job. ${r.explorer}`);
+      }
+      if (a.withdraw !== undefined) {
+        const r = await f.withdrawGuarantee(a.withdraw === "all" ? undefined : String(a.withdraw), a.at ? { at: a.at as "wallet" | "line" } : {});
+        said.push(`Took bond out: it is ${r.bondEth} ETH now. ${r.explorer}`);
+      }
+      return said.length ? said.join("\n") : "Say a bond to add, an offer, or what to take out.";
+    },
+  },
+  {
+    name: "factor_hire_with_cover", readOnly: false,
+    input: { agent: z.string().describe("The agent's name or address"), price: amount, cover: z.union([amount, z.literal("max")]).optional().describe('ETH of cover, as text, or "max" (the default): all the agent covers on this job'), title: z.string().min(3).max(80).describe("What you want done, in one line without links"), brief: z.string().min(1).max(12000).optional().describe("The details the agent works from, up to 12,000 characters. Anyone can read it on the job's page"), due_in_hours: z.number().min(1).max(720).optional().describe("24 when not given"), allow_early: z.boolean().optional().describe("true lets the agent take up to half before delivering; false when not given") },
+    description: "Hire an agent WITH COVER: if the job is not delivered by its due time and the 12 hours of grace, this wallet is paid the cover from the agent's guarantee bond, on top of the desk's refund. A rejected delivery pays no cover. THIS SPENDS ETH: the price (held by the desk as any job) and a fee of 1% of the cover. Use factor_guarantee first to see what the agent covers. Confirm the agent, the price, the cover and the due time with the user unless they already gave them.",
+    async run(f, a, spending) {
+      need(f);
+      const price = toWei(String(a.price));
+      spending?.check(price, true);
+      const r = await f.hireWithCover(String(a.agent), price, { cover: a.cover === undefined ? "max" : (a.cover as string), title: String(a.title), ...(typeof a.brief === "string" ? { brief: a.brief } : {}), dueInHours: a.due_in_hours as number | undefined, allowEarly: a.allow_early === true });
+      const total = price + toWei(r.feeEth);
+      spending?.add(total);
+      return `Job ${r.jobId} is locked: ${eth(price)} ETH for ${a.agent}, with ${r.coverEth} ETH of cover (fee ${r.feeEth} ETH)${r.tied ? "" : `. ${r.note}`}. If it is not delivered in time you are paid the cover from the agent's bond as well as the refund. ${r.jobUrl}`;
+    },
+  },
+  {
+    name: "factor_cover", readOnly: true, input: { job: jobId },
+    description: "The cover of a job hired with cover: how much, the fee, where it stands (reserved, covered, delivered, paid out, declined, lapsed) and what happens next. Factor closes a cover by itself once the desk is done with the job: paid to the customer if the job was refunded, back to the agent's bond otherwise.",
+    async run(f, a) {
+      const c = await f.cover(a.job as number);
+      if (!c) return `Job ${a.job} has no cover.`;
+      const next = c.next ? ` Next: ${c.next.what === "pays-if-not-delivered" ? `if not delivered by ${c.next.at}, the cover is paid to the customer` : c.next.what === "releases" ? `the cover goes back to the bond once the job settles (${c.next.at} at the latest)` : c.next.what === "tie" ? `it is tied to its job by ${c.next.at}` : c.next.what === "pays" ? "the cover is being paid to the customer" : "it lapses back to the bond"}.` : "";
+      return `Job ${a.job}: ${c.coverEth} ETH of cover from ${c.agentName}'s guarantee bond, fee ${c.feeEth} ETH. ${c.state === "paid" ? `Not delivered: ${c.paidEth ?? c.coverEth} ETH was paid to the customer.` : c.state === "released" ? "Delivered: the cover went back to the bond." : c.state === "declined" ? "Declined: the customer had the price and the fee back." : c.state === "lapsed" ? "Never tied to a job: it lapsed." : c.state === "reserved" ? "Reserved, not tied to the job yet." : "Covered."}${next}`;
+    },
+  },
+  {
     name: "factor_verified_owner", readOnly: true, input: { agent: z.string().optional().describe("The agent's name or address. Left out: this wallet's own") },
     description: "Whether an agent's owner is verified on Factor: the wallet that runs the agent passed Human Passport (a real person holds it) or Talent Protocol (a builder's record), which check passed, a band of the score, and when it was checked and runs out. Only the outcome is kept. It changes no score, no limit and nothing on the chain. Also says where the owner verifies.",
     async run(f, a) {

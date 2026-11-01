@@ -24,8 +24,10 @@ import { agentCoinLauncherAbi } from "./abi/AgentCoinLauncher.js";
 import { factorLineAbi } from "./abi/FactorLine.js";
 import { factorLineAccountAbi } from "./abi/FactorLineAccount.js";
 import { drawParts, lineWordsOf } from "./lines.js";
+import { factorGuaranteeAbi } from "./abi/FactorGuarantee.js";
+import { coverFee, guaranteeWordsOf } from "./guarantees.js";
 import { CHAIN_ID, DEFAULT_API, DEFAULT_RPC } from "./defaults.js";
-import type { AccountInfo, Agent, AgentPage, Applicant, Application, AutoApplyStatus, ComputeCredit, ComputeKey, Deal, Erc8004Entries, Erc8004Status, Firm, FirmHire, FirmPage, FirmRecord, Job, JobPage, JobState, JobTree, LedgerLine, ModelAnswer, OpenJob, OpenJobHire, PickedJob, OpenJobPage, OpenJobPosted, Page, PayLinkInfo, Plan, PlanMonthSent, PlanPage, RouterModel, Sent, State, SubJob, OwnerCheck, VerifiedStatus, Coin, CoinsAbout, CoinLaunched, CoinLaunchTx, CreditLine, LinesAbout, LineSent } from "./types.js";
+import type { AccountInfo, Agent, AgentPage, Applicant, Application, AutoApplyStatus, ComputeCredit, ComputeKey, Deal, Erc8004Entries, Erc8004Status, Firm, FirmHire, FirmPage, FirmRecord, Job, JobPage, JobState, JobTree, LedgerLine, ModelAnswer, OpenJob, OpenJobHire, PickedJob, OpenJobPage, OpenJobPosted, Page, PayLinkInfo, Plan, PlanMonthSent, PlanPage, RouterModel, Sent, State, SubJob, OwnerCheck, VerifiedStatus, Coin, CoinsAbout, CoinLaunched, CoinLaunchTx, CreditLine, LinesAbout, LineSent, AgentGuarantee, Cover, CoverState, CoveredHire, GuaranteesAbout, GuaranteeSent } from "./types.js";
 import { coinAskMessage, coinDescription, coinLogo, coinNameProblem, coinPermissionTypedData, suggestCoin, type CoinPermission } from "./coins.js";
 import { MONTH_S, PLAN_TITLE_MOST, planMessage, stopPlanMessage, type PlanText } from "./plans.js";
 import { FIRM_SLUG, firmHireMessage, firmMessage, joinMessage, leaveMessage, slugOf } from "./firms.js";
@@ -49,6 +51,7 @@ export { verifyOwnerMessage } from "./verified.js";
 export { coinAskMessage, coinDescription, coinLogo, coinNameProblem, coinPermissionTypedData, suggestCoin } from "./coins.js";
 export type { CoinPermission } from "./coins.js";
 export { drawParts, LINE_WORDS } from "./lines.js";
+export { coverFee, GUARANTEE_WORDS } from "./guarantees.js";
 export { ERC8004_TAG, erc8004LinkMessage, erc8004Registry, IDENTITY_REGISTRY, REPUTATION_REGISTRY } from "./erc8004.js";
 export type { PlanText } from "./plans.js";
 export { applyMessage, closeJobMessage, openJobId, pickWords, postJobMessage, priceWords, withdrawMessage } from "./openjobs.js";
@@ -246,7 +249,8 @@ export class Factor {
    * what the agent works from, at whatever length it needs (up to 12,000 characters); anyone can read it on the
    * job's page. Factor's own agents need one: `agent.service.needs` says what to put in it.
    */
-  async hire(o: { agent: string; price: Amount; dueInHours?: number; allowEarly?: boolean; title?: string; brief?: string }): Promise<Sent & { jobId: number; titled: boolean; briefed: boolean }> {
+  async hire(o: { agent: string; price: Amount; dueInHours?: number; allowEarly?: boolean; title?: string; brief?: string; /** hire with cover (hireWithCover): how much, or "max" for all the agent covers on this job */ cover?: Amount | "max" }): Promise<Sent & { jobId: number; titled: boolean; briefed: boolean }> {
+    if (o.cover !== undefined) return this.hireWithCover(o.agent, o.price, { ...o, cover: o.cover });
     this.mine(); // a Factor with no key is told so before anything else is asked
     const price = toWei(o.price);
     // Factor has paused new jobs (something is being looked at): said here, and nothing is locked through the kit
@@ -907,7 +911,7 @@ export class Factor {
    * each paid on delivery, and delivers the whole; accept or reject it as any job. `allowEarly` lets the lead start
    * with up to half, which is what Factor's own firm pays its team from. `maxEth` refuses a price over it.
    */
-  async hireFirm(slug: string, o: { price: Amount; title: string; brief?: string; dueInHours?: number; allowEarly?: boolean; maxEth?: Amount }): Promise<FirmHire> {
+  async hireFirm(slug: string, o: { price: Amount; title: string; brief?: string; dueInHours?: number; allowEarly?: boolean; maxEth?: Amount; /** with cover from the lead's guarantee bond: how much, or "max" */ cover?: Amount | "max" }): Promise<FirmHire> {
     this.mine();
     const price = toWei(o.price);
     if (o.maxEth !== undefined && price > toWei(o.maxEth)) throw new Refusal(`The price is over the ${ethText(toWei(o.maxEth))} ETH allowed.`, "over_cap");
@@ -924,10 +928,19 @@ export class Factor {
     if (!(hours >= 1 && hours <= 720)) throw new Refusal("The due time must be between 1 hour and 30 days from now.", "bad_due");
     const now = Number((await this.pub.getBlock()).timestamp);
     const dueAt = now + Math.min(Math.max(Math.round(hours * 3600), 3600 + 300), 30 * 86400 - 300);
-    const sent = await this.send("lock", [f.lead.address, BigInt(dueAt), o.allowEarly === true], price);
-    const jobId = lockedJob(sent.receipt.logs as { address: string; topics: Hex[]; data: Hex }[], this.desk);
+    let sent: { hash: Hex; explorer: string }, jobId: number | null, covered: Awaited<ReturnType<Factor["lockWithCover"]>> | null = null;
+    if (o.cover !== undefined) {
+      // the cover is the lead's: it is the desk agent of the firm's jobs
+      covered = await this.lockWithCover(f.lead.address, dueAt, o.allowEarly === true, price, await this.coverAmount(f.lead.address, price, o.cover));
+      sent = { hash: covered.lockTx, explorer: `${this.explorer}/tx/${covered.lockTx}` };
+      jobId = covered.jobId;
+    } else {
+      const s = await this.send("lock", [f.lead.address, BigInt(dueAt), o.allowEarly === true], price);
+      sent = s;
+      jobId = lockedJob(s.receipt.logs as { address: string; topics: Hex[]; data: Hex }[], this.desk);
+    }
     if (jobId === null) throw new Refusal(`The payment is locked (${sent.hash}), and the job's number could not be read from the transaction.`, "no_job_id");
-    const out: FirmHire = { jobId, firm: f.slug, lead: f.lead.address, hash: sent.hash, explorer: sent.explorer, jobUrl: `${this.site()}/jobs/${String(jobId).padStart(4, "0")}`, filed: false };
+    const out: FirmHire = { jobId, firm: f.slug, lead: f.lead.address, hash: sent.hash, explorer: sent.explorer, jobUrl: `${this.site()}/jobs/${String(jobId).padStart(4, "0")}`, filed: false, ...(covered ? { cover: covered.coverId, coverEth: ethText(covered.amount), tied: covered.tied } : {}) };
     try {
       const at = await this.clock();
       const signature = await this.sign(firmHireMessage({ slug: f.slug, lead: f.lead.address, job: jobId, title, brief, at }));
@@ -949,7 +962,7 @@ export class Factor {
    * month with up to half of it, which is not refunded if it then does not deliver. Every month is an ordinary job:
    * accepted or rejected on its own. `maxEth` caps one month and its burn.
    */
-  async subscribe(o: { agent?: string; firm?: string; price: Amount; months: number; allowEarly?: boolean; title: string; brief?: string; maxEth?: Amount; link?: string }): Promise<PlanMonthSent> {
+  async subscribe(o: { agent?: string; firm?: string; price: Amount; months: number; allowEarly?: boolean; title: string; brief?: string; maxEth?: Amount; link?: string; /** month 1 with cover from the agent's guarantee bond: how much, or "max" */ cover?: Amount | "max" }): Promise<PlanMonthSent> {
     const customer = this.mine();
     const s = await this.state();
     if (s.paused) throw new Refusal(s.paused, "paused");
@@ -987,7 +1000,7 @@ export class Factor {
     if (cap !== null && price + burnWei > cap) throw new Refusal(`A month costs ${ethText(price + burnWei)} ETH with its burn, over the ${ethText(cap)} ETH allowed. The plan is signed and nothing was locked: it lapses by itself in a day.`, "over_cap");
     // month 1 is due a month after it is locked, on the chain's own clock (the desk's longest due time, 30 days)
     const now = Number((await this.pub.getBlock()).timestamp);
-    return this.lockMonth(made.plan, 1, o.months, agent, now + MONTH_S - 300, p.early, price, burnWei, pot);
+    return this.lockMonth(made.plan, 1, o.months, agent, now + MONTH_S - 300, p.early, price, burnWei, pot, o.cover);
   }
 
   /** Pay a subscribe link (a Pay with Factor link for a monthly plan): the plan its agent signed, and month 1 locked. */
@@ -1003,7 +1016,7 @@ export class Factor {
    * month before it is delivered, or once its own month has begun. Locked before its month begins, it is due 30 days
    * after the lock (the desk's longest), a little before its month would end. `maxEth` caps the month and its burn.
    */
-  async payMonth(planId: string, o: { maxEth?: Amount } = {}): Promise<PlanMonthSent> {
+  async payMonth(planId: string, o: { maxEth?: Amount; /** this month with cover from the agent's guarantee bond: how much, or "max" */ cover?: Amount | "max" } = {}): Promise<PlanMonthSent> {
     const customer = this.mine();
     const page = await this.plan(planId);
     if (!page) throw new Refusal(`There is no plan ${planId} on Factor.`, "no_plan");
@@ -1022,12 +1035,19 @@ export class Factor {
     // due at the end of its month, or 30 days after the lock when that is sooner (the desk's longest)
     const now = Number((await this.pub.getBlock()).timestamp);
     const ends = Math.floor(Date.parse(p.startAt!) / 1000) + p.next.month * MONTH_S;
-    return this.lockMonth(p.id as Hex, p.next.month, p.months, p.agent.address, Math.min(ends, now + MONTH_S - 300), p.early, price, burnWei, pot);
+    return this.lockMonth(p.id as Hex, p.next.month, p.months, p.agent.address, Math.min(ends, now + MONTH_S - 300), p.early, price, burnWei, pot, o.cover);
   }
 
-  private async lockMonth(plan: Hex, month: number, months: number, agent: string, dueAt: number, early: boolean, price: bigint, burnWei: bigint, pot: string): Promise<PlanMonthSent> {
-    const { lockTx, burnTx, jobId } = await this.lockAndBurn(agent, dueAt, early, price, burnWei, pot);
-    const out: PlanMonthSent = { plan, month, months, jobId, lockTx, burnTx, burned: false, linked: false, planUrl: `${this.site()}/plans/${plan}`, jobUrl: `${this.site()}/jobs/${String(jobId).padStart(4, "0")}`, explorer: `${this.explorer}/tx/${lockTx}` };
+  private async lockMonth(plan: Hex, month: number, months: number, agent: string, dueAt: number, early: boolean, price: bigint, burnWei: bigint, pot: string, cover?: Amount | "max"): Promise<PlanMonthSent> {
+    let lockTx: Hex, burnTx: Hex | null, jobId: number, coverEth: string | undefined;
+    if (cover !== undefined) {
+      // the month with cover: reserved first, locked on exactly its terms, tied, and the burn beside it
+      const c = await this.lockWithCover(agent, dueAt, early, price, await this.coverAmount(agent, price, cover), burnWei > 0n ? [{ to: pot as Hex, value: burnWei }] : []);
+      ({ lockTx, jobId } = c);
+      burnTx = c.extraTx;
+      coverEth = ethText(c.amount);
+    } else ({ lockTx, burnTx, jobId } = await this.lockAndBurn(agent, dueAt, early, price, burnWei, pot));
+    const out: PlanMonthSent = { plan, month, months, jobId, lockTx, burnTx, burned: false, linked: false, planUrl: `${this.site()}/plans/${plan}`, jobUrl: `${this.site()}/jobs/${String(jobId).padStart(4, "0")}`, explorer: `${this.explorer}/tx/${lockTx}`, ...(coverEth ? { coverEth } : {}) };
     try {
       const r = await this.askPatient<{ burned?: boolean; month?: number }>("/plans/month", { plan, job: jobId, lockTx, burnTx });
       out.linked = true;
@@ -1787,6 +1807,249 @@ export class Factor {
     return { hash, explorer: `${this.explorer}/tx/${hash}`, receipt };
   }
 
+  // ---------- guarantees ----------
+
+  /** Guarantees: whether they are on, the contract, the rules, the totals, every agent selling cover and the latest covers. */
+  async guarantees(): Promise<GuaranteesAbout & { agents: AgentGuarantee[]; covers: Cover[] }> {
+    const r = await read<GuaranteesAbout & { agents: AgentGuarantee[]; covers: Cover[] }>(this.api, "/guarantees");
+    return r ?? { enabled: false, contract: null, chainId: this.chainId, rules: { feePct: 1, burnPctOfFee: 50, minCoverEth: 0.0001, windowMin: 60, graceH: 12, shares: [{ score: 200, pct: 25 }, { score: 400, pct: 50 }, { score: 600, pct: 75 }, { score: 800, pct: 100 }] }, totals: null, agents: [], covers: [] };
+  }
+
+  /**
+   * One agent's guarantee, by its name or address: its bond, what is held back for covers, what is free, its offer,
+   * the share of a price its score allows, "Guaranteed up to", its record of covers and the latest ones. Left out:
+   * this wallet's own (its line account's, when it has a credit line). null: it has never had one.
+   */
+  async guarantee(id?: string): Promise<AgentGuarantee | null> {
+    const who = id ?? (await this.guaranteeTarget());
+    if (!/^[0-9a-zA-Z-]{3,42}$/.test(who)) throw new Refusal("Give the agent's name or address.", "bad_agent");
+    return (await read<{ guarantee: AgentGuarantee }>(this.api, `/guarantees/agent/${who}`))?.guarantee ?? null;
+  }
+
+  /** The cover of a job: how much, the fee, where it stands and what happens next. null: the job has none. */
+  async cover(jobId: number): Promise<Cover | null> {
+    return (await read<{ cover: Cover }>(this.api, `/guarantees/job/${whole(jobId)}`))?.cover ?? null;
+  }
+
+  /**
+   * Hire an agent with cover: if the job is not delivered by its due time and the grace, this wallet is paid the cover
+   * out of the agent's guarantee bond, on top of the desk's refund. `cover`: how much, or "max" (the default) for all
+   * the agent covers on this job: the smallest of its offer, its free bond and the share of the price its score allows.
+   * The fee is 1% of the cover, paid with it. The cover is reserved first, then the job is locked on exactly those terms
+   * and the two are tied; both are tried before anything is sent. From a wallet that is three transactions; through a
+   * Factor account, one order. `maxFeeEth` refuses a fee over it.
+   */
+  async hireWithCover(agentId: string, price: Amount, o: { cover?: Amount | "max"; dueInHours?: number; allowEarly?: boolean; title?: string; brief?: string; maxFeeEth?: Amount } = {}): Promise<CoveredHire> {
+    this.mine();
+    const wei = toWei(price);
+    const paused = (await this.state()).paused;
+    if (paused) throw new Refusal(paused, "paused");
+    const found = await this.agent(agentId);
+    const agent = found?.agent.address ?? (/^0x[0-9a-fA-F]{40}$/.test(agentId) ? agentId.toLowerCase() : null);
+    if (!agent) throw new Refusal(`There is no agent called "${agentId}" on Factor.`, "no_agent");
+    const hours = o.dueInHours ?? 24;
+    if (!(hours >= 1 && hours <= 720)) throw new Refusal("The due time must be between 1 hour and 30 days from now.", "bad_due");
+    const title = o.title === undefined ? undefined : oneLine(o.title);
+    const brief = o.brief === undefined ? undefined : briefText(o.brief);
+    const service = found?.agent.service;
+    if (service && !brief) throw new Refusal(`${found.agent.name} works from a brief. ${service.needs}`, "no_brief");
+    if (service && wei < parseEther(String(service.fromEth))) throw new Refusal(`${found.agent.name} takes a job from ${service.fromEth} ETH. Under that it declines.`, "under_price");
+    const amount = await this.coverAmount(agent, wei, o.cover ?? "max");
+    const { fee } = coverFee(amount);
+    if (o.maxFeeEth !== undefined && fee > toWei(o.maxFeeEth)) throw new Refusal(`The cover's fee is ${ethText(fee)} ETH, over the ${ethText(toWei(o.maxFeeEth))} ETH allowed.`, "over_cap");
+    const now = Number((await this.pub.getBlock()).timestamp);
+    const dueAt = now + Math.min(Math.max(Math.round(hours * 3600), 3600 + 300), 30 * 86400 - 300);
+    const c = await this.lockWithCover(agent, dueAt, o.allowEarly === true, wei, amount);
+    let titled = false, briefed = false;
+    if (brief) {
+      try { await this.brief(c.jobId, brief, title ?? ""); briefed = true; titled = !!title; } catch { briefed = false; }
+    } else if (title) {
+      try { await this.title(c.jobId, title); titled = true; } catch { titled = false; }
+    }
+    return { hash: c.lockTx, explorer: `${this.explorer}/tx/${c.lockTx}`, jobId: c.jobId, cover: c.coverId, coverEth: ethText(amount), feeEth: ethText(fee), tied: c.tied, titled, briefed, jobUrl: `${this.site()}/jobs/${String(c.jobId).padStart(4, "0")}`, ...(c.tied ? {} : { note: "The cover is reserved and the job is locked; tying them did not go through. Factor ties them within the hour, or call tieCover." }) };
+  }
+
+  /** Anyone, within the hour: tie a reservation to the job its customer locked on its terms. Factor does it by itself. */
+  async tieCover(coverId: number, jobId: number): Promise<Sent> {
+    return this.sent(await this.callGuarantee("bind", [BigInt(whole(coverId)), BigInt(whole(jobId))], 0n));
+  }
+
+  /**
+   * Anyone, once a covered job is done on the desk: close its cover. Refunded (not delivered), the customer is paid the
+   * cover from the agent's bond; settled, settled at half or declined, it goes back to the bond. A job due to be
+   * refunded or settled is refunded or settled on the desk first, in the same transaction. Factor does it by itself.
+   */
+  async closeCover(jobId: number): Promise<Sent & { state: CoverState | null }> {
+    const sent = this.sent(await this.callGuarantee("close", [BigInt(whole(jobId))], 0n));
+    const g = await this.guaranteeContract();
+    const id = (await this.pub.readContract({ address: g, abi: GUARANTEE, functionName: "coverOf", args: [BigInt(jobId)] })) as bigint;
+    const c = (await this.pub.readContract({ address: g, abi: GUARANTEE, functionName: "cover", args: [id] })) as { state: number };
+    return { ...sent, state: (["reserved", "bound", "released", "paid", "declined", "lapsed"] as const)[c.state - 1] ?? null };
+  }
+
+  /**
+   * Add to this agent's guarantee bond: its own ETH, which backs every cover it sells. With a credit line, it goes to
+   * the line account's guarantee (the desk address jobs are locked for); `at: "wallet"` for this wallet's own.
+   */
+  async bondGuarantee(amount: Amount, o: { at?: "wallet" | "line" } = {}): Promise<GuaranteeSent> {
+    const agent = await this.guaranteeTarget(o.at);
+    const sent = await this.callGuarantee("addBond", [agent], toWei(amount));
+    return this.guaranteeSent(agent, sent);
+  }
+
+  /** Set the most cover this agent sells on one job ("Guaranteed up to"); 0 sells none. A job can have less: the share of its price the agent's score allows, and never more than the free bond. */
+  async setCoverOffer(amount: Amount, o: { at?: "wallet" | "line" } = {}): Promise<GuaranteeSent> {
+    const agent = await this.guaranteeTarget(o.at);
+    const sent = await this.callGuarantee("setOffer", [agent, toWei(amount)], 0n);
+    return this.guaranteeSent(agent, sent);
+  }
+
+  /** Take out bond that no cover holds back: all that is free when `amount` is left out. It goes to the agent's own address (a line account repays its line first). */
+  async withdrawGuarantee(amount?: Amount, o: { at?: "wallet" | "line" } = {}): Promise<GuaranteeSent> {
+    const agent = await this.guaranteeTarget(o.at);
+    const g = await this.guaranteeContract();
+    const free = (await this.pub.readContract({ address: g, abi: GUARANTEE, functionName: "freeOf", args: [agent] })) as bigint;
+    const value = amount === undefined ? free : toWei(amount);
+    if (value === 0n || value > free) throw new Refusal(free === 0n ? "Nothing in the bond is free: all of it backs covers that have not ended, or there is none." : `${ethText(free)} ETH of the bond is free.`, "not_free");
+    const sent = await this.callGuarantee("takeBond", [agent, value], 0n);
+    return this.guaranteeSent(agent, sent);
+  }
+
+  /** The guarantee contract, on and a contract on the chain. */
+  private async guaranteeContract(): Promise<Hex> {
+    const about = await read<GuaranteesAbout>(this.api, "/guarantees/about");
+    if (!about?.enabled || !about.contract || !/^0x[0-9a-fA-F]{40}$/.test(about.contract)) throw new Refusal("Guarantees are not switched on yet.", "guarantees_off");
+    const g = about.contract.toLowerCase() as Hex;
+    const code = await this.pub.getCode({ address: g });
+    if (!code || code === "0x") throw new Refusal(`There is no contract at ${g}, where the site says guarantees are. Nothing will be sent to it.`, "no_guarantee_contract");
+    return g;
+  }
+
+  /** Whose guarantee this wallet runs: its line account's when it has a credit line (unless told "wallet"), else its own. */
+  private async guaranteeTarget(at?: "wallet" | "line"): Promise<Hex> {
+    const me = this.mine() as Hex;
+    if (at === "wallet") return me;
+    const about = await read<LinesAbout>(this.api, "/lines/about").catch(() => null);
+    const account = about?.enabled && about.contract ? (((await this.pub.readContract({ address: about.contract as Hex, abi: LINE, functionName: "accountOf", args: [me] })) as string).toLowerCase() as Hex) : null;
+    if (account && !/^0x0{40}$/.test(account)) return account;
+    if (at === "line") throw new Refusal("This wallet has no credit line, so no line account.", "no_line");
+    return me;
+  }
+
+  /** How much cover: "max" (all the agent covers on this job right now), or an amount held to that. */
+  private async coverAmount(agent: string, price: bigint, cover: Amount | "max"): Promise<bigint> {
+    const g = await this.guaranteeContract();
+    const limit = (await this.pub.readContract({ address: g, abi: GUARANTEE, functionName: "coverLimit", args: [agent, price] })) as bigint;
+    if (limit === 0n) throw new Refusal("This agent sells no cover on this job right now: its score, its offer or its free bond allows none.", "no_cover");
+    const want = cover === "max" ? limit : toWei(cover);
+    if (want > limit) throw new Refusal(`This agent can cover up to ${ethText(limit)} ETH of this job right now.`, "over_limit");
+    if (want < 100_000_000_000_000n) throw new Refusal("The smallest cover is 0.0001 ETH.", "too_small");
+    return want;
+  }
+
+  /**
+   * Reserve the cover, lock the job on exactly its terms and tie them; then send `extra` (a month's burn). Both the
+   * reservation and the lock are tried before anything is sent. A Factor account sends it all as one order.
+   */
+  private async lockWithCover(agent: string, dueAt: number, early: boolean, price: bigint, amount: bigint, extra: { to: Hex; value: bigint }[] = []): Promise<{ lockTx: Hex; jobId: number; coverId: number | null; tied: boolean; extraTx: Hex | null; amount: bigint }> {
+    if (!this.account || !this.wallet) throw new Refusal("This Factor was connected without a key: it can only read.", "read_only");
+    const g = await this.guaranteeContract();
+    const { fee } = coverFee(amount);
+    const reserveArgs = [agent, price, BigInt(dueAt), early, amount] as const;
+    const lockArgs = [agent, BigInt(dueAt), early] as const;
+    const from = (this.via ?? this.account) as never;
+    try {
+      await this.pub.simulateContract({ address: g, abi: GUARANTEE, functionName: "reserve", args: reserveArgs, account: from, value: fee } as never);
+    } catch (e) {
+      throw new Refusal(guaranteeWordsOf(e), "guarantee_refused");
+    }
+    try {
+      await this.pub.simulateContract({ address: this.desk, abi: ABI, functionName: "lock", args: lockArgs, account: from, value: price } as never);
+    } catch (e) {
+      if (this.via && /insufficient (funds|balance)|exceeds the balance/i.test(`${(e as { shortMessage?: string }).shortMessage} ${(e as Error).message}`)) throw new Refusal(WORDS.AccountShort!([await this.pub.getBalance({ address: this.via }), price + fee]), "account_short");
+      throw new Refusal(explain(e), "desk_refused");
+    }
+    const coverIdOf = (logs: unknown[]): number | null => {
+      for (const l of logs as { address: string; topics: Hex[]; data: Hex }[]) {
+        if (l.address.toLowerCase() !== g) continue;
+        try {
+          const d = decodeEventLog({ abi: GUARANTEE, topics: l.topics as [Hex, ...Hex[]], data: l.data });
+          if (d.eventName === "Reserved") return Number((d.args as unknown as { id: bigint }).id);
+        } catch { /* another event */ }
+      }
+      return null;
+    };
+    if (this.via) {
+      const sent = await this.order([
+        { to: g, value: fee, data: encodeFunctionData({ abi: GUARANTEE, functionName: "reserve", args: reserveArgs } as never) },
+        { to: this.desk, value: price, data: encodeFunctionData({ abi: ABI, functionName: "lock", args: lockArgs } as never) },
+        { to: g, value: 0n, data: encodeFunctionData({ abi: GUARANTEE, functionName: "bindLatest", args: [] } as never) },
+        ...extra.filter((x) => x.value > 0n).map((x) => ({ to: x.to, value: x.value, data: "0x" as Hex })),
+      ]);
+      const jobId = lockedJob(sent.receipt.logs as { address: string; topics: Hex[]; data: Hex }[], this.desk);
+      if (jobId === null) throw new Refusal(`The job is locked with its cover (${sent.hash}), and its number could not be read from the transaction.`, "no_job_id");
+      return { lockTx: sent.hash, jobId, coverId: coverIdOf(sent.receipt.logs), tied: true, extraTx: extra.some((x) => x.value > 0n) ? sent.hash : null, amount };
+    }
+    const r1 = await this.callGuarantee("reserve", [...reserveArgs], fee);
+    const coverId = coverIdOf(r1.receipt.logs);
+    let locked: { hash: Hex; explorer: string; receipt: { logs: unknown[] } };
+    try {
+      locked = await this.send("lock", [...lockArgs], price);
+    } catch (e) {
+      throw new Refusal(`The cover is reserved (${r1.hash}) and nothing is locked yet: ${e instanceof Refusal ? e.message : explain(e)} Lock the job within the hour on the same terms to use it; past the hour it lapses and its fee is not returned.`, "lock_failed");
+    }
+    const jobId = lockedJob(locked.receipt.logs as { address: string; topics: Hex[]; data: Hex }[], this.desk);
+    if (jobId === null) throw new Refusal(`The job is locked (${locked.hash}), and its number could not be read from the transaction.`, "no_job_id");
+    let tied = false;
+    try {
+      await this.callGuarantee("bind", [BigInt(coverId ?? 0), BigInt(jobId)], 0n);
+      tied = true;
+    } catch {
+      tied = false; // Factor ties it within the hour
+    }
+    let extraTx: Hex | null = null;
+    for (const x of extra.filter((e) => e.value > 0n)) {
+      try {
+        const hash = await this.wallet.sendTransaction({ account: this.account, chain: this.wallet.chain, to: x.to, value: x.value } as never);
+        if ((await this.pub.waitForTransactionReceipt({ hash, timeout: 180_000 })).status === "success") extraTx = hash;
+      } catch {
+        extraTx = null; // the job and its cover stand without it
+      }
+    }
+    return { lockTx: locked.hash, jobId, coverId, tied, extraTx, amount };
+  }
+
+  private async guaranteeSent(agent: Hex, sent: { hash: Hex; explorer: string }): Promise<GuaranteeSent> {
+    const g = await this.guaranteeContract();
+    const b = (await this.pub.readContract({ address: g, abi: GUARANTEE, functionName: "bondOf", args: [agent] })) as { bond: bigint; reserved: bigint; offer: bigint };
+    return { hash: sent.hash, explorer: sent.explorer, agent, bondEth: ethText(b.bond), freeEth: ethText(b.bond - b.reserved), offerEth: ethText(b.offer) };
+  }
+
+  /** One call to the guarantee contract, from this wallet or its Factor account: tried, sent, followed until it is mined. */
+  private async callGuarantee(functionName: string, args: readonly unknown[], value: bigint): Promise<{ hash: Hex; explorer: string; receipt: { logs: unknown[] } }> {
+    if (!this.account || !this.wallet) throw new Refusal("This Factor was connected without a key: it can only read.", "read_only");
+    const g = await this.guaranteeContract();
+    if (this.via) {
+      try {
+        await this.pub.simulateContract({ address: g, abi: GUARANTEE, functionName, args, account: this.via, value } as never);
+      } catch (e) {
+        if (/insufficient (funds|balance)|exceeds the balance/i.test(`${(e as { shortMessage?: string }).shortMessage} ${(e as Error).message}`)) throw new Refusal(WORDS.AccountShort!([await this.pub.getBalance({ address: this.via }), value]), "account_short");
+        throw new Refusal(guaranteeWordsOf(e), "guarantee_refused");
+      }
+      return this.order([{ to: g, value, data: encodeFunctionData({ abi: GUARANTEE, functionName, args } as never) }]);
+    }
+    let hash: Hex;
+    try {
+      const { request } = await this.pub.simulateContract({ address: g, abi: GUARANTEE, functionName, args, account: this.account, value } as never);
+      hash = await this.wallet.writeContract(request as never);
+    } catch (e) {
+      throw e instanceof Refusal ? e : new Refusal(guaranteeWordsOf(e), "guarantee_refused");
+    }
+    const receipt = await this.pub.waitForTransactionReceipt({ hash, timeout: 180_000 });
+    if (receipt.status !== "success") throw new Refusal(`The transaction ${hash} was mined and refused. Nothing changed but the gas.`, "reverted");
+    return { hash, explorer: `${this.explorer}/tx/${hash}`, receipt };
+  }
+
   // ---------- ERC-8004 ----------
 
   /**
@@ -2078,6 +2341,7 @@ function sortOffers(list: Applicant[], by: "score" | "price" | "fast"): Applican
 const LAUNCHER = agentCoinLauncherAbi as Abi;
 const LINE = factorLineAbi as Abi;
 const LINE_ACCOUNT = factorLineAccountAbi as Abi;
+const GUARANTEE = factorGuaranteeAbi as Abi;
 // The launcher's own refusals, in plain words: a few share a name with an account's, and mean something else here.
 const COIN_WORDS: Record<string, (a: readonly unknown[]) => string> = {
   NotAllowed: () => "Only the agent itself, or its maker with the agent's permission, can launch its coin.",

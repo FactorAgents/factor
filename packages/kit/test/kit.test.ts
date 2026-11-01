@@ -349,11 +349,11 @@ describe("the assistant's caps", () => {
 
 describe("the tools", () => {
   it("have a name, a description and an input each, and say which of them send something", () => {
-    expect(TOOLS.map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_hire", "factor_accept", "factor_reject", "factor_set_title", "factor_register", "factor_set_profile", "factor_bond", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_ask_model", "factor_draw", "factor_deliver", "factor_decline", "factor_sign_up", "factor_create_pay_link", "factor_pay_link_info", "factor_pay_link", "factor_pay_x402", "factor_hire_for_job", "factor_job_tree", "factor_reject_sub_jobs", "factor_record", "factor_erc8004", "factor_link_erc8004", "factor_coins", "factor_coin", "factor_prepare_coin_launch", "factor_sign_coin_permission", "factor_launch_coin", "factor_line", "factor_open_line", "factor_draw_line", "factor_repay_line", "factor_withdraw_from_line", "factor_verified_owner", "factor_verify_owner", "factor_firms", "factor_firm_record", "factor_hire_firm", "factor_plan", "factor_subscribe", "factor_pay_month", "factor_stop_plan", "factor_draw_next_month", "factor_open_jobs", "factor_open_job", "factor_post_job", "factor_apply_to_job", "factor_bid", "factor_withdraw_offer", "factor_offers", "factor_pick_agent", "factor_close_job", "factor_auto_apply", "factor_set_auto_apply", "factor_auto_apply_now"]);
+    expect(TOOLS.map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_hire", "factor_accept", "factor_reject", "factor_set_title", "factor_register", "factor_set_profile", "factor_bond", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_ask_model", "factor_draw", "factor_deliver", "factor_decline", "factor_sign_up", "factor_create_pay_link", "factor_pay_link_info", "factor_pay_link", "factor_pay_x402", "factor_hire_for_job", "factor_job_tree", "factor_reject_sub_jobs", "factor_record", "factor_erc8004", "factor_link_erc8004", "factor_coins", "factor_coin", "factor_prepare_coin_launch", "factor_sign_coin_permission", "factor_launch_coin", "factor_line", "factor_open_line", "factor_draw_line", "factor_repay_line", "factor_withdraw_from_line", "factor_guarantee", "factor_set_guarantee", "factor_hire_with_cover", "factor_cover", "factor_verified_owner", "factor_verify_owner", "factor_firms", "factor_firm_record", "factor_hire_firm", "factor_plan", "factor_subscribe", "factor_pay_month", "factor_stop_plan", "factor_draw_next_month", "factor_open_jobs", "factor_open_job", "factor_post_job", "factor_apply_to_job", "factor_bid", "factor_withdraw_offer", "factor_offers", "factor_pick_agent", "factor_close_job", "factor_auto_apply", "factor_set_auto_apply", "factor_auto_apply_now"]);
     for (const t of TOOLS) expect(t.description.length, t.name).toBeGreaterThan(40);
-    expect(TOOLS.filter((t) => t.readOnly).map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_pay_link_info", "factor_job_tree", "factor_record", "factor_erc8004", "factor_coins", "factor_coin", "factor_prepare_coin_launch", "factor_line", "factor_verified_owner", "factor_firms", "factor_firm_record", "factor_plan", "factor_open_jobs", "factor_open_job", "factor_offers", "factor_auto_apply"]);
+    expect(TOOLS.filter((t) => t.readOnly).map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_pay_link_info", "factor_job_tree", "factor_record", "factor_erc8004", "factor_coins", "factor_coin", "factor_prepare_coin_launch", "factor_line", "factor_guarantee", "factor_cover", "factor_verified_owner", "factor_firms", "factor_firm_record", "factor_plan", "factor_open_jobs", "factor_open_job", "factor_offers", "factor_auto_apply"]);
     // the ones that spend or cannot be undone say so in capitals, where an assistant will not miss it
-    for (const name of ["factor_launch_coin", "factor_hire", "factor_reject", "factor_bond", "factor_pay_link", "factor_pay_x402", "factor_hire_for_job", "factor_reject_sub_jobs", "factor_hire_firm", "factor_subscribe", "factor_pay_month", "factor_pick_agent", "factor_repay_line"]) expect(TOOLS.find((t) => t.name === name)!.description).toMatch(/SPENDS ETH|SETTLES AT HALF/);
+    for (const name of ["factor_launch_coin", "factor_hire", "factor_reject", "factor_bond", "factor_pay_link", "factor_pay_x402", "factor_hire_for_job", "factor_reject_sub_jobs", "factor_hire_firm", "factor_subscribe", "factor_pay_month", "factor_pick_agent", "factor_repay_line", "factor_set_guarantee", "factor_hire_with_cover"]) expect(TOOLS.find((t) => t.name === name)!.description).toMatch(/SPENDS ETH|SETTLES AT HALF/);
   });
 
   it("answer in words", async () => {
@@ -1117,6 +1117,62 @@ describe("credit lines", () => {
     expect(said).toMatch(/owes 0\.006 ETH, due 2026-11-19/);
     expect(said).toMatch(/Can draw 0\.0162 ETH now/);
     expect(said).toMatch(/repaid in full 1 time\(s\) on time and 0 late/);
+  });
+});
+
+describe("guarantees", () => {
+  const G = {
+    agent: AGENTS[0].address, name: "lumen-07", named: true, key: null, bondEth: 0.2, heldEth: 0.02, freeEth: 0.18, offerEth: 0.04, offerWei: "40000000000000000", upToEth: 0.04, upToWei: "40000000000000000",
+    score: 624, sharePct: 75, selling: true, covers: 3, released: 2, paid: 1, declined: 0, lapsed: 0, coveredEth: 0.05, paidOutEth: 0.01, feesEarnedEth: 0.00025,
+  };
+  const COVER = { id: 7, customer: "0x00000000000000000000000000000000000000c1", agent: AGENTS[0].address, agentName: "lumen-07", named: true, priceEth: 0.04, coverEth: 0.02, coverWei: "20000000000000000", feeEth: 0.0002, dueAt: "2026-11-02T00:00:00.000Z", allowEarly: false, state: "bound", job: "0012", reservedAt: "2026-11-01T00:00:00.000Z", expiresAt: "2026-11-01T01:00:00.000Z", tx: "0xabc", next: { what: "pays-if-not-delivered", at: "2026-11-02T12:00:00.000Z" } };
+  const OFF = { enabled: false, contract: null, chainId: 4663, rules: { feePct: 1, burnPctOfFee: 50, minCoverEth: 0.0001, windowMin: 60, graceH: 12, shares: [{ score: 200, pct: 25 }, { score: 400, pct: 50 }, { score: 600, pct: 75 }, { score: 800, pct: 100 }] }, totals: null };
+  const reset = () => { s.site.guarantee = null; s.site.cover = null; s.site.guaranteesAbout = OFF; s.site.state = state(); };
+  beforeEach(reset);
+  afterAll(reset);
+
+  it("reads an agent's guarantee and a job's cover, and says when there is none", async () => {
+    const f = await connect();
+    expect(await f.guarantee("lumen-07")).toBeNull();
+    expect(await f.cover(12)).toBeNull();
+    s.site.guarantee = G;
+    s.site.cover = COVER;
+    expect((await f.guarantee("lumen-07"))!.upToEth).toBe(0.04);
+    expect((await f.cover(12))!.coverEth).toBe(0.02);
+    expect((await f.guarantees()).agents).toHaveLength(1);
+    await expect(f.guarantee("not an id!")).rejects.toThrow(/name or address/);
+  });
+
+  it("refuses to bond, set an offer, hire with cover or close while guarantees are off, before anything is signed", async () => {
+    const f = await connect({ privateKey: KEY });
+    expect((await refusal(f.bondGuarantee("0.01"))).code).toBe("guarantees_off");
+    expect((await refusal(f.setCoverOffer("0.01"))).code).toBe("guarantees_off");
+    expect((await refusal(f.withdrawGuarantee())).code).toBe("guarantees_off");
+    expect((await refusal(f.hireWithCover("lumen-07", "0.04", { cover: "0.01" }))).code).toBe("guarantees_off");
+    expect((await refusal(f.hire({ agent: "lumen-07", price: "0.04", cover: "max" }))).code).toBe("guarantees_off");
+    expect((await refusal(f.closeCover(12))).code).toBe("guarantees_off");
+    expect(s.node.calls.filter((c) => c === "eth_sendRawTransaction")).toHaveLength(0);
+  });
+
+  it("the fee is 1% of the cover, half burned rounded down and the rest the agent's, to the wei", async () => {
+    const { coverFee } = await import("../src/index.js");
+    expect(coverFee(10n ** 16n)).toEqual({ fee: 10n ** 14n, burned: 5n * 10n ** 13n, toAgent: 5n * 10n ** 13n });
+    expect(coverFee(100_000_000_000_001n)).toEqual({ fee: 1_000_000_000_000n, burned: 500_000_000_000n, toAgent: 500_000_000_000n });
+    expect(coverFee(150n)).toEqual({ fee: 1n, burned: 0n, toAgent: 1n });
+  });
+
+  it("tells an assistant what an agent covers, and a job's cover, in words", async () => {
+    const f = await connect();
+    expect((await runTool(f, "factor_guarantee", { agent: "lumen-07" }, null)).text).toBe("Guarantees are not switched on yet.");
+    s.site.guaranteesAbout = { ...OFF, enabled: true, contract: "0x0000000000000000000000000000000000006a7e" };
+    expect((await runTool(f, "factor_guarantee", { agent: "page-smith" }, null)).text).toMatch(/No guarantee for page-smith\. An agent sets one up with factor_set_guarantee/);
+    s.site.guarantee = G;
+    const said = (await runTool(f, "factor_guarantee", { agent: "lumen-07" }, null)).text;
+    expect(said).toMatch(/lumen-07: guaranteed up to 0\.04 ETH a job/);
+    expect(said).toMatch(/0\.02 ETH held back for covers that have not ended, 0\.18 ETH free/);
+    expect(said).toMatch(/1 paid out \(0\.01 ETH to customers\)/);
+    s.site.cover = COVER;
+    expect((await runTool(f, "factor_cover", { job: 12 }, null)).text).toMatch(/0\.02 ETH of cover from lumen-07's guarantee bond, fee 0\.0002 ETH\. Covered\. Next: if not delivered by 2026-11-02T12:00:00\.000Z, the cover is paid to the customer/);
   });
 });
 
