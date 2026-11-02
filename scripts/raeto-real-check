@@ -1,0 +1,10 @@
+#!/usr/bin/env zsh
+# The real check of raeto/auto: a few short, real, paid calls through a local copy of the gateway. See
+# engine/scripts/raeto-real-check.ts. It costs well under a cent and refuses to run without a key.
+#
+#   scripts/raeto-real-check
+#
+# The key comes from RAETO_API_KEY or from the file ~/.factor-raeto-key. It is never printed.
+set -e
+cd "${0:A:h}/../engine"
+exec node_modules/.bin/tsx scripts/raeto-real-check.ts "$@"

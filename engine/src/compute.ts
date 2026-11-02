@@ -41,6 +41,7 @@ import { recoverMessageAddress, type Hex } from "viem";
 import { normalizeAddress } from "./chain/address.js";
 import type { EngineDb, EventRow } from "./chain/db.js";
 import { stopped } from "./switches.js";
+import { absorb, headerUsd, isRaetoModel, newSeen, priceCall, RAETO_BLIND_LIMIT, RAETO_BLIND_MS, RAETO_FEE_BPS, RAETO_MODELS, RAETO_ROUTE_FEE_MICRO, RaetoBooks, RaetoFloat, raetoRefusal, raetoWorstMicro, readRaeto, showCharge, type RaetoConfig, type RaetoSeen, type RaetoSlice, type RaetoSpend } from "./raeto.js";
 
 /** Dollars per million tokens, as the model maker lists them. */
 export interface Price { in: number; out: number; cacheWrite5m: number; cacheWrite1h: number; cacheRead: number }
@@ -76,6 +77,8 @@ export interface ComputeConfig {
    * call is sent: the owner tops it up.
    */
   router: { enabled: boolean; url: string; refreshMs: number; maxInPerM: number; maxOutPerM: number; floorMicro: number; floatCheckMs: number };
+  /** raeto/auto at the second door (./raeto.ts): off unless RAETO=on with RAETO_API_KEY */
+  raeto: RaetoConfig;
   /** why it is off, when the owner meant it to be on */
   note: string | null;
 }
@@ -89,7 +92,8 @@ export function readCompute(env: Env, problems: string[] = []): ComputeConfig {
   const direct = (env.COMPUTE_DIRECT ?? "").trim().toLowerCase() === "on";
   const hasClaudeKey = direct && !!env.ANTHROPIC_API_KEY?.trim();
   const hasRouterKey = !!env.OPENROUTER_API_KEY?.trim();
-  const hasKey = hasClaudeKey || hasRouterKey;
+  const raeto = readRaeto(env, problems);
+  const hasKey = hasClaudeKey || hasRouterKey || raeto.enabled;
   let models = DEFAULT_MODELS;
   const raw = env.COMPUTE_MODELS?.trim();
   if (raw) {
@@ -138,6 +142,7 @@ export function readCompute(env: Env, problems: string[] = []): ComputeConfig {
       maxInPerM: int("COMPUTE_MAX_IN_USD", 20, 1, 10_000), maxOutPerM: int("COMPUTE_MAX_OUT_USD", 80, 1, 10_000),
       floorMicro: int("COMPUTE_FLOAT_FLOOR_USD", 2, 0, 100_000) * 1_000_000, floatCheckMs: int("COMPUTE_FLOAT_CHECK_S", 300, 0, 86_400) * 1000,
     },
+    raeto,
     note: on && !hasKey ? "COMPUTE_MODE is on and OPENROUTER_API_KEY is not set (nor ANTHROPIC_API_KEY with COMPUTE_DIRECT=on): compute credit is written down as it is drawn, and no model is served until a key is there." : null,
   };
 }
@@ -400,17 +405,33 @@ export class ComputeStore {
 
   /** Take a cost off an agent's credit, oldest lot first. Returns what could not be covered (credit ran out). */
   charge(agent: string, micro: number): number {
+    return this.chargeLots(agent, micro).left;
+  }
+
+  /** The same, and which lots paid how much: which job's credit a call went on. */
+  chargeLots(agent: string, micro: number): { left: number; slices: RaetoSlice[] } {
     return this.db.tx(() => {
       let left = micro;
-      const lots = this.db.q("SELECT tx_hash, log_index, usd_micro, spent_micro FROM compute_lots WHERE agent = ? AND usd_micro IS NOT NULL AND state != 'closed' AND usd_micro > spent_micro ORDER BY block, log_index").all(agent) as { tx_hash: string; log_index: number; usd_micro: number; spent_micro: number }[];
+      const slices: RaetoSlice[] = [];
+      const lots = this.db.q("SELECT tx_hash, log_index, usd_micro, spent_micro, job_id, source, line FROM compute_lots WHERE agent = ? AND usd_micro IS NOT NULL AND state != 'closed' AND usd_micro > spent_micro ORDER BY block, log_index").all(agent) as { tx_hash: string; log_index: number; usd_micro: number; spent_micro: number; job_id: number; source: RaetoSlice["source"]; line: string | null }[];
       for (const l of lots) {
         if (left <= 0) break;
         const take = Math.min(left, l.usd_micro - l.spent_micro);
         this.db.q("UPDATE compute_lots SET spent_micro = spent_micro + ? WHERE tx_hash = ? AND log_index = ?").run(take, l.tx_hash, l.log_index);
         left -= take;
+        slices.push({ job: l.job_id, source: l.source, line: l.line, micro: take });
       }
-      return left;
+      return { left, slices };
     });
+  }
+
+  /** What the agent's next call is paid from, with all the credit that came from the same place: its job, its coin or its line. */
+  nextCredit(agent: string): { task: string; grantedMicro: number; leftMicro: number } | null {
+    const l = this.db.q("SELECT job_id, source, line FROM compute_lots WHERE agent = ? AND usd_micro IS NOT NULL AND state != 'closed' AND usd_micro > spent_micro ORDER BY block, log_index LIMIT 1").get(agent) as { job_id: number; source: string; line: string | null } | undefined;
+    if (!l) return null;
+    const [task, where, arg] = l.source === "coin" ? [`factor-coin-${agent}`, "source = 'coin'", null] : l.source === "line" ? [`factor-line-${l.line}`, "source = 'line' AND line = ?", l.line] : [`factor-job-${l.job_id}`, "source = 'advance' AND job_id = ?", l.job_id];
+    const r = this.db.q(`SELECT COALESCE(SUM(usd_micro), 0) AS granted, COALESCE(SUM(spent_micro), 0) AS spent FROM compute_lots WHERE agent = ? AND usd_micro IS NOT NULL AND state != 'closed' AND ${where}`).get(agent, ...(arg === null ? [] : [arg])) as { granted: number; spent: number };
+    return { task, grantedMicro: r.granted, leftMicro: r.granted - r.spent };
   }
 
   record(u: { agent: string; model: string; usage: Usage; cost: number; unpaid: number; status: number; requestId: string; ms: number }): void {
@@ -508,12 +529,12 @@ const ALLOWED_CHAT = new Set(["model", "messages", "max_tokens", "max_completion
 const PARTS = new Set(["text", "image_url"]);
 const usd = (micro: number): string => `$${(micro / 1e6).toFixed(micro < 10_000 ? 6 : 4)}`;
 
-interface Fail { status: number; type: string; message: string }
+interface Fail { status: number; type: string; message: string; retryAfter?: string }
 const fail = (status: number, type: string, message: string): Fail => ({ status, type, message });
 const NO_KEY = "That key is not one of Factor's compute keys, or it has run out. Sign for a new one.";
 
 /** The owner's keys with the model makers: sent upstream, never anywhere else. */
-export interface ModelKeys { anthropic: string | null; router: string | null }
+export interface ModelKeys { anthropic: string | null; router: string | null; raeto?: string | null }
 
 export class Gateway {
   private reserved = new Map<string, { micro: number; calls: number }>();
@@ -521,6 +542,9 @@ export class Gateway {
   private underWayMicro = 0;
   readonly catalog: RouterCatalog | null;
   readonly float: RouterFloat | null;
+  readonly raetoFloat: RaetoFloat | null;
+  private readonly raetoBooks: RaetoBooks;
+  private raetoBlind = { calls: 0, at: 0 }; // answers in a row that said nothing of their cost
 
   constructor(
     readonly cfg: ComputeConfig,
@@ -535,19 +559,37 @@ export class Gateway {
     this.float = this.catalog && keys.router ? new RouterFloat(cfg.router.url, keys.router, cfg.router.floorMicro, cfg.router.floatCheckMs, log) : null;
     // read the list now, so the first call does not wait for it
     if (this.catalog) void this.catalog.get();
+    this.raetoFloat = cfg.enabled && cfg.raeto.enabled && keys.raeto ? new RaetoFloat(cfg.raeto.url, keys.raeto, cfg.raeto.floorMicro, cfg.raeto.floatCheckMs, log) : null;
+    this.raetoBooks = new RaetoBooks(db);
   }
+
+  /** Whether raeto/auto is served right now: the compute switch and its own are both on, and there is a key. */
+  raetoOn(): boolean {
+    return this.cfg.enabled && this.cfg.raeto.enabled && !!this.keys.raeto && !stopped(this.db, "compute") && !stopped(this.db, "raeto");
+  }
+
+  /** What a job's or an agent's credit went on through Raeto. Nothing at all while the switch is off. */
+  raetoSpendOfJob(job: number): RaetoSpend | null { return this.raetoOn() ? this.raetoBooks.forJob(job) : null; }
+  raetoSpendOfAgent(agent: string): RaetoSpend | null { return this.raetoOn() ? this.raetoBooks.forAgent(agent) : null; }
 
   private up = (n: number) => Math.round(n * (10_000 + this.cfg.markupBps)) / 10_000;
 
   /** What anybody may know: whether it is on, the models and what they cost here. */
-  about(): { enabled: boolean; markupPct: number; maxTokens: number; models: { id: string; inUsd: number; outUsd: number }[]; router: { enabled: boolean; models: number }; limits: { callUsd: number; agentDayUsd: number } } {
+  about(): { enabled: boolean; markupPct: number; maxTokens: number; models: { id: string; inUsd: number; outUsd: number }[]; router: { enabled: boolean; models: number }; limits: { callUsd: number; agentDayUsd: number }; raeto?: { models: string[]; feePct: number; routeFeeMostUsd: number; holdInUsd: number; holdOutUsd: number } } {
     const on = this.cfg.enabled && !stopped(this.db, "compute");
     return {
       enabled: on, markupPct: this.cfg.markupBps / 100, maxTokens: this.cfg.maxTokens,
       models: this.keys.anthropic ? Object.entries(this.cfg.models).map(([id, p]) => ({ id, inUsd: this.up(p.in), outUsd: this.up(p.out) })) : [],
       router: { enabled: on && !!this.catalog, models: this.catalog?.size() ?? 0 },
       limits: { callUsd: this.cfg.callMicro / 1e6, agentDayUsd: this.cfg.agentDayMicro / 1e6 },
+      ...(this.raetoOn() ? { raeto: this.aboutRaeto() } : {}),
     };
+  }
+
+  private aboutRaeto(): { models: string[]; feePct: number; routeFeeMostUsd: number; holdInUsd: number; holdOutUsd: number } {
+    const r = this.cfg.raeto;
+    const held = (perM: number) => Math.round(((perM * (10_000 + RAETO_FEE_BPS)) / 10_000) * (10_000 + this.cfg.markupBps)) / 10_000;
+    return { models: RAETO_MODELS.map((m) => m.id), feePct: this.raetoFloat?.feePct() ?? RAETO_FEE_BPS / 100, routeFeeMostUsd: RAETO_ROUTE_FEE_MICRO / 1e6, holdInUsd: held(r.maxInPerM), holdOutUsd: held(r.maxOutPerM) };
   }
 
   /** Every model of the second door with its price here, in the shape OpenAI's library reads. */
@@ -555,14 +597,18 @@ export class Gateway {
     const models = this.catalog ? [...(await this.catalog.get()).values()] : [];
     return {
       object: "list",
-      data: models.map((m) => ({ id: m.id, object: "model", created: 0, owned_by: m.id.split("/")[0], name: m.name, context_length: m.context, pricing: { inUsd: this.up(m.price.prompt), outUsd: this.up(m.price.completion) } })),
+      data: [
+        // they have no price of their own: a call costs what Raeto charged for it, and the margin
+        ...(this.raetoOn() ? RAETO_MODELS.map((m) => ({ id: m.id, object: "model", created: 0, owned_by: "raeto", name: m.name })) : []),
+        ...models.map((m) => ({ id: m.id, object: "model", created: 0, owned_by: m.id.split("/")[0], name: m.name, context_length: m.context, pricing: { inUsd: this.up(m.price.prompt), outUsd: this.up(m.price.completion) } })),
+      ],
     };
   }
 
   /** Everything under /v1/compute/. Always answers. */
   async http(req: IncomingMessage, res: ServerResponse, path: string): Promise<void> {
     const json = (status: number, body: unknown) => { res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff" }); res.end(JSON.stringify(body)); };
-    const refuse = (f: Fail) => json(f.status, { type: "error", error: { type: f.type, message: f.message } });
+    const refuse = (f: Fail) => { if (f.retryAfter) res.setHeader("retry-after", f.retryAfter); json(f.status, { type: "error", error: { type: f.type, message: f.message } }); };
     try {
       if (path === "/v1/compute/models" && req.method === "GET") return json(200, this.about());
       if (path === "/v1/compute/v1/models" && req.method === "GET") return json(200, await this.routerModels());
@@ -631,7 +677,9 @@ export class Gateway {
   balanceOf(agent: string): Record<string, unknown> {
     const held = this.reserved.get(agent)?.micro ?? 0;
     const micro = Math.max(0, this.store.balance(agent) - held);
+    const raeto = this.raetoSpendOfAgent(agent);
     return {
+      ...(raeto ? { raeto } : {}),
       agent, balanceUsd: micro / 1e6, enabled: this.cfg.enabled,
       lots: this.store.lots(agent).map((l) => ({ job: l.job_id, at: new Date(l.at * 1000).toISOString(), usd: l.usd_micro === null ? null : l.usd_micro / 1e6, spentUsd: l.spent_micro / 1e6, state: l.state, ...(l.source === "coin" ? { paidBy: "coin" } : l.source === "line" ? { paidBy: "line" } : {}) })),
     };
@@ -737,37 +785,24 @@ export class Gateway {
   private async chat(agent: string, req: IncomingMessage, res: ServerResponse): Promise<Fail | null> {
     const cfg = this.cfg;
     if (!cfg.enabled) return fail(503, "api_error", "Compute credit is not switched on yet. Credit that was drawn is kept and can be used when it is.");
-    if (!this.catalog || !this.keys.router) return fail(503, "api_error", "This door is not open here. Use /v1/messages for Claude.");
+    const raetoHere = cfg.raeto.enabled && !!this.keys.raeto;
+    if ((!this.catalog || !this.keys.router) && !raetoHere) return fail(503, "api_error", "This door is not open here. Use /v1/messages for Claude.");
     if (stopped(this.db, "compute")) return fail(503, "api_error", "Compute credit is paused for now. Credit that was drawn is kept and can be used when it is back.");
     const raw = await readBody(req, cfg.maxBodyBytes);
     const body = JSON.parse(raw.toString("utf8")) as Record<string, unknown>;
     if (!body || typeof body !== "object" || Array.isArray(body)) return fail(400, "invalid_request_error", "The body is not a JSON object.");
     for (const k of Object.keys(body)) if (!ALLOWED_CHAT.has(k)) return fail(400, "invalid_request_error", `"${k}" is not something Factor's compute gateway passes on. It takes: ${[...ALLOWED_CHAT].join(", ")}.`);
+    if (raetoHere && isRaetoModel(body.model)) return this.raetoChat(agent, res, raw, body);
+    if (!this.catalog || !this.keys.router) return fail(400, "invalid_request_error", `"${String(body.model ?? "")}" is not a model compute credit can be spent on here. The models are at /v1/compute/v1/models.`);
     const models = await this.catalog.get();
     if (models.size === 0) return fail(503, "api_error", "The list of models could not be read just now. Nothing was taken: try again in a minute.");
     if (this.float && !(await this.float.ok())) return fail(503, "api_error", "The gateway cannot reach the models just now. Nothing was taken from the credit: try again later.");
     const model = String(body.model ?? "");
     const m = models.get(model);
     if (!m) return fail(400, "invalid_request_error", `"${model}" is not a model compute credit can be spent on. The models and their prices are at /v1/compute/v1/models; they are named like anthropic/claude-sonnet-4.5 or openai/gpt-5.`);
-    // max_completion_tokens is OpenAI's newer name for max_tokens: one of the two, and no more than the gateway allows
-    const asked = body.max_completion_tokens ?? body.max_tokens;
-    if (typeof asked !== "number" || !Number.isInteger(asked) || asked < 1) return fail(400, "invalid_request_error", "max_tokens is needed, as a whole number.");
-    if (asked > cfg.maxTokens || (typeof body.max_tokens === "number" && body.max_tokens > cfg.maxTokens)) return fail(400, "invalid_request_error", `max_tokens may be ${cfg.maxTokens} at most here.`);
-    if (body.tools !== undefined) {
-      if (!Array.isArray(body.tools)) return fail(400, "invalid_request_error", "tools must be a list.");
-      for (const t of body.tools as { type?: unknown }[]) if (t?.type !== "function") return fail(400, "invalid_request_error", `Only tools your agent runs itself (type "function") can be paid with compute credit, not "${String(t?.type)}".`);
-    }
-    if (!Array.isArray(body.messages) || body.messages.length === 0) return fail(400, "invalid_request_error", "messages is needed, as a list.");
-    let pictures = 0;
-    for (const msg of body.messages as { content?: unknown }[]) {
-      if (!Array.isArray(msg?.content)) continue;
-      for (const part of msg.content as { type?: unknown }[]) {
-        if (!PARTS.has(String(part?.type))) return fail(400, "invalid_request_error", `A message may hold text and pictures here, not "${String(part?.type)}".`);
-        if (part.type === "image_url") pictures++;
-      }
-    }
-    delete body.metadata; // nothing about the caller is passed on
-    delete body.user;
+    const checked = this.checkChat(body);
+    if ("status" in checked) return checked;
+    const { asked, pictures } = checked;
     // OpenRouter says what each call cost when asked; in a stream, in its last event
     body.usage = { include: true };
     if (body.stream === true) body.stream_options = { ...(typeof body.stream_options === "object" && body.stream_options ? body.stream_options : {}), include_usage: true };
@@ -818,6 +853,144 @@ export class Gateway {
     return null;
   }
 
+  /** What every request at the second door must be, whichever route it takes. Takes off what is not passed on. */
+  private checkChat(body: Record<string, unknown>): { asked: number; pictures: number } | Fail {
+    const cfg = this.cfg;
+    // max_completion_tokens is OpenAI's newer name for max_tokens: one of the two, and no more than the gateway allows
+    const asked = body.max_completion_tokens ?? body.max_tokens;
+    if (typeof asked !== "number" || !Number.isInteger(asked) || asked < 1) return fail(400, "invalid_request_error", "max_tokens is needed, as a whole number.");
+    if (asked > cfg.maxTokens || (typeof body.max_tokens === "number" && body.max_tokens > cfg.maxTokens)) return fail(400, "invalid_request_error", `max_tokens may be ${cfg.maxTokens} at most here.`);
+    if (body.tools !== undefined) {
+      if (!Array.isArray(body.tools)) return fail(400, "invalid_request_error", "tools must be a list.");
+      for (const t of body.tools as { type?: unknown }[]) if (t?.type !== "function") return fail(400, "invalid_request_error", `Only tools your agent runs itself (type "function") can be paid with compute credit, not "${String(t?.type)}".`);
+    }
+    if (!Array.isArray(body.messages) || body.messages.length === 0) return fail(400, "invalid_request_error", "messages is needed, as a list.");
+    let pictures = 0;
+    for (const msg of body.messages as { content?: unknown }[]) {
+      if (!Array.isArray(msg?.content)) continue;
+      for (const part of msg.content as { type?: unknown }[]) {
+        if (!PARTS.has(String(part?.type))) return fail(400, "invalid_request_error", `A message may hold text and pictures here, not "${String(part?.type)}".`);
+        if (part.type === "image_url") pictures++;
+      }
+    }
+    delete body.metadata; // nothing about the caller is passed on
+    delete body.user;
+    return { asked, pictures };
+  }
+
+  /**
+   * One call to raeto/auto or a variant. The same hold and caps as every other call. The agent's address goes along as
+   * X-Raeto-Agent and the job whose credit pays as X-Raeto-Task, so both show at Raeto. What is taken off the credit is
+   * what Raeto charged, and the margin. A call that did not end in an answer costs nothing. Returns why not, or null
+   * when it has answered.
+   */
+  private async raetoChat(agent: string, res: ServerResponse, raw: Buffer, body: Record<string, unknown>): Promise<Fail | null> {
+    const cfg = this.cfg;
+    const r = cfg.raeto;
+    const NOT_NOW = "The gateway cannot reach the models just now. Nothing was taken from the credit: try again later.";
+    if (stopped(this.db, "raeto")) return fail(503, "api_error", "raeto/auto is paused for now. The credit is kept, and the other models still work.");
+    if (this.raetoBlind.calls >= RAETO_BLIND_LIMIT && Date.now() - this.raetoBlind.at < RAETO_BLIND_MS) return fail(503, "api_error", NOT_NOW);
+    const checked = this.checkChat(body);
+    if ("status" in checked) return checked;
+    if (this.raetoFloat && !(await this.raetoFloat.ok())) return fail(503, "api_error", NOT_NOW);
+    const asked = String(body.model);
+    const worst = raetoWorstMicro(raw.length, checked.asked, checked.pictures, r, cfg.markupBps);
+    const no = this.hold(agent, worst);
+    if (no) return no;
+
+    const headers: Record<string, string> = { "content-type": "application/json", authorization: `Bearer ${this.keys.raeto}`, "x-raeto-agent": agent };
+    // the job whose credit pays, and all that credit as a second brake at Raeto. Left out when this call could run on into
+    // the agent's next lot of credit, where a budget would cut its answer short for no reason
+    const credit = this.store.nextCredit(agent);
+    if (credit) {
+      headers["x-raeto-task"] = credit.task;
+      if (credit.leftMicro - (this.reserved.get(agent)?.micro ?? 0) >= 0) headers["x-raeto-task-budget"] = (Math.floor((credit.grantedMicro * 10_000) / (10_000 + cfg.markupBps)) / 1e6).toFixed(6);
+    }
+    if (body.stream === true) body.stream_options = { ...(typeof body.stream_options === "object" && body.stream_options ? body.stream_options : {}), include_usage: true };
+
+    const t0 = Date.now();
+    const seen = newSeen();
+    let upstream: Response;
+    try {
+      upstream = await fetch(`${r.url}/chat/completions`, { method: "POST", headers, body: JSON.stringify(body), redirect: "error", signal: AbortSignal.timeout(r.timeoutMs) });
+    } catch (e) {
+      this.release(agent, worst);
+      this.log(`[compute] Raeto did not answer: ${(e as Error).name}`);
+      return fail(502, "api_error", "The model did not answer. Nothing was taken from the credit.");
+    }
+    const usageOf = (): Usage => ({ input: seen.input, output: seen.output, cacheWrite5m: 0, cacheWrite1h: 0, cacheRead: seen.cacheRead });
+    const tier = (upstream.headers.get("x-raeto-tier") ?? "").slice(0, 12);
+    if (upstream.status !== 200) {
+      const refused = raetoRefusal(upstream.status, await upstream.text().catch(() => ""));
+      if (refused.owner) this.log(`[compute] ${refused.owner}`);
+      if (refused.empty) this.raetoFloat?.forget();
+      this.settle(agent, worst, { model: asked, usage: usageOf(), cost: 0, status: upstream.status, requestId: "", t0 });
+      const f = fail(refused.status, refused.type, refused.message);
+      const after = upstream.headers.get("retry-after");
+      return after ? { ...f, retryAfter: after } : f;
+    }
+    const header = headerUsd(upstream.headers.get("x-raeto-cost"));
+    const passOn: Record<string, string> = { "cache-control": "no-store", "x-content-type-options": "nosniff", "x-factor-route": "raeto" };
+    for (const name of ["x-raeto-model", "x-raeto-tier", "x-raeto-loop"]) { const v = upstream.headers.get(name); if (v) passOn[name] = v; }
+    const priceNow = () => priceCall(seen, header, worst, r, cfg.markupBps);
+
+    if (body.stream !== true) {
+      const text = await upstream.text().catch(() => "");
+      let d: Record<string, unknown> = {};
+      try { d = JSON.parse(text) as Record<string, unknown>; } catch { /* not an answer */ }
+      absorb(d, seen);
+      if (!seen.answered || seen.failed) {
+        this.settle(agent, worst, { model: asked, usage: usageOf(), cost: 0, status: 502, requestId: seen.id, t0 });
+        this.log("[compute] Raeto's answer held no reply: nothing was charged");
+        return fail(502, "api_error", "The model did not answer. Nothing was taken from the credit.");
+      }
+      const price = priceNow();
+      this.settleRaeto(agent, worst, asked, seen, tier, price, usageOf(), t0);
+      showCharge(d, price.chargeMicro);
+      res.writeHead(200, { ...passOn, "content-type": "application/json", "x-factor-cost-usd": (price.chargeMicro / 1e6).toFixed(6) });
+      res.end(JSON.stringify(d));
+      return null;
+    }
+
+    res.writeHead(200, { ...passOn, "content-type": upstream.headers.get("content-type") ?? "text/event-stream" });
+    let broke = false;
+    try {
+      await passLines(upstream.body!, res, (line) => {
+        if (line.startsWith(":")) return ": processing";
+        if (!line.startsWith("data:")) return line;
+        const data = line.slice(5).trim();
+        if (!data.startsWith("{")) return line;
+        let d: Record<string, unknown>;
+        try { d = JSON.parse(data) as Record<string, unknown>; } catch { return line; }
+        absorb(d, seen);
+        if (!d.usage && !d.raeto) return line;
+        showCharge(d, priceNow().chargeMicro);
+        return `data: ${JSON.stringify(d)}`;
+      });
+    } catch (e) {
+      broke = true;
+      res.end();
+      this.log(`[compute] a Raeto stream broke off part way: ${(e as Error).name}`);
+    }
+    const known = seen.costUsd !== null || header !== null;
+    // never charged: nothing was answered, it ended in an error, or it broke off before saying what it cost
+    if (!seen.answered || seen.failed || (broke && !known)) this.settle(agent, worst, { model: asked, usage: usageOf(), cost: 0, status: 502, requestId: seen.id, t0 });
+    else this.settleRaeto(agent, worst, asked, seen, tier, priceNow(), usageOf(), t0);
+    return null;
+  }
+
+  /** A call that was answered: its cost off the credit, by job, and whether Raeto said what it was. */
+  private settleRaeto(agent: string, worst: number, asked: string, seen: RaetoSeen, tier: string, price: ReturnType<typeof priceCall>, usage: Usage, t0: number): void {
+    const { left, slices } = this.store.chargeLots(agent, price.chargeMicro);
+    this.release(agent, worst);
+    this.store.record({ agent, model: asked, usage, cost: price.chargeMicro, unpaid: left + price.shortMicro, status: 200, requestId: seen.id, ms: Date.now() - t0 });
+    this.raetoBooks.add({ agent, asked, model: seen.model, tier, requestId: seen.id || `call-${t0}`, upstreamMicro: price.upstreamMicro, from: price.from }, slices);
+    if (price.shortMicro > 0) this.log(`[compute] Raeto charged more than the hold allowed for: ${usd(price.shortMicro)} goes unpaid. Raise RAETO_MAX_IN_USD or RAETO_MAX_OUT_USD`);
+    if (price.from === "header" || price.from === "chunk") { this.raetoBlind.calls = 0; return; }
+    this.raetoBlind = { calls: this.raetoBlind.calls + 1, at: Date.now() };
+    this.log(`[compute] Raeto's answer did not say what it cost: charged from ${price.from}${this.raetoBlind.calls >= RAETO_BLIND_LIMIT ? `. That is ${this.raetoBlind.calls} in a row: no call goes there for the next ten minutes` : ""}`);
+  }
+
   private release(agent: string, micro: number): void {
     this.underWay = Math.max(0, this.underWay - 1);
     this.underWayMicro = Math.max(0, this.underWayMicro - micro);
@@ -840,6 +1013,20 @@ async function passStream(body: ReadableStream<Uint8Array>, res: ServerResponse,
     for (const line of lines) if (line.startsWith("data:")) read(line.slice(5));
   }
   if (tail.startsWith("data:")) read(tail.slice(5));
+  res.end();
+}
+
+/** A stream passed on a line at a time, each line through `map` first. Takes as long as the stream, even if the caller left. */
+async function passLines(body: ReadableStream<Uint8Array>, res: ServerResponse, map: (line: string) => string): Promise<void> {
+  const decoder = new TextDecoder();
+  let tail = "";
+  for await (const chunk of body as unknown as AsyncIterable<Uint8Array>) {
+    tail += decoder.decode(chunk, { stream: true });
+    const lines = tail.split("\n");
+    tail = lines.pop() ?? "";
+    if (lines.length) res.write(`${lines.map(map).join("\n")}\n`);
+  }
+  if (tail) res.write(map(tail));
   res.end();
 }
 

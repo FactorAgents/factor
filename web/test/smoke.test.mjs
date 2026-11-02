@@ -19,7 +19,7 @@ const LOCAL = new URL("./forbidden.local.json", import.meta.url);
 // "Guarantee" is the name of a feature (an agent's guarantee bond, and the cover it sells: "Guaranteed up to"), so the
 // word itself is allowed; a guarantee of any gain is not.
 const FORBIDDEN = [/—/, /\binvest/i, /\breturns?\b/i, /\bprofit/i, /\byield/i, /guarantee[sd]?\s+(of\s+)?(an?\s+|your\s+)?(returns?|profits?|gains?|income|earnings|price|pump)/i, /guaranteed\s+(to\s+)?(rise|grow|go up|earn|pay out)/i, ...(existsSync(LOCAL) ? JSON.parse(readFileSync(LOCAL, "utf8")).map(([p, f]) => new RegExp(p, f)) : [])];
-let server, bare, pushed, unpushed;
+let server, bare, pushed, unpushed, raetoSite;
 // A stand-in for the engine's live stream (engine/src/live.ts): it says hello to each stream it is asked for, and
 // sends what a test tells it to. Everything else it answers 404, so the pages on it show an engine with no figures.
 const engine = { streams: new Set(), opened: 0 };
@@ -45,9 +45,52 @@ const stop = (child) => { try { process.kill(-child.pid, "SIGKILL"); } catch { c
 before(async () => {
   await new Promise((r) => fakeEngine.listen(0, "127.0.0.1", r));
   const ENGINE = `http://127.0.0.1:${fakeEngine.address().port}`;
+  raetoSite = await start(PORT + 4, { FACTOR_SAMPLE: "1", FACTOR_SAMPLE_RAETO: "1" });
   [server, bare, pushed, unpushed] = await Promise.all([start(PORT, { FACTOR_SAMPLE: "1" }), start(PORT + 1, {}), start(PORT + 2, { FACTOR_ENGINE_URL: ENGINE }), start(PORT + 3, { FACTOR_ENGINE_URL: ENGINE, LIVE_PUSH: "off" })]);
 });
-after(() => { stop(server); stop(bare); stop(pushed); stop(unpushed); for (const r of engine.streams) r.destroy(); fakeEngine.close(); });
+after(() => { stop(server); stop(bare); stop(pushed); stop(unpushed); stop(raetoSite); for (const r of engine.streams) r.destroy(); fakeEngine.close(); });
+
+test("raeto/auto: nothing about it while it is off, on any page or in the log", async () => {
+  for (const path of ["/", "/work", "/docs", "/log", "/jobs/0414", "/agents/orbit-ops", "/protocol", "/security"]) {
+    const { status, html } = await get(path);
+    assert.equal(status, 200, path);
+    assert.doesNotMatch(html, /raeto/i, `${path} speaks of Raeto while it is off`);
+  }
+  assert.doesNotMatch((await get("/api/v1/compute/v1/models")).html, /raeto/i);
+  assert.doesNotMatch((await get("/api/v1/compute/models")).html, /raeto/i);
+});
+
+test("raeto/auto: when it is on, the work page, the docs, the log, a job's page and an agent's page say how it works and what was spent", async () => {
+  const on = async (path) => { const r = await get(path, `http://127.0.0.1:${PORT + 4}`); return { ...r, html: r.html.replace(/<!-- -->/g, "") }; };
+  const work = text((await on("/work")).html);
+  assert.match(work, /raeto\/auto/);
+  assert.match(work, /Raeto.s charge \+ 5%/);
+  assert.match(work, /Model \+ 8% \+ routing/);
+  assert.match(work, /at most \$0\.000200/);
+  assert.match(work, /\$5\.67 in · \$28\.35 out/);
+  assert.match(work, /Built on Raeto/);
+  const docs = text((await on("/docs")).html);
+  assert.match(docs, /x-raeto-model/);
+  assert.match(docs, /x-factor-cost-usd/);
+  assert.match(docs, /nothing is taken from the credit/);
+  assert.match(text((await on("/log")).html), /raeto\/auto Agent|raeto\/auto An agent/);
+  for (const path of ["/jobs/0414", "/agents/orbit-ops"]) {
+    const page = text((await on(path)).html);
+    assert.match(page, /Compute it spent/, path);
+    assert.match(page, /anthropic\/claude-sonnet-5\.5/, path);
+    assert.match(page, /mistralai\/mistral-small-3\.2-24b-instruct/, path);
+    assert.match(page, /top tier, 1 call/, path);
+    assert.match(page, /\$0\.000214/, path);
+  }
+  assert.doesNotMatch(text((await on("/jobs/0412")).html), /Compute it spent/);
+  const models = await (await fetch(`http://127.0.0.1:${PORT + 4}/api/v1/compute/v1/models`)).json();
+  assert.equal(models.data[0].id, "raeto/auto");
+  // no partnership and no figure of savings
+  for (const path of ["/work", "/docs", "/log"]) {
+    const page = text((await on(path)).html);
+    assert.doesNotMatch(page, /partner(ed|ship)? with Raeto|cheaper|savings|saves? you/i, path);
+  }
+});
 
 test("every page answers, with one main heading and the header that leads to the others", async () => {
   for (const path of PAGES) {

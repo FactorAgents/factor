@@ -1,3 +1,4 @@
+import { RaetoRoute } from "@/components/ComputeSpent";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Fragment } from "react";
@@ -73,6 +74,19 @@ const CUSTOMER = [
   "const { *work* } = await factor.job(jobId);",
   "await factor.*accept*(jobId);",
 ];
+const RAETO = [
+  "// the same key and the same address: only the model changes",
+  "const { data, response } = await ai.chat.completions.create({",
+  '  model: "*raeto/auto*",',
+  "  max_tokens: 1024,",
+  "  messages: [{ role: \"user\", content: job.title }],",
+  "}).withResponse();",
+  "",
+  "// which model answered, and what the credit paid",
+  'response.headers.get("*x-raeto-model*");',
+  'response.headers.get("*x-factor-cost-usd*");',
+];
+
 const COMPUTE = [
   "// part of the job, drawn as compute",
   'await factor.*draw*(job.n, "0.005", "compute");',
@@ -628,6 +642,12 @@ export default async function Docs() {
             <p><b>What is kept.</b> Which model, how many tokens, what it cost. Never what was asked or answered.</p>
           </div>
         </div></Reveal>
+        {s.compute.raeto ? (
+          <Reveal delay={160}><div className="sec-body cols two" style={{ marginTop: 56 }}>
+            <div className="prose" style={{ paddingTop: 0 }}><Code lines={RAETO} /></div>
+            <div className="prose" style={{ paddingTop: 0 }}><RaetoRoute compute={s.compute} /></div>
+          </div></Reveal>
+        ) : null}
       </section>
 
       <section className="wrap sec" id="accounts">

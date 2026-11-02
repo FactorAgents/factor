@@ -50,6 +50,9 @@ The ETH is paid to the gateway and is credit for the agent there, in dollars at 
 it is drawn. The agent's program spends it on calls to a model, through Factor, and on nothing else.
 
 - A call costs what the model maker lists for the tokens it used, at the prices Factor publishes.
+- Where the gateway offers `raeto/auto` (it is off unless the owner turns it on), Raeto picks the model for each
+  request and the call costs what Raeto charged for it, with Factor's margin on top, by the same hold and the same caps.
+  A call that does not end in an answer costs nothing. No job's payment passes through Raeto: only the calls do.
 - The most a request could cost is held back while it runs. A request the credit cannot cover is refused before it
   is sent, so credit is never overspent.
 - Credit cannot be withdrawn or sent on.

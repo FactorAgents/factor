@@ -259,7 +259,7 @@ export interface LedgerEvent {
 export interface Burn { n: number; at: string; eth: number; tokens: number; tx: string }
 /** The burn pot, read from the chain: what it holds, when the next burn may go and what it would spend. */
 export interface BurnPot { potEth: number; nextEth: number; nextAt: string | null; ready: boolean; open: boolean; count: number; ethSpent: number; lastAt: string | null; everyMin: number; smallestEth: number; bonded?: boolean; lastFeesAt?: string | null }
-export interface LogEntry { date: string; area: string; title: string; text: string }
+export interface LogEntry { date: string; area: string; title: string; text: string; /** shown only while this is switched on */ only?: "raeto" }
 
 export interface Params {
   advanceMaxPct: number;     // of the locked payment
@@ -273,9 +273,11 @@ export interface Params {
 }
 
 /** Compute credit: whether it can be spent yet, and the models with what a million tokens costs here, in dollars. */
-export interface Compute { enabled: boolean; markupPct: number; maxTokens: number; models: { id: string; inUsd: number; outUsd: number }[]; router?: { enabled: boolean; models: number }; limits?: { callUsd: number; agentDayUsd: number } }
+export interface Compute { enabled: boolean; markupPct: number; maxTokens: number; models: { id: string; inUsd: number; outUsd: number }[]; router?: { enabled: boolean; models: number }; limits?: { callUsd: number; agentDayUsd: number }; /** raeto/auto at the gateway: only while it is switched on */ raeto?: { models: string[]; feePct: number; routeFeeMostUsd: number; holdInUsd: number; holdOutUsd: number } }
+/** What credit went on through Raeto: which models answered, and what each cost off the credit. */
+export interface RaetoSpend { spentUsd: number; calls: number; models: { model: string; tier: string; calls: number; usd: number }[] }
 /** What an agent has left to spend on models, and the advances it came from. */
-export interface Credit { agent: string; balanceUsd: number; enabled: boolean; lots: { job: number; at: string; usd: number | null; spentUsd: number; state: "open" | "kept" | "closed"; /** paid by the agent's own coin or a draw on its credit line, not by an advance on a job */ paidBy?: "coin" | "line" }[] }
+export interface Credit { raeto?: RaetoSpend; agent: string; balanceUsd: number; enabled: boolean; lots: { job: number; at: string; usd: number | null; spentUsd: number; state: "open" | "kept" | "closed"; /** paid by the agent's own coin or a draw on its credit line, not by an advance on a job */ paidBy?: "coin" | "line" }[] }
 
 export interface FactorState {
   /** engine: read from the chain. sample: made-up figures for building the site. none: no engine was given. */
@@ -410,7 +412,7 @@ export interface Erc8004 {
   links: { registry: string };
 }
 /** One agent with what the page about it shows. */
-export interface AgentPage { /** bounties entered and won */ bounties?: AgentBounties; agent: Agent; /** its Factor Score: the desk's number, the parts, the income behind it, what it can draw */ factorScore?: FactorScore; jobs: Job[]; events: LedgerEvent[]; hiring?: Hiring; /** the firms it leads, belongs to or is invited to */ firms?: { slug: string; name: string; house: boolean; role: "lead" | "member" | "invited" }[]; /** its monthly clients, when it has any plan */ plans?: PlansSummary; /** its ERC-8004 identity and the entries written to it, when one is linked */ erc8004?: Erc8004; /** its own coin, when it has one listed */ coin?: Coin; /** its credit line, from either side, while lines are on */ line?: CreditLine; /** its guarantee bond, offer and covers, while guarantees are on and it has had one */ guarantee?: AgentGuarantee }
+export interface AgentPage { raetoSpend?: RaetoSpend; /** bounties entered and won */ bounties?: AgentBounties; agent: Agent; /** its Factor Score: the desk's number, the parts, the income behind it, what it can draw */ factorScore?: FactorScore; jobs: Job[]; events: LedgerEvent[]; hiring?: Hiring; /** the firms it leads, belongs to or is invited to */ firms?: { slug: string; name: string; house: boolean; role: "lead" | "member" | "invited" }[]; /** its monthly clients, when it has any plan */ plans?: PlansSummary; /** its ERC-8004 identity and the entries written to it, when one is linked */ erc8004?: Erc8004; /** its own coin, when it has one listed */ coin?: Coin; /** its credit line, from either side, while lines are on */ line?: CreditLine; /** its guarantee bond, offer and covers, while guarantees are on and it has had one */ guarantee?: AgentGuarantee }
 
 /** One job in a chain of work: the customer's job at depth 0, the jobs its agent hired for at 1, and so on. */
 export interface TreeNode {
@@ -443,7 +445,7 @@ export interface HireRoom { open: boolean; why?: string; freeEth: number; freeWe
  * `brief`: what the customer asked for at length. `work`: what was delivered, when its agent showed it (its
  * fingerprint is the proof on the chain). `note`: why one of Factor's own agents declined.
  */
-export interface JobPage { job: Job; agent: Agent | null; events: LedgerEvent[]; brief?: string | null; /** "agent": the brief came with the agent's Pay with Factor link, signed by the agent */ briefBy?: "agent"; work?: { kind: "text" | "html"; text: string; at: string } | null; note?: string; /** the chain of work it is part of */ tree?: JobTree; /** what its agent can still hire for it */ hiring?: HireRoom; /** how Factor's own firm went about it */ firmNote?: string; /** its cover, when it was hired with one */ cover?: Cover }
+export interface JobPage { raetoSpend?: RaetoSpend; job: Job; agent: Agent | null; events: LedgerEvent[]; brief?: string | null; /** "agent": the brief came with the agent's Pay with Factor link, signed by the agent */ briefBy?: "agent"; work?: { kind: "text" | "html"; text: string; at: string } | null; note?: string; /** the chain of work it is part of */ tree?: JobTree; /** what its agent can still hire for it */ hiring?: HireRoom; /** how Factor's own firm went about it */ firmNote?: string; /** its cover, when it was hired with one */ cover?: Cover }
 export interface Page<T> { total: number; more: boolean; items: T[] }
 
 // ---------- monthly clients (engine/src/plans.ts) ----------

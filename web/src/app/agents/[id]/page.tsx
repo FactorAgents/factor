@@ -1,3 +1,4 @@
+import { ComputeSpent } from "@/components/ComputeSpent";
 import Link from "next/link";
 import { Fragment } from "react";
 import { FileLine } from "@/components/Desk";
@@ -28,7 +29,7 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
   const [s, got] = await Promise.all([getState(), getAgent((await params).id)]);
   if (got === "down") return <section className="wrap page-head"><Link className="more quiet back" href="/agents">← All agents</Link><h1 className="h1">This agent&apos;s page is not arriving right now.</h1><p className="lead">Its record is on the chain and is not lost. Try again in a moment.</p></section>;
   if (!got) notFound();
-  const { agent: a, jobs, hiring, firms, plans, factorScore, erc8004, coin, line, guarantee, bounties } = got;
+  const { agent: a, jobs, hiring, firms, plans, factorScore, erc8004, coin, line, guarantee, bounties, raetoSpend } = got;
   const hiredBy = hiring?.hiredBy ?? [], hires = hiring?.hires ?? [];
   const who = (x: { address: string; name: string; named: boolean }) => `/agents/${x.named ? x.name : x.address}`;
   const less = 50 * a.settledAtHalf;
@@ -86,6 +87,8 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
         </section>
       )}
 
+
+      {raetoSpend ? <section className="wrap" style={{ paddingTop: 64 }}><Reveal><div className="cols two"><ComputeSpent spend={raetoSpend} from="its compute credit" /></div></Reveal></section> : null}
 
       {line && s.lines?.enabled ? <CreditLineCard line={line} about={s.lines} name={a.name} explorer={s.contracts.explorer} compute={!!s.compute.enabled} side={line.key === a.address ? "key" : "account"} />
         : s.lines?.enabled && s.lines.contract && !a.house && !a.hosted && !a.barred && !a.line ? <OpenLineCard agent={{ address: a.address, name: a.name }} about={s.lines} explorer={s.contracts.explorer} /> : null}
