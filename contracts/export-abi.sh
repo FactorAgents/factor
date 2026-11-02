@@ -5,8 +5,8 @@
 # kit reads them (packages/kit/src/abi), because the kit sends them from an agent's own. The coin launcher's goes to
 # both as well: a maker launches an agent's coin from the site, and an agent from the kit. So do the line contract's and
 # the line account's: an agent opens, draws and repays from the site or the kit. And the guarantee contract's: an agent
-# bonds and sets its offer, and a customer hires with cover, from the site or the kit. Run it after any change to a
-# contract's interface.
+# bonds and sets its offer, and a customer hires with cover, from the site or the kit. The bounty contract's goes to the
+# site only: nobody calls it from the kit yet. Run it after any change to a contract's interface.
 #
 #   contracts/export-abi.sh           writes the files
 #   contracts/export-abi.sh --check   writes nothing; fails if a file is not what the contracts say today
@@ -20,11 +20,13 @@ KIT="$HERE/../packages/kit/src/abi"
 mkdir -p "$OUT" "$WEB" "$KIT"
 forge build --silent || { echo "the contracts do not build"; exit 1; }
 STALE=0
-for pair in FactorDesk:factorDeskAbi:FactorDesk FactorSplitter:factorSplitterAbi:FactorSplitter FactorBurnPot:factorBurnPotAbi:FactorBurnPot FactorAccount:factorAccountAbi:FactorAccount FactorAccounts:factorAccountsAbi:FactorAccount AgentCoinLauncher:agentCoinLauncherAbi:AgentCoinLauncher AgentCoinSplitter:agentCoinSplitterAbi:AgentCoinSplitter FactorLine:factorLineAbi:FactorLine FactorLineAccount:factorLineAccountAbi:FactorLine FactorGuarantee:factorGuaranteeAbi:FactorGuarantee; do
+for pair in FactorDesk:factorDeskAbi:FactorDesk FactorSplitter:factorSplitterAbi:FactorSplitter FactorBurnPot:factorBurnPotAbi:FactorBurnPot FactorAccount:factorAccountAbi:FactorAccount FactorAccounts:factorAccountsAbi:FactorAccount AgentCoinLauncher:agentCoinLauncherAbi:AgentCoinLauncher AgentCoinSplitter:agentCoinSplitterAbi:AgentCoinSplitter FactorLine:factorLineAbi:FactorLine FactorLineAccount:factorLineAccountAbi:FactorLine FactorGuarantee:factorGuaranteeAbi:FactorGuarantee FactorBounty:factorBountyAbi:FactorBounty; do
   NAME=${pair%%:*}; REST=${pair#*:}; CONST=${REST%%:*}; SOURCE=${REST##*:}
   FILE="$OUT/$NAME.ts"
   # the desk and the accounts are what a visitor or an agent calls: those go to the site and the kit as well
   SHARED=0; case $NAME in FactorDesk|FactorAccount|FactorAccounts|AgentCoinLauncher|FactorLine|FactorLineAccount|FactorGuarantee) SHARED=1;; esac
+  # the site reads it, the kit does not yet
+  WEBONLY=0; case $NAME in FactorBounty) WEBONLY=1;; esac
   NEW=$(python3 - "$HERE/out/$SOURCE.sol/$NAME.json" "$NAME" "$CONST" <<'PY'
 import json, sys
 abi = json.load(open(sys.argv[1]))["abi"]
@@ -36,10 +38,12 @@ PY
     [ "$NEW" = "$(cat "$FILE" 2>/dev/null)" ] || { echo "stale: engine/src/abi/$NAME.ts"; STALE=1; }
     [ $SHARED = 0 ] || [ "$NEW" = "$(cat "$WEB/$NAME.ts" 2>/dev/null)" ] || { echo "stale: web/src/lib/abi/$NAME.ts"; STALE=1; }
     [ $SHARED = 0 ] || [ "$NEW" = "$(cat "$KIT/$NAME.ts" 2>/dev/null)" ] || { echo "stale: packages/kit/src/abi/$NAME.ts"; STALE=1; }
+    [ $WEBONLY = 0 ] || [ "$NEW" = "$(cat "$WEB/$NAME.ts" 2>/dev/null)" ] || { echo "stale: web/src/lib/abi/$NAME.ts"; STALE=1; }
   else
     echo "$NEW" > "$FILE"; echo "wrote engine/src/abi/$NAME.ts"
     [ $SHARED = 0 ] || { echo "$NEW" > "$WEB/$NAME.ts"; echo "wrote web/src/lib/abi/$NAME.ts"; }
     [ $SHARED = 0 ] || { echo "$NEW" > "$KIT/$NAME.ts"; echo "wrote packages/kit/src/abi/$NAME.ts"; }
+    [ $WEBONLY = 0 ] || { echo "$NEW" > "$WEB/$NAME.ts"; echo "wrote web/src/lib/abi/$NAME.ts"; }
   fi
 done
 [ $STALE = 0 ] || { echo "run contracts/export-abi.sh"; exit 1; }
