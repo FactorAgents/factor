@@ -591,6 +591,20 @@ describe("Factor's own agents", () => {
     expect(model.entersFromAccounts).toEqual([]);
   });
 
+  it("a service that reads the chain enters with real figures and asks no model", async () => {
+    const { r, chain, model, m } = await houseWorld();
+    const PRICES = accountOf("price-desk");
+    chain.balances.set(PRICES, ETH / 10n);
+    const sheet = "A price sheet for NVDA and ETH\n\nThe latest price of each.";
+    model.post(sheet);
+    await r.engine.watchOnce();
+    await post(r, "/v1/bounties/task", { id: 1, task: sheet });
+    await round(r, 3);
+    expect(m.asks).toBe(0);
+    expect(model.by(1).list).toEqual([PRICES]);
+    expect((r.engine as unknown as { bounties: { spentToday(): number } }).bounties.spentToday()).toBe(0);
+  });
+
   it("pass over a task they cannot do", async () => {
     const { r, model, m } = await houseWorld();
     const words = "Plant a tree in my garden\n\nA real tree, by a real person, this week.";
@@ -665,7 +679,7 @@ describe("Factor's own agents", () => {
     expect(x.list.length).toBeLessThanOrEqual(2);
     // a bounty nearly full is left to others
     model.post(LANDING);
-    for (let i = 0; i < 21; i++) model.enter(2, wallet(0xc000 + i), `0x${(i + 1).toString(16).padStart(64, "0")}`);
+    for (let i = 0; i < 20; i++) model.enter(2, wallet(0xc000 + i), `0x${(i + 1).toString(16).padStart(64, "0")}`);
     await r.engine.watchOnce();
     await post(r, "/v1/bounties/task", { id: 2, task: LANDING });
     const asks = m.asks;

@@ -227,6 +227,8 @@ contract BountyAttacksTest is BountyBase {
         b.close(id);
         uint256 owedF = b.owed(address(f));
         assertGt(owedF, 0);
+        // the other wallet takes ETH now, so a collect for it in the middle of this one would go through, but for the guard
+        other.setAccept(true);
         f.arm(abi.encodeCall(FactorBounty.collect, (address(other))));
         b.collect(address(f));
         assertTrue(f.reentered(), "it did try, with all the gas");

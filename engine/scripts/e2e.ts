@@ -12,7 +12,9 @@
 //                          engine runs with LINES=on (what packages/kit/scripts/lines-e2e.ts starts from). With
 //                          E2E_GUARANTEES=on (and E2E_LINES=on) the guarantee contract is deployed too, by
 //                          contracts/deploy-guarantees.sh, and the engine runs with GUARANTEES=on (what
-//                          packages/kit/scripts/guarantees-e2e.ts starts from)
+//                          packages/kit/scripts/guarantees-e2e.ts starts from). With E2E_BOUNTIES=on (and E2E_LINES=on)
+//                          the bounty contract is deployed too, by contracts/deploy-bounties.sh, and the engine runs with
+//                          BOUNTIES=on and BOUNTIES_HOUSE=on (what scripts/bounties-e2e.ts starts from)
 //
 // What it does, in order:
 //   1  starts anvil as a fork of the chain's head and takes anvil's own built-in test accounts as the admin, the
@@ -327,11 +329,27 @@ async function main(): Promise<void> {
       if (!guarantee || !from) throw new Error("the guarantee contract was not deployed");
       guarantees = { GUARANTEES: "on", FACTOR_GUARANTEE: guarantee, FACTOR_GUARANTEE_BLOCK: from };
     }
+    // bounties: the bounty contract, deployed by the repo's own one-command script against this fork (beside the desk and
+    // the line contract above), read back by its own check, and the engine told of it, with Factor's own agents entering
+    let bounties: Record<string, string> = {};
+    let bounty: string | null = null;
+    if (process.env.E2E_BOUNTIES === "on") {
+      if (!line) throw new Error("E2E_BOUNTIES=on needs E2E_LINES=on: the bounty contract is given the line contract");
+      const forkEnv = join(CONTRACTS, "broadcast", "factor.fork.env");
+      const r = spawnSync("zsh", [join(CONTRACTS, "deploy-bounties.sh"), ADMIN], { cwd: CONTRACTS, encoding: "utf8", timeout: 900_000, env: { ...process.env, FACTOR_RPC: RPC, PATH: `${FOUNDRY}:${process.env.PATH}` } });
+      writeFileSync(join(WORK, "deploy-bounties.log"), `${r.stdout}${r.stderr}`);
+      const written = readFileSync(forkEnv, "utf8");
+      bounty = /FACTOR_BOUNTY=(0x[0-9a-fA-F]{40})/.exec(written)?.[1] ?? null;
+      const from = /FACTOR_BOUNTY_BLOCK=(\d+)/.exec(written)?.[1] ?? null;
+      check("the bounty contract is deployed by contracts/deploy-bounties.sh, which says what each call costs and reads it back wired", r.status === 0 && !!bounty && !!from && r.stdout.includes("OK: the bounty contract is wired") && r.stdout.includes("closing a win"), bounty ?? r.stdout.slice(-400));
+      if (!bounty || !from) throw new Error("the bounty contract was not deployed");
+      bounties = { BOUNTIES: "on", FACTOR_BOUNTY: bounty, FACTOR_BOUNTY_BLOCK: from, BOUNTIES_HOUSE: "on" };
+    }
     // what the kit's and the site's runs start from has Factor's own agents on it too
     await stopPort(ENGINE_PORT);
-    startEngine(dataDir, envFile, { ...HOUSE, ...coins, ...lines, ...guarantees });
+    startEngine(dataDir, envFile, { ...HOUSE, ...coins, ...lines, ...guarantees, ...bounties });
     await waitFor("the house agents to be on the desk", async () => (await state()).agents.filter((a) => a.house && a.named).length === SERVICES.length, 400_000);
-    writeFileSync(join(WORK, "bare.json"), JSON.stringify({ rpc: RPC, api: API, desk, splitter, burnPot, token, accounts: accountsAt, keys, adminKey: ADMIN_KEY, model: `http://127.0.0.1:${MODEL_PORT}`, launcher, line, guarantee, dataDir, envFile }, null, 2));
+    writeFileSync(join(WORK, "bare.json"), JSON.stringify({ rpc: RPC, api: API, desk, splitter, burnPot, token, accounts: accountsAt, keys, adminKey: ADMIN_KEY, model: `http://127.0.0.1:${MODEL_PORT}`, launcher, line, guarantee, bounty, dataDir, envFile }, null, 2));
     console.log(`\nLeft running: the fork on ${RPC}, the engine on ${API}, the pool holding ${eth(pool0)} ETH. Written to ${join(WORK, "bare.json")}.`);
     console.log("Stop them with: npm run e2e -- --stop");
     return;

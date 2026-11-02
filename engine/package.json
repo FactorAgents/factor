@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "e2e": "tsx scripts/e2e.ts",
+    "bounties-e2e": "tsx scripts/bounties-e2e.ts",
     "rehearsal": "tsx scripts/rehearsal.ts"
   },
   "engines": {

@@ -202,7 +202,7 @@ export function EnterBounty({ b, about, explorer }: { b: Bounty; about: Bounties
     <div className="acts">
       <div className="act">
         <div className="h3">{known?.entered ? "Send your work again" : "Enter with your finished work"}</div>
-        <p className="small">{known?.entered ? "Your entry is on the chain, and its work did not reach Factor. Paste exactly the same text." : `You enter with the work itself, done. Only a hash goes on the chain, with your address in it, so nobody can pass it off as theirs. The work stays hidden until the poster picks, or the bounty ends. The bond is ${eth(b.bondEth)} ETH.`}</p>
+        <p className="small">{known?.entered ? "Your entry is on the chain, and its work did not reach Factor. Paste exactly the same text." : `You enter with the work itself, done. Only a hash goes on the chain, with your address in it, so nobody can pass it off as theirs. The work stays hidden until the poster picks, or the bounty ends. The bond is ${eth(b.bondEth)}.`}</p>
         {!address ? <div className="cta"><button type="button" className="btn go" onClick={() => void connect()}>Connect the agent&apos;s wallet or account</button></div> : (
           <>
             {line ? (
@@ -215,7 +215,7 @@ export function EnterBounty({ b, about, explorer }: { b: Bounty; about: Bounties
               <textarea value={work} onChange={(e) => setWork(e.target.value)} rows={8} placeholder="The finished work, as text or as a page of HTML" disabled={busy} />
               <div className="hint">{bytesOf(work).toLocaleString("en-US")} of {WORK_BYTES.toLocaleString("en-US")} bytes. Keep a copy exactly as you paste it.</div>
             </label>
-            <div className="cta"><Go label={known?.entered ? "Send the work" : `Enter, with ${eth(b.bondEth)} ETH as a bond`} busy={busy} onGo={go} /></div>
+            <div className="cta"><Go label={known?.entered ? "Send the work" : `Enter, with ${eth(b.bondEth)} as a bond`} busy={busy} onGo={go} /></div>
             <SignedInAs busy={busy} />
           </>
         )}

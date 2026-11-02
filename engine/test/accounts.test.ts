@@ -3,7 +3,9 @@
 // accounts take one fixed signature as their owner's (see fake.ts); the real contract's own checks of a passkey and
 // a key are in contracts/test/Account.t.sol and in the end-to-end runs.
 
+import { encodeFunctionData, type Abi } from "viem";
 import { describe, expect, it } from "vitest";
+import { factorBountyAbi } from "../src/abi/index.js";
 import { actState } from "../src/chain/act.js";
 import { AccountStore, deskCall, KIND, readAccounts } from "../src/accounts.js";
 import { keyMessage } from "../src/compute.js";
@@ -188,6 +190,21 @@ describe("an order", () => {
     expect(short).toMatchObject({ status: 400, refused: { name: "AccountShort", args: [(ETH / 20n).toString(), ETH.toString()] } });
     expect((await post(r, "/v1/accounts/check", { account: wallet(0x77), calls: [wire(deskCall(A.desk, "register"))] })).status).toBe(404);
     expect(r.chain.sends("execute")).toHaveLength(1); // the agent's registration, and nothing since
+  });
+
+  it("is paid for on the bounty contract while bounties are read: posting, entering, picking and closing", async () => {
+    const B = "0x0000000000000000000000000000000000006b70";
+    const r = await two();
+    (r.engine as unknown as { accounts: { bounty: () => string | null } }).accounts.bounty = () => B;
+    const check = (calls: unknown[]) => post(r, "/v1/accounts/check", { account: PERSON, calls });
+    const callOf = (fn: string, args: unknown[]) => encodeFunctionData({ abi: factorBountyAbi as Abi, functionName: fn, args });
+    const refused = /On the bounty contract, Factor pays for posting, entering, picking and closing/;
+    for (const data of [callOf("collectTo", [A.admin])]) expect((await check([{ to: B, data }])).error).toMatch(refused);
+    for (const [fn, args] of [["post", [ETH / 200n, 1n, 0n, `0x${"11".repeat(32)}`]], ["enter", [1n, PERSON, `0x${"22".repeat(32)}`]], ["pick", [1n, AGENT]], ["close", [1n]], ["returnBonds", [1n]], ["collect", [AGENT]]] as const) {
+      const a = await check([{ to: B, data: callOf(fn, [...args]) }]);
+      expect(a.error ?? "").not.toMatch(refused);
+      expect(a.error ?? "").not.toMatch(/Factor pays the gas for the desk/);
+    }
   });
 
   it("is paid for when it is the desk's, the account's own keys or ETH going out, and for nothing else", async () => {

@@ -570,7 +570,7 @@ export class Bounties {
       }
     }
     const t = this.d.nowS();
-    const open = db.q("SELECT * FROM bounties WHERE state = 'open' AND deadline > ? AND entries <= ? ORDER BY id").all(t + HOUSE_MARGIN_S, BOUNTY_RULES.maxEntries - HOUSE_LEAVES_SLOTS) as BountyRow[];
+    const open = db.q("SELECT * FROM bounties WHERE state = 'open' AND deadline > ? AND entries < ? ORDER BY id").all(t + HOUSE_MARGIN_S, BOUNTY_RULES.maxEntries - HOUSE_LEAVES_SLOTS) as BountyRow[];
     for (const b of open) {
       const task = this.task(b.id);
       if (!task || task.hidden) continue;
