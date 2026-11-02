@@ -25,6 +25,7 @@ import { normalizeAddress } from "../chain/address.js";
 import { nodeBusy, reason, revertOf, type Chain } from "../chain/chain.js";
 import type { EngineDb } from "../chain/db.js";
 import { costMicro, DEFAULT_MODELS, type Price } from "../compute.js";
+import { askRaeto, type RaetoAsker } from "../raeto.js";
 import { stopped } from "../switches.js";
 import { proofOf, type Profiles } from "../profiles.js";
 import { FEED_ABI, FEEDS } from "./feeds.js";
@@ -140,6 +141,8 @@ export interface HouseDeps {
   profiles: Profiles;
   /** the owner's key with the model maker: sent to the model maker, never anywhere else */
   modelKey: string | null;
+  /** Raeto, when HOUSE_RAETO=on (../raeto.ts) */
+  raeto?: RaetoAsker | null;
   seed: Hex | null;
   live: () => boolean;
   now: () => number; // ms, the engine's clock
@@ -191,11 +194,11 @@ export class House {
       const signer = d.signers?.(service.name) ?? (d.seed ? houseSigner(d.seed, service.name) : null);
       if (!signer) continue;
       // an agent that asks a model is not put up without a key for the model: it would only decline everything
-      if (service.ask && !d.modelKey) continue;
+      if (service.ask && !this.canAsk) continue;
       this.agents.push({ service, signer, key: { kind: KIND.wallet, a: `0x${"0".repeat(24)}${signer.address.slice(2)}` as Hex, b: `0x${"0".repeat(64)}` as Hex }, address: null, setUp: false, payoutAt: 0 });
     }
     // the agents people made on the site: they ask a model, so there are none without a key for one
-    if (cfg.hosted.enabled && d.modelKey) for (const row of d.db.q("SELECT * FROM hosted_agents ORDER BY id").all() as HostedRow[]) this.put(row);
+    if (cfg.hosted.enabled && this.canAsk) for (const row of d.db.q("SELECT * FROM hosted_agents ORDER BY id").all() as HostedRow[]) this.put(row);
   }
 
   // ---------- agents made on the site ----------
@@ -214,7 +217,7 @@ export class House {
    */
   make(o: { owner: string; name: string; does: string; instructions: string; priceWei: bigint; payout: string }): Made {
     const h = this.cfg.hosted;
-    if (!h.enabled || !this.d.modelKey) return { ok: false, status: 503, error: "making an agent here is not switched on yet" };
+    if (!h.enabled || !this.canAsk) return { ok: false, status: 503, error: "making an agent here is not switched on yet" };
     if (stopped(this.d.db, "house") || stopped(this.d.db, "keeper")) return { ok: false, status: 503, error: "making an agent is paused for now" };
     if (o.priceWei < h.floorWei) return { ok: false, status: 400, error: `the price is under the least one of these takes a job for (${Number(h.floorWei / 10n ** 12n) / 1e6} ETH)` };
     if (o.priceWei > 10n ** 18n) return { ok: false, status: 400, error: "the price is over 1 ETH a job: set it lower" };
@@ -230,7 +233,7 @@ export class House {
 
   /** Whether an agent can be made here right now: switched on, a key for the model, and nothing stopped. */
   canMake(): boolean {
-    return this.cfg.hosted.enabled && !!this.d.modelKey && this.d.live() && !stopped(this.d.db, "house") && !stopped(this.d.db, "keeper");
+    return this.cfg.hosted.enabled && this.canAsk && this.d.live() && !stopped(this.d.db, "house") && !stopped(this.d.db, "keeper");
   }
 
   /** The agents an address made here, for their owner's own page. */
@@ -450,7 +453,7 @@ export class House {
       else {
         if (this.spentToday() >= this.cfg.dailyMicro || (a.hosted && this.spentToday(a.address!) >= this.cfg.hosted.dailyMicroEach)) return this.decline(a, job, `${a.service.name} has taken all the jobs it takes in a day: hire it again tomorrow`);
         try {
-          const answer = await this.ask(a.service.ask!(title, brief));
+          const answer = await this.ask(a.service.ask!(title, brief), a.address ?? undefined);
           cost = { micro: answer.costMicro, input: answer.input, output: answer.output };
           done = a.service.finish!(answer.text);
         } catch (e) {
@@ -564,7 +567,19 @@ export class House {
 
   // ---------- the model ----------
 
-  private async ask(a: Asked): Promise<{ text: string; input: number; output: number; costMicro: number }> {
+  /** There is a model to ask: the usual one, or Raeto when the owner chose it for Factor's own agents. */
+  private get canAsk(): boolean { return !!this.d.modelKey || !!this.d.raeto; }
+
+  private async ask(a: Asked, agent?: string): Promise<{ text: string; input: number; output: number; costMicro: number }> {
+    // Raeto when the owner chose it and it is not stopped. If it fails, the usual model answers when there is a key for it
+    if (this.d.raeto && !stopped(this.d.db, "raeto")) {
+      try {
+        return await askRaeto(this.d.raeto, a, agent);
+      } catch (e) {
+        this.d.log(`[house] Raeto did not answer (${(e as Error).message?.split("\n")[0]})${this.d.modelKey ? ": asking the usual model" : ""}`);
+        if (!this.d.modelKey) throw e;
+      }
+    }
     const key = this.d.modelKey;
     if (!key) throw new Error("no key for the model");
     const res = await fetch(`${this.cfg.upstream}/v1/messages`, {

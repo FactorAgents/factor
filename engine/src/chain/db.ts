@@ -210,6 +210,24 @@ CREATE INDEX IF NOT EXISTS compute_usage_agent ON compute_usage (agent, id);
 -- The keys agents call the gateway with: only their hashes.
 CREATE TABLE IF NOT EXISTS compute_keys (hash TEXT PRIMARY KEY, agent TEXT NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS compute_keys_agent ON compute_keys (agent, created_at);
+-- What a call through Raeto (../raeto.ts) took from each lot of credit, and which model answered. Never what was asked or answered.
+CREATE TABLE IF NOT EXISTS compute_raeto_spend (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  at INTEGER NOT NULL,               -- ms
+  agent TEXT NOT NULL,
+  job_id INTEGER NOT NULL,           -- 0 when a coin or a line paid
+  source TEXT NOT NULL,
+  line TEXT,
+  asked TEXT NOT NULL,               -- raeto/auto or a variant
+  model TEXT NOT NULL,               -- the model that answered
+  tier TEXT NOT NULL,
+  request_id TEXT NOT NULL,
+  cost_micro INTEGER NOT NULL,       -- off the credit, with the margin
+  upstream_micro REAL NOT NULL,      -- what the whole call took at Raeto
+  cost_from TEXT NOT NULL            -- header, chunk, or how it was worked out when Raeto did not say
+);
+CREATE INDEX IF NOT EXISTS compute_raeto_job ON compute_raeto_spend (job_id, source);
+CREATE INDEX IF NOT EXISTS compute_raeto_agent ON compute_raeto_spend (agent);
 -- Accounts for people without a wallet (../accounts.ts). The engine's own notes, not the chain's: an account and its
 -- first key as it was asked for, and whether the chain has it yet. Never taken back by a reindex.
 CREATE TABLE IF NOT EXISTS accounts (

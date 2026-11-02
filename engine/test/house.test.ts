@@ -11,7 +11,9 @@ import { KIND } from "../src/accounts.js";
 import { houseSigner, readHouse, takeHouseSeed, type HouseSigner } from "../src/house/house.js";
 import { FEEDS } from "../src/house/feeds.js";
 import { SERVICES, tickersIn } from "../src/house/services.js";
+import { turn } from "../src/switches.js";
 import { briefMessage, briefText, proofOf } from "../src/profiles.js";
+import { raetoStub, type RaetoStub } from "../scripts/stub-raeto.js";
 import { A, ETH, FakeChain, GOOD_SIGNATURE } from "./chain/fake.js";
 import { rig, TEST_KEY, wallet, type Rig } from "./chain/harness.js";
 
@@ -89,6 +91,61 @@ async function hire(w: Rig, agent: string, price: bigint, brief: string | null, 
   return id;
 }
 const jobOf = (w: Rig, id: number) => get(w, `/v1/jobs/${id}`);
+
+describe("asking Raeto, when the owner chose it", () => {
+  const stubs: RaetoStub[] = [];
+  afterEach(async () => { await Promise.all(stubs.splice(0).map((s) => s.close())); });
+  const onRaeto = async (more: Record<string, string> = {}, key = true) => {
+    const stub = await raetoStub("sk-raeto-test");
+    stubs.push(stub);
+    stub.say = A_READING;
+    return { stub, w: await world({ COMPUTE_MODE: "on", RAETO: "on", RAETO_API_KEY: "sk-raeto-test", RAETO_URL: stub.url, HOUSE_RAETO: "on", ...more }, key) };
+  };
+  const delivered = async (w: World, stub: RaetoStub) => {
+    const id = await hire(w, READER, ETH / 500n, LEASE, "A lease for a flat");
+    await round(w, 3);
+    expect((await jobOf(w, id)).job).toMatchObject({ state: "delivered", agentId: READER });
+    return stub;
+  };
+
+  it("does the work through Raeto with its tag, and Raeto's figure counts against the day", async () => {
+    const { w, stub } = await onRaeto();
+    await delivered(w, stub);
+    expect(w.m.seen).toHaveLength(0);
+    expect(stub.seen).toHaveLength(1);
+    expect(stub.seen[0]!.headers["x-raeto-agent"]).toBe(READER);
+    expect(stub.seen[0]!.body.model).toBe("raeto/auto");
+    expect((stub.seen[0]!.body.messages as { role: string; content: string }[])[0]).toMatchObject({ role: "system", content: expect.stringContaining("plain-reader") });
+    const row = w.sqlite.prepare("SELECT cost_micro FROM house_jobs").get() as { cost_micro: number };
+    expect(row.cost_micro).toBe(Math.ceil(stub.charged[0]! * 1e6));
+  });
+
+  it("goes to the usual model when Raeto fails", async () => {
+    const { w, stub } = await onRaeto();
+    stub.down = true;
+    await delivered(w, stub);
+    expect(w.m.seen).toHaveLength(1);
+    expect(w.lines.join("\n")).toContain("asking the usual model");
+  });
+
+  it("is off unless asked for, and off with the owner's switch", async () => {
+    const off = await onRaeto({ HOUSE_RAETO: "off" });
+    await delivered(off.w, off.stub);
+    expect(off.stub.seen).toHaveLength(0);
+    expect(off.w.m.seen).toHaveLength(1);
+    const on = await onRaeto();
+    turn(on.w.db, "raeto", false, "a test");
+    await delivered(on.w, on.stub);
+    expect(on.stub.seen).toHaveLength(0);
+  });
+
+  it("puts up the agents that ask a model on Raeto's key alone", async () => {
+    const { w, stub } = await onRaeto({}, false);
+    await delivered(w, stub);
+    expect(stub.seen).toHaveLength(1);
+    expect(w.m.seen).toHaveLength(0);
+  });
+});
 
 describe("the settings", () => {
   it("are off until they are switched on, and need a maker of accounts and a key to make the agents' keys from", () => {

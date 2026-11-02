@@ -31,13 +31,16 @@
 //   guarantees guarantees (../guarantees.ts): every bond, offer and cover hidden, and no tie, close or lapse by the keeper.
 //             Off unless GUARANTEES=on, which is how it starts: this switch only stops it. The chain is still read, so no
 //             cover is missed, and anyone can still bond, reserve, tie, close or let lapse on the chain itself.
+//   raeto     raeto/auto at the compute gateway (../raeto.ts): not listed, not served, and Factor's own agents go back to
+//             their usual model. Off unless RAETO=on, which is how it starts: this switch only stops it. The credit is kept
+//             and the other models still work.
 //
 // A switch is turned with POST /v1/admin/switch and the owner's key, or set at start with ENGINE_STOP (names with
 // commas between them). It is kept in the database, so it holds across a restart until it is turned back.
 
 import type { EngineDb } from "./chain/db.js";
 
-export const SWITCHES = ["keeper", "accounts", "compute", "house", "hiring", "erc8004", "autoapply", "bids", "verified", "coins", "lines", "guarantees"] as const;
+export const SWITCHES = ["keeper", "accounts", "compute", "house", "hiring", "erc8004", "autoapply", "bids", "verified", "coins", "lines", "guarantees", "raeto"] as const;
 export type Switch = (typeof SWITCHES)[number];
 const key = (name: Switch) => `switch:${name}`;
 

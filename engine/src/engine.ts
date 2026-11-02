@@ -19,6 +19,7 @@ import { normalizeAddress } from "./chain/address.js";
 import { addressOfKey, hostsOnly, nodeBusy, reason, revertOf, viemChain, viemSigner, type Chain, type Signer } from "./chain/chain.js";
 import { Accounts } from "./accounts.js";
 import { ComputeStore, Gateway } from "./compute.js";
+import { takeRaetoKey } from "./raeto.js";
 import { Demo } from "./house/demo.js";
 import { House, houseSigner, takeHouseSeed, type HouseSigner } from "./house/house.js";
 import { allStopped, stopFromEnv, stopped } from "./switches.js";
@@ -447,11 +448,12 @@ export class Engine {
     if (c.firms.enabled) this.log(`[firms] on: agents can form firms of up to ${c.firms.mostMembers + 1}, and customers hire them through their lead`);
     if (c.subjobs.enabled) this.log(`[subjobs] on: an agent can hire other agents for parts of its job, ${c.subjobs.maxDepth} levels deep, ${c.subjobs.perParent} under one job`);
     if (c.pay.enabled) this.log(`[pay] Pay with Factor on: every deal adds ${c.pay.burnBps / 100}% of its price to the burn, paid by the buyer`);
-    this.gateway = new Gateway(c.compute, new ComputeStore(this.ctx.db), this.ctx.db, c.compute.enabled ? { anthropic: c.compute.direct ? takeModelKey(this.env) : null, router: takeRouterKey(this.env) } : { anthropic: null, router: null }, this.log, accountSigned);
+    this.gateway = new Gateway(c.compute, new ComputeStore(this.ctx.db), this.ctx.db, c.compute.enabled ? { anthropic: c.compute.direct ? takeModelKey(this.env) : null, router: takeRouterKey(this.env), raeto: c.compute.raeto.enabled ? takeRaetoKey(this.env) : null } : { anthropic: null, router: null }, this.log, accountSigned);
     // Factor's own agents: put up only while there is a gas wallet to send what they sign
     this.house = new House(c.house, {
       db: this.ctx.db, chain: this.chain, desk: c.desk, accounts: this.accounts, profiles: this.profiles,
       modelKey: c.house.enabled ? takeModelKey(this.env) : null, seed: c.house.enabled ? takeHouseSeed(this.env) : null,
+      raeto: c.house.enabled && c.compute.enabled && c.compute.raeto.enabled && c.compute.raeto.house ? { url: c.compute.raeto.url, key: takeRaetoKey(this.env)!, model: c.compute.raeto.houseModel, timeoutMs: c.compute.raeto.timeoutMs } : null,
       live: () => this.ctx?.mode === "live" && !!this.ctx.signer && this.state === "running", now: this.now, log: this.log,
       costTo: () => this.ctx?.facts.from ?? null,
       firms: () => (c.firms.enabled ? this.firms : null), subjobs: () => (c.subjobs.enabled ? this.subjobs : null), burnFor: (wei) => this.pay!.burnFor(wei), burnPot: c.burnPot, nowS,
@@ -533,6 +535,8 @@ export class Engine {
     else if (c.accounts.note) this.log(`[accounts] NOT ON: ${c.accounts.note}`);
     if (c.compute.enabled) this.log(`[compute] on: ${[c.compute.direct ? Object.keys(c.compute.models).join(", ") : "", c.compute.router.enabled ? "OpenRouter's models" : ""].filter(Boolean).join(" and ")}, at the price plus ${c.compute.markupBps / 100}%`);
     else if (c.compute.note) this.log(`[compute] NOT ON: ${c.compute.note}`);
+    if (c.compute.enabled && c.compute.raeto.enabled) this.log(`[compute] raeto/auto is on: what Raeto charges plus ${c.compute.markupBps / 100}%, tagged with each agent's address${c.compute.raeto.house ? `; Factor's own agents ask ${c.compute.raeto.houseModel}` : ""}`);
+    else if (c.compute.raeto.note) this.log(`[compute] raeto/auto NOT ON: ${c.compute.raeto.note}`);
     this.log(`[engine] desk ${c.desk}, splitter ${c.splitter}, burn pot ${c.burnPot}, from block ${c.deployBlock}; ${c.rpcUrls.length} node(s): ${c.rpcUrls.map((u) => hostsOnly(u)).join(", ")}`);
     this.booting = this.boot();
   }

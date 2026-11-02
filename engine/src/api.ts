@@ -284,7 +284,7 @@ export interface FactorState {
   burns: BurnJson[];
   contracts: { desk: string | null; splitter: string | null; burnPot: string | null; token: string | null; explorer: string };
   /** compute credit: whether an advance drawn "as compute" can be spent on models yet, and what they cost here */
-  compute: { enabled: boolean; markupPct: number; maxTokens: number; models: { id: string; inUsd: number; outUsd: number }[]; router: { enabled: boolean; models: number }; limits: { callUsd: number; agentDayUsd: number } };
+  compute: { enabled: boolean; markupPct: number; maxTokens: number; models: { id: string; inUsd: number; outUsd: number }[]; router: { enabled: boolean; models: number }; limits: { callUsd: number; agentDayUsd: number }; raeto?: { models: string[]; feePct: number; routeFeeMostUsd: number; holdInUsd: number; holdOutUsd: number } };
   /** accounts for people without a wallet: whether one can be made and used right now, and what makes them */
   accounts: { enabled: boolean; factory: string | null; ordersPerDay: number };
   /** set while the owner has paused new jobs: why, in a line. The site and the kit then lock nothing. */
@@ -1250,6 +1250,7 @@ export class EngineApi {
       ...((x) => (x ? { line: x } : {}))(v.lines?.on() ? v.lines.one(row.address) : null),
       // its guarantee bond, offer and covers: only while guarantees are on and it has ever had one
       ...((x) => (x ? { guarantee: x } : {}))(v.guarantees?.on() ? v.guarantees.agentJson(row.address, true) : null),
+      ...((x) => (x ? { raetoSpend: x } : {}))(v.gateway?.raetoSpendOfAgent(row.address) ?? null),
     });
   }
 
@@ -1343,6 +1344,7 @@ export class EngineApi {
       ...((h) => (h ? { hiring: h } : {}))(this.hireRoom(v, row, this.chainNow(v, r.snap))),
       // its cover, when it was hired with one: only while guarantees are on
       ...((c) => (c ? { cover: v.guarantees!.coverJson(c) } : {}))(v.guarantees?.on() ? v.guarantees.coverOfJob(id) : null),
+      ...((x) => (x ? { raetoSpend: x } : {}))(v.gateway?.raetoSpendOfJob(id) ?? null),
     });
   }
 
@@ -1572,7 +1574,7 @@ export class EngineApi {
       house: v.house ? v.house.totals() : null,
       demo: v.demo ? v.demo.totals() : null,
       accounts: v.accounts ? { ...v.accounts.about(), note: c.accounts.note, ...v.accounts.store.totals(), gasDayWei: c.accounts.gasDayWei.toString() } : null,
-      compute: v.gateway ? { ...v.gateway.about(), note: c.compute.note, ...v.gateway.store.totals(), todayMicro: v.gateway.store.spentToday(), dailyMicro: c.compute.dailyMicro, routerFloatUsd: v.gateway.float?.usd() ?? null } : null,
+      compute: v.gateway ? { ...v.gateway.about(), note: c.compute.note, ...v.gateway.store.totals(), todayMicro: v.gateway.store.spentToday(), dailyMicro: c.compute.dailyMicro, routerFloatUsd: v.gateway.float?.usd() ?? null, ...(v.gateway.raetoOn() ? { raetoFloatUsd: v.gateway.raetoFloat?.usd() ?? null } : {}) } : null,
       rpc: v.rpc ? { ...v.rpc, lastError: v.rpc.lastError ? hostsOnly(v.rpc.lastError) : null } : null,
       coins: v.coins ? v.coins.health() : null,
       lines: v.lines ? v.lines.health() : null,
