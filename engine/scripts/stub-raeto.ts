@@ -6,7 +6,7 @@
 //
 // What it does is chosen by a mark anywhere in the last message: [stub:429], [stub:500], [stub:timeout], [stub:retry],
 // [stub:nocost], [stub:nousage], [stub:break], [stub:errorchunk], [stub:empty], [stub:402], [stub:401], [stub:400],
-// [stub:409], [stub:budget], [stub:dear]. No mark: a plain answer. It costs what the real one costs for a short request to a cheap
+// [stub:409], [stub:budget], [stub:dear], [stub:thinking]. No mark: a plain answer. It costs what the real one costs for a short request to a cheap
 // model: the provider's price for the tokens, 8%, and a routing fee, and a run can read what it charged in `charged`.
 
 import { createServer, type IncomingHttpHeaders, type Server } from "node:http";
@@ -85,7 +85,7 @@ export function raetoStub(key: string, port = 0): Promise<RaetoStub> {
 
       if (!body.stream) {
         if (mark === "empty") return json(200, { id, object: "chat.completion", model: m.model, choices: [] }, { "x-raeto-cost": "0.00000000", ...headers });
-        return json(200, { id, object: "chat.completion", created: 1793617549, model: m.model, provider: m.provider, system_fingerprint: null, service_tier: "default", choices: [{ index: 0, logprobs: null, finish_reason: "stop", native_finish_reason: "stop", message: { role: "assistant", content: said, refusal: null, reasoning: null } }], ...(mark === "nousage" ? {} : { usage }) }, { ...(quiet ? {} : { "x-raeto-cost": cost.toFixed(8), "x-raeto-saved": "0.00006800", "x-raeto-saved-pct": "68", "x-raeto-route-fee": ROUTE_FEE.toFixed(8) }), ...headers });
+        return json(200, { id, object: "chat.completion", created: 1793617549, model: m.model, provider: m.provider, system_fingerprint: null, service_tier: "default", choices: [{ index: 0, logprobs: null, finish_reason: "stop", native_finish_reason: "stop", message: mark === "thinking" ? { role: "assistant", content: null, refusal: null, reasoning: "Let me think about this." } : { role: "assistant", content: said, refusal: null, reasoning: null } }], ...(mark === "nousage" ? {} : { usage }) }, { ...(quiet ? {} : { "x-raeto-cost": cost.toFixed(8), "x-raeto-saved": "0.00006800", "x-raeto-saved-pct": "68", "x-raeto-route-fee": ROUTE_FEE.toFixed(8) }), ...headers });
       }
       res.writeHead(200, { "content-type": "text/event-stream", ...headers });
       res.write(": OPENROUTER PROCESSING\n\n");

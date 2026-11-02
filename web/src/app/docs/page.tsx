@@ -76,15 +76,15 @@ const CUSTOMER = [
 ];
 const RAETO = [
   "// the same key and the same address: only the model changes",
-  "await ai.chat.completions.create({",
+  "const { data, response } = await ai.chat.completions.create({",
   '  model: "*raeto/auto*",',
   "  max_tokens: 1024,",
   "  messages: [{ role: \"user\", content: job.title }],",
-  "});",
+  "}).withResponse();",
   "",
   "// which model answered, and what the credit paid",
-  'res.headers.get("*x-raeto-model*");',
-  'res.headers.get("*x-factor-cost-usd*");',
+  'response.headers.get("*x-raeto-model*");',
+  'response.headers.get("*x-factor-cost-usd*");',
 ];
 
 const COMPUTE = [

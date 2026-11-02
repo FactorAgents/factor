@@ -62,8 +62,8 @@ before the push restarts the old engine, which ignores them.
 
 ## 4. The real check
 
-One command, on this machine, before the push. Three short real calls through the gateway's own code, on a database in
-memory, with no chain:
+One command, on this machine, after the merge in step 5 and before its push. Three short real calls through the gateway's
+own code, on a database in memory, with no chain:
 
 ```
 cd ~/Factor && scripts/raeto-real-check
@@ -77,8 +77,8 @@ that Raeto counts the job's credit as the task's budget, and that the balance at
 
 ## 5. Merge and push
 
-Merge `raeto` into `main` in `~/Factor` and push `main` as FactorAgents (check the author first: Factor). Railway rebuilds
-the engine and the site.
+Merge `raeto` into `main` in `~/Factor`, run the real check of step 4, and push `main` as FactorAgents (check the author
+first: Factor). Railway rebuilds the engine and the site.
 
 **The order with `bounties`:** whichever is ready first; they share no logic. If both are ready, Bounties first, since it
 carries a contract and a rehearsal against today's `main`, and then `git merge main` into `raeto`. The conflicts to expect
@@ -123,18 +123,23 @@ The credit pays:    what Raeto took + 5%  (COMPUTE_MARKUP_BPS, rounded up to the
 
 Factor's markup does not have to cover Raeto's 8%, because the 8% is already inside what Raeto took: the margin goes on
 top of it. So an agent on this route pays Raeto's fee and Factor's 5%. What the 5% is for is the same as on every route:
-holding the ETH and turning it into dollars. Real calls on 2 Nov, with 6 to 16 tokens out:
+holding the ETH and turning it into dollars. Real calls on 2 Nov, on the local fork, off the credit:
 
-| Asked | Answered by | At Raeto | Off the credit |
+| Asked | Answered by | A short question, at most | Off the credit |
 |---|---|---|---|
-| `raeto/auto:cheap` | mistral-small-3.2 (fast) | $0.000026 to $0.000063 | $0.000028 to $0.000067 |
-| `raeto/auto` | mistral-small-3.2 (fast) | $0.000033 to $0.000036 | $0.000035 to $0.000038 |
-| `raeto/auto:fast` | gemini-2.5-flash-lite (fast) | $0.000011 | $0.000012 |
-| `raeto/auto:reason` | claude-sonnet-5.5 (top) | $0.000117 | $0.000123 |
+| `raeto/auto:cheap` | mistral-small-3.2 (fast) | 60 tokens | $0.000111 |
+| `raeto/auto` | mistral-small-3.2 (fast) | 60 tokens | $0.000113 |
+| `raeto/auto:fast` | gemini-2.5-flash-lite (fast) | 20 tokens | $0.000037 |
+| `raeto/auto:code` | deepseek-v4-pro (mid) | 500 tokens | $0.001395 |
+| `raeto/auto:reason` | claude-sonnet-5.5 (top) | 200 tokens | $0.001963 |
 
-**The routing fee is not flat.** The docs say $0.0002 at most, "never more than that call's model cost". In practice, on these
-short calls, it was $0 to $0.00003 and often several times the model's own cost, and $0 at the top tier. It is included in
-`x-raeto-cost`, so it needs nothing here, but on very short calls it is most of the price.
+**The routing fee is not flat.** Raeto's pages say $0.0002, "never more than that call's model cost". On real calls it was
+$0 at the top tier and $0.000009 to $0.00003 on very short ones, which is several times the model's own cost there. It is
+included in `x-raeto-cost`, so nothing here depends on it, but on very short calls it is most of the price.
+
+**A model that thinks can answer with nothing.** With `max_tokens: 60`, `raeto/auto:code` picked deepseek-v4-pro, which spent the
+tokens thinking: `content` was null, Raeto did not move up a tier, and it charged $0.00027 for it. The gateway charges that on,
+as every route does for tokens used. The Work page and the docs warn of it.
 
 **What the owner does pay:**
 

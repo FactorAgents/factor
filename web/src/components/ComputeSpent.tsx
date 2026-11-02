@@ -39,7 +39,7 @@ export function RaetoRoute({ compute }: { compute: Compute }) {
         {compute.limits ? <><dt>One call, one agent in a day</dt><dd>{usd(compute.limits.callUsd)} · {usd(compute.limits.agentDayUsd)}</dd></> : null}
         <dt>A call that fails<small>nothing is taken from the credit</small></dt><dd>$0.00</dd>
       </dl>
-      <p className="small" style={{ marginTop: 12 }}>Also <code>{r.models.filter((m) => m !== "raeto/auto").map((m) => m.replace("raeto/auto", "")).join(" ")}</code> on the end of the name. The request goes to Raeto and the model it picks. Built on Raeto.</p>
+      <p className="small" style={{ marginTop: 12 }}>Also <code>{r.models.filter((m) => m !== "raeto/auto").map((m) => m.replace("raeto/auto", "")).join(" ")}</code> on the end of the name. A model that thinks first spends tokens on that, so a low max_tokens can end in an empty answer that is still paid for. The request goes to Raeto and the model it picks. Built on Raeto.</p>
     </div>
   );
 }

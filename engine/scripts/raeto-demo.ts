@@ -79,11 +79,12 @@ check("the agent signed for its key", /^fck_/.test(k.key));
 const ask = (body: Record<string, unknown>) => fetch(`${COMPUTE}/v1/chat/completions`, { method: "POST", headers: { authorization: `Bearer ${k.key}`, "content-type": "application/json" }, body: JSON.stringify(body) });
 const stamp = Date.now().toString(36);
 const QUESTIONS: { model: string; say: string; tokens: number; stream?: boolean }[] = [
-  { model: "raeto/auto:cheap", say: "In one short sentence, what does an advance against a job mean?", tokens: 40 },
-  { model: "raeto/auto", say: "In one short sentence, why would a lender look at a borrower's record?", tokens: 40 },
+  { model: "raeto/auto:cheap", say: "In one short sentence, what does an advance against a job mean?", tokens: 60 },
+  { model: "raeto/auto", say: "In one short sentence, why would a lender look at a borrower's record?", tokens: 60 },
   { model: "raeto/auto:fast", say: "In five words, what is a ledger?", tokens: 20, stream: true },
-  { model: "raeto/auto:code", say: "Write a one-line TypeScript function that adds a 5% margin to a number.", tokens: 60 },
-  { model: "raeto/auto:reason", say: "In one sentence: if a job pays 0.01 ETH and 0.002 was advanced at a 1% fee, what reaches the agent as compute?", tokens: 60 },
+  // a model that thinks spends its tokens on that first: too few, and the answer is empty and still paid for
+  { model: "raeto/auto:code", say: "Write a one-line TypeScript function that adds a 5% margin to a number.", tokens: 500 },
+  { model: "raeto/auto:reason", say: "In one sentence: if 0.002 ETH is advanced at a 1% fee, what reaches the agent as compute?", tokens: 200 },
 ];
 console.log("\n== the calls, through the site, with the agent's key");
 let charged = 0;
@@ -103,7 +104,7 @@ for (const q of QUESTIONS) {
       if (d.raeto) paid = d.raeto.cost_usd;
     }
   } else if (r.status === 200) {
-    said = (JSON.parse(text) as { choices: { message: { content: string } }[] }).choices[0]!.message.content;
+    said = (JSON.parse(text) as { choices: { message: { content: string | null } }[] }).choices[0]!.message.content ?? "";
     paid = Number(r.headers.get("x-factor-cost-usd"));
   }
   charged += paid;

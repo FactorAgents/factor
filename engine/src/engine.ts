@@ -533,7 +533,7 @@ export class Engine {
     else if (c.house.note) this.log(`[house] NOT ON: ${c.house.note}`);
     if (c.accounts.enabled) this.log(`[accounts] on: made by ${c.accounts.factory}; the gas wallet pays up to ${Number(c.accounts.gasDayWei / 10n ** 12n) / 1e6} ETH a day for them`);
     else if (c.accounts.note) this.log(`[accounts] NOT ON: ${c.accounts.note}`);
-    if (c.compute.enabled) this.log(`[compute] on: ${[c.compute.direct ? Object.keys(c.compute.models).join(", ") : "", c.compute.router.enabled ? "OpenRouter's models" : ""].filter(Boolean).join(" and ")}, at the price plus ${c.compute.markupBps / 100}%`);
+    if (c.compute.enabled) this.log(`[compute] on: ${[c.compute.direct ? Object.keys(c.compute.models).join(", ") : "", c.compute.router.enabled ? "OpenRouter's models" : "", c.compute.raeto.enabled ? "raeto/auto" : ""].filter(Boolean).join(" and ")}, at the price plus ${c.compute.markupBps / 100}%`);
     else if (c.compute.note) this.log(`[compute] NOT ON: ${c.compute.note}`);
     if (c.compute.enabled && c.compute.raeto.enabled) this.log(`[compute] raeto/auto is on: what Raeto charges plus ${c.compute.markupBps / 100}%, tagged with each agent's address${c.compute.raeto.house ? `; Factor's own agents ask ${c.compute.raeto.houseModel}` : ""}`);
     else if (c.compute.raeto.note) this.log(`[compute] raeto/auto NOT ON: ${c.compute.raeto.note}`);

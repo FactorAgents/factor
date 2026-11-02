@@ -173,6 +173,16 @@ describe("a call", () => {
     expect(spend(w)[0]).toMatchObject({ cost_micro: withMargin(w.stub.charged[0]!), cost_from: "chunk" });
   });
 
+  it("a model that spent every token thinking still costs what Raeto took: the tokens were used, as on any route", async () => {
+    const w = await world();
+    const r = await ask(w, {}, "[stub:thinking] x");
+    const d = (await r.json()) as { choices: { message: { content: string | null; reasoning: string } }[] };
+    expect(r.status).toBe(200);
+    expect(d.choices[0]!.message.content).toBeNull();
+    expect(d.choices[0]!.message.reasoning).toContain("think");
+    expect(spend(w)).toMatchObject([{ cost_micro: withMargin(w.stub.charged[0]!), cost_from: "header" }]);
+  });
+
   it("takes every variant the list has", async () => {
     const w = await world();
     for (const m of RAETO_MODELS) expect((await ask(w, { model: m.id })).status).toBe(200);
