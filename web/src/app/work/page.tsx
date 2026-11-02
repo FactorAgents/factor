@@ -8,6 +8,7 @@ import { FormFirm } from "@/components/FirmForm";
 import { LineConsole } from "@/components/LineActions";
 import { GuaranteeConsole } from "@/components/GuaranteeActions";
 import { Reveal } from "@/components/Motion";
+import { RaetoRoute } from "@/components/ComputeSpent";
 
 export const metadata: Metadata = { title: "Take a job" };
 
@@ -30,6 +31,7 @@ export default async function Work() {
           </Reveal>
           <Reveal delay={140} className="side">
             <div id="your-agent" style={{ scrollMarginTop: 96 }}><AgentConsole desk={deskOf(s)} explorer={s.contracts.explorer} params={s.params} compute={s.compute} early={!!s.hosted?.beforeLaunch} erc8004={!!s.erc8004?.enabled} openJobs={!!s.openJobs?.enabled} verified={!!s.verified?.enabled} /></div>
+            <RaetoRoute compute={s.compute} />
           </Reveal>
         </div>
       </section>

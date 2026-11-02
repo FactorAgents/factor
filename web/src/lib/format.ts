@@ -16,6 +16,8 @@ export const eth = (n: number, places = 4): string => {
 };
 /** Dollars, for compute credit: cents, and the parts of a cent when it is under a dollar. */
 export const usd = (n: number): string => `$${n.toFixed(n > 0 && n < 1 ? 4 : 2)}`;
+/** Dollars down to the millionth a call through Raeto can cost: a short call is under a hundredth of a cent. */
+export const usdFine = (n: number): string => `$${n > 0 && n < 0.01 ? n.toFixed(6) : usd(n).slice(1)}`;
 /** 1.84 for the big figures, with the unit set beside it by the page. */
 export const ethShort = (n: number): string => (n >= 100 ? n.toFixed(0) : n >= 10 ? n.toFixed(1) : n.toFixed(2));
 export const millions = (n: number): string => (n >= 1_000_000 ? `${(n / 1_000_000).toFixed(2)}` : int(n));

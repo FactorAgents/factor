@@ -347,6 +347,10 @@ export function sampleGuarantee(id: string): AgentGuarantee | null {
   return a?.address === guarantee.agent ? guarantee : null;
 }
 
+// raeto/auto on the sample, only with FACTOR_SAMPLE_RAETO=1: for the site's own tests
+const RAETO_ON = process.env.FACTOR_SAMPLE_RAETO === "1";
+const RAETO_SPEND = { spentUsd: 0.000214, calls: 4, models: [{ model: "anthropic/claude-sonnet-5.5", tier: "top", calls: 1, usd: 0.000122 }, { model: "mistralai/mistral-small-3.2-24b-instruct", tier: "fast", calls: 3, usd: 0.000092 }] };
+
 export function sampleState(): FactorState {
   const settled = jobs.filter((j) => j.state === "settled").length;
   return {
@@ -356,7 +360,7 @@ export function sampleState(): FactorState {
     burn: { potEth: 0.0123, nextEth: 0.0123, nextAt: new Date(Date.parse(at(0)) + 12 * 60_000 + 34_000).toISOString(), ready: false, open: true, count: burns[0]?.n ?? 0, ethSpent: 0.0612, lastAt: burns[0]?.at ?? null, everyMin: 30, smallestEth: 0.001, bonded: true, lastFeesAt: at(9) },
     params, agents: [...agents].sort((a, b) => b.score - a.score), jobs, events, burns,
     contracts: { desk: A(1), splitter: A(2), burnPot: A(3), token: A(4), explorer: "https://robinhoodchain.blockscout.com" },
-    compute: { enabled: true, markupPct: 5, maxTokens: 16_000, models: [{ id: "claude-haiku-4-5-20251001", inUsd: 1.05, outUsd: 5.25 }, { id: "claude-sonnet-5-5", inUsd: 2.1, outUsd: 10.5 }, { id: "claude-opus-5-5", inUsd: 4.2, outUsd: 21 }, { id: "claude-fable-5-1", inUsd: 10.5, outUsd: 52.5 }], router: { enabled: true, models: 300 }, limits: { callUsd: 1, agentDayUsd: 2 } },
+    compute: { enabled: true, markupPct: 5, maxTokens: 16_000, models: [{ id: "claude-haiku-4-5-20251001", inUsd: 1.05, outUsd: 5.25 }, { id: "claude-sonnet-5-5", inUsd: 2.1, outUsd: 10.5 }, { id: "claude-opus-5-5", inUsd: 4.2, outUsd: 21 }, { id: "claude-fable-5-1", inUsd: 10.5, outUsd: 52.5 }], router: { enabled: true, models: 300 }, limits: { callUsd: 1, agentDayUsd: 2 }, ...(RAETO_ON ? { raeto: { models: ["raeto/auto", "raeto/auto:cheap", "raeto/auto:fast", "raeto/auto:code", "raeto/auto:reason", "raeto/auto:vision", "raeto/auto:tools", "raeto/auto:json", "raeto/auto:long"], feePct: 8, routeFeeMostUsd: 0.0002, holdInUsd: 5.67, holdOutUsd: 28.35 } } : {}) },
     // the sample has no engine behind it, so nothing can be made or sent from it
     accounts: { enabled: false, factory: null, ordersPerDay: 40 },
     paused: null,
@@ -387,7 +391,7 @@ export function sampleState(): FactorState {
 const find = (id: string): Agent | undefined => agents.find((a) => a.address === id.toLowerCase() || (a.named && a.name === id.toLowerCase()));
 export function sampleAgent(id: string): AgentPage | null {
   const a = find(id);
-  return a ? { agent: a, factorScore: { ...sampleScore(a, SETTLED_BY[a.name] ?? {}), ...(a.name === "orbit-ops" ? { line: { other: LINE_ACCOUNT, role: "key" as const, onTime: 1, late: 0, defaulted: false, points: 0, why: "Its credit line has always been repaid on time." } } : {}) }, jobs: jobs.filter((j) => j.agentId === a.address), events: events.filter((x) => x.agentId === a.address), ...(a.name === "quill-02" ? { plans: planSummary() } : {}), ...(a.name === "lumen-07" ? { erc8004: sampleErc8004(a.address) } : {}), ...((c) => (c ? { coin: c } : {}))(sampleCoin(a.address)), ...((l) => (l ? { line: l } : {}))(sampleLine(a.address)), ...((g) => (g ? { guarantee: g } : {}))(sampleGuarantee(a.address)) } : null;
+  return a ? { ...(RAETO_ON && a.name === "orbit-ops" ? { raetoSpend: RAETO_SPEND } : {}), agent: a, factorScore: { ...sampleScore(a, SETTLED_BY[a.name] ?? {}), ...(a.name === "orbit-ops" ? { line: { other: LINE_ACCOUNT, role: "key" as const, onTime: 1, late: 0, defaulted: false, points: 0, why: "Its credit line has always been repaid on time." } } : {}) }, jobs: jobs.filter((j) => j.agentId === a.address), events: events.filter((x) => x.agentId === a.address), ...(a.name === "quill-02" ? { plans: planSummary() } : {}), ...(a.name === "lumen-07" ? { erc8004: sampleErc8004(a.address) } : {}), ...((c) => (c ? { coin: c } : {}))(sampleCoin(a.address)), ...((l) => (l ? { line: l } : {}))(sampleLine(a.address)), ...((g) => (g ? { guarantee: g } : {}))(sampleGuarantee(a.address)) } : null;
 }
 /** The sample's one agent with an ERC-8004 identity: an entry for each of its settled jobs. */
 function sampleErc8004(address: string): NonNullable<AgentPage["erc8004"]> {
@@ -418,7 +422,7 @@ const WORDS: Record<number, Pick<JobPage, "brief" | "work">> = {
 
 export function sampleJob(n: number): JobPage | null {
   const j = jobs.find((x) => x.n === n);
-  return j ? { job: j, agent: agents.find((a) => a.address === j.agentId) ?? null, events: events.filter((x) => x.jobId === j.id), ...(WORDS[n] ?? {}), ...((c) => (c ? { cover: c } : {}))(covers.find((c) => c.job === j.id)) } : null;
+  return j ? { ...(RAETO_ON && n === 414 ? { raetoSpend: RAETO_SPEND } : {}), job: j, agent: agents.find((a) => a.address === j.agentId) ?? null, events: events.filter((x) => x.jobId === j.id), ...(WORDS[n] ?? {}), ...((c) => (c ? { cover: c } : {}))(covers.find((c) => c.job === j.id)) } : null;
 }
 export function sampleLedger(limit: number, before?: number, kinds?: string[]): Page<LedgerEvent> {
   const all = events.filter((x) => (!kinds || kinds.includes(x.kind)) && (before === undefined || x.n < before));

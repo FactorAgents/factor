@@ -46,7 +46,7 @@ function passed(req: NextRequest): Record<string, string> {
 export async function GET(req: NextRequest, ctx: { params: Promise<{ path: string[] }> }) {
   const path = (await ctx.params).path.join("/");
   if (!READS.test(path)) return said(404, "not_found_error", "There is nothing at this address.");
-  if (sampleMode()) return path === "models" ? Response.json(sampleState().compute, { headers: HEADERS }) : path === "v1/models" ? Response.json(SAMPLE_MODELS, { headers: HEADERS }) : notLive();
+  if (sampleMode()) return path === "models" ? Response.json(sampleState().compute, { headers: HEADERS }) : path === "v1/models" ? Response.json(process.env.FACTOR_SAMPLE_RAETO === "1" ? { ...SAMPLE_MODELS, data: [{ id: "raeto/auto", object: "model", owned_by: "raeto", name: "Raeto picks the model for each request" }, ...SAMPLE_MODELS.data] } : SAMPLE_MODELS, { headers: HEADERS }) : notLive();
   const engine = engineUrl();
   if (!engine) return notLive();
   try {
@@ -81,7 +81,10 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ path: stri
     // a model may take minutes to answer: the wait is the engine's to end, not this door's
     const r = await fetch(`${engine}/v1/compute/${path}`, { method: "POST", cache: "no-store", signal: AbortSignal.timeout(path === "key" ? 12_000 : 600_000), headers: passed(req), body });
     const id = r.headers.get("request-id");
-    return new Response(r.body, { status: r.status, headers: { ...HEADERS, "content-type": r.headers.get("content-type") ?? "application/json", ...(id ? { "request-id": id } : {}), "x-accel-buffering": "no" } });
+    // what a call through Raeto says about itself, and how long to wait when told to
+    const told: Record<string, string> = {};
+    for (const name of ["x-raeto-model", "x-raeto-tier", "x-raeto-loop", "x-factor-route", "x-factor-cost-usd", "retry-after"]) { const v = r.headers.get(name); if (v) told[name] = v; }
+    return new Response(r.body, { status: r.status, headers: { ...HEADERS, "content-type": r.headers.get("content-type") ?? "application/json", ...(id ? { "request-id": id } : {}), ...told, "x-accel-buffering": "no" } });
   } catch {
     return said(502, "api_error", "The engine is not answering.");
   }

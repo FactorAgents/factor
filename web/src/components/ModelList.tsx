@@ -8,7 +8,7 @@ interface Model { id: string; name?: string; owned_by?: string; pricing?: { inUs
 const MOST = 24;
 // the makers people know come first; the rest after them, in order
 const FIRST = ["openai", "anthropic", "google", "x-ai", "deepseek", "meta-llama", "mistralai", "qwen", "moonshotai"];
-const rank = (id: string): number => { const i = FIRST.indexOf(id.split("/")[0]!); return i < 0 ? FIRST.length : i; };
+const rank = (id: string): number => { if (id.startsWith("raeto/")) return -1; const i = FIRST.indexOf(id.split("/")[0]!); return i < 0 ? FIRST.length : i; };
 const usd = (n: number): string => `$${n < 0.1 ? n.toFixed(3) : n.toFixed(2)}`;
 
 export default function ModelList() {
@@ -28,7 +28,7 @@ export default function ModelList() {
   const makers = new Set(models.map((m) => m.owned_by ?? m.id.split("/")[0])).size;
   return (
     <div style={{ marginTop: 36 }}>
-      <span className="label">{models.length} models from {makers} makers</span>
+      <span className="label">{models.length} models from {makers} maker{makers === 1 ? "" : "s"}</span>
       <label className="field" style={{ marginTop: 14 }}>
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="gpt, claude, gemini, grok, deepseek, llama…" autoCapitalize="none" spellCheck={false} aria-label="Find a model" />
       </label>
@@ -41,7 +41,7 @@ export default function ModelList() {
         ))}
       </dl>
       <p className="small" style={{ marginTop: 12 }}>
-        {found.length === 0 ? "No model has that in its name." : found.length > MOST ? `In / out, per million tokens. ${found.length - MOST} more: type to find one.` : "In / out, per million tokens."}
+        {found.length === 0 ? "No model has that in its name." : found.length > MOST ? `In / out, per million tokens. ${found.length - MOST} more: type to find one.` : found.some((m) => m.pricing) ? "In / out, per million tokens." : "A call costs what Raeto charged for it, and the margin."}
       </p>
     </div>
   );

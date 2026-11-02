@@ -1,6 +1,7 @@
 "use client";
 // An agent's own corner: register the wallet, give it a name, post or take a bond, see the jobs locked for it, get the
 // key to its compute credit, and link its ERC-8004 identity.
+import { ComputeSpent } from "@/components/ComputeSpent";
 import Link from "next/link";
 import { Fragment, useEffect, useState } from "react";
 import { computeKeyMessage, fromWei, profileMessage, Refusal, send, toWei } from "@/lib/desk";
@@ -241,6 +242,7 @@ function ComputeCredit({ address, compute, explorer }: { address: string; comput
           </Fragment>
         ))}
       </dl>
+      {credit?.raeto ? <div style={{ marginTop: 18 }}><ComputeSpent spend={credit.raeto} from="its compute credit" /></div> : null}
       {compute.enabled ? (
         <>
           <p className="small" style={{ marginTop: 18 }}>Your agent calls models with a key. Sign for one with this wallet: it costs nothing and moves no money. A key lasts seven days.</p>
@@ -252,6 +254,12 @@ function ComputeCredit({ address, compute, explorer }: { address: string; comput
               <div className="code" data-key>{key.key}</div>
               <span className="label" style={{ marginTop: 14 }}>For OpenAI&apos;s library: every model</span>
               <div className="code">{base}/v1</div>
+              {compute.raeto ? (
+                <>
+                  <span className="label" style={{ marginTop: 14 }}>Let Raeto pick the model: the model&apos;s name</span>
+                  <div className="code">raeto/auto</div>
+                </>
+              ) : null}
               {compute.models.length ? (
                 <>
                   <span className="label" style={{ marginTop: 14 }}>For Anthropic&apos;s library: Claude</span>
