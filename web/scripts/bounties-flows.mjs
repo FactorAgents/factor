@@ -43,7 +43,8 @@ async function anvil(method, params = []) {
   return r.json();
 }
 const warp = async (s) => { await anvil("evm_increaseTime", [s]); await anvil("evm_mine", []); };
-for (const a of [POSTER, AGENT, AGENT3]) await anvil("anvil_setBalance", [a.address, "0x8ac7230489e80000"]);
+// the rehearsal's keys are its own, so the fork is told to send for them, as it does for its built-in test accounts
+for (const a of [POSTER, AGENT, AGENT3]) { await anvil("anvil_setBalance", [a.address, "0x8ac7230489e80000"]); await anvil("anvil_impersonateAccount", [a.address]); }
 
 mkdirSync(SHOTS, { recursive: true });
 const chrome = spawn("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", ["--headless=new", `--remote-debugging-port=${CHROME_PORT}`, "--no-first-run", "--hide-scrollbars", `--user-data-dir=${join(WORK, `chrome-${Date.now()}`)}`, "about:blank"], { stdio: "ignore", detached: true });
@@ -138,7 +139,7 @@ async function until(what, fn, ms = 45_000) {
     let v = null;
     try { v = await fn(); } catch { v = null; }
     if (v) return v;
-    if (Date.now() - t0 > ms) { await shot(`stuck-${Date.now()}`); throw new Error(`timed out waiting for ${what}. The page says: ${(await text().catch(() => "")).replace(/\s+/g, " ").slice(-600)}`); }
+    if (Date.now() - t0 > ms) { await shot(`stuck-${Date.now()}`); throw new Error(`timed out waiting for ${what}. The page says: ${await run("[...document.querySelectorAll('.status, .rest, .note')].map((x) => x.innerText).join(' | ')").catch(() => "")} ... ${(await text().catch(() => "")).replace(/\s+/g, " ").slice(-200)}`); }
     await sleep(350);
   }
 }
@@ -189,7 +190,7 @@ try {
   await shots("post-filled");
   const before = await rd("bountyCount");
   await press("Lock the prize and post");
-  await until("the post", async () => (await text()).includes("is posted"), 90_000);
+  await until("the post", async () => (await text()).includes("is posted"), 40_000);
   const b1 = Number(await rd("bountyCount"));
   check("the form posted it: one more bounty on the chain, with the words the hash of what was typed", BigInt(b1) === before + 1n && (await rd("bounty", [BigInt(b1)])).prize === 5000000000000000n);
   await until("its page with its words", async () => { await go(`/bounties/${b1}`); return (await text()).includes("We print posters on thick paper"); }, 40_000);
@@ -221,9 +222,8 @@ try {
   const session = await until("the account to be made", async () => { const raw = await run("localStorage.getItem('factor-account')"); return raw ? JSON.parse(raw) : null; }, 90_000);
   const person = session.address;
   await anvil("anvil_setBalance", [person, "0x2386f26fc10000"]); // 0.01
-  await until("the Register button", async () => { await go("/work"); return has("Register this account") || has("Register this wallet") || has("Register"); }, 40_000);
-  const reg = (await has("Register this account")) ? "Register this account" : (await has("Register this wallet")) ? "Register this wallet" : "Register";
-  await press(reg);
+  await until("the Register button", async () => { await go("/work"); return has("Register as an agent"); }, 40_000);
+  await press("Register as an agent");
   await until("it to be on the desk", async () => (await chain.readContract({ address: bare.desk, abi: parseAbi(["function agent(address) view returns ((bool registered, bool barred, uint40 firstSettledAt, uint32 settled, uint32 settledAtHalf, uint32 notDelivered, uint32 unanswered, uint32 customers, uint32 onTime, uint32 late, uint32 advancesRepaid, uint32 advancesNotRepaid, uint32 earlyKept, uint256 bond, uint256 feesPaid, uint256 advancedNow, uint256 volume))"]), functionName: "agent", args: [person] })).registered, 90_000);
   await go(`/bounties/${b1}`);
   const PK_WORK = "THE-PASSKEY-AGENTS-WORK: another page about posters.";

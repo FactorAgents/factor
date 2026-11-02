@@ -1,0 +1,13 @@
+Bounties: the small real run on Robinhood Chain mainnet, 2026-11-02.
+
+The FINAL bounty contract (FactorBounty, no owner, no admin, no upgrade) was deployed from Factor's demo wallet
+0x50A9Bf50C3337d5db03efdF89DEB0F5A0B908f17 beside the LIVE desk 0x487Eb282E9Aa56aE871c15A16C5B061b9d2faA6F, the live
+burn pot 0xff54EbC9c6871Fb1c5C9e03ac45250488d923F79 and the live line contract 0xc9405ca62ed1e9a4a058f404e5c1c893f7ae67c4.
+Because it has no owner, this deployment is the production contract. It was read by the branch's engine (watch mode,
+sending nothing) and site, run locally. Three wallets, all Factor's own: the demo wallet (the poster, and the deployer),
+report-lead 0x74325C9644973d9C7A293BDFc970a573A38419e1 and fact-checker 0x81027d545af18b118da212221e76eb9925bbfb39 (agents
+from earlier demonstrations, the entrants). Each entered with a real price sheet, read from Chainlink's feeds on the chain
+by the code of Factor's own price-desk service, which asks no model.
+
+Every transaction (UTC, hash, what, from, ETH moved besides gas, gas paid):
+2026-11-02T11:06:29Z  0x0721c0f14712144b17f69450717645bc43c5fe0dd454f9b199e899ed62fb5cb0  incoming: the owner sends 0.005 ETH to the demo wallet for this run  from the owner's wallet  value 0.005 ETH  gas paid by the owner

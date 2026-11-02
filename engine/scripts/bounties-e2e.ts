@@ -151,9 +151,12 @@ async function main(): Promise<void> {
 
   step("2  a prize, hidden entries, and Factor's own agent entering by itself");
   const TASK1 = "A landing page for our tea shop\n\nWe sell loose leaf tea, posted weekly. Say what it is, who it is for, and end with a link to the shop.";
-  const potAtPost = await balance(bare.burnPot);
+  // what reaches the burn pot is read from the contract's own count: the keeper's burns spend the pot's balance at any moment
+  const burned = () => read<bigint>("totalBurned");
+  const potOwed = () => read<bigint>("owed", [bare.burnPot]);
+  const burnedAtPost = await burned();
   const b1 = await postBounty(TASK1);
-  check("the poster sent the prize and 1%; nothing is burned yet", (await read<bigint>("held")) === PRIZE + FEE && (await balance(bare.burnPot)) === potAtPost);
+  check("the poster sent the prize and 1%; nothing is burned yet", (await read<bigint>("held")) === PRIZE + FEE && (await burned()) === burnedAtPost);
   const SECRET1 = "THE-FIRST-AGENTS-SECRET-WORK: three paragraphs on loose leaf tea, finished.";
   const SECRET2 = "THE-SECOND-AGENTS-SECRET-WORK: a shorter and better one.";
   const e1 = await enter(K.a1, A1, b1, SECRET1);
@@ -195,14 +198,14 @@ async function main(): Promise<void> {
   check("the poster cannot pick an address that did not enter", /NotAnEntrant/.test(await refusedWith(K.poster, "pick", [BigInt(b1), A3])));
 
   step("4  a win through the desk");
-  const potBefore = await balance(bare.burnPot);
+  const burnedBefore = await burned();
   const a2Before = await balance(A2);
   const houseBefore = await balance(PAGE_SMITH);
   await sendFrom(K.poster, bt, B, "pick", [BigInt(b1), A1]);
   const job1 = (await bountyOf(b1)).job;
   const j1 = await deskJob(job1);
   check("the prize is a job on the desk: the bounty contract its customer, the winner its agent, the whole prize its price", j1.customer.toLowerCase() === bt.toLowerCase() && j1.agent.toLowerCase() === A1 && j1.price === PRIZE && j1.state === 1, `job ${job1}`);
-  check("the 1% reached the burn pot at the pick", (await balance(bare.burnPot)) - potBefore === FEE);
+  check("the 1% reached the burn pot at the pick", (await burned()) - burnedBefore === FEE && (await potOwed()) === 0n);
   const bonds = await until("the keeper to send the bonds back", async () => (await balance(A2)) - a2Before === BOND && (await balance(PAGE_SMITH)) - houseBefore === BOND, 120_000);
   check("the keeper sent the others' bonds back by itself, without waiting for the winner", !!bonds);
   const open1 = await until("every entry public", async () => { const t = words((await get(`/bounties/${b1}`)).text); return t.includes("Every entry, in the open") && t.includes("THE-SECOND-AGENTS-SECRET-WORK") ? t : null; }, 60_000);
@@ -229,7 +232,7 @@ async function main(): Promise<void> {
   await enter(K.a1, A1, b2, "I would plant an oak.");
   await enter(K.a2, A2, b2, "I would plant a birch.");
   await enter(K.a3, A3, b2, "I would plant an apple tree.");
-  const [s1, s2, s3, pot2, pos2] = await Promise.all([balance(A1), balance(A2), balance(A3), balance(bare.burnPot), balance(POSTER)]);
+  const [s1, s2, s3, pot2, pos2] = await Promise.all([balance(A1), balance(A2), balance(A3), burned(), balance(POSTER)]);
   await warp(2 * HOUR + 1 + 3 * DAY - 120);
   await sleep(2500);
   check("the keeper does not split before the 3 days are over", (await bountyOf(b2)).state === 1);
@@ -237,7 +240,7 @@ async function main(): Promise<void> {
   const splitDone = await stateIs(b2, 4);
   const share = PRIZE / 3n, dust = PRIZE - share * 3n;
   check("past the 3 days the keeper split it by itself, to the wei", !!splitDone && (await balance(A1)) - s1 === share + BOND && (await balance(A2)) - s2 === share + BOND && (await balance(A3)) - s3 === share + BOND);
-  check("the 1% and the dust were burned, and the poster has nothing back", (await balance(bare.burnPot)) - pot2 === FEE + dust && (await balance(POSTER)) === pos2);
+  check("the 1% and the dust were burned, and the poster has nothing back", (await burned()) - pot2 === FEE + dust && (await potOwed()) === 0n && (await balance(POSTER)) === pos2);
   check("no house agent entered a task none of them can do", !(await api<{ entered: boolean }>(`bounties/${b2}/mine/${PAGE_SMITH}`)).entered);
   check("the split is on the agent's page, apart from the wins", !!(await until("the split on its page", async () => ((await api<{ bounties?: { splitEth: number } }>(`agents/${A1}`)).bounties?.splitEth ?? 0) > 0, 60_000)));
 
@@ -249,11 +252,11 @@ async function main(): Promise<void> {
   await sendFrom(K.poster, bt, B, "pick", [BigInt(b3), A1]);
   const job3 = (await bountyOf(b3)).job;
   await until("the bonds back", async () => (await read<bigint>("bonds")) === BOND, 60_000);
-  const [w3, o3, pot3] = await Promise.all([balance(A1), balance(A2), balance(bare.burnPot)]);
+  const [w3, o3, pot3] = await Promise.all([balance(A1), balance(A2), burned()]);
   await warp(3 * DAY + 12 * HOUR + 60);
   const und = await stateIs(b3, 5);
   check("past the due time and the grace the keeper refunded the desk job and closed the bounty", !!und && (await deskJob(job3)).state === 7);
-  check("the prize and the winner's bond went to the other entrant", (await balance(A2)) - o3 === PRIZE + BOND && (await balance(A1)) === w3 && (await balance(bare.burnPot)) === pot3);
+  check("the prize and the winner's bond went to the other entrant", (await balance(A2)) - o3 === PRIZE + BOND && (await balance(A1)) === w3 && (await burned()) === pot3);
   check("the desk's push reached the contract within its gas: nothing waits for it", ((await chain.readContract({ address: bare.desk, abi: D, functionName: "owed", args: [bt] })) as bigint) === 0n && (await balance(bt)) === 0n);
   check("the winner has no mark but unanswered, as with any job it never touched", (await chain.readContract({ address: bare.desk, abi: D, functionName: "agent", args: [A1] }) as { unanswered: number; barred: boolean }).barred === false);
 
@@ -263,10 +266,10 @@ async function main(): Promise<void> {
   await warp(2 * HOUR + 1);
   await sendFrom(K.poster, bt, B, "pick", [BigInt(b4), A3]);
   const job4 = (await bountyOf(b4)).job;
-  const [pos4, pot4] = await Promise.all([balance(POSTER), balance(bare.burnPot)]);
+  const [pos4, pot4] = await Promise.all([balance(POSTER), burned()]);
   await sendFrom(K.a3, bare.desk, D, "decline", [job4]);
   const dec = await stateIs(b4, 5);
-  check("the keeper closed it at once: the prize back to the poster, the winner's bond to the burn pot", !!dec && (await balance(POSTER)) - pos4 === PRIZE && (await balance(bare.burnPot)) - pot4 === BOND);
+  check("the keeper closed it at once: the prize back to the poster, the winner's bond to the burn pot", !!dec && (await balance(POSTER)) - pos4 === PRIZE && (await burned()) - pot4 === BOND && (await potOwed()) === 0n);
 
   step("8  a house agent that wins delivers by itself, with no second question to the model");
   const TASK5 = "A landing page for our bike shop\n\nWe mend bicycles while you wait. Say what it is, who it is for, and end with a link to the shop.";

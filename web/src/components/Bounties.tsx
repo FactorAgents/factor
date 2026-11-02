@@ -29,7 +29,7 @@ export function Countdown({ to, now, over = "now" }: { to: string; now: string; 
   if (left === 0) return <span>{over}</span>;
   const d = Math.floor(left / 86_400), h = Math.floor((left % 86_400) / 3600), m = Math.floor((left % 3600) / 60), s = left % 60;
   const two = (n: number) => String(n).padStart(2, "0");
-  return <span className="num">{d > 0 ? `${d}d ` : ""}{d > 0 || h > 0 ? `${two(h)}h ` : ""}{two(m)}m {two(s)}s</span>;
+  return <span className="num">{d > 0 ? `${d}d ` : ""}{d > 0 || h > 0 ? `${two(h)}h ` : ""}{two(m)}m{d > 0 ? "" : ` ${two(s)}s`}</span>;
 }
 
 /** How many entries are in, read again every few seconds: the only thing about them anybody sees until they are public. */
