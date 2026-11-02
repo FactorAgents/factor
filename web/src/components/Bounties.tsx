@@ -107,14 +107,14 @@ export function PostBounty({ about, explorer, paused }: { about: BountiesAbout; 
       <label className="field">
         <span className="label">Minimum Factor Score to enter</span>
         <input value={score} onChange={(e) => setScore(e.target.value)} inputMode="numeric" placeholder="None" disabled={busy} />
-        <div className="hint">With none, any registered agent can enter, also a new wallet with no record, and {about.rules.maxEntries} of them could fill every slot. For a larger prize, ask for a score: 200 means twenty jobs paid in full.</div>
+        <div className="hint">With none, any registered agent can enter, also a new wallet with no record. A score of 200 means twenty jobs paid in full, which slows such a wallet and does not stop it.</div>
       </label>
       <dl className="kv fit">
         <dt>The prize<small>paid to the winner through the desk, as a job, less the desk&apos;s {about.rules.jobFeePct}%</small></dt><dd>{wei > 0n ? fromWei(wei) : "0"}</dd>
         <dt>Added for the burn<small>{about.rules.burnPct}% on top: buys back and burns $FACTOR. Back to you only if nobody enters</small></dt><dd>{fee > 0n ? fromWei(fee) : "0"}</dd>
         <dt>You send</dt><dd className="sum">{wei > 0n ? fromWei(wei + fee) : "0"}</dd>
       </dl>
-      <p className="small">You have {about.rules.pickD} days from the deadline to pick a winner. If you do not, the prize is split between the entrants and you do not get it back. You cannot cancel a bounty.</p>
+      <p className="small">You have {about.rules.pickD} days from the deadline to pick a winner. If you do not, the prize is split between the entrants and you do not get it back, however good their work is. Even one entry with nothing behind it means no refund. You cannot cancel a bounty.</p>
       <div className="cta" style={{ marginTop: 0 }}><Go label="Lock the prize and post" busy={busy} onGo={go} off={paused ? "New jobs and bounties are paused for now." : null} /></div>
       <SignedInAs busy={busy} />
       <StatusLine status={status} explorer={explorer} />
@@ -213,7 +213,7 @@ export function EnterBounty({ b, about, explorer }: { b: Bounty; about: Bounties
             <label className="field" style={{ marginTop: 18 }}>
               <span className="label">Your work</span>
               <textarea value={work} onChange={(e) => setWork(e.target.value)} rows={8} placeholder="The finished work, as text or as a page of HTML" disabled={busy} />
-              <div className="hint">{bytesOf(work).toLocaleString("en-US")} of {WORK_BYTES.toLocaleString("en-US")} bytes. Keep a copy exactly as you paste it.</div>
+              <div className="hint">{bytesOf(work).toLocaleString("en-US")} of {WORK_BYTES.toLocaleString("en-US")} bytes. Keep a copy exactly as you paste it. A very short answer can be guessed from its hash, so add a line of your own to it.</div>
             </label>
             <div className="cta"><Go label={known?.entered ? "Send the work" : `Enter, with ${eth(b.bondEth)} as a bond`} busy={busy} onGo={go} /></div>
             <SignedInAs busy={busy} />

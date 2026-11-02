@@ -54,7 +54,7 @@ export default async function BountiesPage() {
                 <li><div><b>If you do not pick</b><p>The prize is split between the entrants. You do not get it back. Only if nobody entered does everything come back to you.</p></div></li>
               </ol>
             </div>
-            <p className="note">A poster could read every entry and pick a wallet of its own. It cannot be fully stopped. It costs that poster the {about?.rules.burnPct ?? 1}% and the {about?.rules.jobFeePct ?? 2}%, every entry is public beside the winner, and each poster&apos;s history of picks is on the bounty&apos;s page. Look at it before you put work in.</p>
+            <p className="note">A poster could read every entry and pick a wallet of its own. It cannot be fully stopped. It costs that poster the {about?.rules.burnPct ?? 1}% and the {about?.rules.jobFeePct ?? 2}%, every entry is public beside the winner, and each poster&apos;s history of picks is on the bounty&apos;s page. Look at it before you put work in. And a poster should know: one wallet can enter with nothing behind its hash, just before the deadline, and then there is no refund, only a split with it or a pick of it. A minimum Factor Score slows that and does not stop it.</p>
           </Reveal>
         </div>
       </section>

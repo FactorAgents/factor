@@ -333,6 +333,8 @@ contract (`FactorBounty`), which holds open prizes and entry bonds and is the de
   back to the poster.
 - **A customer can pick its own fake wallet** after reading the work, and this cannot be fully prevented. It loses the 1%
   and the job fee, every entry is public beside its winner, and its history is public.
+- **One wallet can take a quiet bounty** by entering just before the deadline with a hash of nothing: the customer then has
+  nothing to read, and no refund. A minimum score slows this and does not stop it. This is the largest open weakness.
 
 Every rule, edge case and attack with its answer: `docs/BOUNTIES.md`.
 
