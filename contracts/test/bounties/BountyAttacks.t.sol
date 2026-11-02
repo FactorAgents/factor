@@ -464,7 +464,7 @@ contract BountyAttacksTest is BountyBase {
     function test_attack18_aWrongProofIsNotAccepted() public {
         (uint256 id, uint256 job) = _picked(attacker, _one(agentA));
         _deliverProof(attacker, job, b.entryOf(id, agentA).hash);
-        vm.expectPartialRevert(FactorBounty.TooSoon.selector);
+        vm.expectPartialRevert(FactorDesk.TooSoon.selector);
         b.close(id);
         assertEq(uint8(desk.job(job).state), uint8(FactorDesk.State.Delivered));
     }

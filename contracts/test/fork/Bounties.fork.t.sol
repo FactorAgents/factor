@@ -70,8 +70,6 @@ contract BountiesForkTest is ForkBase {
         assertEq(address(b.desk()), address(DESK));
         assertEq(address(b.line()), address(LINE));
         assertEq(b.burnPot(), address(POT));
-        assertEq(b.grace(), DESK.GRACE());
-        assertEq(b.review(), DESK.REVIEW());
         assertGe(b.MIN_PRIZE(), DESK.MIN_JOB());
         assertGe(b.DELIVER_TIME(), DESK.MIN_DUE());
         assertLe(b.DELIVER_TIME(), DESK.MAX_DUE());

@@ -15,8 +15,6 @@ contract BountyTest is BountyBase {
         assertEq(address(b.desk()), address(desk));
         assertEq(address(b.line()), address(line));
         assertEq(b.burnPot(), desk.burnPot());
-        assertEq(b.grace(), desk.GRACE());
-        assertEq(b.review(), desk.REVIEW());
         assertGe(b.MIN_PRIZE(), desk.MIN_JOB());
     }
 
@@ -395,7 +393,7 @@ contract BountyTest is BountyBase {
         (uint256 id, uint256 job) = _picked(agentA, _one(agentB));
         _deliverProof(agentA, job, keccak256("something else"));
         uint256 at = desk.job(job).deliveredAt + desk.REVIEW();
-        vm.expectRevert(abi.encodeWithSelector(FactorBounty.TooSoon.selector, at));
+        vm.expectRevert(abi.encodeWithSelector(FactorDesk.TooSoon.selector, at));
         b.close(id);
         vm.warp(at);
         uint256 before = agentA.balance;
@@ -444,7 +442,7 @@ contract BountyTest is BountyBase {
         (uint256 id, uint256 job) = _picked(agentA, _one(agentB));
         uint256 at = uint256(desk.job(job).dueAt) + 12 hours;
         vm.warp(at);
-        vm.expectRevert(abi.encodeWithSelector(FactorBounty.TooSoon.selector, at + 1));
+        vm.expectRevert(abi.encodeWithSelector(FactorDesk.TooSoon.selector, at + 1));
         b.close(id);
     }
 

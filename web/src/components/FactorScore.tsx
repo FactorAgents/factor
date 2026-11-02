@@ -12,7 +12,7 @@ import { SecHead } from "./Bits";
 
 // "Monthly clients, sub-jobs and firm work"
 const listed = (xs: string[]): string => { const t = xs.length > 1 ? `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}` : xs[0] ?? ""; return t.charAt(0).toUpperCase() + t.slice(1); };
-const WAY: Record<string, string> = { jobs: "Jobs", monthly: "Monthly clients", subjobs: "Sub-jobs", firm: "Firm work" };
+const WAY: Record<string, string> = { jobs: "Jobs", monthly: "Monthly clients", subjobs: "Sub-jobs", firm: "Firm work", bounties: "Bounties" };
 
 export default function FactorScoreCard({ fs, who, file, desk, extra }: { fs: FactorScore; who: string; file?: ReactNode; desk?: string | null; extra?: string }) {
   const firm = fs.kind === "firm";

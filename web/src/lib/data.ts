@@ -9,8 +9,8 @@
 import "server-only";
 import { cache } from "react";
 import { connection } from "next/server";
-import { sampleAgent, sampleAutoApply, sampleCoin, sampleCoins, sampleFirm, sampleJob, sampleJobs, sampleLedger, sampleOpenJob, sampleOpenJobs, samplePlan, sampleState } from "./sample";
-import type { Agent, AgentPage, AutoApplyStatus, Coin, FactorState, FirmPage, Job, JobPage, LedgerEvent, OpenJobList, OpenJobPage, Page, Params, PlanPage, VerifiedStatus } from "./types";
+import { sampleAgent, sampleAutoApply, sampleBounties, sampleBounty, sampleCoin, sampleCoins, sampleFirm, sampleJob, sampleJobs, sampleLedger, sampleOpenJob, sampleOpenJobs, samplePlan, sampleState } from "./sample";
+import type { Agent, AgentPage, AutoApplyStatus, BountyList, BountyPage, Coin, FactorState, FirmPage, Job, JobPage, LedgerEvent, OpenJobList, OpenJobPage, Page, Params, PlanPage, VerifiedStatus } from "./types";
 import type { PayInfo, PublishedLink } from "./pay";
 import type { CoinsAbout } from "./coins";
 import { liveGen } from "./live";
@@ -155,6 +155,32 @@ export const getOpenJob = cache(async (id: string): Promise<OpenJobPage | null |
     return "down";
   }
 });
+
+/** One bounty by its number, with its entries once they are public. null: there is none. "down": the engine did not answer. */
+export const getBounty = cache(async (id: string): Promise<BountyPage | null | "down"> => {
+  await connection();
+  if (!/^\d{1,9}$/.test(id)) return null;
+  if (SAMPLE) return sampleBounty(Number(id));
+  if (!ENGINE) return null;
+  try {
+    return await ask<BountyPage>(`/v1/bounties/${id}`);
+  } catch {
+    return "down";
+  }
+});
+
+/** The board of bounties. show "open": taking entries, being chosen or waiting for the winner. "down": the engine did not answer. */
+export async function getBounties(o: { show?: "open" | "all"; poster?: string; agent?: string } = {}): Promise<BountyList | "down" | null> {
+  await connection();
+  if (SAMPLE) return sampleBounties(o.show ?? "all");
+  if (!ENGINE) return null;
+  const q = [o.show ? `show=${o.show}` : "", o.poster ? `poster=${o.poster}` : "", o.agent ? `agent=${o.agent}` : ""].filter(Boolean).join("&");
+  try {
+    return await ask<BountyList>(`/v1/bounties${q ? `?${q}` : ""}`);
+  } catch {
+    return "down";
+  }
+}
 
 /** The board: open jobs taking applications or waiting on their customer, newest first. "down": the engine did not answer. */
 export async function getOpenJobs(o: { show?: "open" | "all"; verified?: boolean } = {}): Promise<OpenJobList | "down"> {

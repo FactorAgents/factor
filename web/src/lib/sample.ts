@@ -1,7 +1,7 @@
 // Sample figures, in exactly the engine's shape, so every page can be built, looked at and tested with no chain
 // behind it. Nothing here is real. It is shown only when FACTOR_SAMPLE=1 (see data.ts): a site with no engine shows
 // an empty desk, never these.
-import type { Advance, Agent, AgentGuarantee, AgentPage, Applicant, AutoApplyStatus, Burn, Coin, Cover, CreditLine, Draw, FactorScore, FactorState, Firm, FirmPage, IncomeLine, IncomeSource, Job, JobPage, LedgerEvent, OpenJob, OpenJobList, OpenJobPage, Page, Params, Plan, PlanPage, PlansSummary, ScorePart } from "./types";
+import type { Advance, Agent, AgentGuarantee, AgentPage, Applicant, AutoApplyStatus, Bounty, BountyEntry, BountyHistory, BountyList, BountyPage, Burn, Coin, Cover, CreditLine, Draw, FactorScore, FactorState, Firm, FirmPage, IncomeLine, IncomeSource, Job, JobPage, LedgerEvent, OpenJob, OpenJobList, OpenJobPage, Page, Params, Plan, PlanPage, PlansSummary, ScorePart } from "./types";
 
 // the rulebook's numbers (docs/RULEBOOK.md, section 9)
 const params: Params = { advanceMaxPct: 50, advanceFeePct: 1, jobFeePct: 2, graceHours: 12, reviewHours: 24, rejectedPct: 50, reserveMinPct: 20, minJobEth: 0.001 };
@@ -338,6 +338,34 @@ const guarantee: AgentGuarantee = {
 };
 lumen.guarantee = { upToEth: 0.04, sharePct: shareOf(lumen.score) };
 jobs.find((j) => j.n === 412)!.cover = { id: 2, coverEth: 0.02, feeEth: 0.0002, state: "released" };
+// the sample's bounties: one taking entries, one being chosen, one won, one split
+const later = (min: number) => new Date(NOW + min * 60_000).toISOString();
+const bountyBase = (id: number, title: string, words: string, prizeEth: number, deadline: string, pickUntil: string, entries: number): Bounty => ({
+  id, poster: A(90), prizeEth, prizeWei: BigInt(Math.round(prizeEth * 1e6) * 1e12).toString(), feeEth: round(prizeEth / 100), feeWei: BigInt(Math.round(prizeEth * 1e4) * 1e12).toString(), bondEth: round(prizeEth / 100), bondWei: BigInt(Math.round(prizeEth * 1e4) * 1e12).toString(),
+  deadline, pickUntil, minScore: 0, taskHash: "0x" + "ab".repeat(32), title, task: `${title}\n\n${words}`, hidden: false, state: "open", status: "open", entries, slots: 25, revealed: false, postedAt: at(600), tx: TX(900 + id),
+});
+const bountyList: Bounty[] = [
+  { ...bountyBase(4, "Write the words for our front page", "Three short paragraphs on what the shop sells, who it is for and how to order. Plain words.", 0.05, later(2000), later(6320), 3), minScore: 0 },
+  { ...bountyBase(3, "A one-page summary of the new lease", "The whole lease is pasted below. One page, in plain words, with every date and amount.", 0.02, at(30), later(4290), 4), status: "choosing" },
+  { ...bountyBase(2, "A landing page for a tea shop", "Loose leaf tea, posted weekly. One page.", 0.02, at(9000), at(4680), 2), state: "won", status: "won", revealed: true, winner: { address: agents[0]!.address, name: agents[0]!.name, named: true }, job: { n: 412, id: "0412", state: 4 }, pickedTx: TX(950), pickedAt: at(8000), closedTx: TX(951), closedAt: at(7900), shareEth: 0, paidTo: 1, burnedEth: 0, toPosterEth: 0 },
+  { ...bountyBase(1, "Proofread our terms", "The terms are pasted below.", 0.005, at(12_000), at(7680), 2), state: "unpicked", status: "unpicked", revealed: true, closedTx: TX(952), closedAt: at(7600), shareEth: 0.0025, paidTo: 2, burnedEth: 0.00005, toPosterEth: 0 },
+];
+const entryOf = (n: number, a: Agent, work: string, won: boolean, shareEth: number, bondBackEth: number): BountyEntry => ({ agent: a.address, name: a.name, named: true, n, enteredAt: at(9500 - n * 60), hash: "0x" + String(n).repeat(64).slice(0, 64), tx: TX(960 + n), score: a.score, won, house: a.house, shown: true, kind: "text", work, whole: true, shareEth, bondBackEth });
+const bountyEntries: Record<number, BountyEntry[]> = {
+  2: [entryOf(1, agents[0]!, "Tide Tea. Loose leaf tea, posted weekly, and nothing else on the page but how to order it.", true, 0, 0.0002), entryOf(2, agents[1]!, "A page for a tea shop: its name, what it sells, and a link to the shop.", false, 0, 0.0002)],
+  1: [entryOf(1, agents[0]!, "Twelve corrections, each on its own line.", false, 0.0025, 0.00005), entryOf(2, agents[1]!, "Nine corrections, each with its reason.", false, 0.0025, 0.00005)],
+};
+const bountyHistory = (): BountyHistory => ({ poster: A(90), posted: 4, won: 1, unpicked: 1, undelivered: 0, empty: 0, open: 2, picks: [{ bounty: 2, winner: agents[0]!.address, name: agents[0]!.name, score: agents[0]!.score, jobsSettled: agents[0]!.settled }] });
+/** The sample's board. */
+export function sampleBounties(show: "open" | "all"): BountyList {
+  return { ...sampleState().bounties!, items: show === "open" ? bountyList.filter((b) => b.state === "open" || b.state === "picked") : bountyList };
+}
+/** One of the sample's bounties, with its entries once they are public. */
+export function sampleBounty(id: number): BountyPage | null {
+  const b = bountyList.find((x) => x.id === id);
+  return b ? { ...b, ...(b.revealed ? { items: bountyEntries[id] ?? [] } : {}), history: bountyHistory() } : null;
+}
+
 /** The sample's guarantees: the one agent selling cover, and its covers. */
 export function sampleGuarantees(): { agents: AgentGuarantee[]; covers: Cover[] } {
   return { agents: [{ ...guarantee, items: undefined }], covers };
@@ -374,6 +402,12 @@ export function sampleState(): FactorState {
       enabled: true, contract: null, chainId: 4663, rules: { feePct: 2, burnPct: 1, poolPct: 1, dueDays: 30, defaultDays: 30, minDrawEth: 0.0001, poolOutMaxPct: 80 },
       pool: { poolEth: 0.1942, outEth: 0.006, lostEth: 0, roomEth: 0.1594, roomWei: "159360000000000000", seededEth: 0.2, drawnEth: 0.01, burnedEth: 0.0001, feesToPoolEth: 0.0001, repaidEth: 0.004, recoveredEth: 0 },
       lines: 1, owing: 1,
+    },
+    // the sample has no engine: its bounties are shown, and nothing can be posted or entered from them
+    bounties: {
+      enabled: true, contract: null, chainId: 4663,
+      rules: { burnPct: 1, bondPct: 1, jobFeePct: 2, minPrizeEth: 0.005, maxEntries: 25, minOpenH: 1, maxOpenD: 30, pickD: 3, deliverD: 3, graceH: 12, taskBytes: 8000, workBytes: 200_000 },
+      totals: { bounties: 4, prizesEth: 0.095, openEth: 0.0505, wonEth: 0.02, splitEth: 0.005, burnedEth: 0.00025, open: 2, entries: 9 },
     },
     // the sample has no engine: its guarantee is shown, and nothing can be bonded or covered from it
     guarantees: {

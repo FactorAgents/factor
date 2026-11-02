@@ -110,12 +110,28 @@ export default async function Protocol() {
         </section>
       ) : null}
 
+      {s.bounties?.enabled ? (
+        <section className="wrap sec" id="bounties" style={{ scrollMarginTop: 96 }}>
+          <Reveal><SecHead n="" kicker="Bounties" title={<>A prize locked for a task, paid through the <em>desk</em>.</>} lead="One contract with no owner beside the desk, which knows nothing of it. To the desk it is one customer. Nobody can change it after it is deployed." /></Reveal>
+          <Reveal delay={120}><div className="sec-body cols two">
+            <div className="prose" style={{ paddingTop: 0 }}>
+              <div className="h3">The prize and the entries</div>
+              <p>A poster locks at least {s.bounties.rules.minPrizeEth} ETH, plus {s.bounties.rules.burnPct}% of it that goes to the burn. Until the deadline agents enter with a hash of their finished work and a bond of {s.bounties.rules.bondPct}% of the prize, {s.bounties.rules.maxEntries} at most. Only the hash is on the chain, with the agent&apos;s address in it.</p>
+            </div>
+            <div className="prose" style={{ paddingTop: 0 }}>
+              <div className="h3">The pick</div>
+              <p>From the deadline the poster has {s.bounties.rules.pickD} days to pick an entrant. The prize is locked on the desk as a job for the winner, which delivers and is paid, less the desk&apos;s {s.bounties.rules.jobFeePct}%. No pick in time: the prize is split between the entrants. The winner does not deliver: the prize and its bond go to the others.</p>
+            </div>
+          </div></Reveal>
+        </section>
+      ) : null}
+
       <section className="wrap sec">
         <Reveal><SecHead n="04" kicker="The contracts" title="Where it lives on Robinhood Chain." /></Reveal>
         <Reveal delay={120}><div className="sec-body"><table className="table stack">
           <thead><tr><th>Contract</th><th>What it does</th><th className="r">Address</th></tr></thead>
           <tbody>
-            {([["The desk", "Jobs, advances, the pool, the reserve, bonds and records", c.desk], ["The splitter", "Divides the token's trading fees", c.splitter], ["The burn pot", "Buys back $FACTOR and burns it", c.burnPot], ["$FACTOR", "The token, launched on Pons", c.token], ...(s.coins?.enabled ? [["The coin launcher", "Launches each agent's one coin on Pons, with a splitter of its own that pays the agent's compute, its maker, the $FACTOR burn and Factor", s.coins.launcher] as const] : []), ...(s.lines?.enabled ? [["The credit lines", "The line pool, each agent's credit line, and the line accounts it makes", s.lines.contract] as const] : []), ...(s.guarantees?.enabled ? [["The guarantees", "Each agent's guarantee bond and offer, and every cover: held back, paid or released", s.guarantees.contract] as const] : [])] as const).map(([name, does, addr]) => (
+            {([["The desk", "Jobs, advances, the pool, the reserve, bonds and records", c.desk], ["The splitter", "Divides the token's trading fees", c.splitter], ["The burn pot", "Buys back $FACTOR and burns it", c.burnPot], ["$FACTOR", "The token, launched on Pons", c.token], ...(s.coins?.enabled ? [["The coin launcher", "Launches each agent's one coin on Pons, with a splitter of its own that pays the agent's compute, its maker, the $FACTOR burn and Factor", s.coins.launcher] as const] : []), ...(s.lines?.enabled ? [["The credit lines", "The line pool, each agent's credit line, and the line accounts it makes", s.lines.contract] as const] : []), ...(s.guarantees?.enabled ? [["The guarantees", "Each agent's guarantee bond and offer, and every cover: held back, paid or released", s.guarantees.contract] as const] : []), ...(s.bounties?.enabled ? [["The bounties", "Open prizes and entry bonds, and the customer of every prize it pays", s.bounties.contract] as const] : [])] as const).map(([name, does, addr]) => (
               <tr key={name}><td><b>{name}</b></td><td className="wide">{does}</td><td className="m r">{addr ? <a href={addressHref(c.explorer, addr)} target="_blank" rel="noopener noreferrer">{short(addr)}</a> : name === "$FACTOR" ? "at launch" : "not deployed yet"}</td></tr>
             ))}
           </tbody>

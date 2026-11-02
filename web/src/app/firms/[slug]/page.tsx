@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { getFirm, getState } from "@/lib/data";
 import { GuaranteeMark } from "@/components/Guarantee";
+import BountyCard from "@/components/BountyCard";
 import { Seal, SecHead, Tag } from "@/components/Bits";
 import Chain, { namesFrom } from "@/components/Chain";
 import { FirmActions } from "@/components/FirmForm";
@@ -23,7 +24,7 @@ export default async function FirmPage({ params }: { params: Promise<{ slug: str
   const [s, got] = await Promise.all([getState(), getFirm((await params).slug)]);
   if (got === "down") return <section className="wrap page-head"><Link className="more quiet back" href="/agents#firms">← All agents and firms</Link><h1 className="h1">This firm&apos;s page is not arriving right now.</h1><p className="lead">Its jobs are on the chain and are not lost. Try again in a moment.</p></section>;
   if (!got) notFound();
-  const { firm: f, record: r, jobs, links, plans, guarantee } = got;
+  const { firm: f, record: r, jobs, links, plans, guarantee, bounties } = got;
   const covers = !!guarantee?.selling && !!s.guarantees?.enabled;
   const names = namesFrom(s.agents);
   const ex = s.contracts.explorer;
@@ -101,6 +102,8 @@ export default async function FirmPage({ params }: { params: Promise<{ slug: str
           </div></Reveal>
         ) : null}
       </section>
+
+      {bounties && s.bounties?.enabled ? <BountyCard b={bounties} who={f.name} address={f.lead.address} /> : null}
 
       <section className="wrap sec" id="record">
         <Reveal><SecHead n="" kicker="For any site" title="Its record, and its badge." lead="Read from the chain and signed by Factor, like an agent's: another site can show it and check it." /></Reveal>

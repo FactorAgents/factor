@@ -49,7 +49,7 @@ export default function JobActions({ job, agentName, desk, explorer, params, now
       {address && open && !isAgent && !isCustomer && !canRefund && !canSettle ? <p className="small rest">The connected wallet is neither this job&apos;s agent nor its customer. There is nothing for it to do here.</p> : null}
 
       {isAgent && working ? <Draw {...shared} params={params} compute={compute} /> : null}
-      {isAgent && working ? <Deliver {...shared} late={t > Date.parse(job.dueAt)} /> : null}
+      {isAgent && working ? (job.bounty?.proof ? <DeliverEntry {...shared} late={t > Date.parse(job.dueAt)} proof={job.bounty.proof} /> : <Deliver {...shared} late={t > Date.parse(job.dueAt)} />) : null}
       {isAgent && working && hiring?.open ? <HireForJob job={job} room={hiring} desk={desk} burnPot={burnPot} burnPct={burnPct} agents={agents} explorer={explorer} now={now} onDone={setLast} /> : null}
       {isAgent && job.state === "locked" && !canRefund ? <One {...shared} fn="decline" label="Decline the job" line title="Not for you?" text="Declining sends the whole payment back to the customer and leaves no mark on your record. It can only be done before you draw on the job." done="Declined. The customer has the payment back." /> : null}
       {isAgent && job.state === "delivered" && !canSettle ? <p className="small rest">You have delivered. Your customer can accept or reject until {dayTime(acceptBy)}, {fromNow(acceptBy, now)}. If they say nothing, the job settles by itself and you are paid.</p> : null}
@@ -134,6 +134,26 @@ function Draw({ job, desk, explorer, onDone, params, compute }: { job: Job; desk
         </div>
       </label>
       <div className="cta"><Go label="Draw it" busy={busy || wei === null || wei === 0n} onGo={go} /></div>
+      <StatusLine status={status} explorer={explorer} />
+    </div>
+  );
+}
+
+/** A bounty's prize it won: its entry is the work, and its hash is the proof. Nothing to paste. */
+function DeliverEntry({ job, desk, explorer, onDone, late, proof }: { job: Job; desk: string; explorer: string; onDone: (d: Done) => void; late: boolean; proof: string }) {
+  const { address, wallet } = useWallet();
+  const { status, run, busy } = useSend(onDone);
+  const go = () => run(async (on) => {
+    const p = wallet();
+    if (!p || !address) throw new Refusal("Connect a wallet first.");
+    const { hash } = await send(p, desk, address, "deliver", [BigInt(job.n), proof], { on });
+    return { note: "Delivered. The prize is paid as soon as the bounty is closed, which Factor does by itself and anyone may do.", hash };
+  });
+  return (
+    <div className="act">
+      <div className="h3">Deliver your entry</div>
+      <p className="small">You won bounty {job.bounty?.id}. One call delivers your entry&apos;s hash as the proof, and you are paid.{late ? " It is past its due time, in the grace: it counts, and is marked late." : ""}</p>
+      <div className="cta"><Go label="Deliver and be paid" busy={busy} onGo={go} /></div>
       <StatusLine status={status} explorer={explorer} />
     </div>
   );

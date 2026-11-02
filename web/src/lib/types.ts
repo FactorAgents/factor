@@ -49,6 +49,8 @@ export interface Job {
   plan?: { id: string; month: number; months: number };
   /** locked from an open job: the listing, how many agents applied, and who picked the agent */
   open?: { id: string; applicants: number; by: "factor" | "customer"; /** the customer picked an offer: the price locked is the agent's own */ offers?: boolean };
+  /** a bounty's prize: the bounty, its poster, and the hash its winner delivers as its proof. Only while bounties are on */
+  bounty?: { id: number; title: string | null; poster: string; proof: string | null };
   /** hired with cover: how much, the fee, and how the cover stands. Only while guarantees are on */
   cover?: { id: number; coverEth: number; feeEth: number; state: CoverState };
 }
@@ -159,6 +161,34 @@ export interface GuaranteesAbout {
 }
 /** reserved: not tied to a job yet. bound: tied. released: delivered, back to the bond. paid: not delivered, paid to the customer. declined: the agent declined, the fee went back. lapsed: never tied */
 export type CoverState = "reserved" | "bound" | "released" | "paid" | "declined" | "lapsed";
+/** Bounties (engine/src/bounties.ts, BountiesAbout): whether they are on, the contract, the rules and the totals. */
+export interface BountiesAbout {
+  enabled: boolean; contract: string | null; chainId: number;
+  rules: { burnPct: number; bondPct: number; jobFeePct: number; minPrizeEth: number; maxEntries: number; minOpenH: number; maxOpenD: number; pickD: number; deliverD: number; graceH: number; taskBytes: number; workBytes: number };
+  totals: { bounties: number; prizesEth: number; openEth: number; wonEth: number; splitEth: number; burnedEth: number; open: number; entries: number } | null;
+}
+export type BountyStatus = "open" | "choosing" | "ending" | "picked" | "won" | "unpicked" | "undelivered" | "empty";
+/** One entry (engine/src/bounties.ts, BountyEntryJson): public once a winner is picked or the bounty ends. */
+export interface BountyEntry {
+  agent: string; name: string; named: boolean; n: number; enteredAt: string; hash: string; tx: string; score: number; won: boolean; house: boolean; shown: boolean;
+  kind?: "text" | "html"; work?: string; whole?: boolean; shareEth: number; bondBackEth: number;
+}
+/** One bounty (engine/src/bounties.ts, BountyJson). */
+export interface Bounty {
+  id: number; poster: string; prizeEth: number; prizeWei: string; feeEth: number; feeWei: string; bondEth: number; bondWei: string;
+  deadline: string; pickUntil: string; minScore: number; taskHash: string; title: string | null; task: string | null; hidden: boolean;
+  state: "open" | "picked" | "won" | "unpicked" | "undelivered" | "empty"; status: BountyStatus; entries: number; slots: number; revealed: boolean; postedAt: string; tx: string;
+  winner?: { address: string; name: string; named: boolean };
+  job?: { n: number; id: string; state?: number; dueAt?: string; deliveredAt?: string };
+  pickedTx?: string; pickedAt?: string; closedTx?: string; closedAt?: string; shareEth?: number; paidTo?: number; burnedEth?: number; toPosterEth?: number;
+  next?: "returns" | "splits";
+}
+/** A poster's history, public: the answer to a poster that keeps picking its own wallet. */
+export interface BountyHistory { poster: string; posted: number; won: number; unpicked: number; undelivered: number; empty: number; open: number; picks: { bounty: number; winner: string; name: string; score: number; jobsSettled: number }[] }
+export interface BountyPage extends Bounty { items?: BountyEntry[]; history?: BountyHistory }
+export interface BountyList extends BountiesAbout { items: Bounty[] }
+export interface AgentBounties { entered: number; won: number; wonEth: number; splitEth: number; items: Bounty[] }
+
 /** One cover (engine/src/guarantees.ts, CoverJson). */
 export interface Cover {
   id: number; customer: string; agent: string; agentName: string; named: boolean;
@@ -303,6 +333,8 @@ export interface FactorState {
   lines?: LinesAbout;
   /** guarantees: whether they are on, the contract, the rules and the totals */
   guarantees?: GuaranteesAbout;
+  /** bounties: whether they are on, the contract, the rules and the totals */
+  bounties?: BountiesAbout;
 }
 
 /** One of a firm's agents and its part of the firm's work: the lead's is the firm's jobs, a member's the sub-jobs it took under them. */
@@ -340,7 +372,9 @@ export interface FirmRecord {
   factorScore?: FactorScore;
 }
 /** A firm's page: the firm, its record, its jobs (the newest with the chain of work under each), the lead's links for it. */
-export interface FirmPage { enabled: boolean; firm: Firm; record: FirmRecord; jobs: (Job & { tree?: JobTree | null })[]; links: { id: string; title: string; priceEth: string; due: number; early: boolean; exp: string; url: string; firm?: string }[]; /** its monthly clients, when it has any plan */ plans?: PlansSummary; /** the cover its lead sells, which is the cover on the firm's jobs */ guarantee?: AgentGuarantee }
+export interface FirmPage {
+  /** the bounties its lead entered and won, which are the firm's */
+  bounties?: AgentBounties; enabled: boolean; firm: Firm; record: FirmRecord; jobs: (Job & { tree?: JobTree | null })[]; links: { id: string; title: string; priceEth: string; due: number; early: boolean; exp: string; url: string; firm?: string }[]; /** its monthly clients, when it has any plan */ plans?: PlansSummary; /** the cover its lead sells, which is the cover on the firm's jobs */ guarantee?: AgentGuarantee }
 
 /** One of Factor's own agents: what it does and what it takes a job for. */
 export interface RosterAgent { name: string; does: string; needs: string; delivers: string; fromEth: number; asksAModel: boolean; /** the Desk's opening file on it */ file?: DeskFile }
@@ -376,7 +410,7 @@ export interface Erc8004 {
   links: { registry: string };
 }
 /** One agent with what the page about it shows. */
-export interface AgentPage { agent: Agent; /** its Factor Score: the desk's number, the parts, the income behind it, what it can draw */ factorScore?: FactorScore; jobs: Job[]; events: LedgerEvent[]; hiring?: Hiring; /** the firms it leads, belongs to or is invited to */ firms?: { slug: string; name: string; house: boolean; role: "lead" | "member" | "invited" }[]; /** its monthly clients, when it has any plan */ plans?: PlansSummary; /** its ERC-8004 identity and the entries written to it, when one is linked */ erc8004?: Erc8004; /** its own coin, when it has one listed */ coin?: Coin; /** its credit line, from either side, while lines are on */ line?: CreditLine; /** its guarantee bond, offer and covers, while guarantees are on and it has had one */ guarantee?: AgentGuarantee }
+export interface AgentPage { /** bounties entered and won */ bounties?: AgentBounties; agent: Agent; /** its Factor Score: the desk's number, the parts, the income behind it, what it can draw */ factorScore?: FactorScore; jobs: Job[]; events: LedgerEvent[]; hiring?: Hiring; /** the firms it leads, belongs to or is invited to */ firms?: { slug: string; name: string; house: boolean; role: "lead" | "member" | "invited" }[]; /** its monthly clients, when it has any plan */ plans?: PlansSummary; /** its ERC-8004 identity and the entries written to it, when one is linked */ erc8004?: Erc8004; /** its own coin, when it has one listed */ coin?: Coin; /** its credit line, from either side, while lines are on */ line?: CreditLine; /** its guarantee bond, offer and covers, while guarantees are on and it has had one */ guarantee?: AgentGuarantee }
 
 /** One job in a chain of work: the customer's job at depth 0, the jobs its agent hired for at 1, and so on. */
 export interface TreeNode {

@@ -94,9 +94,6 @@ contract FactorBounty is ReentrancyGuardTransient {
     FactorLine public immutable line;
     /// @notice The desk's burn pot, which buys back and burns $FACTOR.
     address public immutable burnPot;
-    /// @notice The desk's own numbers, read from it once.
-    uint256 public immutable grace;
-    uint256 public immutable review;
 
     uint256 public bountyCount;
     mapping(uint256 id => Bounty) internal bounties;
@@ -182,8 +179,6 @@ contract FactorBounty is ReentrancyGuardTransient {
         line = line_;
         burnPot = desk_.burnPot();
         if (burnPot == address(0)) revert ZeroAddress();
-        grace = desk_.GRACE();
-        review = desk_.REVIEW();
         // every prize can be locked on the desk, and the desk takes the due time of every pick
         if (MIN_PRIZE < desk_.MIN_JOB() || DELIVER_TIME < desk_.MIN_DUE() || DELIVER_TIME > desk_.MAX_DUE()) {
             revert DeskRules();
@@ -418,20 +413,14 @@ contract FactorBounty is ReentrancyGuardTransient {
     function _closePicked(uint256 id, Bounty storage b) internal {
         uint256 job = b.job;
         FactorDesk.Job memory j = desk.job(job);
+        // the desk's own clock is the only clock: it refuses a refund or a settlement before its time
         if (j.state == FactorDesk.State.Locked || j.state == FactorDesk.State.Advanced) {
-            uint256 at = uint256(j.dueAt) + grace;
-            if (block.timestamp <= at) revert TooSoon(at + 1);
             desk.refund(job);
             j = desk.job(job);
         } else if (j.state == FactorDesk.State.Delivered) {
-            if (j.proof == entries[id][b.winner].hash) {
-                desk.accept(job);
-            } else {
-                // not the entry that was picked: the desk's own clock pays it, and it has lost a day
-                uint256 at = uint256(j.deliveredAt) + review;
-                if (block.timestamp < at) revert TooSoon(at);
-                desk.settle(job);
-            }
+            // the entry that was picked is accepted now; anything else is settled by the desk after the customer's 24 hours
+            if (j.proof == entries[id][b.winner].hash) desk.accept(job);
+            else desk.settle(job);
             j = desk.job(job);
         }
         uint256 prize = b.prize;

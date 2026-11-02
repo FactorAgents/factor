@@ -11,8 +11,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { createServer } from "node:http";
 
 const PORT = Number(process.env.SMOKE_PORT) || 3611, BASE = `http://127.0.0.1:${PORT}`, BARE = `http://127.0.0.1:${PORT + 1}`;
-const PAGES = ["/", "/agents/orbit-ops", "/ledger", "/ledger?show=burned", "/agents", "/agents/lumen-07", "/jobs/0412", "/jobs/0406", "/jobs/0404", "/jobs/0403", "/hire", "/hire?agent=page-smith", "/hire?agent=lumen-07&cover=1", "/work", "/protocol", "/token", "/burn", "/docs", "/log", "/security", "/pay", "/firms/night-desk", "/hire?firm=night-desk", "/plans/0x5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a", "/open-jobs", "/open-jobs/0x0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b", "/coins", "/coins?sort=new", "/coins/page-smith"];
-const NAV = ["/ledger", "/agents", "/coins", "/open-jobs", "/hire", "/work", "/protocol", "/token", "/burn", "/docs", "/roadmap"];
+const PAGES = ["/bounties", "/bounties/1", "/bounties/2", "/bounties/3", "/bounties/4", "/", "/agents/orbit-ops", "/ledger", "/ledger?show=burned", "/agents", "/agents/lumen-07", "/jobs/0412", "/jobs/0406", "/jobs/0404", "/jobs/0403", "/hire", "/hire?agent=page-smith", "/hire?agent=lumen-07&cover=1", "/work", "/protocol", "/token", "/burn", "/docs", "/log", "/security", "/pay", "/firms/night-desk", "/hire?firm=night-desk", "/plans/0x5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a", "/open-jobs", "/open-jobs/0x0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b", "/coins", "/coins?sort=new", "/coins/page-smith"];
+const NAV = ["/ledger", "/agents", "/coins", "/open-jobs", "/bounties", "/hire", "/work", "/protocol", "/token", "/burn", "/docs", "/roadmap"];
 // Words the copy does not use: no long dash, no promise of gain. A list kept beside this file and out of the repo
 // (forbidden.local.json, pairs of pattern and flags) adds to them on the machine it is on.
 const LOCAL = new URL("./forbidden.local.json", import.meta.url);
@@ -566,6 +566,45 @@ test("credit lines: an agent's line on its page, its mark in the list, the work 
   assert.equal((await fetch(`${BASE}/api/v1/lines/nobody-here`)).status, 404);
 });
 
+test("bounties: the board, a page with counts only until the reveal, every entry beside the winner, the docs and the protocol; nothing to send on the sample", async () => {
+  const board = text((await get("/bounties")).html);
+  assert.match(board, /Lock a prize\. Agents enter with the finished work ?\./);
+  assert.match(board, /Write the words for our front page/);
+  assert.match(board, /3 of 25/);
+  assert.match(board, /It cannot be fully stopped/);
+  assert.match(board, /Bounties are not open yet/);
+  // the entries are hidden before the reveal: counts only
+  const open = text((await get("/bounties/4")).html);
+  assert.match(open, /Hidden until a winner is picked/);
+  assert.match(open, /3 entries are in/);
+  assert.doesNotMatch(open, /Entry 1/);
+  const choosing = text((await get("/bounties/3")).html);
+  assert.match(choosing, /The poster can read them now/);
+  assert.doesNotMatch(choosing, /Entry 1/);
+  // after a pick: everything, beside the winner, and the poster's history
+  const won = text((await get("/bounties/2")).html);
+  assert.match(won, /Every entry, in the open/);
+  assert.match(won, /Entry 1 · lumen-07 Winner/);
+  assert.match(won, /Entry 2/);
+  assert.match(won, /Tide Tea/);
+  assert.match(won, /What it did with its other bounties/);
+  assert.match(won, /delivered its entry and was paid/);
+  const split = text((await get("/bounties/1")).html);
+  assert.match(split, /No winner was picked in time/);
+  assert.match(split, /from the split/);
+  assert.equal((await get("/bounties/99")).status, 404);
+  const docs = text((await get("/docs")).html);
+  assert.match(docs, /Bounties Enter with the finished work\. The poster picks one ?\./);
+  assert.match(docs, /api\/v1\/bounties\/entry/);
+  const protocol = text((await get("/protocol")).html);
+  assert.match(protocol, /Bounties A prize locked for a task, paid through the desk/);
+  assert.match(protocol, /The bounties/);
+  for (const t of [board, open, won, split, docs.slice(docs.indexOf("Bounties Enter")), protocol.slice(protocol.indexOf("Bounties A prize"))]) assert.doesNotMatch(t, /\b(70|20|40|10)\s?%/);
+  const api = await (await fetch(`${BASE}/api/v1/bounties/2`)).json();
+  assert.equal(api.items.length, 2);
+  assert.equal((await (await fetch(`${BASE}/api/v1/bounties/4`)).json()).items, undefined);
+});
+
 test("guarantees: Guaranteed up to on an agent's page, in the list and on its firm, the cover on a job's page, hire with cover, the work page, the docs and the protocol; nothing to send on the sample, and no share but the fee's own", async () => {
   const page = text((await get("/agents/lumen-07")).html);
   assert.match(page, /Guaranteed up to 0\.0400 ETH/);
@@ -605,27 +644,28 @@ test("the roadmap: on the home page, every phase in order, what is live checked 
   assert.match(html, /id="roadmap"/);
   const t = text(html);
   assert.match(t, /07 Roadmap The credit layer for AI agents \./);
-  assert.match(t, /13 of 14 phases live/);
+  assert.match(t, /14 of 15 phases live/);
   // the intro counts from the roadmap itself, so it never goes stale
-  assert.match(t, /Thirteen phases are live, the next one is planned, and more will follow\./);
-  assert.doesNotMatch(t, /Eleven phases|Twelve phases/);
-  const names = ["Launch", "Compute on credit", "Pay with Factor", "Agents hire agents", "Agent firms", "Monthly clients", "Agents find their own work", "Agents that bid", "Agent coins", "Factor Score", "Credit lines", "Verified owners", "Guarantees", "Factor everywhere"];
+  assert.match(t, /Fourteen phases are live, the next one is planned, and more will follow\./);
+  assert.doesNotMatch(t, /Twelve phases|Thirteen phases/);
+  const names = ["Launch", "Compute on credit", "Pay with Factor", "Agents hire agents", "Agent firms", "Monthly clients", "Agents find their own work", "Agents that bid", "Bounties", "Agent coins", "Factor Score", "Credit lines", "Verified owners", "Guarantees", "Factor everywhere"];
   let at = t.indexOf("Stage 1");
   names.forEach((name, i) => { const k = t.indexOf(`Phase ${String(i + 1).padStart(2, "0")} ${name}`, at); assert.ok(k > at, `phase ${i + 1} ${name} in order`); at = k; });
-  for (const day of ["14 Oct", "15 Oct", "16 Oct", "17 Oct", "18 Oct", "19 Oct", "20 Oct", "22 Oct", "23 Oct", "24 Oct", "28 Oct", "30 Oct", "1 Nov"]) assert.match(t, new RegExp(`Live ${day}`));
-  assert.match(t, /Live 20 Oct Phase 10 Factor Score/);
-  assert.match(t, /Live 28 Oct Phase 09 Agent coins/);
-  assert.match(t, /Live 30 Oct Phase 11 Credit lines/);
-  assert.match(t, /Live 24 Oct Phase 12 Verified owners/);
-  assert.match(t, /Live 1 Nov Phase 13 Guarantees/);
-  assert.match(t, /Next Phase 14 Factor everywhere/);
+  for (const day of ["14 Oct", "15 Oct", "16 Oct", "17 Oct", "18 Oct", "19 Oct", "20 Oct", "22 Oct", "23 Oct", "24 Oct", "28 Oct", "30 Oct", "1 Nov", "2 Nov"]) assert.match(t, new RegExp(`Live ${day}`));
+  assert.match(t, /Live 20 Oct Phase 11 Factor Score/);
+  assert.match(t, /Live 28 Oct Phase 10 Agent coins/);
+  assert.match(t, /Live 30 Oct Phase 12 Credit lines/);
+  assert.match(t, /Live 24 Oct Phase 13 Verified owners/);
+  assert.match(t, /Live 1 Nov Phase 14 Guarantees/);
+  assert.match(t, /Live 2 Nov Phase 09 Bounties/);
+  assert.match(t, /Next Phase 15 Factor everywhere/);
   assert.equal((t.match(/Planned Phase/g) ?? []).length, 0);
   for (const w of ["October", "November", "December"]) assert.ok(!t.slice(t.indexOf("Stage 2")).includes(w), `no planned date: ${w}`);
   // the line runs on past the last phase into a stage still being planned, with no phase number and no date
-  const more = t.slice(t.indexOf("Phase 14 Factor everywhere"));
+  const more = t.slice(t.indexOf("Phase 15 Factor everywhere"));
   assert.match(more, /Stage 5 Coming What comes next/);
   assert.match(more, /The next stage is being planned\. New phases are added here as we get close to finishing the ones above/);
-  assert.ok(!/Phase 15/.test(t), "no phase number for what comes next");
+  assert.ok(!/Phase 16/.test(t), "no phase number for what comes next");
   assert.equal((t.match(/checked off the day it goes live/g) ?? []).length, 1);
   assert.equal((t.match(/Builds on/g) ?? []).length, 6);
   // the footer leads to it on every page, as the header does

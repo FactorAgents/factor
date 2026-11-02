@@ -12,7 +12,7 @@ interface IEthUsdFeedB {
 }
 
 /// Deploys the bounty contract: one transaction, given the desk and the line contract and nothing else. It reads the burn
-/// pot and the desk's own grace and review from the desk. There is no owner, and nothing is set afterwards, because
+/// pot from the desk. There is no owner, and nothing is set afterwards, because
 /// nothing can be. Nothing needs seeding: every prize and every bond is its sender's own.
 ///
 ///   FACTOR_ADMIN=… FACTOR_GATEWAY=… FACTOR_BURN_POT=… FACTOR_DESK=… FACTOR_SPLITTER=… FACTOR_ACCOUNTS=… FACTOR_LINE=… \
@@ -159,7 +159,6 @@ contract DeployBounties is Script, Config {
         require(address(b.desk()) == address(desk), "bounty: wrong desk");
         require(address(b.line()) == address(line), "bounty: wrong line contract");
         require(b.burnPot() == desk.burnPot(), "bounty: not the desk's burn pot");
-        require(b.grace() == desk.GRACE() && b.review() == desk.REVIEW(), "bounty: the desk's grace and review");
         require(
             b.BURN_BPS() == 100 && b.BOND_BPS() == 100 && b.MIN_PRIZE() == 0.005 ether && b.MAX_ENTRIES() == 25,
             "bounty: fee, bond, smallest prize or most entries"
