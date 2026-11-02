@@ -42,14 +42,14 @@ const base = await new Promise<string>((done) => server.listen(0, "127.0.0.1", (
 const agentKey = store.addKey(AGENT, 3600).key;
 
 // what the gateway really sends and is really told, seen on the way through
-interface Wire { agent: string | null; task: string | null; budget: string | null; status: number; cost: string | null; model: string | null; tier: string | null; route: string | null }
+interface Wire { agent: string | null; task: string | null; budget: string | null; taskSaid: string | null; status: number; cost: string | null; model: string | null; tier: string | null; route: string | null }
 const wires: Wire[] = [];
 const realFetch = globalThis.fetch;
 globalThis.fetch = async (input, init) => {
   const res = await realFetch(input, init);
   if (String(input) === `${URL_}/chat/completions`) {
     const h = new Headers(init?.headers);
-    wires.push({ agent: h.get("x-raeto-agent"), task: h.get("x-raeto-task"), budget: h.get("x-raeto-task-budget"), status: res.status, cost: res.headers.get("x-raeto-cost"), model: res.headers.get("x-raeto-model"), tier: res.headers.get("x-raeto-tier"), route: res.headers.get("x-raeto-route") });
+    wires.push({ agent: h.get("x-raeto-agent"), task: h.get("x-raeto-task"), budget: h.get("x-raeto-task-budget"), taskSaid: res.headers.get("x-raeto-task"), status: res.status, cost: res.headers.get("x-raeto-cost"), model: res.headers.get("x-raeto-model"), tier: res.headers.get("x-raeto-tier"), route: res.headers.get("x-raeto-route") });
   }
   return res;
 };
@@ -91,6 +91,7 @@ for (const c of CALLS) {
   check("it answered", r.status === 200, `status ${r.status}`);
   check("the agent's tag went along", wire.agent === AGENT, String(wire.agent));
   check("the credit it is paid from went along", wire.task === `factor-coin-${AGENT}`, String(wire.task));
+  check("Raeto counts the job's credit as its budget", !!wire.budget && (wire.taskSaid ?? "").includes(`budget=${wire.budget}`), `${wire.taskSaid}`);
   check("the owner's key is not in the answer", !text.includes(key));
   const row = spend()[n];
   check("the call is in the books", !!row);

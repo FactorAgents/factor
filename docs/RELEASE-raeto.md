@@ -69,10 +69,10 @@ memory, with no chain:
 cd ~/Factor && scripts/raeto-real-check
 ```
 
-**Cost:** about $0.0002 from the Raeto balance (three runs on 2 Nov cost $0.000135, $0.000113 and the same again). It
-stops past 5 cents, and refuses to run without a key. It must end `Every check passed`. It checks that Raeto says what
-each call cost on a whole answer and on a stream, that the credit paid exactly that and the margin, that the tag and the
-task went along, and that the balance at Raeto dropped by what the calls said. Write what it prints as the cost in
+**Cost:** about $0.00015 from the Raeto balance (runs on 2 Nov cost $0.000135, $0.000113 and $0.000109). It stops past 5
+cents, and refuses to run without a key. It must end `Every check passed`. It checks that Raeto says what each call cost
+on a whole answer and on a stream, that the credit paid exactly that and the margin, that the tag and the task went along,
+that Raeto counts the job's credit as the task's budget, and that the balance at Raeto dropped by what the calls said. Write what it prints as the cost in
 `~/Skatt-2026/data/utgifter.csv`, as for every other test.
 
 ## 5. Merge and push

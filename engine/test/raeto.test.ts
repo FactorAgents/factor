@@ -163,6 +163,16 @@ describe("a call", () => {
     expect(spend(w)[0]!.upstream_micro).toBeCloseTo(w.stub.charged[0]! * 1e6, 3);
   });
 
+  it("an agent that hangs up in the middle of a stream still pays for the answer: the stream is read to its end", async () => {
+    const w = await world();
+    const stop = new AbortController();
+    const r = await fetch(`${w.url}/v1/compute/v1/chat/completions`, { method: "POST", signal: stop.signal, headers: { authorization: `Bearer ${w.key}`, "content-type": "application/json" }, body: JSON.stringify({ model: "raeto/auto", max_tokens: 100, stream: true, messages: [{ role: "user", content: "Say hello" }] }) });
+    await r.body!.getReader().read();
+    stop.abort();
+    await vi.waitFor(() => expect(spend(w)).toHaveLength(1));
+    expect(spend(w)[0]).toMatchObject({ cost_micro: withMargin(w.stub.charged[0]!), cost_from: "chunk" });
+  });
+
   it("takes every variant the list has", async () => {
     const w = await world();
     for (const m of RAETO_MODELS) expect((await ask(w, { model: m.id })).status).toBe(200);

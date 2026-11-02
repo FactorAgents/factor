@@ -79,7 +79,7 @@ export function raetoStub(key: string, port = 0): Promise<RaetoStub> {
       const said = stub.say ?? "A plain answer from the stand-in.";
       const usage = { prompt_tokens: input, completion_tokens: output, total_tokens: input + output, cost: provider, is_byok: false, prompt_tokens_details: { cached_tokens: 0, cache_write_tokens: 0, audio_tokens: 0, video_tokens: 0 }, cost_details: { upstream_inference_cost: provider }, completion_tokens_details: { reasoning_tokens: 0, image_tokens: 0, audio_tokens: 0 } };
       const route = `model=${m.model}; mode=${body.model.split(":")[1] ?? "auto"}; tier=${m.tier}; why=simple request; est_saved_pct=98${mark === "retry" ? "; escalated_from=deepseek/deepseek-v4-pro; escalated_why=empty answer" : ""}`;
-      const headers: Record<string, string> = { "x-raeto-model": m.model, "x-raeto-tier": m.tier, "x-raeto-route": route, ...(req.headers["x-raeto-task"] ? { "x-raeto-task": `id=${String(req.headers["x-raeto-task"])}; calls=1; spent=${cost.toFixed(6)}` } : {}) };
+      const headers: Record<string, string> = { "x-raeto-model": m.model, "x-raeto-tier": m.tier, "x-raeto-route": route, ...(req.headers["x-raeto-task"] ? { "x-raeto-task": `id=${String(req.headers["x-raeto-task"])}; calls=1; spent=${cost.toFixed(6)}${req.headers["x-raeto-task-budget"] ? `; budget=${String(req.headers["x-raeto-task-budget"])}` : ""}` } : {}) };
       const quiet = mark === "nocost" || mark === "nousage";
       if (!quiet && mark !== "break" && mark !== "errorchunk" && mark !== "empty") stub.charged.push(cost);
 

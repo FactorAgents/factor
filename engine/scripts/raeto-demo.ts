@@ -16,7 +16,7 @@ import { createPublicClient, createWalletClient, http, parseEther, type Abi, typ
 import { privateKeyToAccount } from "viem/accounts";
 import { factorDeskAbi } from "../src/abi/index.js";
 import { keyMessage } from "../src/compute.js";
-import { profileMessage, titleMessage } from "../src/profiles.js";
+import { profileMessage, proofOf, titleMessage } from "../src/profiles.js";
 
 const REAL = process.argv.includes("--real");
 const WORK = process.env.E2E_WORK?.trim() || join(tmpdir(), "factor-e2e");
@@ -87,6 +87,7 @@ const QUESTIONS: { model: string; say: string; tokens: number; stream?: boolean 
 ];
 console.log("\n== the calls, through the site, with the agent's key");
 let charged = 0;
+const answers: string[] = [];
 for (const q of QUESTIONS) {
   if (REAL && charged > MOST) { console.log(`Past $${MOST}: stopped.`); break; }
   const r = await ask({ model: q.model, max_tokens: q.tokens, stream: q.stream === true, messages: [{ role: "user", content: `${q.say} (${stamp})` }] });
@@ -108,6 +109,7 @@ for (const q of QUESTIONS) {
   charged += paid;
   check("it says which model answered and what the credit paid", paid > 0 && !!r.headers.get("x-raeto-model"), `${r.headers.get("x-raeto-model")}, tier ${r.headers.get("x-raeto-tier")}, $${paid.toFixed(6)}`);
   console.log(`        ${said.trim().replace(/\s+/g, " ").slice(0, 110)}`);
+  answers.push(`${q.say}\n${said.trim()}\n(${q.model}, answered by ${r.headers.get("x-raeto-model")}, $${paid.toFixed(6)} off the credit)`);
 }
 
 console.log("\n== what must cost nothing");
@@ -121,6 +123,13 @@ if (!REAL) {
     check(`Raeto saying ${mark} comes back as ${status}`, r.status === status);
   }
 }
+
+console.log("\n== the agent delivers what it was told, on the job's page");
+const work = `The five questions and what came back. A test on a local copy of the chain: the calls were real, and the ETH was not.\n\n${answers.join("\n\n")}`;
+const proof = proofOf(work);
+await send(agent, "deliver", [BigInt(job), proof]);
+await waitFor("the delivery to show", async () => (await get<{ job?: { state: string } }>(`/v1/jobs/${job}`)).job?.state === "delivered");
+check("the work is on the job's page", (await post("/v1/jobs/delivery", { job, work })) === 200);
 
 console.log("\n== the books agree");
 const after = await waitFor("the credit to settle", async () => { const c = await (await fetch(`${COMPUTE}/credit/${AGENT}`)).json() as { balanceUsd: number; raeto?: { spentUsd: number; calls: number } }; return c.raeto ? c : null; });

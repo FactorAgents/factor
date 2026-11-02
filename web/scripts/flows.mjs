@@ -34,8 +34,8 @@ import { privateKeyToAccount } from "viem/accounts";
 
 const WEB = join(fileURLToPath(new URL(".", import.meta.url)), "..");
 const ENGINE = join(WEB, "..", "engine");
-const WORK = join(tmpdir(), "factor-e2e");
-const SITE_PORT = 3620, CHROME_PORT = 9987;
+const WORK = process.env.E2E_WORK?.trim() || join(tmpdir(), "factor-e2e");
+const SITE_PORT = Number(process.env.FLOWS_SITE_PORT) || 3620, CHROME_PORT = Number(process.env.FLOWS_CHROME_PORT) || 9987;
 // by name, not by number: a passkey belongs to a site's name, and a browser makes none for a bare address
 const SITE = `http://localhost:${SITE_PORT}`;
 const SHOTS = join(WEB, "..", "docs", "shots", "flows");
@@ -429,6 +429,19 @@ try {
   for (;;) { const { done, value } = await reader.read(); if (done) break; chunks++; lastAt = Date.now(); streamText += new TextDecoder().decode(value); }
   check("a stream comes through the site as it is made, not all at once at the end", streamed.headers.get("content-type") === "text/event-stream" && chunks > 3 && lastAt - firstAt > 60 && streamText.trimEnd().endsWith('data: {"type":"message_stop"}'), `${chunks} pieces over ${lastAt - firstAt} ms`);
   check("through the site too, no key means no model, and the owner's health page is not there", (await fetch(`${base}/v1/messages`, { method: "POST", headers: { "x-api-key": "fck_" + "a".repeat(32), "content-type": "application/json" }, body: "{}" })).status === 401 && (await fetch(`${base}/health`)).status === 404 && (await fetch(`${base}/v1/complete`, { method: "POST", body: "{}" })).status === 404);
+  // raeto/auto, when the run was started with it on (RAETO=on RAETO_API_KEY=... RAETO_URL=<the stand-in>): off, none of this exists
+  if (process.env.RAETO === "on") {
+    check("the page with the key names raeto/auto as the model", await run(`[...document.querySelectorAll(".keybox .code")].some((c) => c.textContent === "raeto/auto")`));
+    check("the work page says how it works", /Raeto's charge \+ 5%/.test(await text()) && /Model \+ 8% \+ routing/.test(await text()));
+    const viaRaeto = await fetch(`${base}/v1/chat/completions`, { method: "POST", headers: { authorization: `Bearer ${computeKey}`, "content-type": "application/json" }, body: JSON.stringify({ model: "raeto/auto", max_tokens: 50, messages: [{ role: "user", content: "Say hello" }] }) });
+    await viaRaeto.text();
+    check("the agent's program calls raeto/auto through the site, and the site passes on which model answered and what it cost", viaRaeto.status === 200 && !!viaRaeto.headers.get("x-raeto-model") && Number(viaRaeto.headers.get("x-factor-cost-usd")) > 0);
+    await until("the compute on the job's page", async () => /Compute it spent/.test(await (await fetch(`${SITE}/jobs/4`)).text()));
+    const stream = await fetch(`${base}/v1/chat/completions`, { method: "POST", headers: { authorization: `Bearer ${computeKey}`, "content-type": "application/json" }, body: JSON.stringify({ model: "raeto/auto:cheap", max_tokens: 50, stream: true, messages: [{ role: "user", content: "Say hello" }] }) });
+    const streamed = await stream.text();
+    check("a stream through the site stays a stream, and its last chunk says what the credit paid", stream.headers.get("content-type")?.includes("event-stream") && /"raeto":\{"model":"[^"]+","cost_usd":[0-9.e-]+\}/.test(streamed) && !streamed.includes("OPENROUTER"));
+    check("the dev log has its entry", /raeto\/auto/.test(await (await fetch(`${SITE}/log`)).text()));
+  }
   await until("the page to show what was spent", async () => /\$0\.00\d+ of \$\d+\.\d\d spent/.test(await text()), 40_000);
   await run(`document.querySelector(".keybox").scrollIntoView({ block: "center" })`);
   await sleep(400);
