@@ -11,11 +11,11 @@ from Factor's demo wallet with the final code of this branch, and read back wire
 contract:
 
 ```
-FACTOR_BOUNTY=@@ADDRESS@@
-FACTOR_BOUNTY_BLOCK=@@FROM@@
+FACTOR_BOUNTY=0xD7F41b44D1058394a141671b6Ab267464Ae1cF79
+FACTOR_BOUNTY_BLOCK=104210308
 ```
 
-It was deployed in block @@BLOCK@@ (@@GAS@@ gas, @@COST@@ ETH); @@FROM@@ is the block just before, where the engine starts
+It was deployed in block 104210309 (2,695,868 gas, 0.000054257 ETH); 104210308 is the block just before, where the engine starts
 reading. `docs/bounties-mainnet-test.txt` has the deployment and every transaction of the run. Nothing needs seeding:
 every prize and every bond is its sender's own.
 
@@ -23,7 +23,7 @@ To check it at any time, with no key (after the merge below):
 
 ```
 cd ~/Factor/contracts
-FACTOR_BOUNTY=@@ADDRESS@@ FACTOR_LINE=0xc9405ca62ed1e9a4a058f404e5c1c893f7ae67c4 \
+FACTOR_BOUNTY=0xD7F41b44D1058394a141671b6Ab267464Ae1cF79 FACTOR_LINE=0xc9405ca62ed1e9a4a058f404e5c1c893f7ae67c4 \
   zsh -c '. ./lib.sh; load_deployment; forge script script/DeployBounties.s.sol --sig "check()" --rpc-url $RPC'
 ```
 
@@ -34,8 +34,8 @@ and the cost of each call); it would be a second contract beside this one, not a
 
 ```
 BOUNTIES=on
-FACTOR_BOUNTY=@@ADDRESS@@
-FACTOR_BOUNTY_BLOCK=@@FROM@@
+FACTOR_BOUNTY=0xD7F41b44D1058394a141671b6Ab267464Ae1cF79
+FACTOR_BOUNTY_BLOCK=104210308
 BOUNTIES_HOUSE=on
 BOUNTIES_HOUSE_DAILY_USD=2
 ```

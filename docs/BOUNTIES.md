@@ -331,11 +331,17 @@ them and the site shows them (`BOUNTIES=on`, and the owner's `bounties` switch),
 
 | | |
 |---|---|
-| `contracts/test/bounties/Bounty.t.sol` | Every rule above, one by one, with the examples to the wei, and fuzzed: any prize and any number of entrants split to the wei |
-| `contracts/test/bounties/BountyAttacks.t.sol` | Every attack of section 9 carried out, each one |
-| `contracts/test/invariant/Bounty.invariant.t.sol` | Random sequences over bounties and the desk together: the books, every prize accounted for, nothing stuck at the end of a run, and the desk's books after every step |
-| `contracts/test/review/break-bounty.py` | Breaks the contract on purpose, one rule at a time; the tests catch each one |
-| `contracts/test/fork/Bounties.fork.t.sol` | Against the LIVE desk, burn pot, line contract and accounts on a copy of Robinhood Chain: a win through the desk, an unpicked split, a winner who never delivers, a line account entering, a passkey account posting and entering |
-| `engine/test/bounties.test.ts` | The engine on a made-up chain: reading, hidden entries, the poster's signed read, the keeper's every step, house agents and their cap, the switch |
-| `engine/scripts/bounties-e2e.ts` | Everything together on a local fork: the one-command deploy, the engine, the site, a win, a split, a winner who never delivers, house agents with a stub model |
+| `contracts/test/bounties/Bounty.t.sol` | Every rule above, one by one, with the examples to the wei, and fuzzed: any prize and any number of entrants split to the wei (68 tests) |
+| `contracts/test/bounties/BountyAttacks.t.sol` | The attacks of section 9 carried out, including the ones that cannot be stopped, written down as what they cost (33 tests) |
+| `contracts/test/invariant/Bounty.invariant.t.sol` | Random sequences over bounties and the desk together: the books, every prize accounted for, nothing stuck at the end of every run, and the desk's books after every step. A 300,000-move soak passed |
+| `contracts/test/review/break-bounty.py` | Breaks the contract on purpose, 65 ways; the tests catch every one |
+| `contracts/test/fork/Bounties.fork.t.sol` | Against the LIVE desk, burn pot, line contract and accounts on a copy of Robinhood Chain: a win through the desk, an unpicked split, a winner who never delivers, one who declines, a line account entering, accounts posting and entering by order (8 tests) |
+| `engine/test/bounties.test.ts` | The engine on a made-up chain: reading, hidden entries at every door, the poster's signed read, the keeper's every step, house agents, their cap and what they pass over, no page view starting a model, the switch (28 tests) |
+| `engine/scripts/bounties-e2e.ts` | Everything together on a local fork: the one-command deploy, the engine, the site, a win, a split, a winner who never delivers, one who declines, a house agent entering and winning with a stub model, nobody entering, what nobody can do, the switch (68 checks) |
+| `web/scripts/bounties-flows.mjs` | The site in a real browser on that fork: post, enter, read by signature, pick and deliver, from a wallet and from a passkey account, on a desktop and a phone (30 checks) |
 | `docs/bounties-mainnet-test.txt` | The small real run on Robinhood Chain that deployed the contract |
+
+**Not tested with real money:** a house agent entering, because the keys of Factor's own agents and its model key are on the
+host and the real run sent nothing from there. The real run's two entries were sent by two demo agents with sheets from
+the code of the price-desk service, with no model. The splits, a winner who never delivers and the house agents are tested
+on forks only: the real bounty ran one way, a win through the desk.

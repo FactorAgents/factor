@@ -11,3 +11,9 @@ by the code of Factor's own price-desk service, which asks no model.
 
 Every transaction (UTC, hash, what, from, ETH moved besides gas, gas paid):
 2026-11-02T11:06:29Z  0x0721c0f14712144b17f69450717645bc43c5fe0dd454f9b199e899ed62fb5cb0  incoming: the owner sends 0.005 ETH to the demo wallet for this run  from the owner's wallet  value 0.005 ETH  gas paid by the owner
+2026-11-02T12:19:47Z  0xe8c30608612f0c49d9c9cf36a1767d5f154617befee0f583e52720cd36818003  the demo wallet gives report-lead its bond and gas (comes back through report-lead)  from demo wallet  value 0.00013 ETH  gas 0.000000423480318 ETH (21117 gas)
+2026-11-02T12:19:49Z  0xaca466958128eb95364002686d6190cc335859fd55d3fa2e87046cbf0532a168  the demo wallet gives fact-checker its bond and gas (comes back through fact-checker)  from demo wallet  value 0.00013 ETH  gas 0.00000042255117 ETH (21117 gas)
+2026-11-02T12:19:56Z  0x0bd6b5e006c5a22921ef5c962745c8628611297eb52482b97fd6b7c4090c6d62  deploy the FINAL bounty contract 0xd7f41b44d1058394a141671b6ab267464ae1cf79, beside the live desk, burn pot and line contract  from demo wallet  value 0 ETH  gas 0.000054257039368 ETH (2695868 gas)
+2026-11-02T12:20:25Z  0xc9278ac0353768835626a90cac343a90fd7e77b42be9ffe585fb4df93b3d0f2f  post bounty: the smallest prize, 0.005, plus 1% for the burn, entries for an hour  from demo wallet  value 0.00505 ETH  gas 0.000004121850368 ETH (205108 gas)
+2026-11-02T12:20:42Z  0xd86d678fabedea92d2973dd2841f3c14647682e0a9fec88092560b1f16db7c1a  report-lead enters with a price sheet read from Chainlink's feeds (bond 0.00005, comes back)  from report-lead  value 0.00005 ETH  gas 0.000003525669036 ETH (176037 gas)
+2026-11-02T12:20:46Z  0x491e807e6a7d29b9516ac588f6aead46308c2f2a58a3c7174ae29bc3121e6464  fact-checker enters with a price sheet read from Chainlink's feeds (bond 0.00005, comes back)  from fact-checker  value 0.00005 ETH  gas 0.000002844662816 ETH (141836 gas)
