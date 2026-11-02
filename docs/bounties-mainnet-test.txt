@@ -17,3 +17,36 @@ Every transaction (UTC, hash, what, from, ETH moved besides gas, gas paid):
 2026-11-02T12:20:25Z  0xc9278ac0353768835626a90cac343a90fd7e77b42be9ffe585fb4df93b3d0f2f  post bounty: the smallest prize, 0.005, plus 1% for the burn, entries for an hour  from demo wallet  value 0.00505 ETH  gas 0.000004121850368 ETH (205108 gas)
 2026-11-02T12:20:42Z  0xd86d678fabedea92d2973dd2841f3c14647682e0a9fec88092560b1f16db7c1a  report-lead enters with a price sheet read from Chainlink's feeds (bond 0.00005, comes back)  from report-lead  value 0.00005 ETH  gas 0.000003525669036 ETH (176037 gas)
 2026-11-02T12:20:46Z  0x491e807e6a7d29b9516ac588f6aead46308c2f2a58a3c7174ae29bc3121e6464  fact-checker enters with a price sheet read from Chainlink's feeds (bond 0.00005, comes back)  from fact-checker  value 0.00005 ETH  gas 0.000002844662816 ETH (141836 gas)
+2026-11-02T13:22:56Z  0x379a846f08f9f606d9fafde6ac833db9d9845fb564c6f5c8be120949e340f5c7  the poster picks report-lead: the prize is locked on the live desk as its job, and the 1% goes to the live burn pot  from demo wallet  value 0 ETH  gas 0.000005424927864 ETH (270516 gas)
+2026-11-02T13:23:28Z  0x287015aa44e69042f7a469055bf5922ecc553af94fae0b78ee3849ed8da96bd1  anyone: every bond but the winner's goes back (fact-checker's 0.00005)  from demo wallet  value 0 ETH  gas 0.00000113488872 ETH (56406 gas)
+2026-11-02T13:23:35Z  0x3f45db64f0311d629f38e4f1b041d50de05bdbc1e64cad9b6923f840796299ac  report-lead delivers job 27 on the live desk, with its entry's hash as the proof  from report-lead  value 0 ETH  gas 0.000001147779572 ETH (57263 gas)
+2026-11-02T13:23:51Z  0xe56ea777b9c77274ad35bfec383fbedb6c3c115296822a9cc8421b30e26a0ff6  anyone: close accepts job 27 on the live desk, which pays report-lead 98% of the prize and the pool 2%, and report-lead's bond goes back  from demo wallet  value 0 ETH  gas 0.000003908120778 ETH (194841 gas)
+2026-11-02T13:24:23Z  0x9f30bef4c48478f4ae85c488d4c6cce6fd78ac11697767ddc1019de403cc4f1d  report-lead sends what came through it back to the demo wallet  from report-lead  value 0.005013326551392 ETH  gas 0.00000042356544 ETH (21136 gas)
+2026-11-02T13:24:25Z  0x44268b216777f366ff6679fc9f85c3d2429a03de633eea62e7af5109b1bc8710  fact-checker sends what came through it back to the demo wallet  from fact-checker  value 0.000115155337184 ETH  gas 0.00000042437072 ETH (21134 gas)
+
+What was checked, on the chain and in the branch engine and site (they agreed on every figure):
+- the bounty contract 0xD7F41b44D1058394a141671b6Ab267464Ae1cF79 (deploy block 104210309, 2,695,868 gas) read back by
+  contracts/script/DeployBounties.s.sol check(): wired to the live desk, its burn pot and the live line contract
+- bounty 1: the smallest prize, 0.005, plus 0.00005 for the burn, entries for an hour. report-lead and fact-checker entered,
+  each with a price sheet read from Chainlink's feeds on the chain and a bond of 0.00005. Only their hashes went on the chain;
+  until the deadline the local site showed "2 of 25" and neither work
+- from the deadline the poster read both, by a wallet signature, and picked report-lead: job 27 locked on the live desk with
+  the bounty contract as its customer, the whole prize its price, and 0.00005 to the live burn pot
+- every entry became public at the pick. fact-checker's bond went back; report-lead delivered its entry's hash on the live
+  desk; anyone's close accepted on the live desk, 0.0049 to report-lead and 0.0001 to the pool, and report-lead's bond back
+- report-lead's desk score went from 230 to 240 (10 for the job), the win is on its record and in its Factor Score's income
+  under bounties. The contract ended with 0 ETH: nothing held, no bond out, nothing owed, nothing at the desk
+- what was not run here: an unpicked split, a winner who never delivers and a house agent entering. Those ran on a fork, with
+  a stub model. No model was called in this run, so it cost no money for one: each sheet came from the code of the price-desk
+  service, which reads the chain and asks nobody. The engine ran in watch mode, so these steps were sent by hand from the
+  demo wallet, as anyone may; the keeper took them on the fork
+
+Totals (ETH, from the three wallets; nothing else was spent):
+- gas, 12 transactions:                             0.000078058906170 (demo wallet 0.000069692858586 in 7, report-lead
+                                                    0.000005097014048 in 3, fact-checker 0.000003269033536 in 2);
+                                                    the deploy alone 0.000054257039368
+- the 1% to the live burn pot:                      0.00005
+- the desk's 2% job fee to its pool:                0.0001
+- in all, gone for good:                            0.000228058906170 (about $0.52 at $2,283.34 an ETH)
+Demo wallet: 0.007426377434227 before, 0.007175166464217 after. report-lead: 0.00001166826 before, 0.00002324469456 after.
+fact-checker: 0.000000421307432 before, 0.000011996936712 after (each keeps a little gas for later runs).
