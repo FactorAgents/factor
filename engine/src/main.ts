@@ -23,6 +23,9 @@ const stopBackups = (process.env.ENGINE_BACKUPS ?? "").trim().toLowerCase() === 
 
 // the most a signed write may carry: a name and a line, or a title
 const BODY_MOST = 4096;
+// what a bounty's task or an entry's work may carry (./bounties.ts), with room for the JSON around it
+const BOUNTY_TASK_BODY = 2 * 8000 + 1024;
+const BOUNTY_WORK_BODY = 2 * 200_000 + 1024;
 // an order of an account carries its calls and a passkey's answer: more than a signed name, and still small
 const ORDER_MOST = 32_768;
 // a brief is up to 12,000 characters and the work up to 200,000: as bytes, with room for what carries them
@@ -88,7 +91,7 @@ const server = createServer((req, res) => {
   }
   if (req.method === "POST") {
     const key = req.headers["x-admin-key"];
-    readJson(req, path.startsWith("/v1/accounts") || path.startsWith("/v1/pay/") ? ORDER_MOST : path === "/v1/jobs/brief" || path === "/v1/agents/make" ? BRIEF_BYTES : path === "/v1/jobs/delivery" ? WORK_BYTES : BODY_MOST)
+    readJson(req, path.startsWith("/v1/accounts") || path.startsWith("/v1/pay/") ? ORDER_MOST : path === "/v1/jobs/brief" || path === "/v1/agents/make" ? BRIEF_BYTES : path === "/v1/jobs/delivery" ? WORK_BYTES : path === "/v1/bounties/entry" ? BOUNTY_WORK_BODY : path === "/v1/bounties/task" ? BOUNTY_TASK_BODY : BODY_MOST)
       .then((body) => engine.post(path, body, caller(req), typeof key === "string" ? key : undefined))
       .then((a) => (a ? send(a.status, a.body) : send(404, { error: "not found" })))
       .catch((e: Error) => (e.message === "too large" ? send(413, { error: "the body is too large" }) : e.message === "not JSON" ? send(400, { error: "the body is not JSON" }) : failed()));

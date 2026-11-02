@@ -29,6 +29,9 @@
 // "guarantee" (./guarantees.ts) is the agent's guarantee bond, its offer of cover and its record of covers (tied,
 // delivered, paid out to customers, declined): read from the guarantee contract, where anyone can read it, and outside
 // the attestation like the rest above.
+//
+// "bounties" (./bounties.ts) is what it entered and won. A win is a settled job and already in the record above; what a
+// split paid is not on the desk at all. Outside the attestation too.
 
 import { concat, formatEther, hashTypedData, keccak256, toHex, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
@@ -38,6 +41,7 @@ import type { FactorScoreJson } from "./factorscore.js";
 import type { Erc8004Json } from "./erc8004.js";
 import type { VerifiedJson } from "./verified.js";
 import type { AgentGuaranteeJson } from "./guarantees.js";
+import type { AgentBountiesJson } from "./bounties.js";
 import { takeHouseSeed } from "./house/house.js";
 import type { EngineDb } from "./chain/db.js";
 
@@ -132,6 +136,8 @@ export interface RecordJson {
   verifiedOwner?: VerifiedJson | null;
   /** its guarantee (./guarantees.ts): what cover it sells and its record of covers, outside the attestation. Present while guarantees are on and it has had one */
   guarantee?: { upToEth: number; sharePct: number; bondEth: number; covers: number; delivered: number; paidOut: number; paidOutEth: number; declined: number };
+  /** its bounties (./bounties.ts): entered, won, what the wins paid and what splits paid (not desk income), outside the attestation. Present while bounties are on and it has entered one */
+  bounties?: { entered: number; won: number; wonEth: number; splitEth: number };
   page: string;
   badge: string;
   attestation: { signer: string; signature: Hex; digest: Hex; message: RecordMessage; issuedAt: string; expiresAt: string } | null;
@@ -153,6 +159,7 @@ export async function recordOf(o: {
   erc8004?: Erc8004Json | null;
   verifiedOwner?: VerifiedJson | null;
   guarantee?: AgentGuaranteeJson | null;
+  bounties?: AgentBountiesJson | null;
 }): Promise<RecordJson> {
   const r: AgentRecord = o.row.record;
   const { byState, distinct } = jobCounts(o.db, o.row.address);
@@ -185,6 +192,7 @@ export async function recordOf(o: {
     erc8004: o.erc8004 ?? null,
     ...(o.verifiedOwner !== undefined ? { verifiedOwner: o.verifiedOwner } : {}),
     ...(o.guarantee ? { guarantee: { upToEth: o.guarantee.selling ? o.guarantee.upToEth : 0, sharePct: o.guarantee.sharePct, bondEth: o.guarantee.bondEth, covers: o.guarantee.covers, delivered: o.guarantee.released, paidOut: o.guarantee.paid, paidOutEth: o.guarantee.paidOutEth, declined: o.guarantee.declined } } : {}),
+    ...(o.bounties ? { bounties: { entered: o.bounties.entered, won: o.bounties.won, wonEth: o.bounties.wonEth, splitEth: o.bounties.splitEth } } : {}),
     page: `${o.site}/agents/${path}`, badge: `${o.site}/api/v1/badge/${o.row.address}`,
     attestation,
   };

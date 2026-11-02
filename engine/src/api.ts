@@ -33,6 +33,9 @@
 //   GET  /v1/coins/<id>         one coin, by its agent (address or name) or its own address
 //   POST /v1/coins/permission   the maker of an agent Factor runs asks for the agent's permission to launch its coin
 //   GET  /v1/lines              credit lines (lines.ts); /v1/lines/about, /v1/lines/<id>
+//   GET  /v1/bounties           bounties (bounties.ts): the rules, the totals and the board; /v1/bounties/about, /<n>,
+//                               /<n>/entries/<agent>, /<n>/mine/<agent>, /agent/<id>, /poster/<address>
+//   POST /v1/bounties/task|entry|read   a task's words and an entry's work, each hashed against the chain; a poster's read
 //   GET  /v1/guarantees         guarantees (guarantees.ts): the rules, the totals, every agent selling cover, the latest
 //                               covers; /v1/guarantees/about, /agent/<id>, /job/<n>, /cover/<n>, /customer/<address>
 //
@@ -58,7 +61,7 @@ import { allStopped, isSwitch, SWITCHES, stopped, turn } from "./switches.js";
 import { DeskStore, KIND_NAME, RULES, STATE, STATE_NAME, type AdvanceRow, type AgentRecord, type AgentRow, type JobRow, type LedgerRow } from "./desk.js";
 import { briefText, oneLine, Profiles, type Profile, type Written } from "./profiles.js";
 import { canDrawOf, limitOf, scoreOf, scoreParts } from "./score.js";
-import { drawOf, factorScore, incomeOf, sourceOfJob, type FactorScoreJson, type IncomeSource, type ScoreJob } from "./factorscore.js";
+import { drawOf, factorScore, INCOME_WITH_BOUNTIES, incomeOf, sourceOfJob, type FactorScoreJson, type IncomeSource, type ScoreJob } from "./factorscore.js";
 import type { Erc8004 } from "./erc8004.js";
 import type { Pulse } from "./pulse.js";
 import { ethOf, type DeskMind, type Facts, type Note } from "./deskmind.js";
@@ -77,6 +80,7 @@ import type { Verified, VerifiedJson, VerifiedAbout } from "./verified.js";
 import type { CoinJson, Coins } from "./coins.js";
 import type { LineBadge, Lines, LinesAbout } from "./lines.js";
 import type { CoverJson, Guarantees, GuaranteesAbout } from "./guarantees.js";
+import type { AgentBountiesJson, Bounties, BountiesAbout } from "./bounties.js";
 
 export interface Answer {
   status: number;
@@ -133,11 +137,14 @@ export interface EngineView {
   lines?: Lines | null;
   /** guarantees (./guarantees.ts) */
   guarantees?: Guarantees | null;
+  /** bounties (./bounties.ts) */
+  bounties?: Bounties | null;
 }
 
 /** How a job came to its agent (./factorscore.ts), from the engine's links between jobs. */
-export function sourceOf(v: Pick<EngineView, "plans" | "firms" | "subjobs">, agent: string, id: number): IncomeSource {
+export function sourceOf(v: Pick<EngineView, "plans" | "firms" | "subjobs" | "bounties">, agent: string, id: number): IncomeSource {
   return sourceOfJob({
+    isBounty: (j) => !!v.bounties?.on() && !!v.bounties.ofJob(j),
     isMonth: (j) => !!v.plans?.monthOf(j),
     firm: (j) => { const f = v.firms?.firmOfJob(j); return f ? { part: f.part, team: v.firms!.team(f.firm) } : null; },
     isSubjob: (j) => !!v.subjobs?.store.link(j),
@@ -205,6 +212,8 @@ export interface JobJson {
   open?: { id: string; applicants: number; by: "factor" | "customer"; offers?: boolean };
   /** hired with cover (./guarantees.ts): how much, and how the cover stands. Only while guarantees are on */
   cover?: { id: number; coverEth: number; feeEth: number; state: CoverJson["state"] };
+  /** a bounty's prize (./bounties.ts): the bounty, its poster, and the hash the winner delivers as its proof. Only while bounties are on */
+  bounty?: { id: number; title: string | null; poster: string; proof: string | null };
 }
 /** The other agents one agent hired for parts of its jobs, and those that hired it: one line each, with how many jobs. */
 export interface HiringJson { hiredBy: { address: string; name: string; named: boolean; jobs: number }[]; hires: { address: string; name: string; named: boolean; jobs: number }[] }
@@ -323,6 +332,8 @@ export interface FactorState {
   lines: LinesAbout;
   /** guarantees (./guarantees.ts): whether they are on, the contract, the rules and the totals */
   guarantees: GuaranteesAbout;
+  /** bounties (./bounties.ts): whether they are on, the contract, the rules and the totals */
+  bounties: BountiesAbout;
 }
 export interface RosterJson { name: string; does: string; needs: string; delivers: string; fromEth: number; asksAModel: boolean; /** the Desk's opening file on it */ file?: { text: string; at: string } }
 // what Factor's own agents are, said the same before the launch and after it
@@ -583,7 +594,14 @@ export class EngineApi {
       }
       return answer;
     }
-    // guarantees: the rules and totals, every agent selling cover, one agent's guarantee, a cover; kept a few seconds
+    // bounties: the rules and totals, the board, one bounty with its entries once they are public; kept a few seconds
+    if (path === "/v1/bounties" || path.startsWith("/v1/bounties/")) {
+      if (from && this.tooMany(from, "bounties-get", 600)) return { status: 429, body: { error: "too many requests: try again in a minute" } };
+      const v = this.view();
+      if (v.state !== "running") return { status: 503, body: { error: "the engine is not reading the chain yet" } };
+      const answer = this.bountiesGet(v, path, query);
+      if (answer) return answer;
+    }
     if (path === "/v1/guarantees" || path.startsWith("/v1/guarantees/")) {
       if (from && this.tooMany(from, "guarantees-get", 600)) return { status: 429, body: { error: "too many requests: try again in a minute" } };
       const v = this.view();
@@ -708,6 +726,7 @@ export class EngineApi {
         erc8004: v.erc8004?.json(row.address) ?? null,
         ...(v.verified?.on() ? { verifiedOwner: v.verified.json(row.address) } : {}),
         ...((x) => (x ? { guarantee: x } : {}))(v.guarantees?.on() ? v.guarantees.agentJson(row.address) : null),
+        ...((x) => (x ? { bounties: x } : {}))(v.bounties?.on() ? v.bounties.agentJson(row.address) : null),
       }) as unknown as Record<string, unknown>);
     }
     return null;
@@ -762,6 +781,8 @@ export class EngineApi {
       jobs: jobs.map((j, i) => (i < 10 ? { ...j, tree: this.tree(v, j.n) } : j)),
       links,
       ...((p) => (p ? { plans: p } : {}))(this.plansOf(v, { firm: firm.slug })),
+      // the bounties the firm's lead entered and won, which are the firm's: only while bounties are on
+      ...((x) => (x ? { bounties: x } : {}))(v.bounties?.on() ? v.bounties.agentJson(firm.lead) : null),
       // the cover the firm's lead sells, which is the cover on the firm's jobs: only while guarantees are on
       ...((x) => (x ? { guarantee: x } : {}))(v.guarantees?.on() ? v.guarantees.agentJson(firm.lead) : null),
     });
@@ -858,6 +879,57 @@ export class EngineApi {
     const l = v.lines;
     if (l && v.state === "running") return l.about();
     return { enabled: false, contract: null, chainId: v.config.chainId, rules: { feePct: 2, burnPct: 1, poolPct: 1, dueDays: 30, defaultDays: 30, minDrawEth: 0.0001, poolOutMaxPct: 80 }, pool: null, lines: 0, owing: 0 };
+  }
+
+  // Bounties (./bounties.ts), read from the database only. No work leaves here until it is public.
+  private bountiesGet(v: EngineView, path: string, query: URLSearchParams): Answer | null {
+    const b = v.bounties;
+    const on = !!b?.on();
+    if (path === "/v1/bounties/about") return ok({ ...this.bountiesAbout(v) });
+    if (path === "/v1/bounties") {
+      const poster = normalizeAddress(query.get("poster") ?? "");
+      const agent = normalizeAddress(query.get("agent") ?? "");
+      return ok({ ...this.bountiesAbout(v), items: on ? b!.list({ show: query.get("show") ?? "all", ...(poster ? { poster } : {}), ...(agent ? { agent } : {}) }) : [] });
+    }
+    if (!on) return notFound("bounties are switched off for now");
+    let m = /^\/v1\/bounties\/agent\/([0-9a-zA-Z-]{3,42})$/.exec(path);
+    if (m) {
+      const address = normalizeAddress(m[1]) ?? v.profiles?.byName(m[1]!) ?? null;
+      const one = address ? b!.agentJson(address) : null;
+      return ok({ bounties: one });
+    }
+    m = /^\/v1\/bounties\/poster\/(0x[0-9a-fA-F]{40})$/.exec(path);
+    if (m) return ok({ ...b!.posterJson(normalizeAddress(m[1])!) });
+    m = /^\/v1\/bounties\/(\d{1,9})$/.exec(path);
+    if (m) {
+      const one = b!.json(Number(m[1]));
+      return one ? ok({ ...one, history: b!.posterJson(one.poster) }) : notFound("no such bounty");
+    }
+    m = /^\/v1\/bounties\/(\d{1,9})\/entries\/(0x[0-9a-fA-F]{40})$/.exec(path);
+    if (m) {
+      const one = b!.entryWhole(Number(m[1]), normalizeAddress(m[2])!);
+      return one ? ok({ entry: one }) : notFound("no such entry to read: entries are public once a winner is picked or the bounty ends");
+    }
+    m = /^\/v1\/bounties\/(\d{1,9})\/mine\/(0x[0-9a-fA-F]{40})$/.exec(path);
+    if (m) return ok({ ...b!.mine(Number(m[1]), normalizeAddress(m[2])!) });
+    return null;
+  }
+
+  private bountiesAbout(v: EngineView): BountiesAbout {
+    const b = v.bounties;
+    return b ? b.about() : { enabled: false, contract: null, chainId: v.config.chainId, rules: { burnPct: 1, bondPct: 1, jobFeePct: 2, minPrizeEth: 0.005, maxEntries: 25, minOpenH: 1, maxOpenD: 30, pickD: 3, deliverD: 3, graceH: 12, taskBytes: 8000, workBytes: 200_000 }, totals: null };
+  }
+
+  // A task's words and an entry's work, each taken only when it hashes to what the chain holds, and a poster's read.
+  private async bountiesPost(path: string, body: unknown, from: string): Promise<Answer> {
+    const v = this.view();
+    if (!v.bounties || v.state !== "running") return { status: 503, body: { error: "the engine is not reading the chain yet" } };
+    if (!body || typeof body !== "object" || Array.isArray(body)) return { status: 400, body: { error: "the body is not a JSON object" } };
+    if (this.tooMany(from, "bounties", 60)) return { status: 429, body: { error: "too many requests: try again in a minute" } };
+    const b = body as Record<string, unknown>;
+    const a = path === "/v1/bounties/task" ? await v.bounties.putTask(b) : path === "/v1/bounties/entry" ? await v.bounties.putEntry(b) : await v.bounties.read(b);
+    if (a.status === 200 && path !== "/v1/bounties/read") this.cache.clear();
+    return a;
   }
 
   // Guarantees (./guarantees.ts), read from the database only.
@@ -1094,6 +1166,7 @@ export class EngineApi {
     if (path === "/v1/firms/form" || path === "/v1/firms/join" || path === "/v1/firms/leave" || path === "/v1/firms/hire") return this.firmsPost(path, body, from);
     if (path === "/v1/plans/create" || path === "/v1/plans/month" || path === "/v1/plans/stop") return this.plansPost(path, body, from);
     if (path === "/v1/openjobs/post" || path === "/v1/openjobs/apply" || path === "/v1/openjobs/hire" || path === "/v1/openjobs/close" || path === "/v1/openjobs/withdraw") return this.openJobsPost(path, body, from);
+    if (path === "/v1/bounties/task" || path === "/v1/bounties/entry" || path === "/v1/bounties/read") return this.bountiesPost(path, body, from);
     if (path === "/v1/autoapply/rules") return this.autoApplyPost(body, from);
     if (path === "/v1/accounts" || path.startsWith("/v1/accounts/")) return this.accountsPost(path, body, from);
     if (path === "/v1/agents/make" || path === "/v1/agents/pause") return this.hostedPost(path, body, from);
@@ -1127,7 +1200,7 @@ export class EngineApi {
       return ok({ ok: true, stopped: allStopped(v.ctx.db) });
     }
     if (path === "/v1/admin/hide") {
-      const done = b.what === "plan" && typeof b.key === "string" ? !!v.plans?.store.hide(b.key, b.hidden !== false) : b.what === "openjob" && typeof b.key === "string" ? !!v.openjobs?.store.hide(b.key, b.hidden !== false) : b.what === "firm" && typeof b.key === "string" ? !!v.firms?.store.hide(b.key, b.hidden !== false) : (b.what === "agent" || b.what === "job") && (typeof b.key === "string" || typeof b.key === "number") ? v.profiles.hide(b.what, String(b.key), b.hidden !== false) : false;
+      const done = b.what === "plan" && typeof b.key === "string" ? !!v.plans?.store.hide(b.key, b.hidden !== false) : b.what === "openjob" && typeof b.key === "string" ? !!v.openjobs?.store.hide(b.key, b.hidden !== false) : b.what === "bounty" && (typeof b.key === "string" || typeof b.key === "number") ? !!v.bounties?.hide(String(b.key), b.hidden !== false) : b.what === "firm" && typeof b.key === "string" ? !!v.firms?.store.hide(b.key, b.hidden !== false) : (b.what === "agent" || b.what === "job") && (typeof b.key === "string" || typeof b.key === "number") ? v.profiles.hide(b.what, String(b.key), b.hidden !== false) : false;
       this.cache.clear();
       return done ? ok({ ok: true }) : notFound("nothing by that key");
     }
@@ -1185,7 +1258,9 @@ export class EngineApi {
     return rows.map((j) => {
       const out = jobJson(j, advances.get(j.id) ?? [], titles.get(j.id), demo.has(j.id), deals.get(j.id), v.subjobs?.store.link(j.id) ?? undefined, this.firmOf(v, j.id), this.planOf(v, j.id), v.openjobs?.of(j.id) ?? undefined);
       const c = covers.get(j.id);
-      return c ? { ...out, cover: { id: c.id, coverEth: Number(formatEther(BigInt(c.amount))), feeEth: Number(formatEther(BigInt(c.fee))), state: c.state } } : out;
+      const withCover = c ? { ...out, cover: { id: c.id, coverEth: Number(formatEther(BigInt(c.amount))), feeEth: Number(formatEther(BigInt(c.fee))), state: c.state } } : out;
+      const b = v.bounties?.on() ? v.bounties.ofJob(j.id) : null;
+      return b ? { ...withCover, bounty: v.bounties!.jobLink(b) } : withCover;
     });
   }
 
@@ -1248,6 +1323,8 @@ export class EngineApi {
       ...((x) => (x ? { coin: x } : {}))(v.coins?.on() ? v.coins.one(row.address) : null),
       // its credit line, from its key's side or its line account's: only while lines are on and it has one
       ...((x) => (x ? { line: x } : {}))(v.lines?.on() ? v.lines.one(row.address) : null),
+      // its bounties, entered and won: only while bounties are on and it has entered one
+      ...((x) => (x ? { bounties: x } : {}))(v.bounties?.on() ? v.bounties.agentJson(row.address) : null),
       // its guarantee bond, offer and covers: only while guarantees are on and it has ever had one
       ...((x) => (x ? { guarantee: x } : {}))(v.guarantees?.on() ? v.guarantees.agentJson(row.address, true) : null),
     });
@@ -1274,7 +1351,7 @@ export class EngineApi {
     const both = merged ? [merged.key, merged.account] : [row.address];
     const jobs = db.q(`SELECT id, state, customer, price, fee, closed_at, early, from_pool FROM desk_jobs WHERE agent IN (${both.map(() => "?").join(", ")}) AND state IN (?, ?)`).all(...both, STATE.settled, STATE.half) as ScoreJob[];
     // each job once, under the first way that fits it
-    const income = incomeOf(jobs, (id): IncomeSource => sourceOf(v, row.address, id));
+    const income = incomeOf(jobs, (id): IncomeSource => sourceOf(v, row.address, id), v.bounties?.on() ? INCOME_WITH_BOUNTIES : undefined);
     const distinct = new Set(jobs.map((j) => j.customer)).size;
     const out = v.subjobs ? (db.q("SELECT s.price, d.state FROM subjobs s LEFT JOIN desk_jobs d ON d.id = s.job_id WHERE s.hirer = ?").all(row.address) as { price: string; state: number | null }[]) : [];
     const value = out.reduce((n, x) => n + BigInt(x.price), 0n);
@@ -1477,7 +1554,8 @@ export class EngineApi {
     const coins = { enabled: coinsOn, launcher: coinsOn ? c.coins.launcher : null, count: coinList.length, items: coinList.slice(0, 6) };
     const lines = this.linesAbout(v);
     const guarantees = this.guaranteesAbout(v);
-    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused, roster: this.rosterJson(v), hosted, pulse: pulseJson(v, 8), desk: this.deskJson(v), signups, activity, pay, subjobs, firms, plans, erc8004, openJobs, autoApply, verified, coins, lines, guarantees };
+    const bounties = this.bountiesAbout(v);
+    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused, roster: this.rosterJson(v), hosted, pulse: pulseJson(v, 8), desk: this.deskJson(v), signups, activity, pay, subjobs, firms, plans, erc8004, openJobs, autoApply, verified, coins, lines, guarantees, bounties };
     if (!r) {
       return { ...base, launched: false, stats: { advancedEth: 0, settledJobs: 0, jobs: 0, poolEth: 0, reserveEth: 0, outEth: 0, heldEth: 0, burnedTokens: 0, supplyLeft: SUPPLY, agents: 0, demoJobs: 0, lostEth: 0, poolFromTradingEth: 0 }, burn: null, agents: [], jobs: [], events: [], burns: [] };
     }
@@ -1577,6 +1655,7 @@ export class EngineApi {
       coins: v.coins ? v.coins.health() : null,
       lines: v.lines ? v.lines.health() : null,
       guarantees: v.guarantees ? v.guarantees.health() : null,
+      bounties: v.bounties ? v.bounties.health() : null,
       erc8004: v.erc8004 ? { ...v.erc8004.about(), spentTodayWei: v.erc8004.spentToday().toString(), gasDayWei: c.erc8004.gasDayWei.toString(), scan: ctx.db.getJson("erc8004:scan") } : null,
       events: ctx.db.count("chain_events"),
       ledger: ctx.db.count("ledger"),

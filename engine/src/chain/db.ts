@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS engine_locks (name TEXT PRIMARY KEY, holder TEXT NOT 
 -- Everything the engine sent, would have sent (dry), or could not send: what, why, and how it ended.
 CREATE TABLE IF NOT EXISTS engine_actions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  kind TEXT NOT NULL,                -- sweep, claim_token, burn, settle_job, refund_job, collect, return_compute, erc8004, line, guarantee, unstick
+  kind TEXT NOT NULL,                -- sweep, claim_token, burn, settle_job, refund_job, collect, return_compute, erc8004, line, guarantee, bounty, unstick
   ref TEXT NOT NULL DEFAULT '',
   mode TEXT NOT NULL,                -- dry or live
   status TEXT NOT NULL,              -- dry, signed, sent, done, failed, replaced
@@ -459,6 +459,54 @@ CREATE INDEX IF NOT EXISTS guarantee_covers_customer ON guarantee_covers (custom
 CREATE INDEX IF NOT EXISTS guarantee_covers_job ON guarantee_covers (job);
 CREATE INDEX IF NOT EXISTS guarantee_covers_state ON guarantee_covers (state);
 CREATE INDEX IF NOT EXISTS guarantee_covers_block ON guarantee_covers (block);
+-- Bounties (../bounties.ts): each bounty as its logs say, and each entry. The words and the work are in tables of their own.
+CREATE TABLE IF NOT EXISTS bounties (
+  id INTEGER PRIMARY KEY,
+  block INTEGER NOT NULL,
+  at INTEGER NOT NULL,
+  tx_hash TEXT NOT NULL,
+  poster TEXT NOT NULL,
+  prize TEXT NOT NULL,
+  fee TEXT NOT NULL,
+  bond TEXT NOT NULL,
+  deadline INTEGER NOT NULL,
+  min_score INTEGER NOT NULL,
+  task_hash TEXT NOT NULL,
+  state TEXT NOT NULL DEFAULT 'open',
+  entries INTEGER NOT NULL DEFAULT 0,
+  winner TEXT,
+  job INTEGER,
+  due_at INTEGER,
+  picked_at INTEGER,
+  picked_tx TEXT,
+  bonds_back INTEGER NOT NULL DEFAULT 0,
+  closed_at INTEGER,
+  closed_tx TEXT,
+  share TEXT NOT NULL DEFAULT '0',
+  paid_to INTEGER NOT NULL DEFAULT 0,
+  burned TEXT NOT NULL DEFAULT '0',
+  to_poster TEXT NOT NULL DEFAULT '0'
+);
+CREATE INDEX IF NOT EXISTS bounties_poster ON bounties (poster, id);
+CREATE INDEX IF NOT EXISTS bounties_winner ON bounties (winner);
+CREATE INDEX IF NOT EXISTS bounties_job ON bounties (job);
+CREATE INDEX IF NOT EXISTS bounties_state ON bounties (state);
+CREATE INDEX IF NOT EXISTS bounties_block ON bounties (block);
+CREATE TABLE IF NOT EXISTS bounty_entries (
+  bounty INTEGER NOT NULL,
+  agent TEXT NOT NULL,
+  block INTEGER NOT NULL,
+  at INTEGER NOT NULL,
+  tx_hash TEXT NOT NULL,
+  from_addr TEXT NOT NULL,
+  hash TEXT NOT NULL,
+  n INTEGER NOT NULL,
+  got_share TEXT NOT NULL DEFAULT '0',
+  got_bond TEXT NOT NULL DEFAULT '0',
+  PRIMARY KEY (bounty, agent)
+);
+CREATE INDEX IF NOT EXISTS bounty_entries_agent ON bounty_entries (agent, bounty);
+CREATE INDEX IF NOT EXISTS bounty_entries_block ON bounty_entries (block);
 -- Each move on a guarantee: a bond in or out, an offer, a cover ended, a payout refused.
 CREATE TABLE IF NOT EXISTS guarantee_moves (
   tx_hash TEXT NOT NULL,
@@ -482,7 +530,7 @@ CREATE TABLE IF NOT EXISTS job_titles (
 );
 `;
 
-export type ActionKind = "sweep" | "retry_split" | "claim_token" | "burn" | "settle_job" | "refund_job" | "collect" | "return_compute" | "skim" | "relay" | "erc8004" | "coin_sweep" | "line" | "guarantee" | "unstick";
+export type ActionKind = "sweep" | "retry_split" | "claim_token" | "burn" | "settle_job" | "refund_job" | "collect" | "return_compute" | "skim" | "relay" | "erc8004" | "coin_sweep" | "line" | "guarantee" | "bounty" | "unstick";
 export type ActionStatus = "dry" | "signed" | "sent" | "done" | "failed" | "replaced";
 
 export interface ActionRow {
@@ -514,7 +562,7 @@ export interface EventRow {
 }
 
 // The tables a stretch of blocks writes to, all keyed by block: what a reorg or a reindex takes back.
-const BY_BLOCK = ["chain_events", "chain_splits", "chain_burns", "ledger", "desk_advances", "coins", "coin_splits", "coin_trades", "coin_transfers", "lines", "line_moves", "guarantee_bonds", "guarantee_covers", "guarantee_moves"];
+const BY_BLOCK = ["chain_events", "chain_splits", "chain_burns", "ledger", "desk_advances", "coins", "coin_splits", "coin_trades", "coin_transfers", "lines", "line_moves", "guarantee_bonds", "guarantee_covers", "guarantee_moves", "bounties", "bounty_entries"];
 
 export class EngineDb {
   readonly holder = randomBytes(6).toString("hex"); // this process, for the locks

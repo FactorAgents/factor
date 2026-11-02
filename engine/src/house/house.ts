@@ -34,6 +34,7 @@ import { HOUSE_FIRM, type Firms } from "../firms.js";
 import type { Subjobs } from "../subjobs.js";
 import { SERVICES, type Asked, type Done, type Service } from "./services.js";
 import type { Runner } from "../autoapply.js";
+import type { HouseHands } from "../bounties.js";
 
 type Env = Record<string, string | undefined>;
 
@@ -161,6 +162,8 @@ export interface HouseDeps {
   /** auto-apply (../autoapply.ts): whether the agent draws the half up front on a job it applied to on its own, and the word that it is delivering */
   earlyHalf?: (jobId: number, agent: string) => boolean;
   delivering?: (jobId: number, agent: string, drew: bigint, title: string) => void;
+  /** bounties (../bounties.ts): the job is a prize this agent won: the work it entered and its hash, delivered with no second call to a model */
+  bountyWin?: (jobId: number, agent: string) => { work: string; proof: Hex } | null;
 }
 
 export class House {
@@ -424,6 +427,15 @@ export class House {
       return;
     }
 
+    // a bounty's prize it won: the work is done and paid for, and it only has to be delivered
+    if ((!row || row.state === "waiting") && job.state === 1 && nowS <= job.due_at + GRACE_S) {
+      const won = this.d.bountyWin?.(job.id, a.address!);
+      if (won) {
+        this.save(job.id, a, { state: "worked", work: won.work, kind: /^\s*<!doctype html/i.test(won.work) ? "html" : "text", tries: 0, next_at: 0 });
+        row = this.row(job.id)!;
+      }
+    }
+
     if (!row || row.state === "waiting") {
       if (job.state !== 1) return; // not ours to decide any more
       if (nowS > job.due_at + GRACE_S) return this.save(job.id, a, { state: "gave_up", note: "its time had run out before it could be done" });
@@ -475,7 +487,7 @@ export class House {
       // order, so the advance is never out on a job that is not delivered (an advance kept that way bars an agent).
       // The same for a job it applied to on its own, when its owner's rules say it takes the half up front.
       const early = !!job.allow_early && job.state === 1 && ((this.demoCustomer !== null && job.customer === this.demoCustomer) || !!this.d.earlyHalf?.(job.id, a.address!));
-      const calls = [...(early ? [deskCall(this.d.desk, "draw", [BigInt(job.id), BigInt(job.price) / 2n, 0])] : []), deskCall(this.d.desk, "deliver", [BigInt(job.id), proofOf(row.work)])];
+      const calls = [...(early ? [deskCall(this.d.desk, "draw", [BigInt(job.id), BigInt(job.price) / 2n, 0])] : []), deskCall(this.d.desk, "deliver", [BigInt(job.id), this.d.bountyWin?.(job.id, a.address!)?.proof ?? proofOf(row.work)])];
       const relay = await this.orderFor(a, job, calls);
       if (relay) {
         this.save(job.id, a, { state: "delivering", relay });
@@ -560,6 +572,30 @@ export class House {
       const [, answer] = await this.d.chain.read<readonly [bigint, bigint, bigint, bigint, bigint]>({ to: feed.address, abi: FEED_ABI as never, functionName: "latestRoundData" });
       return answer > 0n ? answer : null;
     } catch { return null; }
+  }
+
+  // ---------- what they lend to bounties ----------
+
+  /**
+   * Bounties (../bounties.ts) use the agents' hands: their accounts, their services and the model, and keep their own
+   * books and their own cap. Nothing while the agents are stopped or the engine is not sending. Hosted agents are their
+   * makers': they do not enter on their own.
+   */
+  bountyHands(): HouseHands | null {
+    if (!this.cfg.enabled || !this.d.live() || stopped(this.d.db, "house") || stopped(this.d.db, "keeper")) return null;
+    return {
+      ready: () => this.agents.filter((a) => !a.hosted && a.setUp && a.address).map((a) => ({ name: a.service.name, address: a.address!, service: a.service })),
+      balance: (address) => this.d.chain.balance(address),
+      work: (service, title, brief) => service.work!(title, brief, { chain: this.d.chain, now: Math.floor(this.d.now() / 1000), desk: this.d.desk, pace: () => new Promise((r) => setTimeout(r, this.d.paceMs ?? 300)) }),
+      ask: async (q) => { const answer = await this.ask(q); return { text: answer.text, costMicro: answer.costMicro }; },
+      worstCost: (q) => {
+        const price: Price = DEFAULT_MODELS[this.cfg.model] ?? DEFAULT_MODELS["claude-sonnet-5-5"]!;
+        // a token is at least a byte or so of what is asked: counted as one per three bytes, on the high side
+        return costMicro({ input: Math.ceil((q.system.length + q.user.length) / 3), output: q.maxTokens, cacheWrite5m: 0, cacheWrite1h: 0, cacheRead: 0 }, price, 0);
+      },
+      order: (agent, call) => { const a = this.agents.find((x) => x.address === agent); return a ? this.order(a, [call]) : Promise.resolve(null); },
+      relay: (id) => { const sent = this.d.accounts.store.relay(id); return sent?.status === "done" ? "done" : sent && (sent.status === "queued" || sent.status === "sent") ? "waiting" : "failed"; },
+    };
   }
 
   // ---------- the model ----------

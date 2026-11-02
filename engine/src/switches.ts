@@ -31,13 +31,16 @@
 //   guarantees guarantees (../guarantees.ts): every bond, offer and cover hidden, and no tie, close or lapse by the keeper.
 //             Off unless GUARANTEES=on, which is how it starts: this switch only stops it. The chain is still read, so no
 //             cover is missed, and anyone can still bond, reserve, tie, close or let lapse on the chain itself.
+//   bounties  bounties (../bounties.ts): every bounty hidden, and no close, no return of bonds and no entry by the keeper or
+//             Factor's own agents. Off unless BOUNTIES=on, which is how it starts: this switch only stops it. The chain is
+//             still read, so nothing is missed, and anyone can still post, enter, pick or close on the chain itself.
 //
 // A switch is turned with POST /v1/admin/switch and the owner's key, or set at start with ENGINE_STOP (names with
 // commas between them). It is kept in the database, so it holds across a restart until it is turned back.
 
 import type { EngineDb } from "./chain/db.js";
 
-export const SWITCHES = ["keeper", "accounts", "compute", "house", "hiring", "erc8004", "autoapply", "bids", "verified", "coins", "lines", "guarantees"] as const;
+export const SWITCHES = ["keeper", "accounts", "compute", "house", "hiring", "erc8004", "autoapply", "bids", "verified", "coins", "lines", "guarantees", "bounties"] as const;
 export type Switch = (typeof SWITCHES)[number];
 const key = (name: Switch) => `switch:${name}`;
 

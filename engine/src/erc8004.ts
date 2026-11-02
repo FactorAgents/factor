@@ -23,7 +23,8 @@
 //   PAST    ERC8004_BACKFILL=on writes the settled jobs from before an agent was linked, once, oldest first.
 //
 // A job hired with cover (./guarantees.ts) says so in its file: the cover and the guarantee contract. A covered job that
-// was not delivered is refunded, not settled, so it is not written: the cover paid out shows on the agent's record.
+// was not delivered is refunded, not settled, so it is not written: the cover paid out shows on the agent's record. A
+// bounty's prize (./bounties.ts) is a settled job like any other, written with the tag "bounty" and the bounty's number.
 //
 // What the registry itself holds to: the writer may not be the identity's owner or one it approved (it says
 // "Self-feedback not allowed"). So the gas wallet must never own an identity Factor writes to; a job the registry
@@ -53,7 +54,7 @@ export const VALUE_DECIMALS = 0;
 /** The first tag of every entry Factor writes: what an app filters on to read Factor's entries alone. */
 export const TAG1 = "factor";
 /** The second tag: how the job came to the agent. */
-export const TAG2: Record<IncomeSource, string> = { jobs: "job", monthly: "monthly", subjobs: "subjob", firm: "firm" };
+export const TAG2: Record<IncomeSource, string> = { jobs: "job", monthly: "monthly", subjobs: "subjob", firm: "firm", bounties: "bounty" };
 
 export interface Erc8004Config {
   /** ERC8004=on: off unless it is said */
@@ -310,6 +311,8 @@ export interface FeedbackFile {
     settledTx: string | null;
     /** the job was hired with cover (./guarantees.ts): how much, and the contract that held it back from the agent's bond */
     guaranteed?: { coverWei: string; contract: string };
+    /** the job was a bounty's prize (./bounties.ts): its number, and the contract that is its customer */
+    bounty?: { id: number; contract: string };
   };
 }
 
@@ -318,7 +321,7 @@ export interface FeedbackFile {
  * valueDecimals, tags, proofOfPayment) with Factor's own part beside it. Everything in it is fixed once the job has
  * settled, so it never changes; it is written as compact JSON, and its keccak256 is the hash on the chain.
  */
-export function feedbackFile(o: { chainId: number; identity: string; agentId: string; writer: string; desk: string; site: string; job: JobRow; settledTx: string | null; tag2: string; cover?: { coverWei: string; contract: string } | null }): { file: FeedbackFile; body: string; hash: Hex; value: number } {
+export function feedbackFile(o: { chainId: number; identity: string; agentId: string; writer: string; desk: string; site: string; job: JobRow; settledTx: string | null; tag2: string; cover?: { coverWei: string; contract: string } | null; bounty?: { id: number; contract: string } | null }): { file: FeedbackFile; body: string; hash: Hex; value: number } {
   const j = o.job;
   const full = j.state === STATE.settled;
   const value = full ? VALUE.settled : VALUE.half;
@@ -348,6 +351,7 @@ export function feedbackFile(o: { chainId: number; identity: string; agentId: st
       lockedTx: j.locked_tx || null,
       settledTx: o.settledTx,
       ...(o.cover ? { guaranteed: { coverWei: o.cover.coverWei, contract: getAddress(o.cover.contract) } } : {}),
+      ...(o.bounty ? { bounty: { id: o.bounty.id, contract: getAddress(o.bounty.contract) } } : {}),
     },
   };
   const body = JSON.stringify(file);
@@ -384,6 +388,8 @@ export interface Erc8004Deps {
   sameHand?: (a: string, b: string) => boolean;
   /** the cover a job was hired with, while guarantees are read (./guarantees.ts): said in the entry's file */
   coverOf?: (job: number) => { coverWei: string; contract: string } | null;
+  /** the bounty a job's prize came from, while bounties are read (./bounties.ts): said in the entry's file */
+  bountyOf?: (job: number) => { id: number; contract: string } | null;
   log: (line: string) => void;
 }
 
@@ -616,7 +622,7 @@ export class Erc8004 {
     const agentId = link.agent_id!;
     const had = this.store.entry(job.id);
     // a file made for an earlier try is kept word for word, as long as it is for the same identity and writer
-    const made = had && had.agent_id === agentId && had.writer === writer ? { body: had.body, hash: had.hash as Hex, value: had.value } : feedbackFile({ chainId: this.d.chainId, identity: this.cfg.identity, agentId, writer, desk: this.d.desk, site: this.cfg.site, job, settledTx, tag2, cover: this.d.coverOf?.(job.id) ?? null });
+    const made = had && had.agent_id === agentId && had.writer === writer ? { body: had.body, hash: had.hash as Hex, value: had.value } : feedbackFile({ chainId: this.d.chainId, identity: this.cfg.identity, agentId, writer, desk: this.d.desk, site: this.cfg.site, job, settledTx, tag2, cover: this.d.coverOf?.(job.id) ?? null , bounty: this.d.bountyOf?.(job.id) ?? null});
     const uri = `${this.cfg.site}/api/v1/erc8004/feedback/${job.id}`;
     const call: CallSpec = { to: this.cfg.reputation, abi: erc8004ReputationAbi as Abi, functionName: "giveFeedback", args: [BigInt(agentId), BigInt(made.value), VALUE_DECIMALS, TAG1, tag2, "", uri, made.hash] };
     return { call, row: { job_id: job.id, agent: job.agent, agent_id: agentId, writer, value: made.value, tag2, uri, hash: made.hash, body: made.body, past: past ? 1 : 0, status: "queued", tx_hash: null, feedback_index: null, block: null, error: null } };

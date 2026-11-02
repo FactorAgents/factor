@@ -50,7 +50,7 @@ import type { ActionKind, ActionRow } from "./db.js";
 import { ponsEscrowAbi } from "./pons.js";
 
 export type SendKind = Exclude<ActionKind, "unstick">;
-export const KINDS: SendKind[] = ["relay", "sweep", "coin_sweep", "retry_split", "claim_token", "burn", "guarantee", "settle_job", "refund_job", "collect", "line", "return_compute", "skim", "erc8004"];
+export const KINDS: SendKind[] = ["relay", "sweep", "coin_sweep", "retry_split", "claim_token", "burn", "guarantee", "bounty", "settle_job", "refund_job", "collect", "line", "return_compute", "skim", "erc8004"];
 // In dry mode nothing changes on the chain, so a trigger stays true: what would be sent is shown again this often.
 export const DRY_REPEAT_S = 1800;
 const BPS = 10_000n;
@@ -822,6 +822,15 @@ async function guaranteeStep(ctx: Ctx, head: Head): Promise<string> {
   return say(ctx, "guarantee", await ctx.guarantees.step(ctx, head, (kind, ref, call, detail, feeCap) => attempt(ctx, kind, ref, call, detail, feeCap)));
 }
 
+// ---------- bounties ----------
+
+// Bounties closed when their time has come, and bonds sent back after a pick (../bounties.ts decides; the attempt is the
+// same as every other one here).
+async function bountyStep(ctx: Ctx, head: Head): Promise<string> {
+  if (!ctx.bounties) return say(ctx, "bounty", "bounties are not switched on");
+  return say(ctx, "bounty", await ctx.bounties.step(ctx, head, (kind, ref, call, detail, feeCap) => attempt(ctx, kind, ref, call, detail, feeCap)));
+}
+
 // ---------- credit lines ----------
 
 // Income waiting in a line account whose line owes, swept into the line; a line still owed 30 days past due, recovered
@@ -839,6 +848,7 @@ const STEPS: [SendKind, (ctx: Ctx, head: Head) => Promise<string>][] = [
   ["claim_token", claimToken],
   ["burn", burn],
   ["guarantee", guaranteeStep],
+  ["bounty", bountyStep],
   ["settle_job", settleJobs],
   ["refund_job", refundJobs],
   ["collect", collect],
