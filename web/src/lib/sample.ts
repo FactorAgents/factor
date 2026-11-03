@@ -1,7 +1,7 @@
 // Sample figures, in exactly the engine's shape, so every page can be built, looked at and tested with no chain
 // behind it. Nothing here is real. It is shown only when FACTOR_SAMPLE=1 (see data.ts): a site with no engine shows
 // an empty desk, never these.
-import type { Advance, Agent, AgentGuarantee, AgentPage, Applicant, AutoApplyStatus, Bounty, BountyEntry, BountyHistory, BountyList, BountyPage, Burn, Coin, Cover, CreditLine, Draw, FactorScore, FactorState, Firm, FirmPage, IncomeLine, IncomeSource, Job, JobPage, LedgerEvent, OpenJob, OpenJobList, OpenJobPage, Page, Params, Plan, PlanPage, PlansSummary, ScorePart } from "./types";
+import type { Advance, Agent, AgentGuarantee, AgentMilestones, AgentPage, MilestonePlan, Applicant, AutoApplyStatus, Bounty, BountyEntry, BountyHistory, BountyList, BountyPage, Burn, Coin, Cover, CreditLine, Draw, FactorScore, FactorState, Firm, FirmPage, IncomeLine, IncomeSource, Job, JobPage, LedgerEvent, OpenJob, OpenJobList, OpenJobPage, Page, Params, Plan, PlanPage, PlansSummary, ScorePart } from "./types";
 
 // the rulebook's numbers (docs/RULEBOOK.md, section 9)
 const params: Params = { advanceMaxPct: 50, advanceFeePct: 1, jobFeePct: 2, graceHours: 12, reviewHours: 24, rejectedPct: 50, reserveMinPct: 20, minJobEth: 0.001 };
@@ -366,6 +366,28 @@ export function sampleBounty(id: number): BountyPage | null {
   return b ? { ...b, ...(b.revealed ? { items: bountyEntries[id] ?? [] } : {}), history: bountyHistory() } : null;
 }
 
+// the sample's one job in stages: page-smith, three stages, the first paid (job 408), the second on the desk (job 416)
+const PAGES = addressOf("page-smith");
+const stagePlan = (): MilestonePlan => {
+  const j1 = jobs.find((j) => j.n === 408)!, j2 = jobs.find((j) => j.n === 416)!;
+  return {
+    id: 1, customer: A(91), agent: { address: PAGES, name: "page-smith", named: true, score: agents.find((a) => a.name === "page-smith")!.score, barred: false },
+    totalEth: 0.09, totalWei: "90000000000000000", count: 3, allowEarly: false, termsHash: "0x" + "cd".repeat(32), title: "A site for a coffee roaster", hidden: false, state: "running",
+    current: 2, postedAt: j1.lockedAt, tx: TX(970), paidEth: 0.035,
+    stages: [
+      { n: 1, priceEth: 0.035, priceWei: "35000000000000000", timeS: 3 * 86_400, status: "paid", title: j1.title, job: { n: 408, id: "0408" }, dueAt: j1.dueAt, openedAt: j1.lockedAt, deliveredAt: j1.deliveredAt, paidAt: j1.settledAt, paidTx: TX(971) },
+      { n: 2, priceEth: 0.025, priceWei: "25000000000000000", timeS: 7 * 86_400, status: "open", title: j2.title, job: { n: 416, id: "0416" }, dueAt: j2.dueAt, openedAt: j2.lockedAt },
+      { n: 3, priceEth: 0.03, priceWei: "30000000000000000", timeS: 7 * 86_400, status: "waiting", title: "The order page", expectedDueAt: new Date(Date.parse(j2.dueAt) + 7 * 86_400_000).toISOString() },
+    ],
+  };
+};
+for (const [n, stage] of [[408, 1], [416, 2]] as const) jobs.find((j) => j.n === n)!.milestone = { id: 1, stage, count: 3, title: "A site for a coffee roaster", stageTitle: jobs.find((j) => j.n === n)!.title, customer: A(91), state: "running" };
+/** The job in stages a sample job is a stage of. */
+export function sampleMilestoneOfJob(n: number): MilestonePlan | null {
+  return n === 408 || n === 416 ? stagePlan() : null;
+}
+const agentMilestones = (address: string): AgentMilestones | null => (address === PAGES ? { plans: 1, running: 1, done: 0, missed: 0, declined: 0, rejected: 0, stagesPaid: 1, paidEth: 0.035, items: [stagePlan()] } : null);
+
 /** The sample's guarantees: the one agent selling cover, and its covers. */
 export function sampleGuarantees(): { agents: AgentGuarantee[]; covers: Cover[] } {
   return { agents: [{ ...guarantee, items: undefined }], covers };
@@ -413,6 +435,12 @@ export function sampleState(): FactorState {
       rules: { burnPct: 1, bondPct: 1, jobFeePct: 2, minPrizeEth: 0.005, maxEntries: 25, minOpenH: 1, maxOpenD: 30, pickD: 3, deliverD: 3, graceH: 12, taskBytes: 8000, workBytes: 200_000 },
       totals: { bounties: 4, prizesEth: 0.095, openEth: 0.0505, wonEth: 0.02, splitEth: 0.005, burnedEth: 0.00025, open: 2, entries: 9 },
     },
+    // the sample has no engine: its job in stages is shown, and nothing can be hired, accepted or stepped from it
+    milestones: {
+      enabled: true, contract: null, chainId: 4663,
+      rules: { minStages: 2, maxStages: 6, minStageEth: 0.001, minTimeH: 1, maxTimeD: 30, jobFeePct: 2, advanceFeePct: 1, graceH: 12, reviewH: 24, titleChars: 80, briefChars: 12_000, termsBytes: 40_000 },
+      totals: { plans: 1, budgetsEth: 0.09, paidEth: 0.035, returnedEth: 0, heldEth: 0.03, running: 1, done: 0, stagesPaid: 1 },
+    },
     // the sample has no engine: its guarantee is shown, and nothing can be bonded or covered from it
     guarantees: {
       enabled: true, contract: null, chainId: 4663,
@@ -425,7 +453,7 @@ export function sampleState(): FactorState {
 const find = (id: string): Agent | undefined => agents.find((a) => a.address === id.toLowerCase() || (a.named && a.name === id.toLowerCase()));
 export function sampleAgent(id: string): AgentPage | null {
   const a = find(id);
-  return a ? { ...(RAETO_ON && a.name === "orbit-ops" ? { raetoSpend: RAETO_SPEND } : {}), agent: a, factorScore: { ...sampleScore(a, SETTLED_BY[a.name] ?? {}), ...(a.name === "orbit-ops" ? { line: { other: LINE_ACCOUNT, role: "key" as const, onTime: 1, late: 0, defaulted: false, points: 0, why: "Its credit line has always been repaid on time." } } : {}) }, jobs: jobs.filter((j) => j.agentId === a.address), events: events.filter((x) => x.agentId === a.address), ...(a.name === "quill-02" ? { plans: planSummary() } : {}), ...(a.name === "lumen-07" ? { erc8004: sampleErc8004(a.address) } : {}), ...((c) => (c ? { coin: c } : {}))(sampleCoin(a.address)), ...((l) => (l ? { line: l } : {}))(sampleLine(a.address)), ...((g) => (g ? { guarantee: g } : {}))(sampleGuarantee(a.address)) } : null;
+  return a ? { ...(RAETO_ON && a.name === "orbit-ops" ? { raetoSpend: RAETO_SPEND } : {}), agent: a, factorScore: { ...sampleScore(a, SETTLED_BY[a.name] ?? {}), ...(a.name === "orbit-ops" ? { line: { other: LINE_ACCOUNT, role: "key" as const, onTime: 1, late: 0, defaulted: false, points: 0, why: "Its credit line has always been repaid on time." } } : {}) }, jobs: jobs.filter((j) => j.agentId === a.address), events: events.filter((x) => x.agentId === a.address), ...(a.name === "quill-02" ? { plans: planSummary() } : {}), ...(a.name === "lumen-07" ? { erc8004: sampleErc8004(a.address) } : {}), ...((c) => (c ? { coin: c } : {}))(sampleCoin(a.address)), ...((l) => (l ? { line: l } : {}))(sampleLine(a.address)), ...((g) => (g ? { guarantee: g } : {}))(sampleGuarantee(a.address)), ...((x) => (x ? { milestones: x } : {}))(agentMilestones(a.address)) } : null;
 }
 /** The sample's one agent with an ERC-8004 identity: an entry for each of its settled jobs. */
 function sampleErc8004(address: string): NonNullable<AgentPage["erc8004"]> {

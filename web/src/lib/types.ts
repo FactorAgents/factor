@@ -51,6 +51,8 @@ export interface Job {
   open?: { id: string; applicants: number; by: "factor" | "customer"; /** the customer picked an offer: the price locked is the agent's own */ offers?: boolean };
   /** a bounty's prize: the bounty, its poster, and the hash its winner delivers as its proof. Only while bounties are on */
   bounty?: { id: number; title: string | null; poster: string; proof: string | null };
+  /** a stage of a job in stages: the plan, which stage of how many, its customer. Its accept and reject go through the milestone contract. Only while milestones are on */
+  milestone?: MilestoneJobLink;
   /** hired with cover: how much, the fee, and how the cover stands. Only while guarantees are on */
   cover?: { id: number; coverEth: number; feeEth: number; state: CoverState };
 }
@@ -58,7 +60,7 @@ export interface Job {
 export interface ScorePart { name: string; value: string; points: number; max: number }
 
 /** How a settled job came: hired by a customer, a month of a plan, a part of another agent's job, a firm's work. */
-export type IncomeSource = "jobs" | "monthly" | "subjobs" | "firm";
+export type IncomeSource = "jobs" | "monthly" | "subjobs" | "firm" | "bounties" | "milestones";
 export interface IncomeLine { source: IncomeSource; name: string; line: string; settled: number; settledAtHalf: number; valueWei: string; valueEth: number; feesWei: string; feesEth: number }
 /** What the desk lets an agent draw from the pool, with the words for why. A firm's is its lead's, with each member's. */
 export interface Draw {
@@ -188,6 +190,30 @@ export interface BountyHistory { poster: string; posted: number; won: number; un
 export interface BountyPage extends Bounty { items?: BountyEntry[]; history?: BountyHistory }
 export interface BountyList extends BountiesAbout { items: Bounty[] }
 export interface AgentBounties { entered: number; won: number; wonEth: number; splitEth: number; items: Bounty[] }
+
+/** Milestones (engine/src/milestones.ts, MilestonesAbout): whether they are on, the contract, the rules and the totals. */
+export interface MilestonesAbout {
+  enabled: boolean; contract: string | null; chainId: number;
+  rules: { minStages: number; maxStages: number; minStageEth: number; minTimeH: number; maxTimeD: number; jobFeePct: number; advanceFeePct: number; graceH: number; reviewH: number; titleChars: number; briefChars: number; termsBytes: number };
+  totals: { plans: number; budgetsEth: number; paidEth: number; returnedEth: number; heldEth: number; running: number; done: number; stagesPaid: number } | null;
+}
+/** Where one stage stands: not on the desk yet, on it, delivered, paid, or how it ended the plan; returned: never started, back to the customer. */
+export type StageStatus = "waiting" | "open" | "delivered" | "paid" | "missed" | "declined" | "rejected" | "returned";
+export type PlanState = "running" | "done" | "missed" | "declined" | "rejected";
+/** One stage (engine/src/milestones.ts, MilestoneStageJson). */
+export interface MilestoneStage {
+  n: number; priceEth: number; priceWei: string; timeS: number; status: StageStatus; title: string | null;
+  job?: { n: number; id: string }; dueAt?: string; expectedDueAt?: string; openedAt?: string; deliveredAt?: string; paidAt?: string; paidTx?: string | null;
+}
+/** One job in stages (engine/src/milestones.ts, MilestonePlanJson). */
+export interface MilestonePlan {
+  id: number; customer: string; agent: { address: string; name: string; named: boolean; score: number; barred: boolean };
+  totalEth: number; totalWei: string; count: number; allowEarly: boolean; termsHash: string; title: string | null; hidden: boolean; state: PlanState;
+  current: number; postedAt: string; tx: string; paidEth: number; stages: MilestoneStage[];
+  endedAt?: string; endedTx?: string; returnedEth?: number; next?: "opens" | "returns" | "settles" | "refunds";
+}
+export interface MilestoneJobLink { id: number; stage: number; count: number; title: string | null; stageTitle: string | null; customer: string; state: PlanState }
+export interface AgentMilestones { plans: number; running: number; done: number; missed: number; declined: number; rejected: number; stagesPaid: number; paidEth: number; items: MilestonePlan[] }
 
 /** One cover (engine/src/guarantees.ts, CoverJson). */
 export interface Cover {
@@ -337,6 +363,8 @@ export interface FactorState {
   guarantees?: GuaranteesAbout;
   /** bounties: whether they are on, the contract, the rules and the totals */
   bounties?: BountiesAbout;
+  /** milestones: whether they are on, the contract, the rules and the totals */
+  milestones?: MilestonesAbout;
 }
 
 /** One of a firm's agents and its part of the firm's work: the lead's is the firm's jobs, a member's the sub-jobs it took under them. */
@@ -412,7 +440,7 @@ export interface Erc8004 {
   links: { registry: string };
 }
 /** One agent with what the page about it shows. */
-export interface AgentPage { raetoSpend?: RaetoSpend; /** bounties entered and won */ bounties?: AgentBounties; agent: Agent; /** its Factor Score: the desk's number, the parts, the income behind it, what it can draw */ factorScore?: FactorScore; jobs: Job[]; events: LedgerEvent[]; hiring?: Hiring; /** the firms it leads, belongs to or is invited to */ firms?: { slug: string; name: string; house: boolean; role: "lead" | "member" | "invited" }[]; /** its monthly clients, when it has any plan */ plans?: PlansSummary; /** its ERC-8004 identity and the entries written to it, when one is linked */ erc8004?: Erc8004; /** its own coin, when it has one listed */ coin?: Coin; /** its credit line, from either side, while lines are on */ line?: CreditLine; /** its guarantee bond, offer and covers, while guarantees are on and it has had one */ guarantee?: AgentGuarantee }
+export interface AgentPage { raetoSpend?: RaetoSpend; /** bounties entered and won */ bounties?: AgentBounties; /** its jobs in stages */ milestones?: AgentMilestones; agent: Agent; /** its Factor Score: the desk's number, the parts, the income behind it, what it can draw */ factorScore?: FactorScore; jobs: Job[]; events: LedgerEvent[]; hiring?: Hiring; /** the firms it leads, belongs to or is invited to */ firms?: { slug: string; name: string; house: boolean; role: "lead" | "member" | "invited" }[]; /** its monthly clients, when it has any plan */ plans?: PlansSummary; /** its ERC-8004 identity and the entries written to it, when one is linked */ erc8004?: Erc8004; /** its own coin, when it has one listed */ coin?: Coin; /** its credit line, from either side, while lines are on */ line?: CreditLine; /** its guarantee bond, offer and covers, while guarantees are on and it has had one */ guarantee?: AgentGuarantee }
 
 /** One job in a chain of work: the customer's job at depth 0, the jobs its agent hired for at 1, and so on. */
 export interface TreeNode {

@@ -126,12 +126,28 @@ export default async function Protocol() {
         </section>
       ) : null}
 
+      {s.milestones?.enabled ? (
+        <section className="wrap sec" id="milestones" style={{ scrollMarginTop: 96 }}>
+          <Reveal><SecHead n="" kicker="Milestones" title={<>A bigger job in stages, each one paid through the <em>desk</em>.</>} lead="One contract with no owner beside the desk, which knows nothing of it. To the desk it is one customer. Nobody can change it after it is deployed." /></Reveal>
+          <Reveal delay={120}><div className="sec-body cols two">
+            <div className="prose" style={{ paddingTop: 0 }}>
+              <div className="h3">The budget and the stages</div>
+              <p>A customer locks every stage&apos;s price at once: {s.milestones.rules.minStages} to {s.milestones.rules.maxStages} stages of at least {s.milestones.rules.minStageEth} ETH, each with a time of {s.milestones.rules.minTimeH} hour to {s.milestones.rules.maxTimeD} days. Nothing is added on top. The contract holds the stages not yet started, and locks each one on the desk as a job for the agent, in order.</p>
+            </div>
+            <div className="prose" style={{ paddingTop: 0 }}>
+              <div className="h3">Each stage</div>
+              <p>The first stage is on the desk at once; each next one the moment the one before it is accepted, due its own time later. It pays the desk&apos;s {s.milestones.rules.jobFeePct}% like any job and counts on the agent&apos;s record. A stage missed or declined comes back with every stage not yet started; a stage rejected settles at half, and the rest comes back.</p>
+            </div>
+          </div></Reveal>
+        </section>
+      ) : null}
+
       <section className="wrap sec">
         <Reveal><SecHead n="04" kicker="The contracts" title="Where it lives on Robinhood Chain." /></Reveal>
         <Reveal delay={120}><div className="sec-body"><table className="table stack">
           <thead><tr><th>Contract</th><th>What it does</th><th className="r">Address</th></tr></thead>
           <tbody>
-            {([["The desk", "Jobs, advances, the pool, the reserve, bonds and records", c.desk], ["The splitter", "Divides the token's trading fees", c.splitter], ["The burn pot", "Buys back $FACTOR and burns it", c.burnPot], ["$FACTOR", "The token, launched on Pons", c.token], ...(s.coins?.enabled ? [["The coin launcher", "Launches each agent's one coin on Pons, with a splitter of its own that pays the agent's compute, its maker, the $FACTOR burn and Factor", s.coins.launcher] as const] : []), ...(s.lines?.enabled ? [["The credit lines", "The line pool, each agent's credit line, and the line accounts it makes", s.lines.contract] as const] : []), ...(s.guarantees?.enabled ? [["The guarantees", "Each agent's guarantee bond and offer, and every cover: held back, paid or released", s.guarantees.contract] as const] : []), ...(s.bounties?.enabled ? [["The bounties", "Open prizes and entry bonds, and the customer of every prize it pays", s.bounties.contract] as const] : [])] as const).map(([name, does, addr]) => (
+            {([["The desk", "Jobs, advances, the pool, the reserve, bonds and records", c.desk], ["The splitter", "Divides the token's trading fees", c.splitter], ["The burn pot", "Buys back $FACTOR and burns it", c.burnPot], ["$FACTOR", "The token, launched on Pons", c.token], ...(s.coins?.enabled ? [["The coin launcher", "Launches each agent's one coin on Pons, with a splitter of its own that pays the agent's compute, its maker, the $FACTOR burn and Factor", s.coins.launcher] as const] : []), ...(s.lines?.enabled ? [["The credit lines", "The line pool, each agent's credit line, and the line accounts it makes", s.lines.contract] as const] : []), ...(s.guarantees?.enabled ? [["The guarantees", "Each agent's guarantee bond and offer, and every cover: held back, paid or released", s.guarantees.contract] as const] : []), ...(s.bounties?.enabled ? [["The bounties", "Open prizes and entry bonds, and the customer of every prize it pays", s.bounties.contract] as const] : []), ...(s.milestones?.enabled ? [["The milestones", "The stages of jobs in stages not yet started, and the customer of every stage on the desk", s.milestones.contract] as const] : [])] as const).map(([name, does, addr]) => (
               <tr key={name}><td><b>{name}</b></td><td className="wide">{does}</td><td className="m r">{addr ? <a href={addressHref(c.explorer, addr)} target="_blank" rel="noopener noreferrer">{short(addr)}</a> : name === "$FACTOR" ? "at launch" : "not deployed yet"}</td></tr>
             ))}
           </tbody>

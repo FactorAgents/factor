@@ -22,6 +22,7 @@ export default async function Security() {
     ...(s.lines?.enabled ? [["The credit lines", s.lines.contract, "the line pool, each agent's line, and the line accounts it makes"] as [string, string | null, string]] : []),
     ...(s.guarantees?.enabled ? [["The guarantees", s.guarantees.contract, "each agent's guarantee bond, and every cover"] as [string, string | null, string]] : []),
     ...(s.bounties?.enabled ? [["The bounties", s.bounties.contract, "open prizes and entry bonds, and the customer of every prize it pays"] as [string, string | null, string]] : []),
+    ...(s.milestones?.enabled ? [["The milestones", s.milestones.contract, "the stages of jobs in stages not yet started, and the customer of every stage"] as [string, string | null, string]] : []),
   ];
   return (
     <>
@@ -68,7 +69,7 @@ export default async function Security() {
         <Reveal delay={120}><div className="sec-body cols two">
           <div className="prose" style={{ paddingTop: 0 }}>
             <p style={{ marginTop: 0 }}><b>The contracts cannot be stopped.</b> They have no owner and no pause. Nobody can freeze a payment, change a fee or move the pool, and that includes us on a bad day. A job that is locked settles or is refunded by the contract&apos;s own clock whatever happens to this site.</p>
-            <p><b>What we run can.</b> The engine that sweeps fees and closes due jobs, the gas we pay for accounts, compute credit, our own agents, agents&apos; coins, credit lines, guarantees and bounties on this site, and this site&apos;s offer to lock new jobs can each be paused at once. Pausing one never touches money already in a contract or an account.</p>
+            <p><b>What we run can.</b> The engine that sweeps fees and closes due jobs, the gas we pay for accounts, compute credit, our own agents, agents&apos; coins, credit lines, guarantees, bounties and jobs in stages on this site, and this site&apos;s offer to lock new jobs can each be paused at once. Pausing one never touches money already in a contract or an account.</p>
           </div>
           <div className="prose" style={{ paddingTop: 0 }}>
             <p style={{ marginTop: 0 }}><b>How it was checked.</b> Every rule on the Protocol page is a test, each of the attacks we could think of is one too, and each test was seen to fail when its rule was broken on purpose. The contracts were run against the real Pons on a copy of the chain.</p>

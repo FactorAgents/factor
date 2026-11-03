@@ -11,7 +11,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { createServer } from "node:http";
 
 const PORT = Number(process.env.SMOKE_PORT) || 3611, BASE = `http://127.0.0.1:${PORT}`, BARE = `http://127.0.0.1:${PORT + 1}`;
-const PAGES = ["/bounties", "/bounties/1", "/bounties/2", "/bounties/3", "/bounties/4", "/", "/agents/orbit-ops", "/ledger", "/ledger?show=burned", "/agents", "/agents/lumen-07", "/jobs/0412", "/jobs/0406", "/jobs/0404", "/jobs/0403", "/hire", "/hire?agent=page-smith", "/hire?agent=lumen-07&cover=1", "/work", "/protocol", "/token", "/burn", "/docs", "/log", "/security", "/pay", "/firms/night-desk", "/hire?firm=night-desk", "/plans/0x5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a", "/open-jobs", "/open-jobs/0x0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b", "/coins", "/coins?sort=new", "/coins/page-smith"];
+const PAGES = ["/bounties", "/bounties/1", "/bounties/2", "/bounties/3", "/bounties/4", "/", "/agents/orbit-ops", "/ledger", "/ledger?show=burned", "/agents", "/agents/lumen-07", "/jobs/0412", "/jobs/0406", "/jobs/0404", "/jobs/0403", "/hire", "/hire?agent=page-smith", "/hire?agent=lumen-07&cover=1", "/work", "/protocol", "/token", "/burn", "/docs", "/log", "/security", "/pay", "/firms/night-desk", "/hire?firm=night-desk", "/plans/0x5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a", "/open-jobs", "/open-jobs/0x0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b", "/coins", "/coins?sort=new", "/coins/page-smith", "/jobs/0416", "/jobs/0408", "/agents/page-smith", "/hire?stages=1"];
 // The header's five groups and the pages in each, in order. A group of one page is a plain link.
 const GROUPS = { Hire: ["/hire", "/open-jobs", "/bounties"], Agents: ["/agents", "/coins", "/work"], Ledger: ["/ledger"], Protocol: ["/protocol", "/docs", "/roadmap"], Token: ["/token", "/burn"] };
 const NAV = Object.values(GROUPS).flat();
@@ -679,6 +679,57 @@ test("bounties: the board, a page with counts only until the reveal, every entry
   assert.equal((await (await fetch(`${BASE}/api/v1/bounties/4`)).json()).items, undefined);
 });
 
+test("milestones: hiring in stages under Hire, the stage tracker on a stage's page, the stages on the agent's page, the docs, the protocol and the log; nothing to send on the sample", async () => {
+  const hire = text((await get("/hire?agent=page-smith&stages=1")).html);
+  assert.match(hire, /In stages/);
+  assert.match(hire, /Stage 1 What it delivers/);
+  assert.match(hire, /Stage 2 What it delivers/);
+  assert.match(hire, /Add a stage/);
+  assert.match(hire, /Let the agent start each stage with half/);
+  // the sample has no milestone contract: nothing can be locked from it
+  assert.match(hire, /Not open yet/);
+  assert.match(hire, /A job in stages is one bigger job split into 2 to 6 parts/);
+  // the plain form is still the plain form, with the third mode beside it
+  const plain = text((await get("/hire")).html);
+  assert.match(plain, /One job (Monthly )?In stages/);
+  assert.match(plain, /What you want done/);
+  const stage = text((await get("/jobs/0416")).html);
+  assert.match(stage, /Stage 2 of 3 of A site for a coffee roaster ?, a job in stages/);
+  assert.match(stage, /A job in 3 stages/);
+  assert.match(stage, /01 A pricing page with three plans/);
+  assert.match(stage, /Paid/);
+  assert.match(stage, /On the desk/);
+  assert.match(stage, /03 The order page/);
+  assert.match(stage, /Not started/);
+  assert.match(stage, /through the milestone contract/);
+  const first = text((await get("/jobs/0408")).html);
+  assert.match(first, /Stage 1 of 3/);
+  assert.doesNotMatch(text((await get("/jobs/0412")).html), /A job in \d stages/);
+  const agent = text((await get("/agents/page-smith")).html);
+  assert.match(agent, /Jobs in stages How jobs in stages work → Paid stage by stage ?\./);
+  assert.match(agent, /1 of 3 paid/);
+  assert.match(agent, /Stage 2 of 3/);
+  const docs = text((await get("/docs")).html);
+  assert.match(docs, /Milestones A bigger job in stages, the whole budget locked up front ?\./);
+  assert.match(docs, /hireInStages/);
+  assert.match(docs, /api\/v1\/milestones\/terms/);
+  assert.match(docs, /factor_hire_in_stages/);
+  const protocol = text((await get("/protocol")).html);
+  assert.match(protocol, /Milestones A bigger job in stages, each one paid through the desk/);
+  assert.match(protocol, /The milestones/);
+  assert.match(text((await get("/security")).html), /The milestones/);
+  assert.match(text((await get("/log")).html), /Milestones A customer can hire an agent for a bigger job in 2 to 6 stages/);
+  for (const t of [hire, stage, agent, docs.slice(docs.indexOf("Milestones A bigger")), protocol.slice(protocol.indexOf("Milestones A bigger"))]) {
+    assert.doesNotMatch(t, /\b(70|20|40|10)\s?%/);
+    assert.doesNotMatch(t, /\bdemo\b/i);
+  }
+  const api = await (await fetch(`${BASE}/api/v1/milestones/job/416`)).json();
+  assert.equal(api.stages.length, 3);
+  assert.equal(api.current, 2);
+  // nothing of it before the launch, or with milestones off
+  assert.doesNotMatch(text((await get("/hire", BARE)).html), /In stages/);
+});
+
 test("guarantees: Guaranteed up to on an agent's page, in the list and on its firm, the cover on a job's page, hire with cover, the work page, the docs and the protocol; nothing to send on the sample, and no share but the fee's own", async () => {
   const page = text((await get("/agents/lumen-07")).html);
   assert.match(page, /Guaranteed up to 0\.0400 ETH/);
@@ -718,30 +769,31 @@ test("the roadmap: on the home page, every phase in order, what is live checked 
   assert.match(html, /id="roadmap"/);
   const t = text(html);
   assert.match(t, /07 Roadmap The credit layer for AI agents \./);
-  assert.match(t, /14 of 15 phases live/);
+  assert.match(t, /15 of 16 phases live/);
   // the intro counts from the roadmap itself, so it never goes stale
-  assert.match(t, /Fourteen phases are live, the next one is planned, and more will follow\./);
-  assert.doesNotMatch(t, /Twelve phases|Thirteen phases/);
-  const names = ["Launch", "Compute on credit", "Pay with Factor", "Agents hire agents", "Agent firms", "Monthly clients", "Agents find their own work", "Agents that bid", "Bounties", "Agent coins", "Factor Score", "Credit lines", "Verified owners", "Guarantees", "Factor everywhere"];
+  assert.match(t, /Fifteen phases are live, the next one is planned, and more will follow\./);
+  assert.doesNotMatch(t, /Thirteen phases|Fourteen phases/);
+  const names = ["Launch", "Compute on credit", "Pay with Factor", "Agents hire agents", "Agent firms", "Monthly clients", "Agents find their own work", "Agents that bid", "Bounties", "Agent coins", "Factor Score", "Credit lines", "Verified owners", "Guarantees", "Milestones", "Factor everywhere"];
   let at = t.indexOf("Stage 1");
   names.forEach((name, i) => { const k = t.indexOf(`Phase ${String(i + 1).padStart(2, "0")} ${name}`, at); assert.ok(k > at, `phase ${i + 1} ${name} in order`); at = k; });
-  for (const day of ["14 Oct", "15 Oct", "16 Oct", "17 Oct", "18 Oct", "19 Oct", "20 Oct", "22 Oct", "23 Oct", "24 Oct", "28 Oct", "30 Oct", "1 Nov", "2 Nov"]) assert.match(t, new RegExp(`Live ${day}`));
+  for (const day of ["14 Oct", "15 Oct", "16 Oct", "17 Oct", "18 Oct", "19 Oct", "20 Oct", "22 Oct", "23 Oct", "24 Oct", "28 Oct", "30 Oct", "1 Nov", "2 Nov", "3 Nov"]) assert.match(t, new RegExp(`Live ${day}`));
   assert.match(t, /Live 20 Oct Phase 11 Factor Score/);
   assert.match(t, /Live 28 Oct Phase 10 Agent coins/);
   assert.match(t, /Live 30 Oct Phase 12 Credit lines/);
   assert.match(t, /Live 24 Oct Phase 13 Verified owners/);
   assert.match(t, /Live 1 Nov Phase 14 Guarantees/);
   assert.match(t, /Live 2 Nov Phase 09 Bounties/);
-  assert.match(t, /Next Phase 15 Factor everywhere/);
+  assert.match(t, /Live 3 Nov Phase 15 Milestones/);
+  assert.match(t, /Next Phase 16 Factor everywhere/);
   assert.equal((t.match(/Planned Phase/g) ?? []).length, 0);
   for (const w of ["October", "November", "December"]) assert.ok(!t.slice(t.indexOf("Stage 2")).includes(w), `no planned date: ${w}`);
   // the line runs on past the last phase into a stage still being planned, with no phase number and no date
-  const more = t.slice(t.indexOf("Phase 15 Factor everywhere"));
+  const more = t.slice(t.indexOf("Phase 16 Factor everywhere"));
   assert.match(more, /Stage 5 Coming What comes next/);
   assert.match(more, /The next stage is being planned\. New phases are added here as we get close to finishing the ones above/);
-  assert.ok(!/Phase 16/.test(t), "no phase number for what comes next");
+  assert.ok(!/Phase 17/.test(t), "no phase number for what comes next");
   assert.equal((t.match(/checked off the day it goes live/g) ?? []).length, 1);
-  assert.equal((t.match(/Builds on/g) ?? []).length, 6);
+  assert.equal((t.match(/Builds on/g) ?? []).length, 7);
   // the footer leads to it on every page, as the header does
   assert.match(html, /<footer[\s\S]*href="\/roadmap"/);
 });

@@ -28,6 +28,10 @@ export default function JobActions({ job, agentName, desk, explorer, params, now
   const canRefund = (job.state === "locked" || job.state === "advanced") && t > refundFrom;
   const canSettle = job.state === "delivered" && t >= settleFrom;
   const working = (job.state === "locked" || job.state === "advanced") && !canRefund;
+  // a stage of a job in stages: its customer on the desk is the milestone contract, and the plan's own customer accepts,
+  // rejects and steps it in the stage tracker above (StageActions), which also settles or refunds it on the desk
+  const stage = job.milestone ?? null;
+  const planCustomer = !!stage && address === stage.customer.toLowerCase();
 
   // What was just done is said here, by the page: the form that did it may be gone the moment the job changes.
   const [last, setLast] = useState<Done | null>(null);
@@ -46,7 +50,7 @@ export default function JobActions({ job, agentName, desk, explorer, params, now
           <div className="cta"><Go label="" busy={false} onGo={() => undefined} /></div>
         </div>
       ) : null}
-      {address && open && !isAgent && !isCustomer && !canRefund && !canSettle ? <p className="small rest">The connected wallet is neither this job&apos;s agent nor its customer. There is nothing for it to do here.</p> : null}
+      {address && open && !isAgent && !isCustomer && !planCustomer && !canRefund && !canSettle ? <p className="small rest">The connected wallet is neither this job&apos;s agent nor its customer. There is nothing for it to do here.</p> : null}
 
       {isAgent && working ? <Draw {...shared} params={params} compute={compute} /> : null}
       {isAgent && working ? (job.bounty?.proof ? <DeliverEntry {...shared} late={t > Date.parse(job.dueAt)} proof={job.bounty.proof} /> : <Deliver {...shared} late={t > Date.parse(job.dueAt)} />) : null}
@@ -63,8 +67,8 @@ export default function JobActions({ job, agentName, desk, explorer, params, now
       ) : null}
       {isCustomer && (!job.title || (working && !hasBrief)) ? <Title job={job} explorer={explorer} onDone={setLast} needsBrief={working && !hasBrief} briefHint={briefHint} /> : null}
 
-      {canSettle ? <One {...shared} fn="settle" label="Settle the job" title="The customer's day is over" text={`It was delivered ${dayTime(job.deliveredAt!)} and nobody rejected it. Anyone can settle it now: the pool is repaid and the agent is paid. The engine does this by itself within a minute or two.`} done="Settled. The agent is paid." /> : null}
-      {canRefund ? <One {...shared} fn="refund" label="Refund the customer" title="It was not delivered in time" text={`The due time and the ${params.graceHours} hours of grace are past. Anyone can refund it now: the payment goes back to the customer. The engine does this by itself within a minute or two.`} done="Refunded to the customer." /> : null}
+      {canSettle && !stage ? <One {...shared} fn="settle" label="Settle the job" title="The customer's day is over" text={`It was delivered ${dayTime(job.deliveredAt!)} and nobody rejected it. Anyone can settle it now: the pool is repaid and the agent is paid. The engine does this by itself within a minute or two.`} done="Settled. The agent is paid." /> : null}
+      {canRefund && !stage ? <One {...shared} fn="refund" label="Refund the customer" title="It was not delivered in time" text={`The due time and the ${params.graceHours} hours of grace are past. Anyone can refund it now: the payment goes back to the customer. The engine does this by itself within a minute or two.`} done="Refunded to the customer." /> : null}
     </div>
   );
 }

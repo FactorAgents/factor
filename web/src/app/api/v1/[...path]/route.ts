@@ -6,10 +6,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { callerOf } from "@/lib/caller";
 import { engineUrl, sampleMode } from "@/lib/data";
-import { sampleAgent, sampleAutoApply, sampleBounties, sampleBounty, sampleCoin, sampleCoins, sampleGuarantee, sampleGuarantees, sampleLine, sampleLines, sampleFirm, sampleJob, sampleJobs, sampleLedger, sampleOpenJob, sampleOpenJobs, samplePlan, sampleState } from "@/lib/sample";
+import { sampleAgent, sampleAutoApply, sampleBounties, sampleBounty, sampleMilestoneOfJob, sampleCoin, sampleCoins, sampleGuarantee, sampleGuarantees, sampleLine, sampleLines, sampleFirm, sampleJob, sampleJobs, sampleLedger, sampleOpenJob, sampleOpenJobs, samplePlan, sampleState } from "@/lib/sample";
 import { answerBody, answerHeaders, sharedRead } from "@/lib/shared";
 
-const READS = /^(state|pulse|desk|agents|agents\/made\/0x[0-9a-fA-F]{40}|agents\/[0-9a-zA-Z-]{3,42}|jobs|jobs\/\d{1,9}|jobs\/\d{1,9}\/tree|ledger|burns|accounts\/0x[0-9a-fA-F]{40}|accounts\/relay\/0x[0-9a-f]{64}|accounts\/by-credential\/0x[0-9a-f]{2,2046}|pay\/link\/[A-Za-z0-9_-]{20,6000}\.[A-Za-z0-9_-]{80,3000}|pay\/links\/0x[0-9a-fA-F]{40}|firms|firms\/[a-z0-9-]{3,32}|plans|plans\/0x[0-9a-f]{64}|erc8004|erc8004\/[0-9a-zA-Z-]{3,42}|openjobs|openjobs\/0x[0-9a-f]{64}|autoapply\/[0-9a-zA-Z-]{3,42}|verified|verified\/[0-9a-zA-Z-]{3,42}|coins|coins\/about|coins\/[0-9a-zA-Z-]{3,42}|lines|lines\/about|lines\/[0-9a-zA-Z-]{3,42}|guarantees|guarantees\/about|guarantees\/agent\/[0-9a-zA-Z-]{3,42}|guarantees\/(job|cover)\/\d{1,9}|guarantees\/customer\/0x[0-9a-fA-F]{40}|bounties|bounties\/about|bounties\/\d{1,9}|bounties\/\d{1,9}\/entries\/0x[0-9a-fA-F]{40}|bounties\/\d{1,9}\/mine\/0x[0-9a-fA-F]{40}|bounties\/agent\/[0-9a-zA-Z-]{3,42}|bounties\/poster\/0x[0-9a-fA-F]{40})$/;
+const READS = /^(state|pulse|desk|agents|agents\/made\/0x[0-9a-fA-F]{40}|agents\/[0-9a-zA-Z-]{3,42}|jobs|jobs\/\d{1,9}|jobs\/\d{1,9}\/tree|ledger|burns|accounts\/0x[0-9a-fA-F]{40}|accounts\/relay\/0x[0-9a-f]{64}|accounts\/by-credential\/0x[0-9a-f]{2,2046}|pay\/link\/[A-Za-z0-9_-]{20,6000}\.[A-Za-z0-9_-]{80,3000}|pay\/links\/0x[0-9a-fA-F]{40}|firms|firms\/[a-z0-9-]{3,32}|plans|plans\/0x[0-9a-f]{64}|erc8004|erc8004\/[0-9a-zA-Z-]{3,42}|openjobs|openjobs\/0x[0-9a-f]{64}|autoapply\/[0-9a-zA-Z-]{3,42}|verified|verified\/[0-9a-zA-Z-]{3,42}|coins|coins\/about|coins\/[0-9a-zA-Z-]{3,42}|lines|lines\/about|lines\/[0-9a-zA-Z-]{3,42}|guarantees|guarantees\/about|guarantees\/agent\/[0-9a-zA-Z-]{3,42}|guarantees\/(job|cover)\/\d{1,9}|guarantees\/customer\/0x[0-9a-fA-F]{40}|bounties|bounties\/about|bounties\/\d{1,9}|bounties\/\d{1,9}\/entries\/0x[0-9a-fA-F]{40}|bounties\/\d{1,9}\/mine\/0x[0-9a-fA-F]{40}|bounties\/agent\/[0-9a-zA-Z-]{3,42}|bounties\/poster\/0x[0-9a-fA-F]{40}|milestones|milestones\/about|milestones\/\d{1,9}|milestones\/job\/\d{1,9}|milestones\/agent\/[0-9a-zA-Z-]{3,42}|milestones\/customer\/0x[0-9a-fA-F]{40})$/;
 // two things a wallet signs, what an account without a wallet asks of the engine (lib/passkey.ts), a job paid
 // through a Pay with Factor link (lib/pay.ts), an agent hiring another for part of its job (lib/subjobs.ts), and a
 // firm formed, joined, left or hired (lib/firms.ts), and a monthly plan signed, a month of it linked, or a plan stopped
@@ -17,8 +17,8 @@ const READS = /^(state|pulse|desk|agents|agents\/made\/0x[0-9a-fA-F]{40}|agents\
 // linked to the lock that hired its agent, or taken down (lib/openjobs.ts), and an agent's auto-apply rules (lib/autoapply.ts),
 // and an owner verifying the wallet that runs its agent (lib/verified.ts), and the maker of an agent Factor runs asking
 // for the agent's permission to launch its coin (lib/coins.ts), and a bounty's words, an entry's work and a poster's read
-// (lib/bounties.ts)
-const WRITES = /^(match|agents\/profile|agents\/make|agents\/pause|jobs\/title|jobs\/brief|jobs\/delivery|accounts|accounts\/check|accounts\/call|accounts\/relay|pay\/deal|pay\/links|subjobs\/plan|subjobs\/link|firms\/form|firms\/join|firms\/leave|firms\/hire|plans\/create|plans\/month|plans\/stop|erc8004\/link|openjobs\/post|openjobs\/apply|openjobs\/hire|openjobs\/close|openjobs\/withdraw|autoapply\/rules|verified\/check|coins\/permission|bounties\/task|bounties\/entry|bounties\/read)$/;
+// (lib/bounties.ts), and the words of a job in stages (lib/milestones.ts)
+const WRITES = /^(match|agents\/profile|agents\/make|agents\/pause|jobs\/title|jobs\/brief|jobs\/delivery|accounts|accounts\/check|accounts\/call|accounts\/relay|pay\/deal|pay\/links|subjobs\/plan|subjobs\/link|firms\/form|firms\/join|firms\/leave|firms\/hire|plans\/create|plans\/month|plans\/stop|erc8004\/link|openjobs\/post|openjobs\/apply|openjobs\/hire|openjobs\/close|openjobs\/withdraw|autoapply\/rules|verified\/check|coins\/permission|bounties\/task|bounties\/entry|bounties\/read|milestones\/terms)$/;
 const QUERY = ["limit", "before", "show", "agent", "customer", "firm", "verified", "sort", "poster"];
 const BODY_MOST = 4096;
 // an order of an account carries its calls and a passkey's answer
@@ -56,6 +56,8 @@ function fromSample(path: string, q: URLSearchParams): unknown {
   if (path.startsWith("guarantees/customer/")) return { items: [] };
   if (path === "bounties" || path === "bounties/about") return { ...sampleBounties((q.get("show") as "open" | "all") ?? "all"), ...(path === "bounties/about" ? { items: undefined } : {}) };
   if (/^bounties\/\d+$/.test(path)) return sampleBounty(Number(path.slice(9)));
+  if (path === "milestones" || path === "milestones/about") return { ...sampleState().milestones, ...(path === "milestones" ? { items: [sampleMilestoneOfJob(416)] } : {}) };
+  if (/^milestones\/job\/\d+$/.test(path)) return sampleMilestoneOfJob(Number(path.slice(15)));
   return null;
 }
 
@@ -103,7 +105,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ path: stri
   if (!engine) return json({ error: "nothing is live yet" }, 503);
   const text = await req.text();
   // a brief is up to 12,000 characters and a piece of work up to 200,000
-  const most = path === "bounties/entry" ? 2 * 200_000 + 1024 : path === "bounties/task" ? 2 * 8000 + 1024 : path.startsWith("accounts") || path.startsWith("pay/") ? ORDER_MOST : path === "jobs/brief" || path === "agents/make" || path === "match" || path === "subjobs/plan" || path === "firms/hire" || path === "plans/create" || path === "openjobs/post" ? 64_000 : path === "jobs/delivery" ? 900_000 : BODY_MOST;
+  const most = path === "bounties/entry" ? 2 * 200_000 + 1024 : path === "bounties/task" ? 2 * 8000 + 1024 : path === "milestones/terms" ? 2 * 40_000 + 1024 : path.startsWith("accounts") || path.startsWith("pay/") ? ORDER_MOST : path === "jobs/brief" || path === "agents/make" || path === "match" || path === "subjobs/plan" || path === "firms/hire" || path === "plans/create" || path === "openjobs/post" ? 64_000 : path === "jobs/delivery" ? 900_000 : BODY_MOST;
   if (text.length > most) return json({ error: "the body is too large" }, 413);
   // who is asking is passed on, so the engine's limit on signed writes counts visitors and not this site
   const from = callerOf(req);

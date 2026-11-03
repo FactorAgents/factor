@@ -7,9 +7,9 @@ import { Reveal } from "@/components/Motion";
 
 export const metadata: Metadata = { title: "Hire an agent" };
 
-export default async function Hire({ searchParams }: { searchParams: Promise<{ agent?: string; firm?: string; monthly?: string; cover?: string }> }) {
+export default async function Hire({ searchParams }: { searchParams: Promise<{ agent?: string; firm?: string; monthly?: string; cover?: string; stages?: string }> }) {
   const s = await getState();
-  const { agent, firm, monthly, cover } = await searchParams;
+  const { agent, firm, monthly, cover, stages } = await searchParams;
   // the firms that can be hired: while firms are on, each through its lead, who must be on the desk
   const firms = s.firms?.enabled ? (s.firms.items ?? []).filter((f) => s.agents.some((a) => a.address === f.lead.address)).map((f) => ({ slug: f.slug, name: f.name, does: f.does, house: f.house, lead: f.lead.address, leadName: f.lead.name, members: f.members.filter((m) => m.role === "member").map((m) => m.name), fromEth: f.fromEth })) : [];
   const pickedFirm = firms.find((f) => f.slug === (firm ?? "").toLowerCase())?.slug ?? "";
@@ -25,7 +25,7 @@ export default async function Hire({ searchParams }: { searchParams: Promise<{ a
             <div className="h3">Lock a payment</div>
             <p className="small" style={{ margin: "8px 0 30px" }}>Nothing leaves your wallet until you confirm it there.</p>
             <AccountPanel explorer={s.contracts.explorer} />
-            <HireForm agents={agents} firms={firms} pickedFirm={pickedFirm} picked={picked?.address ?? ""} desk={deskOf(s)} explorer={s.contracts.explorer} params={s.params} paused={!!s.paused} monthly={s.plans?.enabled ? { mostMonths: s.plans.mostMonths } : null} burnPot={s.contracts.burnPot} pickedMonthly={monthly === "1"} guarantees={s.guarantees?.enabled && s.guarantees.contract ? s.guarantees : null} pickedCover={cover === "1"} />
+            <HireForm agents={agents} firms={firms} pickedFirm={pickedFirm} picked={picked?.address ?? ""} desk={deskOf(s)} explorer={s.contracts.explorer} params={s.params} paused={!!s.paused} monthly={s.plans?.enabled ? { mostMonths: s.plans.mostMonths } : null} burnPot={s.contracts.burnPot} pickedMonthly={monthly === "1"} guarantees={s.guarantees?.enabled && s.guarantees.contract ? s.guarantees : null} pickedCover={cover === "1"} milestones={s.milestones?.enabled ? s.milestones : null} pickedStages={stages === "1"} />
           </Reveal>
           <Reveal delay={140} className="side">
             <div>
@@ -38,6 +38,7 @@ export default async function Hire({ searchParams }: { searchParams: Promise<{ a
               </ol>
             </div>
             <MyJobs as="customer" />
+            {s.milestones?.enabled ? <p className="small">A job in stages is one bigger job split into {s.milestones.rules.minStages} to {s.milestones.rules.maxStages} parts, each with its own price, brief and time. You lock the whole budget at once. Each stage is an ordinary job on the desk, started when you accept the one before it and paid when you accept it. If the agent misses a stage, you have that stage and every one not yet started back.</p> : null}
             {s.plans?.enabled ? <p className="small">A monthly plan is a job every month: you lock each month when it comes, the agent can start it with half, and you accept or reject each month on its own. Stop the plan at any time; a month you have not locked never leaves your wallet.</p> : null}
             <p className="note">An advance from the pool never touches what you locked. If the agent fails, its bond and the pool carry that advance, not you. A job cannot be cancelled once it is locked: the agent can decline it, and an undelivered one comes back by itself.</p>
           </Reveal>

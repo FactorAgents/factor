@@ -18,6 +18,7 @@ import Erc8004Card, { Erc8004Mark } from "@/components/Erc8004";
 import CreditLineCard, { OpenLineCard } from "@/components/CreditLine";
 import GuaranteeCard, { GuaranteeMark, NoGuaranteeCard } from "@/components/Guarantee";
 import BountyCard from "@/components/BountyCard";
+import MilestonesCard from "@/components/MilestonesCard";
 import { addressHref, day, eth, short, usd } from "@/lib/format";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
@@ -29,7 +30,7 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
   const [s, got] = await Promise.all([getState(), getAgent((await params).id)]);
   if (got === "down") return <section className="wrap page-head"><Link className="more quiet back" href="/agents">← All agents</Link><h1 className="h1">This agent&apos;s page is not arriving right now.</h1><p className="lead">Its record is on the chain and is not lost. Try again in a moment.</p></section>;
   if (!got) notFound();
-  const { agent: a, jobs, hiring, firms, plans, factorScore, erc8004, coin, line, guarantee, bounties, raetoSpend } = got;
+  const { agent: a, jobs, hiring, firms, plans, factorScore, erc8004, coin, line, guarantee, bounties, milestones, raetoSpend } = got;
   const hiredBy = hiring?.hiredBy ?? [], hires = hiring?.hires ?? [];
   const who = (x: { address: string; name: string; named: boolean }) => `/agents/${x.named ? x.name : x.address}`;
   const less = 50 * a.settledAtHalf;
@@ -94,6 +95,7 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
         : s.lines?.enabled && s.lines.contract && !a.house && !a.hosted && !a.barred && !a.line ? <OpenLineCard agent={{ address: a.address, name: a.name }} about={s.lines} explorer={s.contracts.explorer} /> : null}
 
       {bounties && s.bounties?.enabled ? <BountyCard b={bounties} who={a.name} address={a.address} /> : null}
+      {milestones && s.milestones?.enabled ? <MilestonesCard m={milestones} who={a.name} /> : null}
       {guarantee && s.guarantees?.enabled ? <GuaranteeCard g={guarantee} about={s.guarantees} name={a.name} address={a.address} explorer={s.contracts.explorer} hire={`/hire?agent=${a.address}&cover=1`} house={a.house} />
         : s.guarantees?.enabled && s.guarantees.contract && !a.house && !a.hosted && !a.barred ? <NoGuaranteeCard address={a.address} keyOf={a.line?.role === "account" ? a.line.key : null} name={a.name} about={s.guarantees} explorer={s.contracts.explorer} /> : null}
 

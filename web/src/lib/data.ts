@@ -9,8 +9,8 @@
 import "server-only";
 import { cache } from "react";
 import { connection } from "next/server";
-import { sampleAgent, sampleAutoApply, sampleBounties, sampleBounty, sampleCoin, sampleCoins, sampleFirm, sampleJob, sampleJobs, sampleLedger, sampleOpenJob, sampleOpenJobs, samplePlan, sampleState } from "./sample";
-import type { Agent, AgentPage, AutoApplyStatus, BountyList, BountyPage, Coin, FactorState, FirmPage, Job, JobPage, LedgerEvent, OpenJobList, OpenJobPage, Page, Params, PlanPage, VerifiedStatus } from "./types";
+import { sampleAgent, sampleAutoApply, sampleBounties, sampleBounty, sampleMilestoneOfJob, sampleCoin, sampleCoins, sampleFirm, sampleJob, sampleJobs, sampleLedger, sampleOpenJob, sampleOpenJobs, samplePlan, sampleState } from "./sample";
+import type { Agent, AgentPage, AutoApplyStatus, BountyList, BountyPage, MilestonePlan, Coin, FactorState, FirmPage, Job, JobPage, LedgerEvent, OpenJobList, OpenJobPage, Page, Params, PlanPage, VerifiedStatus } from "./types";
 import type { PayInfo, PublishedLink } from "./pay";
 import type { CoinsAbout } from "./coins";
 import { liveGen } from "./live";
@@ -166,6 +166,18 @@ export const getBounty = cache(async (id: string): Promise<BountyPage | null | "
     return await ask<BountyPage>(`/v1/bounties/${id}`);
   } catch {
     return "down";
+  }
+});
+
+/** The job in stages a desk job is a stage of, with every stage. null: it is not one, or milestones are off. */
+export const getStagePlan = cache(async (job: number): Promise<MilestonePlan | null> => {
+  await connection();
+  if (SAMPLE) return sampleMilestoneOfJob(job);
+  if (!ENGINE) return null;
+  try {
+    return await ask<MilestonePlan>(`/v1/milestones/job/${job}`);
+  } catch {
+    return null;
   }
 });
 
