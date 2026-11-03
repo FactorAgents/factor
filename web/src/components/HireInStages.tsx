@@ -111,11 +111,11 @@ export default function HireInStages({ agents, picked, about, explorer, params, 
         ))}
       </ol>
       {stages.length < MAX_STAGES ? <button type="button" className="btn line" onClick={() => setStages((xs) => [...xs, blank(xs.length)])} disabled={busy}>Add a stage</button> : <p className="small">{MAX_STAGES} stages is the most one job can have.</p>}
-      <button type="button" className={`toggle${early ? "" : " off"}`} role="switch" aria-checked={early} onClick={() => setEarly((v) => !v)} disabled={busy} style={{ marginTop: 26 }}>
+      <button type="button" className={`toggle${early ? "" : " off"}`} role="switch" aria-checked={early} onClick={() => setEarly((v) => !v)} disabled={busy}>
         <i />
         <div><b>Let the agent start each stage with half</b><span>Up to half of a stage goes to the agent as soon as that stage is on the desk. If it does not deliver that stage, that part is not refunded. Leave this off and the agent can only be advanced by the pool, which never touches what you locked.</span></div>
       </button>
-      <p className="small" style={{ marginTop: 18 }}>{bad ? `Each stage is ${about.rules.minStageEth} ETH or more.` : under && who?.service ? `${who.name} takes a job from ${who.service.fromEth} ETH. A stage under that it declines, and the rest comes back to you.` : `${fromWei(total)} ETH for ${stages.length} stages, locked now. Each stage is paid when you accept it; the agent pays the desk's ${params.jobFeePct}% fee out of each. If a stage is not delivered in its time and ${params.graceHours} hours of grace, you have it back with every stage not yet started.`}</p>
+      <p className="small">{bad ? `Each stage is ${about.rules.minStageEth} ETH or more.` : under && who?.service ? `${who.name} takes a job from ${who.service.fromEth} ETH. A stage under that it declines, and the rest comes back to you.` : `${fromWei(total)} ETH for ${stages.length} stages, locked now. Each stage is paid when you accept it; the agent pays the desk's ${params.jobFeePct}% fee out of each. If a stage is not delivered in its time and ${params.graceHours} hours of grace, you have it back with every stage not yet started.`}</p>
       <div className="cta" style={{ marginTop: 4 }}>
         <Go label={`Lock ${fromWei(total)} ETH for ${stages.length} stages`} busy={busy || bad || !who} onGo={lock} off={!about.contract ? "Not open yet" : paused ? "New jobs are paused" : null} />
       </div>

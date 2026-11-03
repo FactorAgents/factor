@@ -707,8 +707,7 @@ test("milestones: hiring in stages under Hire, the stage tracker on a stage's pa
   assert.doesNotMatch(text((await get("/jobs/0412")).html), /A job in \d stages/);
   const agent = text((await get("/agents/page-smith")).html);
   assert.match(agent, /Jobs in stages How jobs in stages work → Paid stage by stage ?\./);
-  assert.match(agent, /1 of 3 paid/);
-  assert.match(agent, /Stage 2 of 3/);
+  assert.match(agent, /1 of 3 stages paid ?, stage 2 on the desk/);
   const docs = text((await get("/docs")).html);
   assert.match(docs, /Milestones A bigger job in stages, the whole budget locked up front ?\./);
   assert.match(docs, /hireInStages/);
