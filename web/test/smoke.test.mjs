@@ -12,7 +12,11 @@ import { createServer } from "node:http";
 
 const PORT = Number(process.env.SMOKE_PORT) || 3611, BASE = `http://127.0.0.1:${PORT}`, BARE = `http://127.0.0.1:${PORT + 1}`;
 const PAGES = ["/bounties", "/bounties/1", "/bounties/2", "/bounties/3", "/bounties/4", "/", "/agents/orbit-ops", "/ledger", "/ledger?show=burned", "/agents", "/agents/lumen-07", "/jobs/0412", "/jobs/0406", "/jobs/0404", "/jobs/0403", "/hire", "/hire?agent=page-smith", "/hire?agent=lumen-07&cover=1", "/work", "/protocol", "/token", "/burn", "/docs", "/log", "/security", "/pay", "/firms/night-desk", "/hire?firm=night-desk", "/plans/0x5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a", "/open-jobs", "/open-jobs/0x0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b", "/coins", "/coins?sort=new", "/coins/page-smith"];
-const NAV = ["/ledger", "/agents", "/coins", "/open-jobs", "/bounties", "/hire", "/work", "/protocol", "/token", "/burn", "/docs", "/roadmap"];
+// The header's five groups and the pages in each, in order. A group of one page is a plain link.
+const GROUPS = { Hire: ["/hire", "/open-jobs", "/bounties"], Agents: ["/agents", "/coins", "/work"], Ledger: ["/ledger"], Protocol: ["/protocol", "/docs", "/roadmap"], Token: ["/token", "/burn"] };
+const NAV = Object.values(GROUPS).flat();
+// the group each page is in, which the header marks as the current one (none for a page of no group)
+const CURRENT = { "/bounties": "Hire", "/bounties/1": "Hire", "/hire": "Hire", "/open-jobs": "Hire", "/agents": "Agents", "/agents/lumen-07": "Agents", "/jobs/0412": "Agents", "/coins/page-smith": "Agents", "/work": "Agents", "/ledger": "Ledger", "/protocol": "Protocol", "/docs": "Protocol", "/token": "Token", "/burn": "Token", "/": null, "/log": null, "/security": null, "/pay": null };
 // Words the copy does not use: no long dash, no promise of gain. A list kept beside this file and out of the repo
 // (forbidden.local.json, pairs of pattern and flags) adds to them on the machine it is on.
 const LOCAL = new URL("./forbidden.local.json", import.meta.url);
@@ -97,7 +101,34 @@ test("every page answers, with one main heading and the header that leads to the
     const { status, html } = await get(path);
     assert.equal(status, 200, path);
     assert.equal((html.match(/<h1[\s>]/g) ?? []).length, 1, `${path} has one main heading`);
-    for (const to of NAV) assert.match(html, new RegExp(`href="${to}"`), `${path} does not lead to ${to}`);
+    // the header itself leads to every page, each in its group, and folds them the same way into the phone's menu
+    const header = /<header class="top">[\s\S]*?<\/header>/.exec(html)?.[0] ?? "";
+    const menu = /<nav class="menu[^"]*" aria-label="Pages">[\s\S]*?<\/nav>/.exec(html)?.[0] ?? "";
+    assert.ok(header && menu, `${path} has no header, or no menu`);
+    for (const to of NAV) {
+      assert.match(header, new RegExp(`href="${to}"`), `${path}: the header does not lead to ${to}`);
+      assert.match(menu, new RegExp(`href="${to}"`), `${path}: the menu does not lead to ${to}`);
+    }
+    assert.match(menu, /href="\/log"/, `${path}: the menu has no Dev log`);
+    for (const [name, pages] of Object.entries(GROUPS)) {
+      if (pages.length === 1) {
+        assert.match(header, new RegExp(`<a [^>]*href="${pages[0]}"[^>]*>${name}</a>`), `${path}: ${name} is not a plain link`);
+        continue;
+      }
+      const button = new RegExp(`<button[^>]*data-group="${name}"[^>]*>`).exec(header)?.[0] ?? "";
+      assert.match(button, /aria-expanded="false"/, `${path}: the ${name} group is not a closed button`);
+      assert.match(button, new RegExp(`aria-controls="pages-${name.toLowerCase()}"`), `${path}: the ${name} group names no list`);
+      const list = new RegExp(`<div class="drop" id="pages-${name.toLowerCase()}"[^>]*>([\\s\\S]*?)</div>`).exec(header)?.[1] ?? "";
+      assert.deepEqual([...list.matchAll(/href="([^"]+)"/g)].map((m) => m[1]), pages, `${path}: the ${name} group holds other pages`);
+      assert.match(menu, new RegExp(`<div class="label mh">${name}</div>`), `${path}: the menu has no ${name} heading`);
+    }
+    // the group of the page being read, and only it, is marked as current
+    if (path in CURRENT) {
+      const marked = [...header.matchAll(/<button[^>]*data-group="([^"]+)"[^>]*>/g)].filter((m) => /class="on"/.test(m[0]) && /aria-current="true"/.test(m[0])).map((m) => m[1]);
+      const ledger = /<a [^>]*>Ledger<\/a>/.exec(header)?.[0] ?? "";
+      if (/class="on"/.test(ledger) && /aria-current="page"/.test(ledger)) marked.push("Ledger");
+      assert.deepEqual(marked, CURRENT[path] ? [CURRENT[path]] : [], `${path}: the wrong group is marked`);
+    }
     assert.match(html, /BUY ON PONS|NOT LIVE YET/, `${path} has no buy button`);
     assert.match(html, /aria-label="GitHub/, `${path} has no GitHub icon`);
     assert.match(html, /at your own risk/, `${path} has no own-risk line`);
