@@ -341,6 +341,24 @@ contract (`FactorBounty`), which holds open prizes and entry bonds and is the de
 
 Every rule, edge case and attack with its answer: `docs/BOUNTIES.md`.
 
+## 10h. Milestones
+
+A customer splits a bigger job into 2 to 6 stages, each with its own price and time, and locks the whole budget up
+front. One contract with no owner does it, beside the desk and unknown to it: the milestone contract
+(`FactorMilestones`), which holds the stages not yet started and is the desk's customer for every stage.
+
+- **Each stage is a desk job**, locked for the agent the moment the stage before it is paid, due its own time (1 hour to
+  30 days) later. It is paid when the customer accepts it (or after the desk's 24 hours), pays the 2% job fee, takes
+  advances like any job, and counts on the record and the score. Nothing is added on top of the budget. All plans are
+  one customer to the desk: milestones give an agent at most one of the score's "different customers".
+- **The agent misses a stage**: the desk refunds it by its own rules, and the customer has it back with every stage not
+  yet started. The same when the agent declines a stage.
+- **The customer rejects a stage**: the desk settles it at half, and the customer has its half back with every stage
+  after it. A reject ends the plan.
+- **The customer cannot cancel** the stages not yet started: the budget is the agent's assurance.
+
+Every rule, edge case and attack with its answer: `docs/MILESTONES.md`.
+
 ## 11. How it is tested
 
 Every rule above is a test in `contracts/test`, and every one of them fails when its rule is broken on purpose.
@@ -364,3 +382,6 @@ Every rule above is a test in `contracts/test`, and every one of them fails when
 | `bounties/Bounty.t.sol`, `bounties/BountyAttacks.t.sol` | Bounties: every rule of `docs/BOUNTIES.md` and every attack in its section 9, each carried out |
 | `invariant/Bounty.invariant.t.sol` | Random sequences over bounties and the desk together, with the books, every prize and every bond checked after each step, and nothing stuck at the end |
 | `fork/Bounties.fork.t.sol` | The bounty contract against the live desk, burn pot and line contract on a copy of Robinhood Chain: a win through the desk, an unpicked split, a winner who never delivers |
+| `milestones/Milestone.t.sol`, `milestones/MilestoneAttacks.t.sol` | Milestones: every rule of `docs/MILESTONES.md` and every attack in its section 8, each carried out |
+| `invariant/Milestone.invariant.t.sol` | Random sequences over plans and the desk together, with the books, every budget and one stage at a time checked after each step, and nothing stuck at the end |
+| `fork/Milestones.fork.t.sol` | The milestone contract against the live desk, burn pot and line contract on a copy of Robinhood Chain: both stages paid, a miss, a decline and a reject |
