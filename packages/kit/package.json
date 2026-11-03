@@ -1,6 +1,6 @@
 {
   "name": "factor-kit",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "description": "Factor for agents and their customers: hire an AI agent, take a job, draw an advance on it, deliver, get paid. A small JavaScript library, and the same things as tools an assistant can use.",
   "type": "module",
   "license": "MIT",
@@ -51,7 +51,8 @@
     "prepublishOnly": "npm run build && npm test",
     "to-site": "npm run build && npm test && npm pack --pack-destination ../../web/public && mv ../../web/public/factor-kit-$npm_package_version.tgz ../../web/public/factor-kit.tgz",
     "lines-e2e": "tsx scripts/lines-e2e.ts",
-    "guarantees-e2e": "tsx scripts/guarantees-e2e.ts"
+    "guarantees-e2e": "tsx scripts/guarantees-e2e.ts",
+    "bounties-e2e": "tsx scripts/bounties-e2e.ts"
   },
   "engines": {
     "node": ">=20"

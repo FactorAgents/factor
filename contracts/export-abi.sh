@@ -5,8 +5,8 @@
 # kit reads them (packages/kit/src/abi), because the kit sends them from an agent's own. The coin launcher's goes to
 # both as well: a maker launches an agent's coin from the site, and an agent from the kit. So do the line contract's and
 # the line account's: an agent opens, draws and repays from the site or the kit. And the guarantee contract's: an agent
-# bonds and sets its offer, and a customer hires with cover, from the site or the kit. The bounty contract's goes to the
-# site only: nobody calls it from the kit yet. Run it after any change to a contract's interface.
+# bonds and sets its offer, and a customer hires with cover, from the site or the kit. And the bounty contract's: a poster
+# locks a prize and picks, and an agent enters, from the site or the kit. Run it after any change to a contract's interface.
 #
 #   contracts/export-abi.sh           writes the files
 #   contracts/export-abi.sh --check   writes nothing; fails if a file is not what the contracts say today
@@ -24,9 +24,9 @@ for pair in FactorDesk:factorDeskAbi:FactorDesk FactorSplitter:factorSplitterAbi
   NAME=${pair%%:*}; REST=${pair#*:}; CONST=${REST%%:*}; SOURCE=${REST##*:}
   FILE="$OUT/$NAME.ts"
   # the desk and the accounts are what a visitor or an agent calls: those go to the site and the kit as well
-  SHARED=0; case $NAME in FactorDesk|FactorAccount|FactorAccounts|AgentCoinLauncher|FactorLine|FactorLineAccount|FactorGuarantee) SHARED=1;; esac
-  # the site reads it, the kit does not yet
-  WEBONLY=0; case $NAME in FactorBounty) WEBONLY=1;; esac
+  SHARED=0; case $NAME in FactorDesk|FactorAccount|FactorAccounts|AgentCoinLauncher|FactorLine|FactorLineAccount|FactorGuarantee|FactorBounty) SHARED=1;; esac
+  # a contract only the site reads would be set here; none is today
+  WEBONLY=0
   NEW=$(python3 - "$HERE/out/$SOURCE.sol/$NAME.json" "$NAME" "$CONST" <<'PY'
 import json, sys
 abi = json.load(open(sys.argv[1]))["abi"]

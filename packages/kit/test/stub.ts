@@ -2,11 +2,17 @@
 // refuses before it would send anything, and what its tools say. The real thing is scripts/e2e.ts.
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { toFunctionSelector } from "viem";
+import { decodeFunctionData, encodeErrorResult, encodeFunctionResult, toFunctionSelector, type Abi, type Hex } from "viem";
+import { factorBountyAbi } from "../src/abi/FactorBounty.js";
+import { entryHashOf as engineEntryHash } from "../../../engine/src/bounties.js";
 import type { Agent, Job, State } from "../src/types.js";
 
 export const DESK = "0x00000000000000000000000000000000000de5c0";
 export const COIN_LAUNCHER = "0x00000000000000000000000000000000000c01a1";
+export const BOUNTY = "0x00000000000000000000000000000000000b0a7e";
+const B = factorBountyAbi as Abi;
+/** A bounty as the made-up bounty contract holds it. */
+export interface ChainBounty { poster: string; deadline: number; minScore: number; state: number; bondsBack: boolean; winner: string; prize: bigint; fee: bigint; bond: bigint; job: bigint; task: Hex }
 const LAUNCH_FEE = toFunctionSelector("launchFee()");
 const NONCES = toFunctionSelector("nonces(address)");
 export const KEY = "0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6"; // one of anvil's public test keys
@@ -21,6 +27,8 @@ export const JOB: Job = {
   lockedAt: "2026-10-13T08:00:00.000Z", dueAt: "2026-10-14T08:00:00.000Z", allowEarly: false, late: false, deliveredAt: "2026-10-13T09:00:00.000Z", advances: [{ kind: "pool", eth: 0.02, feeEth: 0.0002, at: "2026-10-13T08:05:00.000Z" }], tx: "0xabc",
 };
 
+export const BOUNTIES_OFF = { enabled: false, contract: null, chainId: 4663, rules: { burnPct: 1, bondPct: 1, jobFeePct: 2, minPrizeEth: 0.005, maxEntries: 25, minOpenH: 1, maxOpenD: 30, pickD: 3, deliverD: 3, graceH: 12, taskBytes: 8000, workBytes: 200_000 }, totals: null };
+
 export function state(over: Partial<State> = {}): State {
   return {
     asOf: new Date().toISOString(), launched: true, links: { pons: null, github: null, x: null },
@@ -32,11 +40,11 @@ export function state(over: Partial<State> = {}): State {
   };
 }
 
-export interface Stub { api: string; rpc: string; site: { coins: unknown[]; coin: unknown; coinsAbout: unknown; state: State; refuse: number | null; payInfo: ((token: string) => { status: number; body: unknown }) | null; x402: { status: number; body: unknown } | null; record: unknown; jobExtra: Record<string, unknown>; tree: unknown; firms: unknown[]; firm: unknown; firmRecord: unknown; plan: unknown; plans: unknown[]; erc8004: unknown; openJob: unknown; openJobs: unknown[]; autoApply: unknown; verified: unknown; line: unknown; linesAbout: unknown; guarantee: unknown; cover: unknown; guaranteesAbout: unknown }; node: { chainId: number; code: string; calls: string[] }; posts: { path: string; body: unknown; auth?: string }[]; close(): Promise<void> }
+export interface Stub { api: string; rpc: string; site: { coins: unknown[]; coin: unknown; coinsAbout: unknown; state: State; refuse: number | null; payInfo: ((token: string) => { status: number; body: unknown }) | null; x402: { status: number; body: unknown } | null; record: unknown; jobExtra: Record<string, unknown>; tree: unknown; firms: unknown[]; firm: unknown; firmRecord: unknown; plan: unknown; plans: unknown[]; erc8004: unknown; openJob: unknown; openJobs: unknown[]; autoApply: unknown; verified: unknown; line: unknown; linesAbout: unknown; guarantee: unknown; cover: unknown; guaranteesAbout: unknown; covers: unknown[]; bountiesAbout: unknown; bounties: unknown[]; bounty: unknown; bountyEntry: unknown; agentBounties: unknown; bountyPoster: unknown; bountyRead: unknown[]; burns: unknown[]; payLinks: unknown[]; raeto: boolean; credit: Record<string, unknown> }; node: { chainId: number; code: string; calls: string[]; bounties: Map<number, ChainBounty>; entries: Map<string, { hash: Hex; at: number }>; refuse: Record<string, { error: string; args: unknown[] }> }; posts: { path: string; body: unknown; auth?: string }[]; close(): Promise<void> }
 
 export async function stub(): Promise<Stub> {
-  const site = { coins: [] as unknown[], coin: null as unknown, coinsAbout: { enabled: false, launcher: null } as unknown, state: state(), refuse: null as number | null, payInfo: null as Stub["site"]["payInfo"], x402: null as Stub["site"]["x402"], record: null as unknown, jobExtra: {} as Record<string, unknown>, tree: null as unknown, firms: [] as unknown[], firm: null as unknown, firmRecord: null as unknown, plan: null as unknown, plans: [] as unknown[], erc8004: null as unknown, openJob: null as unknown, openJobs: [] as unknown[], autoApply: null as unknown, verified: null as unknown, line: null as unknown, linesAbout: { enabled: false, contract: null, chainId: 4663, rules: { feePct: 2, burnPct: 1, poolPct: 1, dueDays: 30, defaultDays: 30, minDrawEth: 0.0001, poolOutMaxPct: 80 }, pool: null, lines: 0, owing: 0 } as unknown, guarantee: null as unknown, cover: null as unknown, guaranteesAbout: { enabled: false, contract: null, chainId: 4663, rules: { feePct: 1, burnPctOfFee: 50, minCoverEth: 0.0001, windowMin: 60, graceH: 12, shares: [{ score: 200, pct: 25 }, { score: 400, pct: 50 }, { score: 600, pct: 75 }, { score: 800, pct: 100 }] }, totals: null } as unknown };
-  const node = { chainId: 4663, code: "0x6080", calls: [] as string[] };
+  const site = { coins: [] as unknown[], coin: null as unknown, coinsAbout: { enabled: false, launcher: null } as unknown, state: state(), refuse: null as number | null, payInfo: null as Stub["site"]["payInfo"], x402: null as Stub["site"]["x402"], record: null as unknown, jobExtra: {} as Record<string, unknown>, tree: null as unknown, firms: [] as unknown[], firm: null as unknown, firmRecord: null as unknown, plan: null as unknown, plans: [] as unknown[], erc8004: null as unknown, openJob: null as unknown, openJobs: [] as unknown[], autoApply: null as unknown, verified: null as unknown, line: null as unknown, linesAbout: { enabled: false, contract: null, chainId: 4663, rules: { feePct: 2, burnPct: 1, poolPct: 1, dueDays: 30, defaultDays: 30, minDrawEth: 0.0001, poolOutMaxPct: 80 }, pool: null, lines: 0, owing: 0 } as unknown, guarantee: null as unknown, cover: null as unknown, guaranteesAbout: { enabled: false, contract: null, chainId: 4663, rules: { feePct: 1, burnPctOfFee: 50, minCoverEth: 0.0001, windowMin: 60, graceH: 12, shares: [{ score: 200, pct: 25 }, { score: 400, pct: 50 }, { score: 600, pct: 75 }, { score: 800, pct: 100 }] }, totals: null } as unknown, covers: [] as unknown[], bountiesAbout: BOUNTIES_OFF as unknown, bounties: [] as unknown[], bounty: null as unknown, bountyEntry: null as unknown, agentBounties: null as unknown, bountyPoster: null as unknown, bountyRead: [] as unknown[], burns: [] as unknown[], payLinks: [] as unknown[], raeto: false, credit: {} as Record<string, unknown> };
+  const node = { chainId: 4663, code: "0x6080", calls: [] as string[], bounties: new Map<number, ChainBounty>(), entries: new Map<string, { hash: Hex; at: number }>(), refuse: {} as Record<string, { error: string; args: unknown[] }> };
   const posts: { path: string; body: unknown; auth?: string }[] = [];
   const json = (res: import("node:http").ServerResponse, status: number, body: unknown) => { res.writeHead(status, { "content-type": "application/json" }); res.end(JSON.stringify(body)); };
   const body = (req: import("node:http").IncomingMessage) => new Promise<string>((r) => { let s = ""; req.on("data", (c) => (s += c)); req.on("end", () => r(s)); });
@@ -48,6 +56,8 @@ export async function stub(): Promise<Stub> {
       if (path === "/compute/v1/chat/completions" || path === "/compute/v1/messages") {
         if (site.refuse) return json(res, site.refuse, { type: "error", error: { type: "billing_error", message: "this agent has no compute credit" } });
         const m = (posts.at(-1)!.body as { model: string }).model;
+        // raeto/auto: the model Raeto picked, and what the call took from the credit, as the gateway says them
+        if (m.startsWith("raeto/auto")) { res.writeHead(200, { "content-type": "application/json", "x-factor-route": "raeto", "x-raeto-model": "deepseek/deepseek-chat", "x-factor-cost-usd": "0.000412" }); return res.end(JSON.stringify({ id: "gen-2", model: "deepseek/deepseek-chat", choices: [{ message: { role: "assistant", content: "Hello from the model Raeto picked" } }], usage: { prompt_tokens: 10, completion_tokens: 5, cost: 0.000412 }, raeto: { model: "deepseek/deepseek-chat", cost_usd: 0.000412 } })); }
         return json(res, 200, path.endsWith("messages")
           ? { type: "message", model: m, content: [{ type: "text", text: "Hello from Claude" }], usage: { input_tokens: 12, output_tokens: 4 } }
           : { id: "gen-1", model: m, choices: [{ message: { role: "assistant", content: "Hello from the model" } }], usage: { prompt_tokens: 10, completion_tokens: 5 } });
@@ -69,10 +79,12 @@ export async function stub(): Promise<Stub> {
       if (path === "/coins/permission") { const b = posts.at(-1)!.body as { agent: string; maker: string; name: string; symbol: string }; return json(res, 200, { agent: b.agent, maker: b.maker, name: b.name, symbol: b.symbol, logo: `https://factoragents.fun/api/v1/coins/logo/${b.agent}`, description: "d", nonce: "0", deadline: "4102444800", signature: `0x${"5e".repeat(65)}`, launcher: COIN_LAUNCHER, chainId: 4663 }); }
       if (path === "/erc8004/link") { const b = posts.at(-1)!.body as { agentId: string | null }; return json(res, 200, { ok: true, agentId: b.agentId, ...(b.agentId ? { via: "wallet" } : {}) }); }
       if (path === "/firms/form") { const b = posts.at(-1)!.body as { slug: string; members: string[] }; return json(res, 200, { ok: true, firm: b.slug, edited: false, invited: b.members }); }
+      // bounties: a poster's read answers the entries it was given; a task or a work is taken as it was sent
+      if (path === "/bounties/read") return json(res, site.bountyRead.length ? 200 : 409, site.bountyRead.length ? { id: (posts.at(-1)!.body as { id: number }).id, items: site.bountyRead } : { error: "the entries open to the poster at the deadline, once nobody can enter any more" });
       return json(res, 200, path === "/compute/key" ? { key: "fck_a-key-from-the-stub-0123456789ab", expiresAt: "2099-01-01T00:00:00.000Z", agent: (posts.at(-1)!.body as { address: string }).address } : { ok: true });
     }
     const credit = /^\/compute\/credit\/(0x[0-9a-f]{40})$/.exec(path);
-    if (credit) return json(res, 200, { agent: credit[1], balanceUsd: credit[1] === AGENTS[0].address ? 12.5 : 49.5, enabled: site.state.compute.enabled, lots: [{ job: 12, at: "2026-10-13T10:00:00.000Z", usd: 49.5, spentUsd: 0, state: "open" }] });
+    if (credit) return json(res, 200, { agent: credit[1], balanceUsd: credit[1] === AGENTS[0].address ? 12.5 : 49.5, enabled: site.state.compute.enabled, lots: [{ job: 12, at: "2026-10-13T10:00:00.000Z", usd: 49.5, spentUsd: 0, state: "open" }], ...site.credit });
     if (path === "/state") return json(res, 200, site.state);
     // Pay with Factor: what the test puts here is what the site says
     const link = /^\/pay\/link\/(.+)$/.exec(path);
@@ -81,6 +93,7 @@ export async function stub(): Promise<Stub> {
     if (path === "/record/signer") return json(res, 200, { signer: (site.record as { attestation?: { signer: string } } | null)?.attestation?.signer ?? null });
     if (path.startsWith("/record/")) return site.record ? json(res, 200, site.record) : json(res, 404, { error: "no such agent" });
     if (path === "/compute/v1/models") return json(res, 200, { object: "list", data: [
+      ...(site.raeto ? [{ id: "raeto/auto", object: "model", created: 0, owned_by: "raeto", name: "Raeto picks the model for each request" }, { id: "raeto/auto:cheap", object: "model", created: 0, owned_by: "raeto", name: "Raeto picks the model, and keeps the cheap answer" }] : []),
       { id: "openai/gpt-5", object: "model", owned_by: "openai", name: "OpenAI: GPT-5", context_length: 400_000, pricing: { inUsd: 1.3125, outUsd: 10.5 } },
       { id: "deepseek/deepseek-chat", object: "model", owned_by: "deepseek", name: "DeepSeek V3", context_length: 128_000, pricing: { inUsd: 0.2625, outUsd: 0.84 } },
     ] });
@@ -95,6 +108,18 @@ export async function stub(): Promise<Stub> {
     if (path === "/guarantees") return json(res, 200, { ...(site.guaranteesAbout as object), agents: site.guarantee ? [site.guarantee] : [], covers: site.cover ? [site.cover] : [] });
     if (path.startsWith("/guarantees/agent/")) return site.guarantee ? json(res, 200, { guarantee: site.guarantee }) : json(res, 404, { error: "no guarantee for that agent" });
     if (path.startsWith("/guarantees/job/")) return site.cover ? json(res, 200, { cover: site.cover }) : json(res, 404, { error: "no such cover" });
+    if (path.startsWith("/guarantees/customer/")) return json(res, 200, { items: site.covers });
+    // bounties: the rules and the board, one bounty, one entry, an agent's and a poster's, as the engine answers them
+    if (path === "/bounties/about") return json(res, 200, site.bountiesAbout);
+    if (path === "/bounties") return json(res, 200, { ...(site.bountiesAbout as object), items: site.bounties });
+    const bm = /^\/bounties\/(\d+)\/mine\/(0x[0-9a-f]{40})$/.exec(path);
+    if (bm) { const e = node.entries.get(`${bm[1]}:${bm[2]}`); return json(res, 200, { entered: !!e, workShown: !!e, ...(e ? { hash: e.hash } : {}) }); }
+    if (/^\/bounties\/\d+\/entries\/0x[0-9a-f]{40}$/.test(path)) return site.bountyEntry ? json(res, 200, { entry: site.bountyEntry }) : json(res, 404, { error: "no such entry to read: entries are public once a winner is picked or the bounty ends" });
+    if (path.startsWith("/bounties/agent/")) return json(res, 200, { bounties: site.agentBounties });
+    if (path.startsWith("/bounties/poster/")) return site.bountyPoster ? json(res, 200, site.bountyPoster) : json(res, 404, { error: "bounties are switched off for now" });
+    if (/^\/bounties\/\d+$/.test(path)) return site.bounty ? json(res, 200, site.bounty) : json(res, 404, { error: "no such bounty" });
+    if (path === "/burns") return json(res, 200, { total: site.burns.length, more: false, items: site.burns });
+    if (path.startsWith("/pay/links/")) return json(res, 200, { items: site.payLinks });
     if (path === "/coins/about") return json(res, 200, site.coinsAbout);
     if (path.startsWith("/coins/")) return site.coin ? json(res, 200, site.coin) : json(res, 404, { error: "no coin is listed for that" });
     if (path.startsWith("/verified/")) return site.verified ? json(res, 200, site.verified) : json(res, 200, { enabled: false, owners: [], verifiedOwner: null });
@@ -124,6 +149,22 @@ export async function stub(): Promise<Stub> {
       const block = { number: "0x10", hash: `0x${"11".repeat(32)}`, parentHash: `0x${"10".repeat(32)}`, timestamp: `0x${Math.floor(Date.now() / 1000).toString(16)}`, gasLimit: "0x1c9c380", gasUsed: "0x0", baseFeePerGas: "0x1", transactions: [], miner: `0x${"00".repeat(20)}`, extraData: "0x", logsBloom: `0x${"00".repeat(256)}`, nonce: "0x0000000000000000", difficulty: "0x0", sha3Uncles: `0x${"00".repeat(32)}`, size: "0x1", stateRoot: `0x${"00".repeat(32)}`, receiptsRoot: `0x${"00".repeat(32)}`, transactionsRoot: `0x${"00".repeat(32)}`, uncles: [], mixHash: `0x${"00".repeat(32)}` };
       // the coin launcher's two reads: Pons' launch fee (0.0005 ETH) and an agent's permission number (0)
       const data = (c as { params?: [{ data?: string; input?: string }] }).params?.[0]?.data ?? (c as { params?: [{ input?: string }] }).params?.[0]?.input ?? "";
+      const to = ((c as { params?: [{ to?: string }] }).params?.[0]?.to ?? "").toLowerCase();
+      // the made-up bounty contract: its reads, and a refusal for a call the test names
+      if (c.method === "eth_call" && to === BOUNTY) {
+        const d = decodeFunctionData({ abi: B, data: data as Hex });
+        const no = node.refuse[d.functionName];
+        if (no) return { jsonrpc: "2.0", id: c.id, error: { code: 3, message: "execution reverted", data: encodeErrorResult({ abi: B, errorName: no.error, args: no.args }) } };
+        const a = (d.args ?? []) as readonly unknown[];
+        const none: ChainBounty = { poster: `0x${"0".repeat(40)}`, deadline: 0, minScore: 0, state: 0, bondsBack: false, winner: `0x${"0".repeat(40)}`, prize: 0n, fee: 0n, bond: 0n, job: 0n, task: `0x${"0".repeat(64)}` };
+        const out = d.functionName === "bounty" ? node.bounties.get(Number(a[0])) ?? none
+          : d.functionName === "entryOf" ? node.entries.get(`${Number(a[0])}:${String(a[1]).toLowerCase()}`) ?? { hash: `0x${"0".repeat(64)}`, at: 0 }
+          : d.functionName === "entryHash" ? engineEntryHash(BOUNTY, Number(a[0]), String(a[1]), a[2] as Hex)
+          : d.functionName === "owed" ? 0n
+          : null;
+        if (out === null) return { jsonrpc: "2.0", id: c.id, error: { code: -32601, message: `the stub bounty contract does not do ${d.functionName}` } };
+        return { jsonrpc: "2.0", id: c.id, result: encodeFunctionResult({ abi: B, functionName: d.functionName, result: out } as never) };
+      }
       const call = c.method === "eth_call" ? (data.startsWith(LAUNCH_FEE) ? `0x${(5n * 10n ** 14n).toString(16).padStart(64, "0")}` : data.startsWith(NONCES) ? `0x${"0".repeat(64)}` : null) : null;
       const result = c.method === "eth_chainId" ? `0x${node.chainId.toString(16)}` : c.method === "eth_getCode" ? node.code : c.method === "eth_blockNumber" ? "0x10" : c.method === "eth_getBlockByNumber" ? block : call;
       return result === null ? { jsonrpc: "2.0", id: c.id, error: { code: -32601, message: `the stub node does not do ${c.method}` } } : { jsonrpc: "2.0", id: c.id, result };

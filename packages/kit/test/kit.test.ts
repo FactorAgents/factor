@@ -349,11 +349,12 @@ describe("the assistant's caps", () => {
 
 describe("the tools", () => {
   it("have a name, a description and an input each, and say which of them send something", () => {
-    expect(TOOLS.map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_hire", "factor_accept", "factor_reject", "factor_set_title", "factor_register", "factor_set_profile", "factor_bond", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_ask_model", "factor_draw", "factor_deliver", "factor_decline", "factor_sign_up", "factor_create_pay_link", "factor_pay_link_info", "factor_pay_link", "factor_pay_x402", "factor_hire_for_job", "factor_job_tree", "factor_reject_sub_jobs", "factor_record", "factor_erc8004", "factor_link_erc8004", "factor_coins", "factor_coin", "factor_prepare_coin_launch", "factor_sign_coin_permission", "factor_launch_coin", "factor_line", "factor_open_line", "factor_draw_line", "factor_repay_line", "factor_withdraw_from_line", "factor_guarantee", "factor_set_guarantee", "factor_hire_with_cover", "factor_cover", "factor_verified_owner", "factor_verify_owner", "factor_firms", "factor_firm_record", "factor_hire_firm", "factor_plan", "factor_subscribe", "factor_pay_month", "factor_stop_plan", "factor_draw_next_month", "factor_open_jobs", "factor_open_job", "factor_post_job", "factor_apply_to_job", "factor_bid", "factor_withdraw_offer", "factor_offers", "factor_pick_agent", "factor_close_job", "factor_auto_apply", "factor_set_auto_apply", "factor_auto_apply_now"]);
+    expect(TOOLS.map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_hire", "factor_accept", "factor_reject", "factor_set_title", "factor_register", "factor_set_profile", "factor_bond", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_ask_model", "factor_draw", "factor_deliver", "factor_decline", "factor_sign_up", "factor_create_pay_link", "factor_pay_link_info", "factor_pay_link", "factor_pay_x402", "factor_hire_for_job", "factor_job_tree", "factor_reject_sub_jobs", "factor_record", "factor_erc8004", "factor_link_erc8004", "factor_register_erc8004", "factor_coins", "factor_coin", "factor_prepare_coin_launch", "factor_sign_coin_permission", "factor_cancel_coin_permissions", "factor_launch_coin", "factor_line", "factor_open_line", "factor_bond_line", "factor_draw_line", "factor_repay_line", "factor_withdraw_from_line", "factor_guarantee", "factor_set_guarantee", "factor_hire_with_cover", "factor_cover", "factor_verified_owner", "factor_verify_owner", "factor_firms", "factor_firm_record", "factor_hire_firm", "factor_form_firm", "factor_join_firm", "factor_leave_firm", "factor_plan", "factor_plans", "factor_subscribe", "factor_subscribe_link", "factor_pay_month", "factor_stop_plan", "factor_draw_next_month", "factor_open_jobs", "factor_open_job", "factor_post_job", "factor_apply_to_job", "factor_bid", "factor_withdraw_offer", "factor_offers", "factor_pick_agent", "factor_close_job", "factor_auto_apply", "factor_set_auto_apply", "factor_auto_apply_now", "factor_bounties", "factor_bounty", "factor_post_bounty", "factor_enter_bounty", "factor_bounty_entries", "factor_pick_winner", "factor_deliver_bounty", "factor_close_bounty"]);
     for (const t of TOOLS) expect(t.description.length, t.name).toBeGreaterThan(40);
-    expect(TOOLS.filter((t) => t.readOnly).map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_pay_link_info", "factor_job_tree", "factor_record", "factor_erc8004", "factor_coins", "factor_coin", "factor_prepare_coin_launch", "factor_line", "factor_guarantee", "factor_cover", "factor_verified_owner", "factor_firms", "factor_firm_record", "factor_plan", "factor_open_jobs", "factor_open_job", "factor_offers", "factor_auto_apply"]);
+    expect(TOOLS.filter((t) => t.readOnly).map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_pay_link_info", "factor_job_tree", "factor_record", "factor_erc8004", "factor_coins", "factor_coin", "factor_prepare_coin_launch", "factor_line", "factor_guarantee", "factor_cover", "factor_verified_owner", "factor_firms", "factor_firm_record", "factor_plan", "factor_plans", "factor_open_jobs", "factor_open_job", "factor_offers", "factor_auto_apply", "factor_bounties", "factor_bounty"]);
     // the ones that spend or cannot be undone say so in capitals, where an assistant will not miss it
-    for (const name of ["factor_launch_coin", "factor_hire", "factor_reject", "factor_bond", "factor_pay_link", "factor_pay_x402", "factor_hire_for_job", "factor_reject_sub_jobs", "factor_hire_firm", "factor_subscribe", "factor_pay_month", "factor_pick_agent", "factor_repay_line", "factor_set_guarantee", "factor_hire_with_cover"]) expect(TOOLS.find((t) => t.name === name)!.description).toMatch(/SPENDS ETH|SETTLES AT HALF/);
+    for (const name of ["factor_launch_coin", "factor_hire", "factor_reject", "factor_bond", "factor_pay_link", "factor_pay_x402", "factor_hire_for_job", "factor_reject_sub_jobs", "factor_hire_firm", "factor_subscribe", "factor_pay_month", "factor_pick_agent", "factor_repay_line", "factor_set_guarantee", "factor_hire_with_cover", "factor_bond_line", "factor_subscribe_link", "factor_post_bounty", "factor_enter_bounty"]) expect(TOOLS.find((t) => t.name === name)!.description).toMatch(/SPENDS ETH|SETTLES AT HALF/);
+    expect(TOOLS.find((t) => t.name === "factor_pick_winner")!.description).toMatch(/CANNOT BE TAKEN BACK/);
   });
 
   it("answer in words", async () => {
@@ -1243,5 +1244,281 @@ describe("agent coins", () => {
     expect(prepared.code).toBe("no_permission");
     expect(prepared.message).toMatch(/\/agents\/page-smith#coin/);
     s.site.state = state();
+  });
+});
+
+describe("raeto/auto at the compute gateway", () => {
+  afterEach(() => { s.site.raeto = false; s.site.credit = {}; s.site.state = state(); });
+
+  it("lists raeto/auto and its variants first, marked as picking the model, with no price of their own", async () => {
+    s.site.raeto = true;
+    const f = await connect();
+    const all = await f.computeModels();
+    expect(all.slice(0, 2)).toEqual([
+      { id: "raeto/auto", name: "Raeto picks the model for each request", maker: "raeto", contextLength: 0, inUsd: 0, outUsd: 0, auto: true },
+      { id: "raeto/auto:cheap", name: "Raeto picks the model, and keeps the cheap answer", maker: "raeto", contextLength: 0, inUsd: 0, outUsd: 0, auto: true },
+    ]);
+    expect(all.filter((m) => !m.auto).map((m) => m.id)).toEqual(["openai/gpt-5", "deepseek/deepseek-chat"]);
+    expect((await f.computeModels("raeto")).map((m) => m.id)).toEqual(["raeto/auto", "raeto/auto:cheap"]);
+    // an assistant is told they cost what Raeto charged, and never sees them as the cheapest models at $0
+    const said = (await runTool(f, "factor_compute_models", {}, null)).text.split("\n");
+    expect(said[0]).toBe("raeto/auto (Raeto picks the model for each request); raeto/auto:cheap (Raeto picks the model, and keeps the cheap answer). A call through any of them costs what Raeto charged for it, with the margin: none has a price of its own.");
+    expect(said[1]).toBe("2 models, per million tokens: deepseek/deepseek-chat $0.263 in / $0.840 out; openai/gpt-5 $1.31 in / $10.50 out.");
+  });
+
+  it("asks raeto/auto through the second door, and says which model Raeto picked and what the call cost", async () => {
+    const f = await connect({ privateKey: KEY });
+    const a = await f.askModel("Say hello", { model: "raeto/auto", maxTokens: 100 });
+    expect(a).toEqual({ text: "Hello from the model Raeto picked", model: "deepseek/deepseek-chat", inputTokens: 10, outputTokens: 5, costUsd: 0.000412 });
+    const sent = s.posts.at(-1)!;
+    expect(sent.path).toBe("/compute/v1/chat/completions");
+    expect((sent.body as { model: string }).model).toBe("raeto/auto");
+    // a model with a price of its own says no cost: the gateway gives none for it
+    expect((await f.askModel("Say hello", { model: "openai/gpt-5" })).costUsd).toBeUndefined();
+    const tool = (await runTool(f, "factor_ask_model", { model: "raeto/auto:cheap", prompt: "Say hello" }, null)).text;
+    expect(tool).toBe("Hello from the model Raeto picked\n\n(deepseek/deepseek-chat, picked by raeto/auto:cheap: 10 tokens in, 5 out, $0.000412 paid from compute credit.)");
+  });
+
+  it("says what an agent spent through raeto/auto, and where each lot of its credit came from", async () => {
+    s.site.credit = { lots: [{ job: 12, at: "2026-10-13T10:00:00.000Z", usd: 49.5, spentUsd: 1.5, state: "open" }, { job: 0, at: "2026-10-29T10:00:00.000Z", usd: 9.8, spentUsd: 0, state: "open", paidBy: "line" }], raeto: { spentUsd: 0.42, calls: 3, models: [{ model: "deepseek/deepseek-chat", tier: "cheap", calls: 2, usd: 0.3 }, { model: "openai/gpt-5", tier: "", calls: 1, usd: 0.12 }] } };
+    s.site.state = state({ compute: { enabled: true, markupPct: 5, maxTokens: 16_000, models: [], raeto: { models: ["raeto/auto"], feePct: 8, routeFeeMostUsd: 0.0002, holdInUsd: 5.67, holdOutUsd: 28.35 } } });
+    const f = await connect();
+    const c = await f.computeCredit("lumen-07");
+    expect(c.raeto?.calls).toBe(3);
+    expect(c.lots[1]?.paidBy).toBe("line");
+    const said = (await runTool(f, "factor_compute_credit", { agent: "lumen-07" }, null)).text;
+    expect(said).toContain("From job 12: $1.50 of $49.50 spent; its credit line: $0.00 of $9.80 spent.");
+    expect(said).toContain("Through raeto/auto: $0.4200 on 3 calls (deepseek/deepseek-chat $0.3000, openai/gpt-5 $0.1200).");
+    expect(said).toContain("Or raeto/auto, which picks the model for each request: a call costs what Raeto charged for it, with its 8% fee and Factor's margin.");
+  });
+});
+
+// ---------- bounties ----------
+
+import { BOUNTY_WORDS, bountyEntryHash, bountyParts, bountyReadMessage } from "../src/index.js";
+import { entryHashOf as engineEntryHash, readMessage as engineRead, textHash as engineTextHash } from "../../../engine/src/bounties.js";
+import { factorBountyAbi } from "../src/abi/FactorBounty.js";
+import { BOUNTIES_OFF, BOUNTY, type ChainBounty } from "./stub.js";
+
+describe("bounties", () => {
+  const ON = { ...BOUNTIES_OFF, enabled: true, contract: BOUNTY };
+  const POSTER = "0x00000000000000000000000000000000000000c1";
+  const ME = privateKeyToAccount(KEY).address.toLowerCase();
+  const BOARD = { id: 7, poster: POSTER, prizeEth: 0.01, prizeWei: "10000000000000000", feeEth: 0.0001, feeWei: "100000000000000", bondEth: 0.0001, bondWei: "100000000000000", deadline: "2026-11-06T12:00:00.000Z", pickUntil: "2026-11-09T12:00:00.000Z", minScore: 200, taskHash: `0x${"aa".repeat(32)}`, title: "A haiku about loose leaf tea", task: "A haiku about loose leaf tea\n\nFive, seven, five. About our shop.", hidden: false, state: "open", status: "open", entries: 2, slots: 25, revealed: false, postedAt: "2026-11-03T12:00:00.000Z", tx: "0xabc" };
+  const HISTORY = { poster: POSTER, posted: 3, won: 1, unpicked: 1, undelivered: 0, empty: 0, open: 1, items: [], picks: [{ bounty: 4, winner: AGENTS[0]!.address, name: "lumen-07", score: 624, jobsSettled: 4 }] };
+  const chainBounty = (over: Partial<ChainBounty> = {}): ChainBounty => ({ poster: POSTER, deadline: Math.floor(Date.now() / 1000) + 3600, minScore: 0, state: 1, bondsBack: false, winner: `0x${"0".repeat(40)}`, prize: 10n ** 16n, fee: 10n ** 14n, bond: 10n ** 14n, job: 0n, task: `0x${"aa".repeat(32)}`, ...over });
+  const reset = () => { s.site.bountiesAbout = BOUNTIES_OFF; s.site.bounties = []; s.site.bounty = null; s.site.bountyEntry = null; s.site.agentBounties = null; s.site.bountyPoster = null; s.site.bountyRead = []; s.node.bounties.clear(); s.node.entries.clear(); s.node.refuse = {}; s.site.state = state(); };
+  beforeEach(reset);
+  afterAll(reset);
+  const sent = () => s.node.calls.filter((c) => c === "eth_sendRawTransaction").length;
+
+  it("hashes an entry and words a poster's read to the letter the engine and the contract check", () => {
+    const work = "Steam on the window\nleaves unfurl in the warm cup\nthe shop smells of rain";
+    expect(bountyEntryHash(BOUNTY, 7, AGENTS[0]!.address, work)).toBe(engineEntryHash(BOUNTY, 7, AGENTS[0]!.address, engineTextHash(work)));
+    // the agent's address is in it: the same work entered by another agent has another hash
+    expect(bountyEntryHash(BOUNTY, 7, AGENTS[1]!.address, work)).not.toBe(bountyEntryHash(BOUNTY, 7, AGENTS[0]!.address, work));
+    expect(bountyReadMessage({ id: 7, poster: POSTER, at: 1_792_570_000 })).toBe(engineRead({ id: 7, poster: POSTER, at: 1_792_570_000 }));
+  });
+
+  it("works out the 1% on top and the bond as the contract does, to the wei", () => {
+    expect(bountyParts(5n * 10n ** 15n)).toEqual({ fee: 5n * 10n ** 13n, bond: 5n * 10n ** 13n, total: 505n * 10n ** 13n });
+    expect(bountyParts(10_000_000_000_000_199n)).toEqual({ fee: 100_000_000_000_001n, bond: 100_000_000_000_001n, total: 10_100_000_000_000_200n });
+  });
+
+  it("has plain words for every refusal of the bounty contract", () => {
+    const errors = (factorBountyAbi as readonly { type: string; name?: string }[]).filter((x) => x.type === "error").map((x) => x.name!);
+    expect(errors.length).toBeGreaterThan(20);
+    for (const name of errors) expect(BOUNTY_WORDS[name], name).toBeTypeOf("function");
+    expect(BOUNTY_WORDS.ScoreTooLow([120n, 200n])).toBe("The poster asks for a Factor Score of 200. This agent has 120.");
+    expect(BOUNTY_WORDS.TooSmall([5n * 10n ** 15n])).toBe("The smallest prize is 0.005 ETH.");
+  });
+
+  it("reads the board, one bounty with its poster's history, an entry once public, an agent's and a poster's", async () => {
+    const f = await connect();
+    expect((await f.bounties()).enabled).toBe(false);
+    s.site.bountiesAbout = ON;
+    s.site.bounties = [BOARD];
+    s.site.bounty = { ...BOARD, history: HISTORY };
+    expect((await f.bounties({ show: "open" })).items.map((b) => b.id)).toEqual([7]);
+    expect((await f.bounty(7))!.history.posted).toBe(3);
+    expect(await f.bountyEntry(7, AGENTS[0]!.address)).toBeNull();
+    s.site.bountyEntry = { agent: AGENTS[0]!.address, name: "lumen-07", named: true, n: 1, enteredAt: "2026-11-03T13:00:00.000Z", hash: `0x${"bb".repeat(32)}`, tx: "0xabc", score: 624, won: true, house: false, shown: true, kind: "text", work: "the haiku", whole: true, shareEth: 0, bondBackEth: 0.0001 };
+    expect((await f.bountyEntry(7, "lumen-07"))!.work).toBe("the haiku");
+    s.site.agentBounties = { entered: 2, won: 1, wonEth: 0.01, splitEth: 0, items: [BOARD] };
+    expect((await f.agentBounties("lumen-07"))!.won).toBe(1);
+    s.site.bountyPoster = HISTORY;
+    expect((await f.bountyPoster(POSTER)).picks[0]!.name).toBe("lumen-07");
+    expect((await f.bountyEntryStatus(7, "lumen-07")).entered).toBe(false);
+    await expect(f.bounty(0)).rejects.toThrow(/whole number, like 7/);
+    await expect(f.bounties({ poster: "lumen-07" })).rejects.toThrow(/poster's address/);
+  });
+
+  it("refuses to post, enter, pick or deliver while bounties are off, and a prize or a task it would not post, before anything is sent", async () => {
+    const f = await connect({ privateKey: KEY });
+    expect((await refusal(f.postBounty({ prize: "0.01", task: "A haiku about tea" }))).code).toBe("bounties_off");
+    expect((await refusal(f.enterBounty(7, "the work"))).code).toBe("bounties_off");
+    expect((await refusal(f.pickWinner(7, "lumen-07"))).code).toBe("bounties_off");
+    expect((await refusal(f.deliverBounty(7))).code).toBe("bounties_off");
+    expect((await refusal(f.closeBounty(7))).code).toBe("bounties_off");
+    expect((await refusal(f.postBounty({ prize: "0.004", task: "A haiku about tea" }))).message).toBe("The smallest prize is 0.005 ETH.");
+    expect((await refusal(f.postBounty({ prize: "0.01", task: "x".repeat(8001) }))).code).toBe("bad_text");
+    expect((await refusal(f.postBounty({ prize: "0.01", task: "A haiku", deadlineInHours: 721 }))).code).toBe("bad_due");
+    expect((await refusal(f.postBounty({ prize: "0.01", task: "A haiku", minScore: 1001 }))).code).toBe("bad_score");
+    expect((await refusal(f.postBounty({ prize: "0.01", task: "A haiku", maxEth: "0.01" }))).message).toBe("The prize with its 1% is 0.0101 ETH, over the 0.01 ETH allowed.");
+    expect((await refusal(f.enterBounty(7, "  "))).code).toBe("no_work");
+    expect(sent()).toBe(0);
+  });
+
+  it("refuses to post while new jobs are paused, and says the contract's own refusal in words", async () => {
+    s.site.bountiesAbout = ON;
+    s.site.state = state({ paused: "New jobs are paused while something is looked at." });
+    const f = await connect({ privateKey: KEY });
+    expect((await refusal(f.postBounty({ prize: "0.01", task: "A haiku about tea" }))).message).toBe("New jobs are paused while something is looked at.");
+    s.site.state = state();
+    s.node.refuse.post = { error: "BadDeadline", args: [] };
+    const r = await refusal(f.postBounty({ prize: "0.01", task: "A haiku about tea" }));
+    expect(r.code).toBe("bounty_refused");
+    expect(r.message).toBe("The deadline must be between 1 hour and 30 days from now.");
+    expect(sent()).toBe(0);
+  });
+
+  it("enters only an open bounty before its deadline, with the hash the contract itself works out, and says a refusal in words", async () => {
+    s.site.bountiesAbout = ON;
+    const f = await connect({ privateKey: KEY });
+    expect((await refusal(f.enterBounty(7, "the work"))).message).toBe("There is no bounty 7 on the chain.");
+    s.node.bounties.set(7, chainBounty({ deadline: Math.floor(Date.now() / 1000) - 60 }));
+    expect((await refusal(f.enterBounty(7, "the work"))).code).toBe("too_late");
+    s.node.bounties.set(7, chainBounty({ state: 3 }));
+    expect((await refusal(f.enterBounty(7, "the work"))).message).toBe("Bounty 7 takes no entries: it is won.");
+    s.node.bounties.set(7, chainBounty());
+    expect((await refusal(f.enterBounty(7, "the work", { maxBondEth: "0.00001" }))).code).toBe("over_cap");
+    // the contract refuses the entry (a minimum score): said in words, and nothing is sent
+    s.node.refuse.enter = { error: "ScoreTooLow", args: [120n, 200n] };
+    const r = await refusal(f.enterBounty(7, "the work"));
+    expect(r.message).toBe("The poster asks for a Factor Score of 200. This agent has 120.");
+    expect(s.node.calls).toContain("eth_call");
+    expect(sent()).toBe(0);
+  });
+
+  it("lets only the poster read and pick, only an entrant be picked, and only the winner deliver", async () => {
+    s.site.bountiesAbout = ON;
+    const f = await connect({ privateKey: KEY });
+    s.node.bounties.set(7, chainBounty());
+    expect((await refusal(f.pickWinner(7, "lumen-07"))).code).toBe("not_poster");
+    s.node.bounties.set(7, chainBounty({ poster: ME }));
+    expect((await refusal(f.pickWinner(7, "lumen-07"))).message).toBe("lumen-07 has not entered bounty 7.");
+    s.node.entries.set(`7:${AGENTS[0]!.address}`, { hash: `0x${"bb".repeat(32)}`, at: 1_792_000_000 });
+    s.node.refuse.pick = { error: "TooSoon", args: [1_792_570_000n] };
+    expect((await refusal(f.pickWinner(7, "lumen-07"))).message).toBe("Not before 2026-10-21 08:06 UTC.");
+    expect((await refusal(f.deliverBounty(7))).message).toBe("No winner of bounty 7 is picked yet.");
+    expect(sent()).toBe(0);
+  });
+
+  it("reads the entries as the poster, with a signature over the engine's words on the chain's clock", async () => {
+    s.site.bountiesAbout = ON;
+    const f = await connect({ privateKey: KEY });
+    expect((await refusal(f.bountyEntries(7))).code).toBe("too_soon");
+    s.site.bountyRead = [{ agent: AGENTS[0]!.address, name: "lumen-07", named: true, n: 1, enteredAt: "2026-11-03T13:00:00.000Z", hash: `0x${"bb".repeat(32)}`, tx: "0xabc", score: 624, won: false, house: false, shown: true, kind: "text", work: "the haiku, whole", whole: true, shareEth: 0, bondBackEth: 0 }];
+    const items = await f.bountyEntries(7);
+    expect(items[0]!.work).toBe("the haiku, whole");
+    const b = s.posts.at(-1)!.body as { id: number; poster: string; at: number; signature: `0x${string}` };
+    expect(Object.keys(b).sort()).toEqual(["at", "id", "poster", "signature"]);
+    expect(b.poster).toBe(ME);
+    expect(Math.abs(b.at - Date.now() / 1000)).toBeLessThan(60);
+    expect((await recoverMessageAddress({ message: engineRead({ id: 7, poster: ME, at: b.at }), signature: b.signature })).toLowerCase()).toBe(ME);
+    const tool = (await runTool(f, "factor_bounty_entries", { id: 7 }, null)).text;
+    expect(tool).toBe("1. lumen-07 (0x00000000000000000000000000000000000000a1), Factor Score 624:\nthe haiku, whole");
+  });
+
+  it("tells an assistant the board and one bounty in words, with the poster's history", async () => {
+    const f = await connect();
+    expect((await runTool(f, "factor_bounties", {}, null)).text).toBe("Bounties are not switched on yet.");
+    s.site.bountiesAbout = ON;
+    expect((await runTool(f, "factor_bounties", {}, null)).text).toBe("No bounty is open right now.");
+    s.site.bounties = [BOARD];
+    expect((await runTool(f, "factor_bounties", {}, null)).text).toBe('Bounty 7 "A haiku about loose leaf tea": a prize of 0.01 ETH, 0.0001 ETH bond to enter, Factor Score 200 or more. 2 of 25 entries; taking entries until 2026-11-06T12:00:00.000Z.');
+    s.site.bounty = { ...BOARD, history: HISTORY };
+    const one = (await runTool(f, "factor_bounty", { id: 7 }, null)).text;
+    expect(one).toContain("The task:\nA haiku about loose leaf tea\n\nFive, seven, five. About our shop.");
+    expect(one).toContain("Its poster 0x00000000000000000000000000000000000000c1 posted 3 bounties: 1 won, 1 split with no pick, 0 whose winner did not deliver, 0 with nobody in, 1 still open. Its picks: lumen-07 (Factor Score 624, 4 jobs settled).");
+    expect(one).toContain("Enter with factor_enter_bounty: the bond is 0.0001 ETH, back at the end.");
+    // once a winner is picked, every entry with its agent and the start of its work
+    s.site.bounty = { ...BOARD, state: "picked", status: "picked", revealed: true, winner: { address: AGENTS[0]!.address, name: "lumen-07", named: true }, job: { n: 31, id: "0031" }, history: HISTORY, items: [{ agent: AGENTS[0]!.address, name: "lumen-07", named: true, n: 1, enteredAt: "2026-11-03T13:00:00.000Z", hash: `0x${"bb".repeat(32)}`, tx: "0xabc", score: 624, won: true, house: false, shown: true, kind: "text", work: "the haiku", whole: true, shareEth: 0, bondBackEth: 0 }] };
+    const picked = (await runTool(f, "factor_bounty", { id: 7 }, null)).text;
+    expect(picked).toContain("lumen-07 was picked, job 31, and delivers it.");
+    expect(picked).toContain('1. lumen-07 (0x00000000000000000000000000000000000000a1): Factor Score 624, WON. "the haiku"');
+    s.site.bounty = null;
+    expect((await runTool(f, "factor_bounty", { id: 8 }, null)).text).toBe("There is no bounty 8 on Factor, or bounties are not switched on.");
+  });
+
+  it("stops a prize or a bond over the owner's caps before anything is sent", async () => {
+    s.site.bountiesAbout = ON;
+    s.site.bounty = { ...BOARD, history: HISTORY };
+    const dir = mkdtempSync(join(tmpdir(), "factor-kit-"));
+    const f = await connect({ privateKey: KEY });
+    const spending = new Spending(limitsFrom({ FACTOR_MAX_JOB_ETH: "0.01", FACTOR_MAX_DAY_ETH: "0.00005", FACTOR_KIT_DIR: dir }), f.address!);
+    const before = s.node.calls.length;
+    // the prize and its 1% together are one job's worth
+    const post = await runTool(f, "factor_post_bounty", { prize: "0.01", task: "A haiku about tea" }, spending);
+    expect(post.isError).toBe(true);
+    expect(post.text).toContain("0.0101 ETH is over this assistant's cap of 0.01 ETH for one job");
+    const enter = await runTool(f, "factor_enter_bounty", { id: 7, work: "the haiku" }, spending);
+    expect(enter.isError).toBe(true);
+    expect(enter.text).toContain("over this assistant's cap of 0.00005 ETH a day");
+    expect(s.node.calls.slice(before)).toEqual([]);
+    expect(spending.today()).toBe(0n);
+    rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe("what else the site serves", () => {
+  afterEach(() => { s.site.burns = []; s.site.payLinks = []; s.site.covers = []; s.site.plans = []; s.site.linesAbout = { ...(s.site.linesAbout as object), enabled: false, contract: null }; s.site.coinsAbout = { enabled: false, launcher: null }; s.site.guaranteesAbout = { ...(s.site.guaranteesAbout as object), enabled: false, contract: null }; });
+
+  it("reads the burns, an agent's published links and a customer's covers", async () => {
+    s.site.burns = [{ n: 3, at: "2026-11-01T00:00:00.000Z", eth: 0.01, tokens: 12_345, tx: "0xabc" }];
+    s.site.payLinks = [{ id: "0123456789abcdef", title: "Summarise a contract", priceEth: "0.04", due: 24, early: true, exp: "2026-12-01T00:00:00.000Z", url: "https://factoragents.fun/pay/x" }];
+    s.site.covers = [{ id: 7, customer: "0x00000000000000000000000000000000000000c1", agent: AGENTS[0]!.address, agentName: "lumen-07", named: true, priceEth: 0.04, coverEth: 0.02, coverWei: "20000000000000000", feeEth: 0.0002, dueAt: "2026-11-02T00:00:00.000Z", allowEarly: false, state: "paid", job: "0012", reservedAt: "2026-11-01T00:00:00.000Z", expiresAt: "2026-11-01T01:00:00.000Z", tx: "0xabc" }];
+    const f = await connect({ privateKey: KEY });
+    expect((await f.burns())[0]!.tokens).toBe(12_345);
+    expect((await f.payLinks("lumen-07"))[0]!.title).toBe("Summarise a contract");
+    expect((await f.covers())[0]!.state).toBe("paid");
+    await expect(f.covers("lumen-07")).rejects.toThrow(/customer's address/);
+    s.site.guaranteesAbout = { ...(s.site.guaranteesAbout as object), enabled: true, contract: "0x0000000000000000000000000000000000006a7e" };
+    expect((await runTool(f, "factor_cover", {}, null)).text).toBe("Job 12: 0.02 ETH of cover from lumen-07, fee 0.0002 ETH, paid.");
+  });
+
+  it("the tools for firms sign the engine's words with the agent's own key", async () => {
+    const me = privateKeyToAccount(KEY).address.toLowerCase();
+    const f = await connect({ privateKey: KEY });
+    const formed = await runTool(f, "factor_form_firm", { name: "Figure Check Co", does: "Market notes where every figure is checked", members: ["lumen-07"] }, null);
+    expect(formed.text).toBe(`Formed the firm figure-check-co: ${s.api}/firms/figure-check-co. Invited: ${AGENTS[0]!.address}. Each is in it once it signs to join (factor_join_firm).`);
+    const b = s.posts.at(-1)!.body as { slug: string; name: string; does: string; lead: string; members: string[]; at: number; signature: `0x${string}` };
+    expect((await recoverMessageAddress({ message: engineFirm({ slug: b.slug, name: b.name, does: b.does, lead: b.lead, members: b.members, at: b.at }), signature: b.signature })).toLowerCase()).toBe(me);
+    s.site.firm = { enabled: true, firm: { slug: "figure-check-co", name: "Figure Check Co", does: "d", house: false, lead: { address: AGENTS[0]!.address, name: "lumen-07", named: true }, members: [], since: "2026-11-01T00:00:00.000Z", hired: 0, settled: 0, settledEth: 0 }, record: {}, jobs: [], links: [] };
+    expect((await runTool(f, "factor_join_firm", { firm: "figure-check-co" }, null)).text).toBe("This agent is a member of figure-check-co now.");
+    const j = s.posts.at(-1)!;
+    expect(j.path).toBe("/firms/join");
+    expect((await recoverMessageAddress({ message: engineJoin({ slug: "figure-check-co", lead: AGENTS[0]!.address, member: me, at: (j.body as { at: number }).at }), signature: (j.body as { signature: `0x${string}` }).signature })).toLowerCase()).toBe(me);
+    expect((await runTool(f, "factor_leave_firm", { firm: "figure-check-co" }, null)).text).toBe("This agent has left figure-check-co.");
+    expect(s.posts.at(-1)!.path).toBe("/firms/leave");
+    s.site.firm = null;
+  });
+
+  it("the tools for plans, lines, coins and ERC-8004 read in words and refuse before anything is sent", async () => {
+    const f = await connect({ privateKey: KEY });
+    s.site.plans = [{ id: `0x${"12".repeat(32)}`, status: "active", customer: f.address, agent: { address: AGENTS[0]!.address, name: "lumen-07", named: true }, title: "A weekly market note", brief: "", priceEth: 0.01, priceWei: "10000000000000000", months: 3, early: true, via: "kit", signedAt: "", startAt: null, stoppedAt: null, locked: 1, delivered: 0, settled: 0, paidEth: 0, lockedEth: 0.01, items: [], next: null, drawEarly: null, signed: { message: "", signature: "", by: "" } }];
+    expect((await runTool(f, "factor_plans", {}, null)).text).toBe(`0x${"12".repeat(32)}: "A weekly market note", lumen-07, 0.01 ETH a month for 3 months, active. Locked 1, delivered 0. Customer ${f.address}.`);
+    expect((await runTool(f, "factor_bond_line", { amount: "0.01" }, null)).text).toBe("Credit lines are not switched on yet.");
+    expect((await runTool(f, "factor_cancel_coin_permissions", {}, null)).text).toBe("Agent coins are not switched on yet.");
+    // a link that sells one job is not paid as a plan
+    s.site.payInfo = () => ({ status: 200, body: { link: { agent: AGENTS[0]!.address, price: "10000000000000000", title: "One job", brief: "", due: 24, early: false, exp: 4_102_444_800, id: "x", v: 1 }, registered: true, paused: null, priceWei: "10000000000000000", priceEth: "0.01", burnWei: "100000000000000", burnEth: "0.0001", totalWei: "10100000000000000" } });
+    const pl = await runTool(f, "factor_subscribe_link", { link: `${s.api}/pay/${"a".repeat(40)}.${"b".repeat(100)}` }, null);
+    expect(pl.text).toBe("That link sells one job, not a monthly plan: pay it with factor_pay_link.");
+    s.site.payInfo = null;
+    // the made-up node cannot register an identity: refused in words, nothing sent
+    const reg = await runTool(f, "factor_register_erc8004", {}, null);
+    expect(reg.isError).toBe(true);
+    expect(s.node.calls.filter((c) => c === "eth_sendRawTransaction")).toHaveLength(0);
+    expect((await runTool(await connect(), "factor_register_erc8004", {}, null)).text).toMatch(/No wallet key is set/);
   });
 });

@@ -40,6 +40,8 @@ export interface Job {
   open?: { id: string; applicants: number; by: "factor" | "customer" };
   /** hired with cover: how much, the fee, and how the cover stands (while guarantees are on) */
   cover?: { id: number; coverEth: number; feeEth: number; state: CoverState };
+  /** a bounty's prize, paid through the desk (while bounties are on): the bounty, its poster, and the hash its winner delivers as the proof */
+  bounty?: { id: number; title: string | null; poster: string; proof: string | null };
 }
 
 export interface Agent {
@@ -86,7 +88,7 @@ export interface State {
   events: LedgerLine[];
   contracts: { desk: string | null; splitter: string | null; burnPot: string | null; token: string | null; explorer: string };
   /** compute credit: whether an advance drawn as compute can be spent on models, and what they cost, in dollars a million tokens */
-  compute: { enabled: boolean; markupPct: number; maxTokens: number; models: ComputeModel[]; router?: { enabled: boolean; models: number }; limits?: { callUsd: number; agentDayUsd: number } };
+  compute: { enabled: boolean; markupPct: number; maxTokens: number; models: ComputeModel[]; router?: { enabled: boolean; models: number }; limits?: { callUsd: number; agentDayUsd: number }; /** raeto/auto at the second door, while it is served: its names, Raeto's fee, and what a call holds while it runs, in dollars a million tokens */ raeto?: RaetoAbout };
   /** accounts whose gas Factor pays: whether one can be made and used right now, and the contract that makes them */
   accounts: { enabled: boolean; factory: string | null; ordersPerDay: number };
   /** set while Factor has paused new jobs: why, in a line. The kit then locks nothing. */
@@ -106,6 +108,12 @@ export interface State {
   coins?: { enabled: boolean; launcher: string | null; count: number; items: Coin[] };
   /** guarantees: whether they are on, the contract, the rules and the totals */
   guarantees?: GuaranteesAbout;
+  /** credit lines: whether they are on, the contract, the rules and the line pool */
+  lines?: LinesAbout;
+  /** bounties: whether they are on, the contract, the rules and the totals */
+  bounties?: BountiesAbout;
+  /** ERC-8004: whether settled jobs are written to the agents' reputation, the identity registry, and the address entries come from */
+  erc8004?: { enabled: boolean; registry: string | null; reviewer: string | null };
 }
 
 /** A Factor account: what an agent's key acts through when Factor pays its gas (connect with `gasless: true`). */
@@ -122,18 +130,33 @@ export interface AccountInfo {
 }
 
 export interface ComputeModel { id: string; inUsd: number; outUsd: number }
-/** What an agent has left to spend on models, and the compute advances it came from. */
-export interface ComputeCredit { agent: string; balanceUsd: number; enabled: boolean; lots: { job: number; at: string; usd: number | null; spentUsd: number; state: "open" | "kept" | "closed" }[] }
+/**
+ * raeto/auto: a name at the second door with no model of its own. Raeto picks the model for each request (the variants
+ * lean to the cheap answer, the fast one, code, reasoning, pictures, tools, JSON or a long memory), and a call costs what
+ * Raeto charged for it, with its fee and Factor's margin. What a call holds while it runs assumes the dearest model.
+ */
+export interface RaetoAbout { models: string[]; feePct: number; routeFeeMostUsd: number; holdInUsd: number; holdOutUsd: number }
+/** What an agent's (or a job's) credit went on through raeto/auto: the dollars, the calls, and which models Raeto picked. */
+export interface RaetoSpend { spentUsd: number; calls: number; models: { model: string; tier: string; calls: number; usd: number }[] }
+/** What an agent has left to spend on models, and the lots of credit it came from: compute advances, its coin's fees, or its credit line. */
+export interface ComputeCredit { agent: string; balanceUsd: number; enabled: boolean; lots: { job: number; at: string; usd: number | null; spentUsd: number; state: "open" | "kept" | "closed"; /** a lot its coin's fees or its credit line paid for, not a job's advance */ paidBy?: "coin" | "line" }[]; /** what it spent through raeto/auto, while that is served */ raeto?: RaetoSpend }
 /**
  * What a program needs to spend an agent's compute credit. `baseURL` with `apiKey` for Anthropic's library (Claude);
  * `openaiBaseURL` with `apiKey` for OpenAI's library or any that speaks its shape, for every model of the second door
  * (GPT, Claude, Gemini, Grok, DeepSeek, Llama, Mistral and the rest, named like "openai/gpt-5").
  */
 export interface ComputeKey { baseURL: string; openaiBaseURL: string; apiKey: string; expiresAt: string; balanceUsd: number; models: ComputeModel[]; maxTokens: number }
-/** A model of the second door, with what it costs through Factor, in dollars a million tokens. */
-export interface RouterModel { id: string; name: string; maker: string; contextLength: number; inUsd: number; outUsd: number }
-/** A model's answer, paid from the agent's compute credit. */
-export interface ModelAnswer { text: string; model: string; inputTokens: number; outputTokens: number }
+/**
+ * A model of the second door, with what it costs through Factor, in dollars a million tokens. `auto`: raeto/auto or one of
+ * its variants, which picks the model for each request and has no price of its own (inUsd and outUsd are 0): a call costs
+ * what Raeto charged for it, with the margin.
+ */
+export interface RouterModel { id: string; name: string; maker: string; contextLength: number; inUsd: number; outUsd: number; auto?: boolean }
+/**
+ * A model's answer, paid from the agent's compute credit. `model`: the model that answered (through raeto/auto, the one
+ * Raeto picked). `costUsd`: what the call took from the credit, when the answer says it (raeto/auto's always do).
+ */
+export interface ModelAnswer { text: string; model: string; inputTokens: number; outputTokens: number; costUsd?: number }
 
 /** The other agents one agent hired for parts of its jobs, and those that hired it, with how many jobs. */
 export interface Hiring { hiredBy: { address: string; name: string; named?: boolean; jobs: number }[]; hires: { address: string; name: string; named?: boolean; jobs: number }[] }
@@ -165,7 +188,14 @@ export interface Erc8004Status { enabled: boolean; agent: string; erc8004: Erc80
 export interface Erc8004Entries { agentId: string; registry: string; reputation: string; reviewer: string; count: number; average: number | null; entries: Erc8004Entry[] }
 export interface Erc8004Entry { index: number; value: number; valueDecimals: number; tag1: string; tag2: string; revoked: boolean; job: number | null; uri: string | null; tx: string | null }
 
-export interface AgentPage { agent: Agent; /** its Factor Score, with the parts and what it can draw */ factorScore?: FactorScore; jobs: Job[]; events: LedgerLine[]; hiring?: Hiring; /** the firms it leads, belongs to or is invited to */ firms?: { slug: string; name: string; house: boolean; role: "lead" | "member" | "invited" }[]; /** its monthly clients, when it has any plan */ plans?: PlansSummary; /** its ERC-8004 identity and the entries written to it, when one is linked */ erc8004?: Erc8004 }
+export interface AgentPage {
+  agent: Agent; /** its Factor Score, with the parts and what it can draw */ factorScore?: FactorScore; jobs: Job[]; events: LedgerLine[]; hiring?: Hiring; /** the firms it leads, belongs to or is invited to */ firms?: { slug: string; name: string; house: boolean; role: "lead" | "member" | "invited" }[]; /** its monthly clients, when it has any plan */ plans?: PlansSummary; /** its ERC-8004 identity and the entries written to it, when one is linked */ erc8004?: Erc8004;
+  /** its own coin, while coins are on and it is listed */ coin?: Coin;
+  /** its credit line, while lines are on and it has one */ line?: CreditLine;
+  /** its guarantee bond, offer and covers, while guarantees are on and it has ever had one */ guarantee?: AgentGuarantee;
+  /** its bounties, entered and won, while bounties are on and it has entered one */ bounties?: AgentBounties;
+  /** what its credit went on through raeto/auto, while that is served */ raetoSpend?: RaetoSpend;
+}
 
 /** One of a firm's agents, and its part of the firm's work. */
 export interface FirmMember { address: string; name: string; named: boolean; role: "lead" | "member" | "invited"; since: string | null; part: { jobs: number; settled: number; settledEth: number; settledWei: string } }
@@ -270,7 +300,7 @@ export interface HireRoom { open: boolean; why?: string; freeEth: number; freeWe
  * `brief`: what the customer asked for at length. `work`: what was delivered, when its agent showed it. `note`: why
  * one of Factor's own agents declined the job.
  */
-export interface JobPage { job: Job; agent: Agent | null; events: LedgerLine[]; brief?: string | null; work?: { kind: "text" | "html"; text: string; at: string } | null; note?: string; /** the chain of work the job is part of */ tree?: JobTree; /** what its agent can still hire for it, while hiring is on */ hiring?: HireRoom }
+export interface JobPage { job: Job; agent: Agent | null; events: LedgerLine[]; brief?: string | null; work?: { kind: "text" | "html"; text: string; at: string } | null; note?: string; /** the chain of work the job is part of */ tree?: JobTree; /** what its agent can still hire for it, while hiring is on */ hiring?: HireRoom; /** its cover, when it was hired with one (while guarantees are on) */ cover?: Cover; /** what its compute credit went on through raeto/auto, while that is served */ raetoSpend?: RaetoSpend }
 export interface Page<T> { total: number; more: boolean; items: T[] }
 /** What a call that was sent answers with. */
 export interface Sent { hash: `0x${string}`; explorer: string }
@@ -581,3 +611,87 @@ export interface GuaranteeSent extends Sent {
   freeEth: string;
   offerEth: string;
 }
+
+/** A burn of $FACTOR by the burn pot: its number, the ETH it spent and the tokens it burned. */
+export interface Burn { n: number; at: string; eth: number; tokens: number; tx: string }
+
+/** A link an agent published on its page: what it sells, for how much, and until when. */
+export interface PublishedLink { id: string; title: string; priceEth: string; due: number; early: boolean; exp: string; url: string; firm?: string }
+
+// ---------- bounties ----------
+
+/** Bounties: whether they are on, the contract, the rules and the totals (the engine's BountiesAbout). */
+export interface BountiesAbout {
+  enabled: boolean; contract: string | null; chainId: number;
+  rules: { burnPct: number; bondPct: number; jobFeePct: number; minPrizeEth: number; maxEntries: number; minOpenH: number; maxOpenD: number; pickD: number; deliverD: number; graceH: number; taskBytes: number; workBytes: number };
+  totals: { bounties: number; prizesEth: number; openEth: number; wonEth: number; splitEth: number; burnedEth: number; open: number; entries: number } | null;
+}
+
+/** The contract's own states: open (taking entries, then the poster's pick), picked, and how it ended. */
+export type BountyState = "open" | "picked" | "won" | "unpicked" | "undelivered" | "empty";
+/** What a bounty is doing now: `open` taking entries, `choosing` waiting for the poster's pick, `ending` its time is up and anyone can close it, then the contract's own states. */
+export type BountyStatus = "open" | "choosing" | "ending" | "picked" | "won" | "unpicked" | "undelivered" | "empty";
+
+/** One bounty as the board shows it (the engine's BountyJson). Never any work. */
+export interface Bounty {
+  id: number; poster: string; prizeEth: number; prizeWei: string; feeEth: number; feeWei: string; bondEth: number; bondWei: string;
+  deadline: string; pickUntil: string; minScore: number; taskHash: string;
+  /** the task's first line and the whole of it; null until its words have arrived, or while they are hidden */
+  title: string | null; task: string | null; hidden: boolean;
+  state: BountyState; status: BountyStatus; entries: number; slots: number;
+  /** its entries are public: a winner is picked, or it ended */
+  revealed: boolean; postedAt: string; tx: string;
+  winner?: { address: string; name: string; named: boolean };
+  /** the desk job its prize became at the pick */
+  job?: { n: number; id: string; state?: number; dueAt?: string; deliveredAt?: string };
+  pickedTx?: string; pickedAt?: string; closedTx?: string; closedAt?: string; shareEth?: number; paidTo?: number; burnedEth?: number; toPosterEth?: number;
+  /** its time is up: what anyone's close does */
+  next?: "returns" | "splits";
+}
+
+/** One entry (the engine's BountyEntryJson): public once a winner is picked or the bounty ends, and to its poster from the deadline. */
+export interface BountyEntry {
+  agent: string; name: string; named: boolean; n: number; enteredAt: string; hash: string; tx: string; score: number; won: boolean;
+  /** one of Factor's own agents entered on its own */
+  house: boolean;
+  /** its work reached Factor */
+  shown: boolean;
+  kind?: "text" | "html"; work?: string; whole?: boolean;
+  shareEth: number; bondBackEth: number;
+}
+
+/** A poster's history, in the open: what it posted, how each ended, and whom it picked. Worth reading before putting work in. */
+export interface BountyPoster { poster: string; posted: number; won: number; unpicked: number; undelivered: number; empty: number; open: number; items: Bounty[]; picks: { bounty: number; winner: string; name: string; score: number; jobsSettled: number }[] }
+
+/** One bounty's page: its facts, its entries once they are public, and its poster's history. */
+export interface BountyPage extends Bounty { items?: BountyEntry[]; history: BountyPoster }
+
+/** An agent's bounties: how many it entered and won, what it won, what it had from splits, and the newest. */
+export interface AgentBounties { entered: number; won: number; wonEth: number; splitEth: number; items: Bounty[] }
+
+/** A bounty posted by the kit: its number, what was sent, and whether its words reached Factor. */
+export interface BountyPosted extends Sent {
+  id: number;
+  prizeWei: bigint; feeWei: bigint; bondWei: bigint;
+  /** when entries end, and until when the poster can pick */
+  deadline: string; pickUntil: string;
+  /** the task's words reached Factor, which shows them because they hash to what the bounty holds */
+  taskSaved: boolean;
+  url: string;
+  note?: string;
+}
+
+/** An entry sent by the kit: the agent it is for, the hash committed on the chain, and whether its work reached Factor. */
+export interface BountyEntered extends Sent {
+  id: number;
+  /** the address that entered: this wallet, or its line account */
+  agent: string;
+  entryHash: `0x${string}`;
+  bondWei: bigint;
+  workSaved: boolean;
+  url: string;
+  note?: string;
+}
+
+/** A pick sent by the kit: the winner, and the desk job its prize became. */
+export interface BountyPicked extends Sent { id: number; winner: string; jobId: number; dueAt: string; jobUrl: string }

@@ -10,7 +10,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { formatEther } from "viem";
 import { z } from "zod";
-import { Factor, Refusal, toWei, type Agent, type CoinPermission, type Job } from "./index.js";
+import { bountyParts, Factor, Refusal, toWei, type Agent, type Bounty, type CoinPermission, type Job } from "./index.js";
 
 export interface Limits {
   /** the most one job may cost, in wei */
@@ -33,6 +33,8 @@ export function limitsFrom(env: Record<string, string | undefined>): Limits {
 
 const eth = (wei: bigint): string => formatEther(wei);
 const OPEN_ID = z.string().regex(/^0x[0-9a-f]{64}$/).describe("The open job's number: 0x and 64 hex characters");
+const FIRM_SLUG = z.string().regex(/^[a-z0-9](?:[a-z0-9-]{1,30})[a-z0-9]$/).describe("The firm's short name, like the-research-desk");
+const BOUNTY_ID = z.number().int().positive().describe("The bounty's number");
 const PLAN_ID = z.string().regex(/^0x[0-9a-f]{64}$/).describe("The plan's number: 0x and 64 hex characters");
 const today = (): string => new Date().toISOString().slice(0, 10);
 
@@ -80,6 +82,19 @@ const jobLine = (j: Job): string => `Job ${j.n}${j.title ? ` "${j.title}"` : ""}
 const forJob = z.number().int().positive().optional().describe("The number of a job this wallet's agent is doing, when it buys this as part of that job: it is then linked under that job (agents that hire agents)");
 const subjobLine = (d: { subjob?: { parent: number } | null; subjobNote?: string }): string => (d.subjob ? ` It is linked under job ${d.subjob.parent}.` : d.subjobNote ? ` It could not be linked under the job: ${d.subjobNote}` : "");
 const jobId = z.number().int().positive().describe("The job's number");
+const bountyLine = (b: Bounty): string => {
+  const now: Record<string, string> = {
+    open: `taking entries until ${b.deadline}`,
+    choosing: `entries closed; its poster picks by ${b.pickUntil}`,
+    ending: `its time is up: a close ${b.next === "returns" ? "sends everything back to the poster" : "splits the prize between the entrants"}`,
+    picked: `${b.winner?.name ?? "an agent"} was picked${b.job ? `, job ${b.job.n}` : ""}, and delivers it`,
+    won: `won by ${b.winner?.name ?? "an agent"}`,
+    unpicked: `nobody was picked in time: split between ${b.paidTo ?? b.entries} entrant${(b.paidTo ?? b.entries) === 1 ? "" : "s"}${b.shareEth ? `, ${b.shareEth} ETH each` : ""}`,
+    undelivered: "its winner did not deliver",
+    empty: "nobody entered",
+  };
+  return `Bounty ${b.id}${b.title ? ` "${b.title}"` : ""}: a prize of ${b.prizeEth} ETH, ${b.bondEth} ETH bond to enter${b.minScore ? `, Factor Score ${b.minScore} or more` : ""}. ${b.entries} of ${b.slots} entries; ${now[b.status] ?? b.status}.`;
+};
 const amount = z.string().regex(/^\d{1,9}(\.\d{1,18})?$/).describe('ETH as text, like "0.04"');
 
 export const TOOLS: Tool[] = [
@@ -239,40 +254,46 @@ export const TOOLS: Tool[] = [
   },
   {
     name: "factor_compute_credit", readOnly: true, input: { agent: z.string().optional().describe("The agent's name or address. Left out: this wallet's own") },
-    description: "What an agent has left of its compute credit, in dollars: advances drawn as compute, which are spent on model calls through Factor and cannot be withdrawn. Also says which models it buys and what they cost.",
+    description: "What an agent has left of its compute credit, in dollars: advances drawn as compute (and what its coin's fees or its credit line paid in), which are spent on model calls through Factor and cannot be withdrawn. Also what it spent through raeto/auto and on which models, and which models it buys and what they cost.",
     async run(f, a) {
       const [c, s] = await Promise.all([f.computeCredit(a.agent as string | undefined), f.state()]);
       const usd = (n: number) => `$${n.toFixed(n > 0 && n < 1 ? 4 : 2)}`;
-      const lots = c.lots.map((l) => `job ${l.job}: ${l.usd === null ? "being priced" : `${usd(l.spentUsd)} of ${usd(l.usd)} spent`}${l.state === "closed" ? " (refunded, closed)" : ""}`).join("; ");
+      const lots = c.lots.map((l) => `${l.paidBy === "coin" ? "its coin's fees" : l.paidBy === "line" ? "its credit line" : `job ${l.job}`}: ${l.usd === null ? "being priced" : `${usd(l.spentUsd)} of ${usd(l.usd)} spent`}${l.state === "closed" ? " (refunded, closed)" : ""}`).join("; ");
       const direct = s.compute?.models.length ? ` Claude directly, per million tokens: ${s.compute.models.map((m) => `${m.id} ${usd(m.inUsd)} in / ${usd(m.outUsd)} out`).join(", ")}.` : "";
       const router = s.compute?.router?.enabled ? ` And ${s.compute.router.models} models from every maker (GPT, Claude, Gemini, Grok, DeepSeek, Llama, Mistral and more): factor_compute_models lists them.` : "";
-      const models = s.compute?.enabled ? `${direct}${router}` : " Compute credit is not switched on yet.";
-      return `${usd(c.balanceUsd)} of compute credit left.${lots ? ` From ${lots}.` : " No advance has been drawn as compute."}${models}`;
+      const raeto = s.compute?.raeto ? ` Or raeto/auto, which picks the model for each request: a call costs what Raeto charged for it, with its ${s.compute.raeto.feePct}% fee and Factor's margin.` : "";
+      const models = s.compute?.enabled ? `${direct}${router}${raeto}` : " Compute credit is not switched on yet.";
+      const spent = c.raeto ? ` Through raeto/auto: ${usd(c.raeto.spentUsd)} on ${c.raeto.calls} call${c.raeto.calls === 1 ? "" : "s"}${c.raeto.models.length ? ` (${c.raeto.models.slice(0, 5).map((m) => `${m.model} ${usd(m.usd)}`).join(", ")})` : ""}.` : "";
+      return `${usd(c.balanceUsd)} of compute credit left.${lots ? ` From ${lots}.` : " No advance has been drawn as compute."}${spent}${models}`;
     },
   },
   {
-    name: "factor_compute_models", readOnly: true, input: { search: z.string().optional().describe('Part of a model\'s name or maker, like "gpt", "claude" or "deepseek". Left out: the 25 cheapest') },
-    description: "The models compute credit can be spent on, from every maker, with what each costs through Factor in dollars a million tokens. Use a model's id with factor_ask_model.",
+    name: "factor_compute_models", readOnly: true, input: { search: z.string().optional().describe('Part of a model\'s name or maker, like "gpt", "claude", "deepseek" or "raeto". Left out: the 25 cheapest') },
+    description: "The models compute credit can be spent on, from every maker, with what each costs through Factor in dollars a million tokens. While Factor serves it, also raeto/auto and its variants, which pick the model for each request and cost what Raeto charged for the call. Use a model's id with factor_ask_model.",
     async run(f, a) {
       const all = await f.computeModels(a.search as string | undefined);
       if (!all.length) return a.search ? `No model has "${String(a.search)}" in its name.` : "No model is served yet: compute credit through every maker is not switched on.";
-      const shown = [...all].sort((x, y) => x.inUsd + x.outUsd - (y.inUsd + y.outUsd)).slice(0, 25);
+      const auto = all.filter((m) => m.auto);
+      const priced = all.filter((m) => !m.auto);
+      const shown = [...priced].sort((x, y) => x.inUsd + x.outUsd - (y.inUsd + y.outUsd)).slice(0, 25);
       const usd = (n: number) => `$${n < 1 ? n.toFixed(3) : n.toFixed(2)}`;
-      return `${all.length} model${all.length === 1 ? "" : "s"}${all.length > shown.length ? `, the ${shown.length} cheapest shown` : ""}, per million tokens: ${shown.map((m) => `${m.id} ${usd(m.inUsd)} in / ${usd(m.outUsd)} out`).join("; ")}.`;
+      const routes = auto.length ? `${auto.map((m) => `${m.id} (${m.name})`).join("; ")}. A call through any of them costs what Raeto charged for it, with the margin: none has a price of its own.` : "";
+      const list = priced.length ? `${priced.length} model${priced.length === 1 ? "" : "s"}${priced.length > shown.length ? `, the ${shown.length} cheapest shown` : ""}, per million tokens: ${shown.map((m) => `${m.id} ${usd(m.inUsd)} in / ${usd(m.outUsd)} out`).join("; ")}.` : "";
+      return [routes, list].filter(Boolean).join("\n");
     },
   },
   {
     name: "factor_ask_model", readOnly: false,
     input: {
-      model: z.string().describe('The model\'s id, like "openai/gpt-5" or "anthropic/claude-sonnet-4.5" (factor_compute_models lists them)'),
+      model: z.string().describe('The model\'s id, like "openai/gpt-5" or "anthropic/claude-sonnet-4.5", or "raeto/auto" for Raeto to pick one for this request (factor_compute_models lists them)'),
       prompt: z.string().describe("What to ask it"),
       system: z.string().optional().describe("How it should answer, when that matters"),
       max_tokens: z.number().int().min(1).max(200_000).optional().describe("The longest answer, in tokens. 1024 when not given"),
     },
-    description: "Ask any model, paid from this agent's compute credit (advances drawn as compute on its jobs). The credit is spent only on what the call really cost; it is not ETH from the wallet. Factor refuses a call the credit cannot cover before it is sent.",
+    description: "Ask any model, paid from this agent's compute credit (advances drawn as compute on its jobs). With raeto/auto, Raeto picks the model for this request, and the answer says which one and what it cost. The credit is spent only on what the call really cost; it is not ETH from the wallet. Factor refuses a call the credit cannot cover before it is sent.",
     async run(f, a) {
       const r = await f.askModel(a.prompt as string, { model: a.model as string, ...(a.system ? { system: a.system as string } : {}), ...(a.max_tokens ? { maxTokens: a.max_tokens as number } : {}) });
-      return `${r.text}\n\n(${r.model}: ${r.inputTokens} tokens in, ${r.outputTokens} out, paid from compute credit.)`;
+      return `${r.text}\n\n(${r.model}${r.model !== a.model && String(a.model).startsWith("raeto/") ? `, picked by ${String(a.model)}` : ""}: ${r.inputTokens} tokens in, ${r.outputTokens} out, ${r.costUsd !== undefined ? `$${r.costUsd.toFixed(6)} ` : ""}paid from compute credit.)`;
     },
   },
   {
@@ -442,7 +463,7 @@ export const TOOLS: Tool[] = [
       if (!st) return `There is no agent "${who ?? f.address}" on Factor.`;
       if (!st.erc8004) {
         if (st.none) return `${who ?? "This agent"} signed that it wants no ERC-8004 identity linked.`;
-        return st.found.length ? `No identity is linked yet. The ERC-8004 registry has ${st.found.map((x) => `#${x.agentId} (by its ${x.via === "wallet" ? "agentWallet" : "owner"})`).join(", ")} for this agent: link one with factor_link_erc8004.` : "No ERC-8004 identity is linked, and the registry has none for this agent's wallet. One can be made with the kit's registerErc8004().";
+        return st.found.length ? `No identity is linked yet. The ERC-8004 registry has ${st.found.map((x) => `#${x.agentId} (by its ${x.via === "wallet" ? "agentWallet" : "owner"})`).join(", ")} for this agent: link one with factor_link_erc8004.` : "No ERC-8004 identity is linked, and the registry has none for this agent's wallet. One can be made with factor_register_erc8004.";
       }
       const e = st.erc8004;
       const read = await f.erc8004Entries(who).catch((err: Error) => err);
@@ -463,6 +484,15 @@ export const TOOLS: Tool[] = [
       const id = String(a.agent_id) === "none" ? null : String(a.agent_id);
       const r = await f.linkErc8004(id);
       return r.agentId === null ? "Done: no ERC-8004 identity is linked to this agent." : `Linked to ERC-8004 identity #${r.agentId}${r.via ? ` (its ${r.via === "wallet" ? "agentWallet is this wallet" : "owner is this wallet"})` : ""}. Every job this agent settles from now on is written to its reputation.`;
+    },
+  },
+  {
+    name: "factor_register_erc8004", readOnly: false, input: { agent_uri: z.string().max(2000).optional().describe("The address of the agent's registration file, when it has one. None when not given") },
+    description: "Give this wallet an ERC-8004 identity: register() on the standard's identity registry on Robinhood Chain, which makes this wallet its owner and its agentWallet. One transaction, which costs only the gas. Factor then finds it and links it by itself, or link it at once with factor_link_erc8004.",
+    async run(f, a) {
+      need(f);
+      const r = await f.registerErc8004(typeof a.agent_uri === "string" ? a.agent_uri : "");
+      return `ERC-8004 identity #${r.agentId} is this wallet's. Transaction ${r.explorer}. Link it with factor_link_erc8004 (agent_id "${r.agentId}"), or Factor links it by itself once it sees it.`;
     },
   },
   {
@@ -527,6 +557,15 @@ export const TOOLS: Tool[] = [
     },
   },
   {
+    name: "factor_cancel_coin_permissions", readOnly: false, input: {},
+    description: "As an agent: take back every permission it has signed for a launch of its coin, so none of them can be used. One transaction, which costs only the gas.",
+    async run(f) {
+      need(f);
+      const r = await f.cancelCoinPermissions();
+      return `Every coin permission this agent signed is taken back: none can launch its coin now. Transaction ${r.explorer}.`;
+    },
+  },
+  {
     name: "factor_launch_coin", readOnly: false,
     input: {
       agent: z.string().optional().describe("The agent whose coin it is, by name or address. Left out: this wallet is the agent and launches its own"),
@@ -572,7 +611,19 @@ export const TOOLS: Tool[] = [
     async run(f) {
       need(f);
       const r = await f.openLine();
-      return `The line is open: ${r.explorer}. Its line account is ${r.account}: new jobs are locked for that address, and its bond (factor_line shows the limit) is added with the kit's bondLine.`;
+      return `The line is open: ${r.explorer}. Its line account is ${r.account}: new jobs are locked for that address, and a bond there (factor_bond_line) raises its limit.`;
+    },
+  },
+  {
+    name: "factor_bond_line", readOnly: false, input: { amount: amount.describe('ETH to add to the bond at the line account, as text, like "0.01"') },
+    description: "Add to the bond at this agent's line account: its own ETH, which raises the credit line's limit by as much. It SPENDS ETH from this wallet, held to the day's cap. It cannot be taken out while the line owes anything, and it pays the line first if the line is never repaid.",
+    async run(f, a, spending) {
+      need(f);
+      const wei = toWei(String(a.amount));
+      spending?.check(wei, false);
+      const r = await f.bondLine(wei);
+      spending?.add(wei);
+      return `${eth(wei)} ETH added to the bond at the line account ${r.account}: the limit is that much higher. The line owes ${r.debtEth} ETH. ${r.explorer}`;
     },
   },
   {
@@ -677,9 +728,13 @@ export const TOOLS: Tool[] = [
     },
   },
   {
-    name: "factor_cover", readOnly: true, input: { job: jobId },
-    description: "The cover of a job hired with cover: how much, the fee, where it stands (reserved, covered, delivered, paid out, declined, lapsed) and what happens next. Factor closes a cover by itself once the desk is done with the job: paid to the customer if the job was refunded, back to the agent's bond otherwise.",
+    name: "factor_cover", readOnly: true, input: { job: jobId.optional().describe("The job's number. Left out: every cover this wallet bought") },
+    description: "The cover of a job hired with cover: how much, the fee, where it stands (reserved, covered, delivered, paid out, declined, lapsed) and what happens next. Without a job: the covers this wallet bought. Factor closes a cover by itself once the desk is done with the job: paid to the customer if the job was refunded, back to the agent's bond otherwise.",
     async run(f, a) {
+      if (a.job === undefined) {
+        const list = await f.covers(need(f));
+        return list.length ? list.map((c) => `Job ${c.job ? Number(c.job) : "not locked yet"}: ${c.coverEth} ETH of cover from ${c.agentName}, fee ${c.feeEth} ETH, ${c.state === "bound" ? "covered" : c.state}.`).join("\n") : "This wallet has bought no cover.";
+      }
       const c = await f.cover(a.job as number);
       if (!c) return `Job ${a.job} has no cover.`;
       const next = c.next ? ` Next: ${c.next.what === "pays-if-not-delivered" ? `if not delivered by ${c.next.at}, the cover is paid to the customer` : c.next.what === "releases" ? `the cover goes back to the bond once the job settles (${c.next.at} at the latest)` : c.next.what === "tie" ? `it is tied to its job by ${c.next.at}` : c.next.what === "pays" ? "the cover is being paid to the customer" : "it lapses back to the bond"}.` : "";
@@ -756,6 +811,39 @@ export const TOOLS: Tool[] = [
     },
   },
   {
+    name: "factor_form_firm", readOnly: false,
+    input: {
+      name: z.string().min(3).max(40).describe("The firm's name, 3 to 40 characters"),
+      does: z.string().min(3).max(80).describe("One line on what the firm does, without links"),
+      members: z.array(z.string()).max(12).describe("The agents it invites, by name or address. Each is in the firm once it signs to join"),
+      slug: z.string().regex(/^[a-z0-9](?:[a-z0-9-]{1,30})[a-z0-9]$/).optional().describe("To edit a firm this agent leads: its short name. Left out: a new firm, named from its name"),
+    },
+    description: "Form an agent firm with this wallet's agent as its lead, or edit one it leads: a name, one line on what it does, and the agents it invites. A signature, not a transaction: it costs nothing. Customers then hire the firm through its lead, who splits each job among the members as sub-jobs.",
+    async run(f, a) {
+      need(f);
+      const r = await f.formFirm({ name: String(a.name), does: String(a.does), members: (a.members as string[] | undefined) ?? [], ...(typeof a.slug === "string" ? { slug: a.slug } : {}) });
+      return `${r.edited ? "Edited" : "Formed"} the firm ${r.slug}: ${r.url}.${r.invited.length ? ` Invited: ${r.invited.join(", ")}. Each is in it once it signs to join (factor_join_firm).` : ""}`;
+    },
+  },
+  {
+    name: "factor_join_firm", readOnly: false, input: { firm: FIRM_SLUG },
+    description: "Join a firm whose lead invited this wallet's agent. A signature, not a transaction: it costs nothing. The firm's record then counts this agent's part of its work.",
+    async run(f, a) {
+      need(f);
+      await f.joinFirm(String(a.firm));
+      return `This agent is a member of ${a.firm} now.`;
+    },
+  },
+  {
+    name: "factor_leave_firm", readOnly: false, input: { firm: FIRM_SLUG },
+    description: "Leave a firm. A signature, not a transaction: it costs nothing. A lead does not leave its firm: it edits who is in it with factor_form_firm.",
+    async run(f, a) {
+      need(f);
+      await f.leaveFirm(String(a.firm));
+      return `This agent has left ${a.firm}.`;
+    },
+  },
+  {
     name: "factor_plan", readOnly: true, input: { plan: PLAN_ID },
     description: "One monthly plan: its agent or firm, the price each month, its months with each one's job, state, what was drawn up front and from the pool and what was paid, what the customer can lock next and when, and what the agent can draw on next month early.",
     async run(f, a) {
@@ -769,6 +857,17 @@ export const TOOLS: Tool[] = [
         ...(p.next ? [p.next.open ? `Month ${p.next.month} can be locked now (factor_pay_month); without it the plan lapses at ${p.next.lapsesAt.slice(0, 16).replace("T", " ")} UTC.` : `Month ${p.next.month} can be locked once ${p.next.why?.replace(/ is not delivered yet$/, " is delivered") ?? "it opens"}${p.next.from ? `, or from ${p.next.from.slice(0, 16).replace("T", " ")} UTC` : ""}.`] : []),
         ...(p.drawEarly ? [p.drawEarly.open ? `The agent can draw ${p.drawEarly.fromPoolEth} ETH on month ${p.drawEarly.month} from the pool now${p.drawEarly.ahead ? ": next month's income, early" : ""} (factor_draw_next_month).` : `Month ${p.drawEarly.month} from the pool: not offered, ${p.drawEarly.why}.`] : []),
       ].join("\n");
+    },
+  },
+  {
+    name: "factor_plans", readOnly: true,
+    input: { as: z.enum(["customer", "agent"]).optional().describe("customer: the plans this wallet pays for. agent: the plans this wallet's agent is on. Give this, agent or firm"), agent: z.string().optional().describe("Another agent's plans, by its name or address"), firm: z.string().regex(/^[a-z0-9](?:[a-z0-9-]{1,30})[a-z0-9]$/).optional().describe("A firm's plans, by its short name") },
+    description: "Monthly plans, newest first: this wallet's as a customer or as an agent, or another agent's or a firm's. Each with its agent, its price a month, how many months are locked and delivered, and where it stands. factor_plan reads one in full.",
+    async run(f, a) {
+      const q = typeof a.firm === "string" ? { firm: a.firm } : typeof a.agent === "string" ? { agent: a.agent.startsWith("0x") ? a.agent.toLowerCase() : ((await f.agent(a.agent))?.agent.address ?? a.agent) } : a.as === "agent" ? { agent: need(f) } : { customer: need(f) };
+      const list = await f.plans(q);
+      if (!list.length) return "No plan.";
+      return list.slice(0, 25).map((p) => `${p.id}: "${p.title}", ${p.firm ? `the firm ${p.firm.name}` : p.agent.name}, ${p.priceEth} ETH a month for ${p.months} months, ${p.status}. Locked ${p.locked}, delivered ${p.delivered}. Customer ${p.customer}.`).join("\n");
     },
   },
   {
@@ -789,6 +888,20 @@ export const TOOLS: Tool[] = [
       spending?.check(price, true);
       if (typeof a.agent !== "string" && typeof a.firm !== "string") throw new Refusal("Name the agent, or the firm.", "no_agent");
       const r = await f.subscribe({ ...(typeof a.firm === "string" ? { firm: a.firm } : { agent: String(a.agent) }), price, months: a.months as number, title: String(a.title), ...(typeof a.brief === "string" ? { brief: a.brief } : {}), allowEarly: a.allow_early === true });
+      spending?.add(price);
+      return `Plan ${r.plan}: month 1 of ${r.months} is locked as job ${r.jobId}, ${eth(price)} ETH${r.burned ? ", with its 1% to the burn" : ""}. ${r.linked ? "Factor linked it to the plan." : `Factor could not link it to the plan: ${r.note ?? "no answer"} The money is locked for the agent as an ordinary job.`} Plan page ${r.planUrl}. Transaction ${r.explorer}.`;
+    },
+  },
+  {
+    name: "factor_subscribe_link", readOnly: false, input: { link: z.string().describe("A subscribe link: a Pay with Factor link for a monthly plan") },
+    description: "Pay a subscribe link: put its agent (or firm) on the monthly plan the agent signed, and lock month 1 now. THIS SPENDS ETH: one month's price plus 1% that buys and burns $FACTOR, locked on Robinhood Chain until the agent delivers; each next month is locked with factor_pay_month. Read it with factor_pay_link_info and confirm with the user first unless they already said to pay it.",
+    async run(f, a, spending) {
+      need(f);
+      const i = await f.payLinkInfo(String(a.link));
+      if (!i.link.months) return "That link sells one job, not a monthly plan: pay it with factor_pay_link.";
+      const price = BigInt(i.link.price);
+      spending?.check(price, true);
+      const r = await f.subscribeLink(String(a.link));
       spending?.add(price);
       return `Plan ${r.plan}: month 1 of ${r.months} is locked as job ${r.jobId}, ${eth(price)} ETH${r.burned ? ", with its 1% to the burn" : ""}. ${r.linked ? "Factor linked it to the plan." : `Factor could not link it to the plan: ${r.note ?? "no answer"} The money is locked for the agent as an ordinary job.`} Plan page ${r.planUrl}. Transaction ${r.explorer}.`;
     },
@@ -1004,6 +1117,112 @@ export const TOOLS: Tool[] = [
         try { const r = await f.applyToJob(id, { pitch: st.rules.pitch, auto: true, ...(q ? { price: BigInt(q.priceWei), dueInHours: q.dueHours } : {}) }); out.push(`${id}: ${q ? `offered ${eth(BigInt(q.priceWei))} ETH in ${q.dueHours} hours` : "applied"}, ranked ${r.rank} of ${r.of}.`); } catch (e) { out.push(`${id}: ${e instanceof Error ? e.message : String(e)}`); }
       }
       return out.join("\n");
+    },
+  },
+  {
+    name: "factor_bounties", readOnly: true,
+    input: {
+      show: z.enum(["open", "all"]).optional().describe("open: taking entries or waiting on a pick, soonest deadline first (the default). all: every bounty, newest first"),
+      mine: z.enum(["poster", "agent"]).optional().describe("poster: the bounties this wallet posted. agent: the bounties this wallet's agent entered"),
+    },
+    description: "Bounties on Factor: a customer locks a prize for a task, agents enter with the finished work until the deadline, and the customer picks a winner, who is paid through the desk. Each with its prize, the bond an entry puts up, the deadline, the minimum Factor Score, how many entered and where it stands. An agent looking for work reads one with factor_bounty and enters with factor_enter_bounty.",
+    async run(f, a) {
+      const r = await f.bounties(a.mine === "poster" ? { poster: need(f) } : a.mine === "agent" ? { agent: need(f) } : { show: a.show === "all" ? "all" : "open" });
+      if (!r.enabled) return "Bounties are not switched on yet.";
+      if (!r.items.length) return a.mine ? "None." : "No bounty is open right now.";
+      return r.items.slice(0, 25).map(bountyLine).join("\n");
+    },
+  },
+  {
+    name: "factor_bounty", readOnly: true, input: { id: BOUNTY_ID },
+    description: "One bounty in full: its task in words, the prize, the bond, the deadline and until when its poster can pick, the minimum Factor Score, how many entered, where it stands, and its poster's history of posts and picks (read it before putting work in). Once a winner is picked or it ended, every entry with its agent and the start of its work.",
+    async run(f, a) {
+      const b = await f.bounty(a.id as number);
+      if (!b) return `There is no bounty ${a.id} on Factor, or bounties are not switched on.`;
+      const h = b.history;
+      const cut = (t: string, most: number) => (t.length > most ? `${t.slice(0, most)}\n[... ${t.length - most} more characters on the bounty's page]` : t);
+      return [
+        bountyLine(b),
+        b.task ? `The task:\n${cut(b.task, 4000)}` : b.hidden ? "Its words are hidden." : "Its words have not reached Factor yet.",
+        b.status === "open" ? `Entries close ${b.deadline}; from then its poster has until ${b.pickUntil} to pick, or the prize is split between the entrants. Each entry stays hidden until a winner is picked, and from everybody but the poster until then from the deadline.`
+          : b.status === "choosing" ? `Entries closed ${b.deadline}; its poster picks by ${b.pickUntil}, or the prize is split between the entrants. The entries stay hidden from everybody but the poster until then.`
+          : b.revealed ? "The entries are public." : "The entries stay hidden until it is closed.",
+        `Its poster ${b.poster} posted ${h.posted} bount${h.posted === 1 ? "y" : "ies"}: ${h.won} won, ${h.unpicked} split with no pick, ${h.undelivered} whose winner did not deliver, ${h.empty} with nobody in, ${h.open} still open.${h.picks.length ? ` Its picks: ${h.picks.slice(0, 5).map((p) => `${p.name} (Factor Score ${p.score}, ${p.jobsSettled} job${p.jobsSettled === 1 ? "" : "s"} settled)`).join(", ")}.` : ""}`,
+        ...(b.items ?? []).map((e) => `${e.n}. ${e.name} (${e.agent}): Factor Score ${e.score}${e.house ? ", one of Factor's own agents" : ""}${e.won ? ", WON" : ""}${e.shareEth ? `, ${e.shareEth} ETH from the split` : ""}${e.shown ? `. ${e.kind === "html" ? "A page of HTML." : `"${(e.work ?? "").slice(0, 300)}${e.whole === false || (e.work ?? "").length > 300 ? "..." : ""}"`}` : ". No work shown."}`),
+        ...(b.status === "open" ? [`Enter with factor_enter_bounty: the bond is ${b.bondEth} ETH, back at the end.`] : []),
+      ].join("\n");
+    },
+  },
+  {
+    name: "factor_post_bounty", readOnly: false,
+    input: {
+      prize: amount.describe('The prize, in ETH, like "0.01": 0.005 or more'),
+      task: z.string().min(3).max(8000).describe("What you need done, in plain words: the first line is its title, the whole of it is what agents work from. Anyone can read it"),
+      deadline_in_hours: z.number().min(1).max(720).optional().describe("Hours until entries close. 72 when not given"),
+      min_score: z.number().int().min(0).max(1000).optional().describe("The Factor Score an agent must have to enter. None when not given"),
+    },
+    description: "Post a bounty: lock a prize for a task, and agents enter with their finished work until the deadline. THIS SPENDS ETH: the prize plus 1% that buys and burns $FACTOR once anybody enters (it comes back if nobody does). From the deadline the poster has 3 days to read the entries (factor_bounty_entries) and pick one (factor_pick_winner), who is paid through the desk. Without a pick in time the prize is split between the entrants and does NOT come back, and a bounty cannot be cancelled. Confirm the prize, the task and the deadline with the user first unless they already gave them.",
+    async run(f, a, spending) {
+      need(f);
+      const prize = toWei(String(a.prize));
+      const total = bountyParts(prize).total;
+      spending?.check(total, true);
+      const r = await f.postBounty({ prize, task: String(a.task), ...(typeof a.deadline_in_hours === "number" ? { deadlineInHours: a.deadline_in_hours } : {}), ...(typeof a.min_score === "number" ? { minScore: a.min_score } : {}), maxEth: total });
+      spending?.add(total);
+      return `Bounty ${r.id} is posted: ${eth(r.prizeWei)} ETH and ${eth(r.feeWei)} ETH for the burn are locked. Agents enter until ${r.deadline}, each putting up ${eth(r.bondWei)} ETH. ${r.taskSaved ? "Its words are on its page." : r.note ?? ""} Read the entries from the deadline with factor_bounty_entries and pick one by ${r.pickUntil}. ${r.url} Transaction ${r.explorer}.`;
+    },
+  },
+  {
+    name: "factor_enter_bounty", readOnly: false,
+    input: {
+      id: BOUNTY_ID,
+      work: z.string().min(1).max(200_000).describe("The finished work itself, or the link to it. It is hidden until a winner is picked; keep it exactly as given: the same text gives the same hash"),
+      at: z.enum(["wallet", "line"]).optional().describe("Enter as this wallet's line account (the default when it has a credit line), or as this wallet itself"),
+    },
+    description: "Enter a bounty as this wallet's agent, with the finished work, before its deadline. It SPENDS ETH: the bond, 1% of the prize, held to the day's cap, which comes back at the end unless this agent is picked and does not deliver. Only a hash goes on the chain; the work stays hidden until a winner is picked, and from everybody but the poster until then from the deadline. Read the task and the poster's history with factor_bounty first. A very short work can be guessed from its hash: add a line of your own to it.",
+    async run(f, a, spending) {
+      need(f);
+      const b = await f.bounty(a.id as number);
+      if (!b) return `There is no bounty ${a.id} on Factor, or bounties are not switched on.`;
+      const bond = BigInt(b.bondWei);
+      spending?.check(bond, false);
+      const r = await f.enterBounty(a.id as number, String(a.work), { ...(a.at ? { at: a.at as "wallet" | "line" } : {}), maxBondEth: bond });
+      spending?.add(bond);
+      return `Entered bounty ${r.id} as ${r.agent}, with a bond of ${eth(r.bondWei)} ETH. Its hash on the chain: ${r.entryHash}. ${r.workSaved ? "The work reached Factor and stays hidden until a winner is picked." : r.note ?? ""} If it is picked, deliver with factor_deliver_bounty within 3 days. ${r.url} Transaction ${r.explorer}.`;
+    },
+  },
+  {
+    name: "factor_bounty_entries", readOnly: false, input: { id: BOUNTY_ID },
+    description: "As the poster of a bounty, from its deadline: read every entry with its work. One signature, which costs nothing and is never kept. Before the deadline nobody can read them, not even the poster. Then pick one with factor_pick_winner.",
+    async run(f, a) {
+      const list = await f.bountyEntries(a.id as number);
+      if (!list.length) return `Nobody entered bounty ${a.id}.`;
+      return list.map((e) => `${e.n}. ${e.name} (${e.agent}), Factor Score ${e.score}${e.house ? ", one of Factor's own agents" : ""}:\n${e.shown ? (e.work ?? "").slice(0, 3000) + ((e.work ?? "").length > 3000 ? `\n[... ${(e.work ?? "").length - 3000} more characters]` : "") : "No work reached Factor for this entry."}`).join("\n\n");
+    },
+  },
+  {
+    name: "factor_pick_winner", readOnly: false, input: { id: BOUNTY_ID, agent: z.string().describe("The entrant to pick: its name or address") },
+    description: "As the poster of a bounty, from its deadline until 3 days after it: pick the winner. The prize, locked already, is locked on the desk as a job for it, due in 3 days, and the 1% is burned. Nothing more leaves the wallet. IT CANNOT BE TAKEN BACK, and every entry is public from that moment, beside the winner. Only on the user's clear choice.",
+    async run(f, a) {
+      const r = await f.pickWinner(a.id as number, String(a.agent));
+      return `${a.agent} won bounty ${r.id}: the prize is locked on the desk as job ${r.jobId}, due ${r.dueAt}. Once it delivers its entry, Factor accepts it on the desk and it is paid. ${r.jobUrl} Transaction ${r.explorer}.`;
+    },
+  },
+  {
+    name: "factor_deliver_bounty", readOnly: false, input: { id: BOUNTY_ID },
+    description: "As the winner of a bounty: deliver the prize's job on the desk, with the hash of the entry that was picked as its proof. The work was handed over in the entry already. Factor then accepts it on the desk and the winner is paid, less the desk's 2% job fee. It is due 3 days after the pick: without it, the prize goes to the other entrants and the bond is lost. Costs only the gas.",
+    async run(f, a) {
+      const r = await f.deliverBounty(a.id as number);
+      return `Bounty ${a.id} is delivered as job ${r.jobId}, with the entry's hash ${r.proof} as its proof. Factor accepts it on the desk, which pays the winner. Transaction ${r.explorer}.`;
+    },
+  },
+  {
+    name: "factor_close_bounty", readOnly: false, input: { id: BOUNTY_ID },
+    description: "Anyone, once a bounty's time has come: close it. Nobody entered: everything back to the poster. Nobody picked in time: the prize is split between the entrants. After a pick: accepted on the desk once the winner delivered its entry, or split between the others when it did not. Factor's keeper does this by itself; this is for sooner. Costs only the gas.",
+    async run(f, a) {
+      const r = await f.closeBounty(a.id as number);
+      const how: Record<string, string> = { won: "won: the desk paid the winner", unpicked: "split between its entrants", undelivered: "ended: the winner did not deliver", empty: "ended with nobody in: everything went back to the poster", picked: "still waiting on its winner", open: "still open" };
+      return `Bounty ${a.id} is ${r.state ? how[r.state] ?? r.state : "closed"}. Transaction ${r.explorer}.`;
     },
   },
 ];

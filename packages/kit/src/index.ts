@@ -26,8 +26,10 @@ import { factorLineAccountAbi } from "./abi/FactorLineAccount.js";
 import { drawParts, lineWordsOf } from "./lines.js";
 import { factorGuaranteeAbi } from "./abi/FactorGuarantee.js";
 import { coverFee, guaranteeWordsOf } from "./guarantees.js";
+import { factorBountyAbi } from "./abi/FactorBounty.js";
+import { BOUNTY_STATES, bountyEntryHash, bountyParts, bountyReadMessage, bountyWordsOf, bytesOf, MIN_PRIZE_WEI, TASK_BYTES, textHash, WORK_BYTES } from "./bounties.js";
 import { CHAIN_ID, DEFAULT_API, DEFAULT_RPC } from "./defaults.js";
-import type { AccountInfo, Agent, AgentPage, Applicant, Application, AutoApplyStatus, ComputeCredit, ComputeKey, Deal, Erc8004Entries, Erc8004Status, Firm, FirmHire, FirmPage, FirmRecord, Job, JobPage, JobState, JobTree, LedgerLine, ModelAnswer, OpenJob, OpenJobHire, PickedJob, OpenJobPage, OpenJobPosted, Page, PayLinkInfo, Plan, PlanMonthSent, PlanPage, RouterModel, Sent, State, SubJob, OwnerCheck, VerifiedStatus, Coin, CoinsAbout, CoinLaunched, CoinLaunchTx, CreditLine, LinesAbout, LineSent, AgentGuarantee, Cover, CoverState, CoveredHire, GuaranteesAbout, GuaranteeSent } from "./types.js";
+import type { AccountInfo, Agent, AgentPage, Applicant, Application, AutoApplyStatus, ComputeCredit, ComputeKey, Deal, Erc8004Entries, Erc8004Status, Firm, FirmHire, FirmPage, FirmRecord, Job, JobPage, JobState, JobTree, LedgerLine, ModelAnswer, OpenJob, OpenJobHire, PickedJob, OpenJobPage, OpenJobPosted, Page, PayLinkInfo, Plan, PlanMonthSent, PlanPage, RouterModel, Sent, State, SubJob, OwnerCheck, VerifiedStatus, Coin, CoinsAbout, CoinLaunched, CoinLaunchTx, CreditLine, LinesAbout, LineSent, AgentGuarantee, Cover, CoverState, CoveredHire, GuaranteesAbout, GuaranteeSent, BountiesAbout, Bounty, BountyPage, BountyEntry, BountyPoster, AgentBounties, BountyPosted, BountyEntered, BountyPicked, BountyState, Burn, PublishedLink } from "./types.js";
 import { coinAskMessage, coinDescription, coinLogo, coinNameProblem, coinPermissionTypedData, suggestCoin, type CoinPermission } from "./coins.js";
 import { MONTH_S, PLAN_TITLE_MOST, planMessage, stopPlanMessage, type PlanText } from "./plans.js";
 import { FIRM_SLUG, firmHireMessage, firmMessage, joinMessage, leaveMessage, slugOf } from "./firms.js";
@@ -52,6 +54,7 @@ export { coinAskMessage, coinDescription, coinLogo, coinNameProblem, coinPermiss
 export type { CoinPermission } from "./coins.js";
 export { drawParts, LINE_WORDS } from "./lines.js";
 export { coverFee, GUARANTEE_WORDS } from "./guarantees.js";
+export { BOUNTY_WORDS, bountyEntryHash, bountyParts, bountyReadMessage, MIN_PRIZE_WEI, TASK_BYTES, WORK_BYTES } from "./bounties.js";
 export { ERC8004_TAG, erc8004LinkMessage, erc8004Registry, IDENTITY_REGISTRY, REPUTATION_REGISTRY } from "./erc8004.js";
 export type { PlanText } from "./plans.js";
 export { applyMessage, closeJobMessage, openJobId, pickWords, postJobMessage, priceWords, withdrawMessage } from "./openjobs.js";
@@ -241,6 +244,13 @@ export class Factor {
     return (await read<Page<LedgerLine>>(this.api, `/ledger${q.size ? `?${q}` : ""}`))?.items ?? [];
   }
 
+  /** Every buy back and burn of $FACTOR, newest first: the ETH each spent and the tokens it burned. */
+  async burns(o: { limit?: number; before?: number } = {}): Promise<Burn[]> {
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(o)) if (v !== undefined) q.set(k, String(v));
+    return (await read<Page<Burn>>(this.api, `/burns${q.size ? `?${q}` : ""}`))?.items ?? [];
+  }
+
   // ---------- a customer ----------
 
   /**
@@ -404,21 +414,24 @@ export class Factor {
 
   /**
    * Every model compute credit can be spent on through the second door, with what it costs through Factor. `search`
-   * keeps the ones whose name or maker has it ("gpt", "claude", "deepseek"). Needs no key.
+   * keeps the ones whose name or maker has it ("gpt", "claude", "deepseek"). Needs no key. While Factor serves it,
+   * raeto/auto and its variants come first, marked `auto`: Raeto picks the model for each request, and a call costs
+   * what Raeto charged for it, with the margin, so they have no price of their own here.
    */
   async computeModels(search?: string): Promise<RouterModel[]> {
     const list = await read<{ data?: { id: string; name?: string; owned_by?: string; context_length?: number; pricing?: { inUsd: number; outUsd: number } }[] }>(this.api, "/compute/v1/models");
     const words = search?.trim().toLowerCase();
     return (list?.data ?? [])
-      .map((m) => ({ id: m.id, name: m.name ?? m.id, maker: m.owned_by ?? m.id.split("/")[0]!, contextLength: m.context_length ?? 0, inUsd: m.pricing?.inUsd ?? 0, outUsd: m.pricing?.outUsd ?? 0 }))
+      .map((m) => ({ id: m.id, name: m.name ?? m.id, maker: m.owned_by ?? m.id.split("/")[0]!, contextLength: m.context_length ?? 0, inUsd: m.pricing?.inUsd ?? 0, outUsd: m.pricing?.outUsd ?? 0, ...(isAuto(m.id) ? { auto: true } : {}) }))
       .filter((m) => !words || `${m.id} ${m.name}`.toLowerCase().includes(words));
   }
 
   /**
    * Ask a model, paid from this agent's compute credit: one line for an agent that has no library of its own.
-   * `model` is any model of the second door ("openai/gpt-5", "anthropic/claude-sonnet-4.5", "deepseek/deepseek-chat")
-   * or, while Factor serves Claude directly, one of its own names ("claude-sonnet-5-5"). The key is signed for once
-   * and used until it runs out.
+   * `model` is any model of the second door ("openai/gpt-5", "anthropic/claude-sonnet-4.5", "deepseek/deepseek-chat"),
+   * "raeto/auto" (or a variant, like "raeto/auto:cheap") while Factor serves it, which has Raeto pick the model for this
+   * request, or, while Factor serves Claude directly, one of its own names ("claude-sonnet-5-5"). The key is signed for
+   * once and used until it runs out. The answer says which model answered, and, through raeto/auto, what it cost.
    */
   async askModel(prompt: string, o: { model: string; system?: string; maxTokens?: number; temperature?: number }): Promise<ModelAnswer> {
     if (typeof prompt !== "string" || !prompt.trim()) throw new Refusal("Say what to ask the model.", "no_prompt");
@@ -447,8 +460,11 @@ export class Factor {
       const d = b as { model?: string; content?: { type: string; text?: string }[]; usage?: { input_tokens?: number; output_tokens?: number } };
       return { text: (d.content ?? []).filter((c) => c.type === "text").map((c) => c.text ?? "").join(""), model: d.model ?? o.model, inputTokens: d.usage?.input_tokens ?? 0, outputTokens: d.usage?.output_tokens ?? 0 };
     }
-    const d = b as { model?: string; choices?: { message?: { content?: string | null } }[]; usage?: { prompt_tokens?: number; completion_tokens?: number } };
-    return { text: d.choices?.[0]?.message?.content ?? "", model: d.model ?? o.model, inputTokens: d.usage?.prompt_tokens ?? 0, outputTokens: d.usage?.completion_tokens ?? 0 };
+    const d = b as { model?: string; choices?: { message?: { content?: string | null } }[]; usage?: { prompt_tokens?: number; completion_tokens?: number }; raeto?: { model?: string } };
+    // through raeto/auto the gateway says which model Raeto picked and what the call took from the credit
+    const picked = r.headers.get("x-raeto-model") ?? d.raeto?.model;
+    const cost = r.headers.get("x-factor-cost-usd");
+    return { text: d.choices?.[0]?.message?.content ?? "", model: picked || d.model || o.model, inputTokens: d.usage?.prompt_tokens ?? 0, outputTokens: d.usage?.completion_tokens ?? 0, ...(cost && /^\d+(\.\d+)?$/.test(cost) ? { costUsd: Number(cost) } : {}) };
   }
 
   /** What an agent has left to spend on models, in dollars, and the compute advances it came from. This wallet's own when no agent is named. */
@@ -596,6 +612,12 @@ export class Factor {
     const b = (await r.json().catch(() => ({}))) as PayLinkInfo & { error?: string };
     if (!r.ok) throw new Refusal(sentence(b.error ?? `Factor's site answered ${r.status}`), r.status === 410 ? "expired" : "bad_link");
     return b;
+  }
+
+  /** The links an agent published on its page that have not expired. Left out: this wallet's own. */
+  async payLinks(agent?: string): Promise<PublishedLink[]> {
+    const address = await this.agentAddress(agent ?? this.mine());
+    return (await read<{ items: PublishedLink[] }>(this.api, `/pay/links/${address}`))?.items ?? [];
   }
 
   /**
@@ -1831,6 +1853,13 @@ export class Factor {
     return (await read<{ cover: Cover }>(this.api, `/guarantees/job/${whole(jobId)}`))?.cover ?? null;
   }
 
+  /** The covers a customer bought, newest first. Left out: this wallet's own. */
+  async covers(customer?: string): Promise<Cover[]> {
+    const who = (customer ?? this.mine()).toLowerCase();
+    if (!/^0x[0-9a-f]{40}$/.test(who)) throw new Refusal("Give the customer's address.", "bad_address");
+    return (await read<{ items: Cover[] }>(this.api, `/guarantees/customer/${who}`))?.items ?? [];
+  }
+
   /**
    * Hire an agent with cover: if the job is not delivered by its due time and the grace, this wallet is paid the cover
    * out of the agent's guarantee bond, on top of the desk's refund. `cover`: how much, or "max" (the default) for all
@@ -1925,7 +1954,10 @@ export class Factor {
     return g;
   }
 
-  /** Whose guarantee this wallet runs: its line account's when it has a credit line (unless told "wallet"), else its own. */
+  /**
+   * The desk address this wallet acts as for a guarantee or a bounty entry: its line account when it has a credit line
+   * (unless told "wallet"), else its own.
+   */
   private async guaranteeTarget(at?: "wallet" | "line"): Promise<Hex> {
     const me = this.mine() as Hex;
     if (at === "wallet") return me;
@@ -2048,6 +2080,293 @@ export class Factor {
       hash = await this.wallet.writeContract(request as never);
     } catch (e) {
       throw e instanceof Refusal ? e : new Refusal(guaranteeWordsOf(e), "guarantee_refused");
+    }
+    const receipt = await this.pub.waitForTransactionReceipt({ hash, timeout: 180_000 });
+    if (receipt.status !== "success") throw new Refusal(`The transaction ${hash} was mined and refused. Nothing changed but the gas.`, "reverted");
+    return { hash, explorer: `${this.explorer}/tx/${hash}`, receipt };
+  }
+
+  // ---------- bounties ----------
+
+  /**
+   * Bounties: whether they are on, the contract, the rules, the totals, and the board, newest first. `show: "open"` keeps
+   * the ones taking entries or waiting on a pick (by deadline); `poster` (an address) the ones it posted, and `agent` (a
+   * name or an address) the ones it entered.
+   */
+  async bounties(o: { show?: "open" | "all"; poster?: string; agent?: string } = {}): Promise<BountiesAbout & { items: Bounty[] }> {
+    const q = new URLSearchParams();
+    if (o.show) q.set("show", o.show);
+    if (o.poster) {
+      if (!/^0x[0-9a-fA-F]{40}$/.test(o.poster)) throw new Refusal("Give the poster's address.", "bad_address");
+      q.set("poster", o.poster.toLowerCase());
+    }
+    if (o.agent) q.set("agent", await this.agentAddress(o.agent));
+    const r = await read<BountiesAbout & { items: Bounty[] }>(this.api, `/bounties${q.size ? `?${q}` : ""}`);
+    return r ?? { enabled: false, contract: null, chainId: this.chainId, rules: { burnPct: 1, bondPct: 1, jobFeePct: 2, minPrizeEth: 0.005, maxEntries: 25, minOpenH: 1, maxOpenD: 30, pickD: 3, deliverD: 3, graceH: 12, taskBytes: TASK_BYTES, workBytes: WORK_BYTES }, totals: null, items: [] };
+  }
+
+  /**
+   * One bounty: its prize, bond, deadline and minimum score, its task in words, how many entered and where it stands, the
+   * desk job its prize became, its entries once they are public (a winner picked, or it ended), and its poster's history.
+   * null: there is no such bounty, or bounties are off.
+   */
+  async bounty(id: number): Promise<BountyPage | null> {
+    return read<BountyPage>(this.api, `/bounties/${bountyNumber(id)}`);
+  }
+
+  /** One entry whole, with its work, once the entries are public. null: there is no such entry, or it is not public yet. */
+  async bountyEntry(id: number, agent: string): Promise<BountyEntry | null> {
+    const address = await this.agentAddress(agent);
+    return (await read<{ entry: BountyEntry }>(this.api, `/bounties/${bountyNumber(id)}/entries/${address}`))?.entry ?? null;
+  }
+
+  /** Whether an agent's entry is on the chain and its work has reached Factor. Nothing hidden: its address and hash are public. Left out: this wallet's own (its line account's, when it has a credit line). */
+  async bountyEntryStatus(id: number, agent?: string): Promise<{ entered: boolean; workShown: boolean; hash?: string }> {
+    const address = agent ? await this.agentAddress(agent) : await this.guaranteeTarget();
+    const r = await read<{ entered: boolean; workShown: boolean; hash?: string }>(this.api, `/bounties/${bountyNumber(id)}/mine/${address}`);
+    if (!r) throw new Refusal("Bounties are not switched on yet.", "bounties_off");
+    return r;
+  }
+
+  /** An agent's bounties: how many it entered and won, what it won and had from splits, and the newest. null: it has entered none. Left out: this wallet's own. */
+  async agentBounties(agent?: string): Promise<AgentBounties | null> {
+    const who = agent ?? this.mine();
+    if (!/^[0-9a-zA-Z-]{3,42}$/.test(who)) throw new Refusal("Give the agent's name or address.", "bad_agent");
+    return (await read<{ bounties: AgentBounties | null }>(this.api, `/bounties/agent/${who}`))?.bounties ?? null;
+  }
+
+  /** A poster's history, in the open: what it posted, how each ended, and whom it picked. Read it before putting work into its bounty. Left out: this wallet's own. */
+  async bountyPoster(address?: string): Promise<BountyPoster> {
+    const who = (address ?? this.mine()).toLowerCase();
+    if (!/^0x[0-9a-f]{40}$/.test(who)) throw new Refusal("Give the poster's address.", "bad_address");
+    const r = await read<BountyPoster>(this.api, `/bounties/poster/${who}`);
+    if (!r) throw new Refusal("Bounties are not switched on yet.", "bounties_off");
+    return r;
+  }
+
+  /**
+   * Post a bounty: lock a prize for a task, and agents enter with their finished work until the deadline. It sends the
+   * prize and 1% of it on top, which is burned once there is somebody to pay (and comes back if nobody enters). Then
+   * the task's words go to Factor, which shows them because they hash to what the bounty holds. From the deadline you
+   * have 3 days to read the entries (bountyEntries) and pick one (pickWinner); the prize is paid to the winner through
+   * the desk. Without a pick, it is split between the entrants and does not come back. A bounty cannot be cancelled.
+   * `task`: the first line is its title, the whole of it is what agents work from. `minScore`: the desk score an agent
+   * needs to enter. `maxEth` refuses a prize and 1% over it.
+   */
+  async postBounty(o: { prize: Amount; task: string; deadlineInHours?: number; minScore?: number; maxEth?: Amount }): Promise<BountyPosted> {
+    this.mine();
+    const prize = toWei(o.prize);
+    if (prize < MIN_PRIZE_WEI) throw new Refusal(`The smallest prize is ${ethText(MIN_PRIZE_WEI)} ETH.`, "bad_amount");
+    const task = taskText(o.task);
+    const hours = o.deadlineInHours ?? 72;
+    if (!(hours >= 1 && hours <= 720)) throw new Refusal("The deadline is 1 hour to 30 days from now.", "bad_due");
+    const minScore = o.minScore ?? 0;
+    if (!Number.isSafeInteger(minScore) || minScore < 0 || minScore > 1000) throw new Refusal("A minimum score is a whole number from 0 to 1000.", "bad_score");
+    const { fee, bond, total } = bountyParts(prize);
+    if (o.maxEth !== undefined && total > toWei(o.maxEth)) throw new Refusal(`The prize with its 1% is ${ethText(total)} ETH, over the ${ethText(toWei(o.maxEth))} ETH allowed.`, "over_cap");
+    const s = await this.state();
+    if (s.paused) throw new Refusal(s.paused, "paused");
+    const contract = await this.bountyContract();
+    // on the chain's own clock, with a few minutes to spare at either end
+    const now = Number((await this.pub.getBlock()).timestamp);
+    const deadline = now + Math.min(Math.max(Math.round(hours * 3600), 3600 + 300), 30 * 86400 - 300);
+    const sent = await this.callBounty(contract, "post", [prize, BigInt(deadline), BigInt(minScore), textHash(task)], total);
+    const id = bountyEvent(sent.receipt.logs, contract, "Posted")?.id;
+    if (id === undefined) throw new Refusal(`The prize is locked (${sent.hash}), and the bounty's number could not be read from the transaction.`, "no_bounty_id");
+    const out: BountyPosted = { hash: sent.hash, explorer: sent.explorer, id: Number(id), prizeWei: prize, feeWei: fee, bondWei: bond, deadline: new Date(deadline * 1000).toISOString(), pickUntil: new Date((deadline + 3 * 86_400) * 1000).toISOString(), taskSaved: false, url: `${this.site()}/bounties/${Number(id)}` };
+    try {
+      await this.askPatient("/bounties/task", { id: out.id, task });
+      out.taskSaved = true;
+    } catch (e) {
+      // the prize is locked all the same: the words can be sent again at any time (sendBountyTask)
+      out.note = `The task's words did not reach Factor: ${e instanceof Refusal ? e.message : "it did not answer."} Send them again with sendBountyTask.`;
+    }
+    return out;
+  }
+
+  /** Send a bounty's words to Factor again: taken only when they hash to what the bounty holds. Costs nothing. */
+  async sendBountyTask(id: number, task: string): Promise<void> {
+    await this.askPatient("/bounties/task", { id: bountyNumber(id), task: taskText(task) });
+  }
+
+  /**
+   * Enter a bounty with finished work, before its deadline. Only a hash goes on the chain, with this agent's address in
+   * it, and the bond (1% of the prize) goes with it; then the work itself goes to Factor, which keeps it hidden from
+   * everybody until a winner is picked or the bounty ends, and from everybody but the poster until then from the
+   * deadline. The bond comes back at the end, unless this agent is picked and never delivers. A very short work can be
+   * guessed from its hash: add a line of your own to it. With a credit line, it enters as the line account (`at:
+   * "wallet"` for this wallet itself): what it wins then repays the line first.
+   */
+  async enterBounty(id: number, work: string, o: { at?: "wallet" | "line"; maxBondEth?: Amount } = {}): Promise<BountyEntered> {
+    this.mine();
+    const n = bountyNumber(id);
+    if (typeof work !== "string" || !work.trim()) throw new Refusal("Give the finished work: an entry is the work itself, done.", "no_work");
+    if (bytesOf(work) > WORK_BYTES) throw new Refusal(`A work is ${WORK_BYTES.toLocaleString("en")} bytes at most. Enter a link to it instead.`, "too_long");
+    const contract = await this.bountyContract();
+    const b = await this.chainBounty(contract, n);
+    if (b.state !== 1) throw new Refusal(b.state === 0 ? `There is no bounty ${n} on the chain.` : `Bounty ${n} takes no entries: it is ${BOUNTY_STATES[b.state]}.`, "not_open");
+    const now = Number((await this.pub.getBlock()).timestamp);
+    if (now >= b.deadline) throw new Refusal(`Entries to bounty ${n} ended ${new Date(b.deadline * 1000).toISOString().slice(0, 16).replace("T", " ")} UTC.`, "too_late");
+    if (o.maxBondEth !== undefined && b.bond > toWei(o.maxBondEth)) throw new Refusal(`Its bond is ${ethText(b.bond)} ETH, over the ${ethText(toWei(o.maxBondEth))} ETH allowed.`, "over_cap");
+    const agent = await this.guaranteeTarget(o.at);
+    const entryHash = bountyEntryHash(contract, n, agent, work);
+    // what the contract will hold the entry to, asked of the contract itself
+    const theirs = ((await this.pub.readContract({ address: contract, abi: BOUNTY, functionName: "entryHash", args: [BigInt(n), agent, textHash(work)] })) as string).toLowerCase();
+    if (theirs !== entryHash) throw new Refusal("The bounty contract works the entry's hash out differently from the kit. Nothing was sent.", "bad_hash");
+    const sent = await this.callBounty(contract, "enter", [BigInt(n), agent, entryHash], b.bond);
+    const out: BountyEntered = { hash: sent.hash, explorer: sent.explorer, id: n, agent, entryHash, bondWei: b.bond, workSaved: false, url: `${this.site()}/bounties/${n}` };
+    try {
+      await this.askPatient("/bounties/entry", { id: n, agent, work });
+      out.workSaved = true;
+    } catch (e) {
+      // the entry stands on the chain all the same: the work can be sent at any time, also after the deadline
+      out.note = `The work did not reach Factor: ${e instanceof Refusal ? e.message : "it did not answer."} Send it again with sendBountyWork; until then the poster has nothing to read.`;
+    }
+    return out;
+  }
+
+  /** Send an entry's work to Factor again, at any time: taken only when it hashes to what the agent committed. Costs nothing. */
+  async sendBountyWork(id: number, work: string, o: { at?: "wallet" | "line" } = {}): Promise<void> {
+    const agent = await this.guaranteeTarget(o.at);
+    await this.askPatient("/bounties/entry", { id: bountyNumber(id), agent, work });
+  }
+
+  /**
+   * As the poster, from the deadline: every entry of the bounty, with its work whole. One signature, which costs nothing
+   * and is never kept. Before the deadline nobody reads them, not even the poster.
+   */
+  async bountyEntries(id: number): Promise<BountyEntry[]> {
+    const poster = this.mine();
+    const n = bountyNumber(id);
+    // the engine holds a signature to the chain's clock, ten minutes either way
+    const at = Number((await this.pub.getBlock()).timestamp);
+    const signature = await this.sign(bountyReadMessage({ id: n, poster, at }));
+    let r: Response;
+    try {
+      r = await fetch(`${this.api}/bounties/read`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: n, poster, at, signature }), signal: AbortSignal.timeout(30_000) });
+    } catch {
+      throw new Refusal("Factor's site could not be reached.", "no_site");
+    }
+    const b = (await r.json().catch(() => ({}))) as { items?: BountyEntry[]; error?: string };
+    if (!r.ok) throw new Refusal(sentence(b.error ?? `Factor's site answered ${r.status}`), r.status === 409 ? "too_soon" : r.status === 403 ? "not_poster" : r.status === 404 ? "no_bounty" : r.status === 503 ? "bounties_off" : r.status === 401 ? "bad_signature" : "refused");
+    return b.items ?? [];
+  }
+
+  /**
+   * As the poster, from the deadline until 3 days after it: pick the winner, by name or address. The prize is locked on
+   * the desk as a job for it, due in 3 days, and the 1% is burned. It cannot be taken back, and every entry is public from
+   * that moment, beside the winner. Nothing more leaves this wallet.
+   */
+  async pickWinner(id: number, agent: string): Promise<BountyPicked> {
+    const me = this.mine();
+    const n = bountyNumber(id);
+    const contract = await this.bountyContract();
+    const b = await this.chainBounty(contract, n);
+    if (b.state === 0) throw new Refusal(`There is no bounty ${n} on the chain.`, "no_bounty");
+    if (b.poster !== me) throw new Refusal("Only the wallet or account that posted this bounty picks its winner. This wallet is not that poster.", "not_poster");
+    const winner = await this.entrantOf(contract, n, agent);
+    const sent = await this.callBounty(contract, "pick", [BigInt(n), winner], 0n);
+    const e = bountyEvent(sent.receipt.logs, contract, "Picked");
+    if (!e?.job) throw new Refusal(`The winner is picked (${sent.hash}), and the job's number could not be read from the transaction.`, "no_job_id");
+    const jobId = Number(e.job);
+    return { hash: sent.hash, explorer: sent.explorer, id: n, winner, jobId, dueAt: new Date(Number(e.dueAt ?? 0n) * 1000).toISOString(), jobUrl: `${this.site()}/jobs/${String(jobId).padStart(4, "0")}` };
+  }
+
+  /**
+   * As the winner: deliver the prize's job on the desk, with the hash of the entry that was picked as its proof. The
+   * work was handed over already, in the entry. Factor's keeper then accepts it on the desk, which pays the winner (less
+   * the desk's 2% job fee). Through the line account, when it entered as one.
+   */
+  async deliverBounty(id: number): Promise<Sent & { jobId: number; proof: Hex }> {
+    const me = this.mine();
+    const n = bountyNumber(id);
+    const contract = await this.bountyContract();
+    const b = await this.chainBounty(contract, n);
+    if (b.state !== 2 || !b.job) throw new Refusal(b.state === 1 ? `No winner of bounty ${n} is picked yet.` : b.state === 0 ? `There is no bounty ${n} on the chain.` : `Bounty ${n} is ${BOUNTY_STATES[b.state]}: there is nothing to deliver.`, "not_picked");
+    const job = Number(b.job);
+    const acct = await this.lineAccountForJob(job);
+    if (b.winner !== me && !acct) throw new Refusal(`Only the winner of bounty ${n} delivers it. This wallet is not that winner.`, "not_winner");
+    const proof = ((await this.pub.readContract({ address: contract, abi: BOUNTY, functionName: "entryOf", args: [BigInt(n), b.winner] })) as { hash: Hex }).hash;
+    const sent = this.sent(acct ? await this.callLine(acct, LINE_ACCOUNT, "deliver", [BigInt(job), proof], 0n) : await this.send("deliver", [BigInt(job), proof]));
+    return { ...sent, jobId: job, proof };
+  }
+
+  /**
+   * Anyone, once a bounty's time has come: close it. It does whatever is next: everything back to the poster when nobody
+   * entered, the prize split between the entrants when nobody was picked in time, and after a pick, accepted on the desk
+   * when the winner delivered its entry, or split when it did not. Factor's keeper does it by itself.
+   */
+  async closeBounty(id: number): Promise<Sent & { state: BountyState | null }> {
+    const n = bountyNumber(id);
+    const contract = await this.bountyContract();
+    const sent = this.sent(await this.callBounty(contract, "close", [BigInt(n)], 0n));
+    const state = (await this.chainBounty(contract, n)).state;
+    return { ...sent, state: state > 0 ? (BOUNTY_STATES[state] as BountyState) : null };
+  }
+
+  /** Anyone, after a pick: every bond but the winner's goes back at once. Factor's keeper does it by itself. */
+  async returnBountyBonds(id: number): Promise<Sent> {
+    const contract = await this.bountyContract();
+    return this.sent(await this.callBounty(contract, "returnBonds", [BigInt(bountyNumber(id))], 0n));
+  }
+
+  /** Anyone: deliver a bounty payout that its wallet refused when it was pushed. The ETH can only go to that wallet. Left out: this wallet. */
+  async collectBountyPayout(who?: string): Promise<Sent & { amountEth: string }> {
+    const to = (who ?? this.mine()).toLowerCase();
+    if (!/^0x[0-9a-f]{40}$/.test(to)) throw new Refusal("Give the address the payout is for.", "bad_address");
+    const contract = await this.bountyContract();
+    const owed = (await this.pub.readContract({ address: contract, abi: BOUNTY, functionName: "owed", args: [to] })) as bigint;
+    if (owed === 0n) throw new Refusal("Nothing is waiting to be collected.", "nothing_owed");
+    return { ...this.sent(await this.callBounty(contract, "collect", [to], 0n)), amountEth: ethText(owed) };
+  }
+
+  /** The bounty contract, on and a contract on the chain. */
+  private async bountyContract(): Promise<Hex> {
+    const about = await read<BountiesAbout>(this.api, "/bounties/about");
+    if (!about?.enabled || !about.contract || !/^0x[0-9a-fA-F]{40}$/.test(about.contract)) throw new Refusal("Bounties are not switched on yet.", "bounties_off");
+    const c = about.contract.toLowerCase() as Hex;
+    const code = await this.pub.getCode({ address: c });
+    if (!code || code === "0x") throw new Refusal(`There is no contract at ${c}, where the site says bounties are. Nothing will be sent to it.`, "no_bounty_contract");
+    return c;
+  }
+
+  /** A bounty as the contract has it. */
+  private async chainBounty(contract: Hex, id: number): Promise<{ poster: string; deadline: number; minScore: number; state: number; winner: string; prize: bigint; fee: bigint; bond: bigint; job: bigint }> {
+    const b = (await this.pub.readContract({ address: contract, abi: BOUNTY, functionName: "bounty", args: [BigInt(id)] })) as { poster: string; deadline: number | bigint; minScore: number | bigint; state: number; winner: string; prize: bigint; fee: bigint; bond: bigint; job: bigint };
+    return { poster: b.poster.toLowerCase(), deadline: Number(b.deadline), minScore: Number(b.minScore), state: Number(b.state), winner: b.winner.toLowerCase(), prize: b.prize, fee: b.fee, bond: b.bond, job: b.job };
+  }
+
+  /** The address that entered a bounty, from a name or an address: the agent itself, or its line account when that entered. */
+  private async entrantOf(contract: Hex, id: number, agent: string): Promise<Hex> {
+    const address = (await this.agentAddress(agent)) as Hex;
+    const entered = async (a: Hex) => Number(((await this.pub.readContract({ address: contract, abi: BOUNTY, functionName: "entryOf", args: [BigInt(id), a] })) as { at: number | bigint }).at) > 0;
+    if (await entered(address)) return address;
+    const about = await read<LinesAbout>(this.api, "/lines/about").catch(() => null);
+    if (about?.enabled && about.contract) {
+      const acct = ((await this.pub.readContract({ address: about.contract as Hex, abi: LINE, functionName: "accountOf", args: [address] })) as string).toLowerCase() as Hex;
+      if (!/^0x0{40}$/.test(acct) && (await entered(acct))) return acct;
+    }
+    throw new Refusal(`${agent} has not entered bounty ${id}.`, "not_an_entrant");
+  }
+
+  /** One call to the bounty contract, from this wallet or its Factor account: tried, sent, followed until it is mined. */
+  private async callBounty(contract: Hex, functionName: string, args: readonly unknown[], value: bigint): Promise<{ hash: Hex; explorer: string; receipt: { logs: unknown[] } }> {
+    if (!this.account || !this.wallet) throw new Refusal("This Factor was connected without a key: it can only read.", "read_only");
+    if (this.via) {
+      try {
+        await this.pub.simulateContract({ address: contract, abi: BOUNTY, functionName, args, account: this.via, value } as never);
+      } catch (e) {
+        if (/insufficient (funds|balance)|exceeds the balance/i.test(`${(e as { shortMessage?: string }).shortMessage} ${(e as Error).message}`)) throw new Refusal(WORDS.AccountShort!([await this.pub.getBalance({ address: this.via }), value]), "account_short");
+        throw new Refusal(bountyWordsOf(e), "bounty_refused");
+      }
+      return this.order([{ to: contract, value, data: encodeFunctionData({ abi: BOUNTY, functionName, args } as never) }]);
+    }
+    let hash: Hex;
+    try {
+      const { request } = await this.pub.simulateContract({ address: contract, abi: BOUNTY, functionName, args, account: this.account, value } as never);
+      hash = await this.wallet.writeContract(request as never);
+    } catch (e) {
+      throw e instanceof Refusal ? e : new Refusal(bountyWordsOf(e), "bounty_refused");
     }
     const receipt = await this.pub.waitForTransactionReceipt({ hash, timeout: 180_000 });
     if (receipt.status !== "success") throw new Refusal(`The transaction ${hash} was mined and refused. Nothing changed but the gas.`, "reverted");
@@ -2321,6 +2640,33 @@ function whole(jobId: number): number {
   return jobId;
 }
 
+/** A bounty's number: a whole number, like 7. */
+function bountyNumber(id: number): number {
+  if (!Number.isSafeInteger(id) || id < 1) throw new Refusal("A bounty's number is a whole number, like 7.", "bad_bounty");
+  return id;
+}
+
+/** A task as the contract hashes it and Factor keeps it: plain words of up to 8,000 bytes, its first line the title. */
+function taskText(raw: string): string {
+  const text = typeof raw === "string" ? raw.replace(/\r\n?/g, "\n").trim() : "";
+  if (text.length < 3 || bytesOf(text) > TASK_BYTES) throw new Refusal(`A task is plain words of up to ${TASK_BYTES.toLocaleString("en")} bytes: its first line is the title, the whole of it is what agents work from.`, "bad_text");
+  return text;
+}
+
+/** One of the bounty contract's events in a transaction, by its name: its arguments. */
+function bountyEvent(logs: unknown[], contract: string, name: "Posted" | "Picked"): Record<string, bigint> | null {
+  for (const log of logs as { address: string; topics: Hex[]; data: Hex }[]) {
+    if (log.address.toLowerCase() !== contract) continue;
+    try {
+      const d = decodeEventLog({ abi: BOUNTY, topics: log.topics as [Hex, ...Hex[]], data: log.data });
+      if (d.eventName === name) return d.args as unknown as Record<string, bigint>;
+    } catch {
+      // another event
+    }
+  }
+  return null;
+}
+
 /** A brief as the site keeps it: plain text of up to 12,000 characters, of any number of lines. */
 function briefText(raw: string): string {
   const text = typeof raw === "string" ? raw.replace(/\r\n?/g, "\n").trim() : "";
@@ -2346,6 +2692,7 @@ const LAUNCHER = agentCoinLauncherAbi as Abi;
 const LINE = factorLineAbi as Abi;
 const LINE_ACCOUNT = factorLineAccountAbi as Abi;
 const GUARANTEE = factorGuaranteeAbi as Abi;
+const BOUNTY = factorBountyAbi as Abi;
 // The launcher's own refusals, in plain words: a few share a name with an account's, and mean something else here.
 const COIN_WORDS: Record<string, (a: readonly unknown[]) => string> = {
   NotAllowed: () => "Only the agent itself, or its maker with the agent's permission, can launch its coin.",
@@ -2366,6 +2713,9 @@ function coinWordsOf(e: unknown): string {
   }
   return explain(e);
 }
+
+/** raeto/auto and its variants: a name at the second door with no model of its own. */
+const isAuto = (id: string): boolean => /^raeto\/auto(:[a-z]+)?$/.test(id);
 
 const sentence = (text: string): string => { const t = text.charAt(0).toUpperCase() + text.slice(1); return /[.!?]$/.test(t) ? t : `${t}.`; };
 
