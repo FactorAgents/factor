@@ -1,18 +1,49 @@
-Milestones: the small real run on Robinhood Chain mainnet. NOT RUN YET (3 Nov 2026, 13:33 UTC).
+Milestones: the small real run on Robinhood Chain mainnet, 3 Nov 2026, 13:40 to 14:07 UTC.
 
-The plan: deploy the FINAL milestone contract (FactorMilestones, no owner, no admin, no upgrade) from Factor's demo wallet
-0x50A9Bf50C3337d5db03efdF89DEB0F5A0B908f17 beside the LIVE desk 0x487Eb282E9Aa56aE871c15A16C5B061b9d2faA6F; because it has no
-owner, that deployment is the production contract. Then hire report-lead 0x74325C9644973d9C7A293BDFc970a573A38419e1 (an agent
-from earlier demonstrations) in 2 stages of 0.001 ETH each, the smallest the desk takes, with the whole 0.002 locked up front;
-report-lead delivers each stage on the live desk with a price sheet read from Chainlink's feeds by the code of Factor's own
-price-desk service (no model), and the demo wallet accepts each through the contract, so both are paid by the live desk.
+What was done: the FINAL milestone contract (FactorMilestones, no owner, no admin, no upgrade) was deployed from Factor's demo
+wallet 0x50A9Bf50C3337d5db03efdF89DEB0F5A0B908f17 beside the LIVE desk 0x487Eb282E9Aa56aE871c15A16C5B061b9d2faA6F, at
+0x5Ea82f6DA6E59B81F735CB403F22256e8f5F5E98, block 105,099,951 (1,827,056 gas); because it has no owner, that deployment is the
+production contract. Then report-lead 0x74325C9644973d9C7A293BDFc970a573A38419e1 (an agent from earlier demonstrations) was
+hired in 2 stages of 0.001 ETH each, the smallest the desk takes, with the whole 0.002 locked up front (plan 1: stage 1 job 29,
+stage 2 job 30); report-lead delivered each stage on the live desk with a price sheet read from Chainlink's feeds by the code
+of Factor's own price-desk service (no model), and the demo wallet accepted each through the contract, so both were paid by the
+live desk: 0.00098 ETH to report-lead and 0.00002 to the pool each time, stage 2 locked in the same transaction as stage 1's
+accept. The plan ended done, the contract holding 0 ETH, and what came through report-lead went back to the demo wallet.
 
-Why it has not run: the demo wallet held 0.002010634052903391 ETH from 12:30 to 13:33 UTC (checked every minute for the last
-25), and the run needs about 0.0022: 0.002 locked for the two stages plus about 0.00009 of gas (deploy 2,016,928 gas, post
-465,917, two accepts 352,060 and 153,087, at about 0.0255 gwei). Nothing was sent, nothing was spent, and no line was added to
-the tax files.
-
-The exact run is ~/.factor-video/milestones-run/flow.ts, one step at a time (docs/RELEASE-milestones.md, section 1). Each
-transaction it sends is appended below, and to ~/Skatt-2026/data/factor-demo-nov03.txt, as it is mined.
+The run was ~/.factor-video/milestones-run/flow.ts, one step at a time (docs/RELEASE-milestones.md, section 1), with the branch
+engine in watch mode (sending nothing) and the branch site reading it locally. One hitch, off the chain: stage 2's brief says
+"the same three prices" and names no ticker, and the price-desk code reads the tickers out of the brief, so the script's deliver
+step for stage 2 declined twice before anything was sent ("the price feeds did not answer just now"), and one accept attempt
+was refused in its simulation because nothing was delivered. The script was then given stage 1's words beside stage 2's brief
+for the read, and the delivery went through. No transaction failed on the chain.
 
 Every transaction (UTC, hash, what, from, ETH moved besides gas, gas paid):
+2026-11-03T13:40:03Z  0xcc47e7c3feef7dd4cb7816594f161b5c249cfc925331d9662d8ed102bdd186c3  deploy the FINAL milestone contract 0x5ea82f6da6e59b81f735cb403f22256e8f5f5e98, beside the live desk  from demo wallet  value 0 ETH  gas 0.000037096545024 ETH (1827056 gas)
+2026-11-03T13:45:42Z  0x3804c2f1d0972369643f7dc6dd28432f671723adcb2c07fbb44a86b38ff75a36  hire report-lead in 2 stages, the smallest the desk takes (0.001 each, a day each): the whole 0.002 locked, stage 1 locked on the live desk as a job  from demo wallet  value 0.002 ETH  gas 0.000009567970756 ETH (475498 gas)
+2026-11-03T13:58:10Z  0x552772a072c2b725ee6de1231a49d866cc59b510eed790f220db37388dbd6413  report-lead delivers stage 1 (job 29) on the live desk: a price sheet read from Chainlink's feeds  from report-lead  value 0 ETH  gas 0.000001138317164 ETH (56723 gas)
+2026-11-03T14:02:19Z  0xfb39b0d97fe312d9813c2a1832ee0d34fa5be03009c57341aa7608ada77522b1  the customer accepts stage 1 through the milestone contract: the live desk pays report-lead 98% of job 29 and its pool 2%, and stage 2 is locked on the live desk at once  from demo wallet  value 0 ETH  gas 0.0000057791 ETH (288955 gas)
+2026-11-03T14:06:16Z  0x6477730fd93f564c8cacb925d0b0814151baf573393da15fea3112ea21252140  report-lead delivers stage 2 (job 30) on the live desk: a price sheet read from Chainlink's feeds  from report-lead  value 0 ETH  gas 0.000001143876018 ETH (56723 gas)
+2026-11-03T14:06:30Z  0xfab7fff96e7f236a1eac0f429458237369d4a6a5aeb8a1f74c9b0d1e930d537d  the customer accepts stage 2 through the milestone contract: the live desk pays report-lead 98% of job 30 and its pool 2%, the last stage  from demo wallet  value 0 ETH  gas 0.00000239710464 ETH (119616 gas)
+2026-11-03T14:06:46Z  0xf68052e67df29e3d8798f241629acd148acffa5d1c85ca3b348cad74bede53a7  report-lead sends what came through it back to the demo wallet  from report-lead  value 0.001957717806818 ETH  gas 0.000000420294 ETH (21000 gas)
+
+What was checked, on the chain and in the branch engine and site (they agreed on every figure):
+- the milestone contract 0x5Ea82f6DA6E59B81F735CB403F22256e8f5F5E98 (deploy block 105,099,951, 1,827,056 gas) read back by
+  contracts/script/DeployMilestones.s.sol check(): wired to the live desk, plans 0, held 0, at desk 0 before the post
+- plan 1: 0.002 ETH locked by the demo wallet for report-lead, two stages of 0.001 and a day each, early half off; stage 1 was
+  job 29 on the live desk at once, its customer the contract, and the plan's words reached the engine (they hashed to the chain)
+- stage 1 delivered (job 29), accepted through the contract: the live desk paid report-lead 0.00098 and its pool 0.00002, and
+  stage 2 was locked as job 30 in the same transaction, due a day after its lock
+- stage 2 delivered (job 30), accepted: paid the same way; the plan's state is done, the contract holds 0 ETH, nothing owed
+- the branch site showed the stage form under Hire, "A job in 2 stages" on both jobs' pages with each stage's state as it went,
+  the customer's accept box on the delivered stage, and report-lead's page "Jobs in stages": 1, 2 stages paid, 0.0020 ETH
+- what was not run here: a missed, declined or rejected stage, a step by the keeper, a line account or a passkey account hiring
+  in stages. Those ran on a fork (contracts/test/fork/Milestones.fork.t.sol) and in the engine's tests. No model was called:
+  each sheet came from the code of the price-desk service, which reads the chain and asks nobody
+
+Totals (ETH, from the two wallets; nothing else was spent):
+- gas, 7 transactions:                              0.000057543207602 (demo wallet 0.000054840720420 in 4, report-lead
+                                                    0.000002702487182 in 3); the deploy alone 0.000037096545024
+- the desk's 2% job fee to its pool, two stages:   0.00004
+- in all, gone for good:                            0.000097543207602 (about $0.22 at $2,279.52 an ETH, the feed's price at 14:06 UTC)
+Demo wallet: 0.008010634052903391 before, 0.007913511139301391 after. report-lead: 0.000011565434308 before,
+0.000011145140308 after (it keeps a little gas for later runs).

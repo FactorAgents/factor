@@ -5,11 +5,11 @@ steps. The rules are `docs/MILESTONES.md`; the contract `contracts/src/FactorMil
 
 ## 1. The contract
 
-**Not deployed yet.** The milestone contract has no owner, no admin and no upgrade, so whoever deploys it holds no power
-over it: the copy deployed for the real run will BE the production contract, as with the line, guarantee and bounty
-contracts. On 3 Nov the demo wallet 0x50A9Bf50C3337d5db03efdF89DEB0F5A0B908f17 held 0.00201 ETH, and the run locks 0.002
-ETH up front on top of about 0.00009 ETH of gas, so nothing was sent. With about 0.0022 ETH in the demo wallet (the
-0.006 the owner meant to send is plenty), the whole run is one script, each step one command:
+**Deployed on 3 Nov 2026 at `0x5Ea82f6DA6E59B81F735CB403F22256e8f5F5E98`, block 105,099,951**, from the demo wallet
+0x50A9Bf50C3337d5db03efdF89DEB0F5A0B908f17 beside the live desk. The milestone contract has no owner, no admin and no
+upgrade, so whoever deployed it holds no power over it: this copy IS the production contract, as with the line, guarantee
+and bounty contracts. The real run that followed (plan 1: report-lead hired in 2 stages of 0.001 ETH, both delivered and
+paid, jobs 29 and 30) is written down in `docs/milestones-mainnet-test.txt`. It was one script, each step one command:
 
 ```
 cd ~/.factor-video/milestones-run
@@ -29,9 +29,8 @@ node_modules/.bin/tsx flow.ts totals
 The keys are read inside the script from ~/.factor-thread-smith-wallet.json and report-lead's key file, and never
 printed. Every transaction is written with its cost to `docs/milestones-mainnet-test.txt` and
 `~/Skatt-2026/data/factor-demo-nov03.txt`; the script stops by itself if more than 0.0004 ETH would be gone for good.
-Expected cost: about 0.00009 ETH of gas and the desk's 2% job fee on each stage (0.00004 ETH to the pool), about $0.30
-in all. After `deploy`, `milestones.env` in that folder holds the address and the block for step 2 below; put them
-into this file in place of the placeholders.
+The run cost 0.000057543 ETH of gas in 7 transactions and the desk's 2% job fee on each stage (0.00004 ETH to the pool),
+about $0.22 in all. `milestones.env` in that folder holds the address and the block for step 2 below.
 
 Were a new copy ever wanted, `contracts/deploy-milestones.sh <wallet>` deploys one (with `FACTOR_DRY=1` first for the
 dry run and the cost of each call); it would be a second contract beside this one, not a replacement. Its dry run on
@@ -43,8 +42,8 @@ delivery on the desk 80,609, and a step that sends the rest back 135,314 (each a
 
 ```
 MILESTONES=on
-FACTOR_MILESTONES=<the address flow.ts deploy wrote to milestones.env>
-FACTOR_MILESTONES_BLOCK=<the block just before the deploy, also in milestones.env>
+FACTOR_MILESTONES=0x5ea82f6da6e59b81f735cb403f22256e8f5f5e98
+FACTOR_MILESTONES_BLOCK=105099950
 ```
 
 `MILESTONES_PER_PASS` (5) can stay unset. No new secret and no new wallet: the keeper's step is sent from the engine's
@@ -64,7 +63,7 @@ site. `main` had not moved since the branch was made (11277fa), so the merge is 
 - the roadmap says 15 of 16 phases live, "Fifteen phases are live, the next one is planned", Milestones live 3 Nov as
   phase 15, and Factor everywhere still last and planned (phase 16)
 - the dev log's first entry is "Milestones"
-- the engine's log says `[milestones] on: plans in stages are read from 0x...`
+- the engine's log says `[milestones] on: plans in stages are read from 0x5ea82f6da6e59b81f735cb403f22256e8f5f5e98`
 
 The roadmap and the dev log say "3 Nov". If the release is on another day, change the date in `web/src/lib/roadmap.ts`
 (`live: "3 Nov"`) and `web/src/lib/devlog.ts` (`date: "2026-11-03"`), and the lines in `web/test/smoke.test.mjs` that
