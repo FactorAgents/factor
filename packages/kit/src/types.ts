@@ -42,6 +42,8 @@ export interface Job {
   cover?: { id: number; coverEth: number; feeEth: number; state: CoverState };
   /** a bounty's prize, paid through the desk (while bounties are on): the bounty, its poster, and the hash its winner delivers as the proof */
   bounty?: { id: number; title: string | null; poster: string; proof: string | null };
+  /** a stage of a job in stages: the plan, which stage of how many, its customer. Accepted or rejected through the milestone contract */
+  milestone?: { id: number; stage: number; count: number; title: string | null; stageTitle: string | null; customer: string; state: MilestoneState };
 }
 
 export interface Agent {
@@ -112,6 +114,8 @@ export interface State {
   lines?: LinesAbout;
   /** bounties: whether they are on, the contract, the rules and the totals */
   bounties?: BountiesAbout;
+  /** milestones: whether jobs in stages are on, the contract, the rules and the totals */
+  milestones?: MilestonesAbout;
   /** ERC-8004: whether settled jobs are written to the agents' reputation, the identity registry, and the address entries come from */
   erc8004?: { enabled: boolean; registry: string | null; reviewer: string | null };
 }
@@ -695,3 +699,59 @@ export interface BountyEntered extends Sent {
 
 /** A pick sent by the kit: the winner, and the desk job its prize became. */
 export interface BountyPicked extends Sent { id: number; winner: string; jobId: number; dueAt: string; jobUrl: string }
+
+// ---------- milestones ----------
+
+/** Milestones: whether jobs in stages are on, the contract, the rules and the totals (the engine's MilestonesAbout). */
+export interface MilestonesAbout {
+  enabled: boolean; contract: string | null; chainId: number;
+  rules: { minStages: number; maxStages: number; minStageEth: number; minTimeH: number; maxTimeD: number; jobFeePct: number; advanceFeePct: number; graceH: number; reviewH: number; titleChars: number; briefChars: number; termsBytes: number };
+  totals: { plans: number; budgetsEth: number; paidEth: number; returnedEth: number; heldEth: number; running: number; done: number; stagesPaid: number } | null;
+}
+
+/** The contract's own states: running (a stage on the desk), and how it ended. */
+export type MilestoneState = "running" | "done" | "missed" | "declined" | "rejected";
+/** Where one stage stands: not on the desk yet, on it, delivered, paid, or how it ended the plan; returned: never started, back to the customer. */
+export type StageStatus = "waiting" | "open" | "delivered" | "paid" | "missed" | "declined" | "rejected" | "returned";
+
+/** One stage (the engine's MilestoneStageJson). */
+export interface MilestoneStage {
+  /** 1 to 6 */
+  n: number; priceEth: number; priceWei: string; timeS: number; status: StageStatus; title: string | null;
+  /** its desk job, once it is on the desk */
+  job?: { n: number; id: string };
+  dueAt?: string;
+  /** not on the desk yet: the due date it would have if every stage before it were accepted on its due date */
+  expectedDueAt?: string;
+  openedAt?: string; deliveredAt?: string; paidAt?: string; paidTx?: string | null;
+}
+
+/** One job in stages (the engine's MilestonePlanJson). */
+export interface MilestonePlan {
+  id: number; customer: string; agent: { address: string; name: string; named: boolean; score: number; barred: boolean };
+  totalEth: number; totalWei: string; count: number; allowEarly: boolean; termsHash: string; title: string | null; hidden: boolean; state: MilestoneState;
+  /** the stage on the desk now, from 1; the last one once it ended */
+  current: number; postedAt: string; tx: string; paidEth: number; stages: MilestoneStage[];
+  endedAt?: string; endedTx?: string; returnedEth?: number;
+  /** its time has come: what anyone's step does */
+  next?: "opens" | "returns" | "settles" | "refunds";
+}
+
+/** An agent's jobs in stages: how many, how they went, the stages it was paid for, and the newest. */
+export interface AgentMilestones { plans: number; running: number; done: number; missed: number; declined: number; rejected: number; stagesPaid: number; paidEth: number; items: MilestonePlan[] }
+
+/** A job in stages hired by the kit: its number, the first stage's desk job, what was sent, and whether its words reached Factor. */
+export interface MilestonesHired extends Sent {
+  id: number;
+  /** the first stage's desk job */
+  job: number;
+  totalWei: bigint;
+  stages: number;
+  /** the words reached Factor, which gives each stage its title and brief because they hash to what the plan holds */
+  termsSaved: boolean;
+  url: string;
+  note?: string;
+}
+
+/** A call on a job in stages: where it stands after it. */
+export interface MilestoneSent extends Sent { id: number; state: MilestoneState | null; current: number; job: number }

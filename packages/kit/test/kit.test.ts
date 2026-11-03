@@ -349,9 +349,9 @@ describe("the assistant's caps", () => {
 
 describe("the tools", () => {
   it("have a name, a description and an input each, and say which of them send something", () => {
-    expect(TOOLS.map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_hire", "factor_accept", "factor_reject", "factor_set_title", "factor_register", "factor_set_profile", "factor_bond", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_ask_model", "factor_draw", "factor_deliver", "factor_decline", "factor_sign_up", "factor_create_pay_link", "factor_pay_link_info", "factor_pay_link", "factor_pay_x402", "factor_hire_for_job", "factor_job_tree", "factor_reject_sub_jobs", "factor_record", "factor_erc8004", "factor_link_erc8004", "factor_register_erc8004", "factor_coins", "factor_coin", "factor_prepare_coin_launch", "factor_sign_coin_permission", "factor_cancel_coin_permissions", "factor_launch_coin", "factor_line", "factor_open_line", "factor_bond_line", "factor_draw_line", "factor_repay_line", "factor_withdraw_from_line", "factor_guarantee", "factor_set_guarantee", "factor_hire_with_cover", "factor_cover", "factor_verified_owner", "factor_verify_owner", "factor_firms", "factor_firm_record", "factor_hire_firm", "factor_form_firm", "factor_join_firm", "factor_leave_firm", "factor_plan", "factor_plans", "factor_subscribe", "factor_subscribe_link", "factor_pay_month", "factor_stop_plan", "factor_draw_next_month", "factor_open_jobs", "factor_open_job", "factor_post_job", "factor_apply_to_job", "factor_bid", "factor_withdraw_offer", "factor_offers", "factor_pick_agent", "factor_close_job", "factor_auto_apply", "factor_set_auto_apply", "factor_auto_apply_now", "factor_bounties", "factor_bounty", "factor_post_bounty", "factor_enter_bounty", "factor_bounty_entries", "factor_pick_winner", "factor_deliver_bounty", "factor_close_bounty"]);
+    expect(TOOLS.map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_hire", "factor_accept", "factor_reject", "factor_set_title", "factor_register", "factor_set_profile", "factor_bond", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_ask_model", "factor_draw", "factor_deliver", "factor_decline", "factor_sign_up", "factor_create_pay_link", "factor_pay_link_info", "factor_pay_link", "factor_pay_x402", "factor_hire_for_job", "factor_job_tree", "factor_reject_sub_jobs", "factor_record", "factor_erc8004", "factor_link_erc8004", "factor_register_erc8004", "factor_coins", "factor_coin", "factor_prepare_coin_launch", "factor_sign_coin_permission", "factor_cancel_coin_permissions", "factor_launch_coin", "factor_line", "factor_open_line", "factor_bond_line", "factor_draw_line", "factor_repay_line", "factor_withdraw_from_line", "factor_guarantee", "factor_set_guarantee", "factor_hire_with_cover", "factor_cover", "factor_verified_owner", "factor_verify_owner", "factor_firms", "factor_firm_record", "factor_hire_firm", "factor_form_firm", "factor_join_firm", "factor_leave_firm", "factor_plan", "factor_plans", "factor_subscribe", "factor_subscribe_link", "factor_pay_month", "factor_stop_plan", "factor_draw_next_month", "factor_open_jobs", "factor_open_job", "factor_post_job", "factor_apply_to_job", "factor_bid", "factor_withdraw_offer", "factor_offers", "factor_pick_agent", "factor_close_job", "factor_auto_apply", "factor_set_auto_apply", "factor_auto_apply_now", "factor_bounties", "factor_bounty", "factor_post_bounty", "factor_enter_bounty", "factor_bounty_entries", "factor_pick_winner", "factor_deliver_bounty", "factor_close_bounty", "factor_milestones", "factor_milestone", "factor_hire_in_stages", "factor_accept_stage", "factor_reject_stage", "factor_step_milestone"]);
     for (const t of TOOLS) expect(t.description.length, t.name).toBeGreaterThan(40);
-    expect(TOOLS.filter((t) => t.readOnly).map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_pay_link_info", "factor_job_tree", "factor_record", "factor_erc8004", "factor_coins", "factor_coin", "factor_prepare_coin_launch", "factor_line", "factor_guarantee", "factor_cover", "factor_verified_owner", "factor_firms", "factor_firm_record", "factor_plan", "factor_plans", "factor_open_jobs", "factor_open_job", "factor_offers", "factor_auto_apply", "factor_bounties", "factor_bounty"]);
+    expect(TOOLS.filter((t) => t.readOnly).map((t) => t.name)).toEqual(["factor_overview", "factor_agents", "factor_agent", "factor_job", "factor_my_jobs", "factor_ledger", "factor_can_draw", "factor_account", "factor_compute_credit", "factor_compute_models", "factor_pay_link_info", "factor_job_tree", "factor_record", "factor_erc8004", "factor_coins", "factor_coin", "factor_prepare_coin_launch", "factor_line", "factor_guarantee", "factor_cover", "factor_verified_owner", "factor_firms", "factor_firm_record", "factor_plan", "factor_plans", "factor_open_jobs", "factor_open_job", "factor_offers", "factor_auto_apply", "factor_bounties", "factor_bounty", "factor_milestones", "factor_milestone"]);
     // the ones that spend or cannot be undone say so in capitals, where an assistant will not miss it
     for (const name of ["factor_launch_coin", "factor_hire", "factor_reject", "factor_bond", "factor_pay_link", "factor_pay_x402", "factor_hire_for_job", "factor_reject_sub_jobs", "factor_hire_firm", "factor_subscribe", "factor_pay_month", "factor_pick_agent", "factor_repay_line", "factor_set_guarantee", "factor_hire_with_cover", "factor_bond_line", "factor_subscribe_link", "factor_post_bounty", "factor_enter_bounty"]) expect(TOOLS.find((t) => t.name === name)!.description).toMatch(/SPENDS ETH|SETTLES AT HALF/);
     expect(TOOLS.find((t) => t.name === "factor_pick_winner")!.description).toMatch(/CANNOT BE TAKEN BACK/);
@@ -1520,5 +1520,93 @@ describe("what else the site serves", () => {
     expect(reg.isError).toBe(true);
     expect(s.node.calls.filter((c) => c === "eth_sendRawTransaction")).toHaveLength(0);
     expect((await runTool(await connect(), "factor_register_erc8004", {}, null)).text).toMatch(/No wallet key is set/);
+  });
+});
+
+// ---------- milestones ----------
+
+import { checkTerms, MILESTONE_WORDS, termsHash, termsText } from "../src/index.js";
+import { parseTerms as engineParseTerms, termsHash as engineTermsHash, termsText as engineTermsText } from "../../../engine/src/milestones.js";
+import { factorMilestonesAbi } from "../src/abi/FactorMilestones.js";
+import { MILESTONES_OFF } from "./stub.js";
+
+describe("milestones", () => {
+  const TERMS = { title: "A shop site in two parts", stages: [{ title: "The words for every page", brief: "Three pages: home, menu, contact.\nPlain words." }, { title: "The pages, built", brief: "The three pages from the words." }] };
+  const PLAN = { id: 3, customer: "0x00000000000000000000000000000000000000c1", agent: { address: AGENTS[1]!.address, name: "page-smith", named: true, score: 580, barred: false }, totalEth: 0.02, totalWei: "20000000000000000", count: 2, allowEarly: false, termsHash: `0x${"cd".repeat(32)}`, title: TERMS.title, hidden: false, state: "running", current: 1, postedAt: "2026-11-03T12:00:00.000Z", tx: "0xabc", paidEth: 0, stages: [{ n: 1, priceEth: 0.01, priceWei: "10000000000000000", timeS: 259_200, status: "open", title: "The words for every page", job: { n: 40, id: "0040" }, dueAt: "2026-11-06T12:00:00.000Z" }, { n: 2, priceEth: 0.01, priceWei: "10000000000000000", timeS: 604_800, status: "waiting", title: "The pages, built", expectedDueAt: "2026-11-13T12:00:00.000Z" }], next: undefined };
+  const reset = () => { s.site.milestonesAbout = MILESTONES_OFF; s.site.milestones = []; s.site.milestone = null; s.site.state = state(); };
+  beforeEach(reset);
+  afterAll(reset);
+  const sent = () => s.node.calls.filter((c) => c === "eth_sendRawTransaction").length;
+
+  it("writes and hashes the words to the letter the engine checks, and the engine reads back what the kit sends", () => {
+    expect(termsText(TERMS)).toBe(engineTermsText(TERMS));
+    expect(termsHash(termsText(TERMS))).toBe(engineTermsHash(engineTermsText(TERMS)));
+    const sentText = checkTerms({ title: "  A shop site   in two parts ", stages: TERMS.stages });
+    expect(sentText).toBe(termsText(TERMS));
+    expect(engineParseTerms(sentText, 2)).toEqual(TERMS);
+  });
+
+  it("refuses words the engine would refuse, before anything is sent", () => {
+    expect(() => checkTerms({ ...TERMS, stages: [TERMS.stages[0]!] })).toThrow(/2 to 6 stages/);
+    expect(() => checkTerms({ ...TERMS, title: "see shop.com" })).toThrow(/without links/);
+    expect(() => checkTerms({ ...TERMS, stages: [TERMS.stages[0]!, { title: "ok title", brief: " " }] })).toThrow(/Stage 2's brief/);
+    expect(() => checkTerms({ ...TERMS, stages: [TERMS.stages[0]!, { title: "x", brief: "b" }] })).toThrow(/Stage 2's title/);
+  });
+
+  it("has plain words for every refusal of the milestone contract", () => {
+    const errors = (factorMilestonesAbi as readonly { type: string; name?: string }[]).filter((x) => x.type === "error").map((x) => x.name!);
+    expect(errors.length).toBeGreaterThan(10);
+    for (const name of errors) expect(MILESTONE_WORDS[name], name).toBeTypeOf("function");
+    expect(MILESTONE_WORDS.TooSmall([10n ** 15n])).toBe("The smallest stage is 0.001 ETH, the desk's smallest job.");
+    expect(MILESTONE_WORDS.WrongValue([2n * 10n ** 16n])).toBe("It takes exactly 0.02 ETH: every stage's price together.");
+  });
+
+  it("reads the plans and one plan with every stage", async () => {
+    const f = await connect();
+    expect((await f.milestones()).enabled).toBe(false);
+    s.site.milestonesAbout = { ...MILESTONES_OFF, enabled: true, contract: BOUNTY };
+    s.site.milestones = [PLAN];
+    s.site.milestone = PLAN;
+    expect((await f.milestones({ show: "open" })).items.map((m) => m.id)).toEqual([3]);
+    expect((await f.milestone(3))!.stages.map((x) => x.status)).toEqual(["open", "waiting"]);
+    expect((await f.milestoneOfJob(40))!.id).toBe(3);
+    await expect(f.milestone(0)).rejects.toThrow(/whole number, like 3/);
+  });
+
+  it("refuses to hire in stages, accept, reject or step while they are off, and a plan it would not send, before anything is sent", async () => {
+    const f = await connect({ privateKey: KEY });
+    const stages = TERMS.stages.map((x) => ({ ...x, price: "0.01", days: 3 }));
+    expect((await refusal(f.hireInStages({ agent: "page-smith", title: TERMS.title, stages }))).code).toBe("milestones_off");
+    expect((await refusal(f.acceptStage(3))).code).toBe("milestones_off");
+    expect((await refusal(f.rejectStage(3))).code).toBe("milestones_off");
+    expect((await refusal(f.stepMilestone(3))).code).toBe("milestones_off");
+    expect((await refusal(f.hireInStages({ agent: "page-smith", title: TERMS.title, stages: [stages[0]!] }))).code).toBe("bad_stages");
+    expect((await refusal(f.hireInStages({ agent: "page-smith", title: TERMS.title, stages: [stages[0]!, { ...stages[1]!, price: "0.0009" }] }))).message).toBe("Stage 2 is 0.0009 ETH; the smallest stage is 0.001 ETH, the desk's smallest job.");
+    expect((await refusal(f.hireInStages({ agent: "page-smith", title: TERMS.title, stages: [stages[0]!, { ...stages[1]!, days: 31 }] }))).code).toBe("bad_due");
+    expect((await refusal(f.hireInStages({ agent: "page-smith", title: TERMS.title, stages, maxEth: "0.019" }))).message).toBe("The stages come to 0.02 ETH, over the 0.019 ETH allowed.");
+    expect(sent()).toBe(0);
+  });
+
+  it("the tools: a hire in stages over the assistant's cap is refused before anything is sent, and the plans are said in words", async () => {
+    const f = await connect({ privateKey: KEY });
+    const dir = mkdtempSync(join(tmpdir(), "factor-kit-"));
+    try {
+      const spending = new Spending({ perJob: toWei("0.015"), perDay: toWei("1"), dir }, f.address!);
+      const r = await runTool(f, "factor_hire_in_stages", { agent: "page-smith", title: TERMS.title, stages: TERMS.stages.map((x) => ({ ...x, price: "0.01" })) }, spending);
+      expect(r.isError).toBe(true);
+      expect(r.text).toMatch(/0\.02 ETH is over this assistant's cap of 0\.015 ETH for one job/);
+      expect((await runTool(f, "factor_milestones", {}, null)).text).toBe("Jobs in stages are not switched on on Factor yet.");
+      s.site.milestonesAbout = { ...MILESTONES_OFF, enabled: true, contract: BOUNTY };
+      s.site.milestones = [PLAN];
+      s.site.milestone = PLAN;
+      expect((await runTool(f, "factor_milestones", {}, null)).text).toBe('Job in stages 3 "A shop site in two parts": 2 stages, 0.02 ETH locked by 0x00000000000000000000000000000000000000c1 for page-smith. Stage 1 is on the desk.');
+      const one = (await runTool(f, "factor_milestone", { id: 3 }, null)).text;
+      expect(one).toContain("1. The words for every page: 0.01 ETH, on the desk, job 40, due 2026-11-06T12:00:00.000Z");
+      expect(one).toContain("2. The pages, built: 0.01 ETH, not started, about 2026-11-13T12:00:00.000Z if every stage before it is accepted on its due date");
+      expect(TOOLS.filter((t) => t.name.includes("milestone") || t.name.includes("stage")).map((t) => t.name)).toEqual(["factor_milestones", "factor_milestone", "factor_hire_in_stages", "factor_accept_stage", "factor_reject_stage", "factor_step_milestone"]);
+      expect(sent()).toBe(0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

@@ -28,8 +28,10 @@ import { factorGuaranteeAbi } from "./abi/FactorGuarantee.js";
 import { coverFee, guaranteeWordsOf } from "./guarantees.js";
 import { factorBountyAbi } from "./abi/FactorBounty.js";
 import { BOUNTY_STATES, bountyEntryHash, bountyParts, bountyReadMessage, bountyWordsOf, bytesOf, MIN_PRIZE_WEI, TASK_BYTES, textHash, WORK_BYTES } from "./bounties.js";
+import { factorMilestonesAbi } from "./abi/FactorMilestones.js";
+import { checkTerms, MAX_STAGE_S, MILESTONE_STATES, milestoneWordsOf, MIN_STAGE_S, MIN_STAGE_WEI, termsHash } from "./milestones.js";
 import { CHAIN_ID, DEFAULT_API, DEFAULT_RPC } from "./defaults.js";
-import type { AccountInfo, Agent, AgentPage, Applicant, Application, AutoApplyStatus, ComputeCredit, ComputeKey, Deal, Erc8004Entries, Erc8004Status, Firm, FirmHire, FirmPage, FirmRecord, Job, JobPage, JobState, JobTree, LedgerLine, ModelAnswer, OpenJob, OpenJobHire, PickedJob, OpenJobPage, OpenJobPosted, Page, PayLinkInfo, Plan, PlanMonthSent, PlanPage, RouterModel, Sent, State, SubJob, OwnerCheck, VerifiedStatus, Coin, CoinsAbout, CoinLaunched, CoinLaunchTx, CreditLine, LinesAbout, LineSent, AgentGuarantee, Cover, CoverState, CoveredHire, GuaranteesAbout, GuaranteeSent, BountiesAbout, Bounty, BountyPage, BountyEntry, BountyPoster, AgentBounties, BountyPosted, BountyEntered, BountyPicked, BountyState, Burn, PublishedLink } from "./types.js";
+import type { AccountInfo, Agent, AgentPage, Applicant, Application, AutoApplyStatus, ComputeCredit, ComputeKey, Deal, Erc8004Entries, Erc8004Status, Firm, FirmHire, FirmPage, FirmRecord, Job, JobPage, JobState, JobTree, LedgerLine, ModelAnswer, OpenJob, OpenJobHire, PickedJob, OpenJobPage, OpenJobPosted, Page, PayLinkInfo, Plan, PlanMonthSent, PlanPage, RouterModel, Sent, State, SubJob, OwnerCheck, VerifiedStatus, Coin, CoinsAbout, CoinLaunched, CoinLaunchTx, CreditLine, LinesAbout, LineSent, AgentGuarantee, Cover, CoverState, CoveredHire, GuaranteesAbout, GuaranteeSent, BountiesAbout, Bounty, BountyPage, BountyEntry, BountyPoster, AgentBounties, BountyPosted, BountyEntered, BountyPicked, BountyState, Burn, PublishedLink, MilestonesAbout, MilestonePlan, MilestonesHired, MilestoneSent, MilestoneState, AgentMilestones } from "./types.js";
 import { coinAskMessage, coinDescription, coinLogo, coinNameProblem, coinPermissionTypedData, suggestCoin, type CoinPermission } from "./coins.js";
 import { MONTH_S, PLAN_TITLE_MOST, planMessage, stopPlanMessage, type PlanText } from "./plans.js";
 import { FIRM_SLUG, firmHireMessage, firmMessage, joinMessage, leaveMessage, slugOf } from "./firms.js";
@@ -55,6 +57,8 @@ export type { CoinPermission } from "./coins.js";
 export { drawParts, LINE_WORDS } from "./lines.js";
 export { coverFee, GUARANTEE_WORDS } from "./guarantees.js";
 export { BOUNTY_WORDS, bountyEntryHash, bountyParts, bountyReadMessage, MIN_PRIZE_WEI, TASK_BYTES, WORK_BYTES } from "./bounties.js";
+export { checkTerms, MAX_STAGES, MILESTONE_WORDS, MIN_STAGE_WEI, MIN_STAGES, termsHash, termsText } from "./milestones.js";
+export type { Terms } from "./milestones.js";
 export { ERC8004_TAG, erc8004LinkMessage, erc8004Registry, IDENTITY_REGISTRY, REPUTATION_REGISTRY } from "./erc8004.js";
 export type { PlanText } from "./plans.js";
 export { applyMessage, closeJobMessage, openJobId, pickWords, postJobMessage, priceWords, withdrawMessage } from "./openjobs.js";
@@ -2373,6 +2377,175 @@ export class Factor {
     return { hash, explorer: `${this.explorer}/tx/${hash}`, receipt };
   }
 
+  // ---------- milestones ----------
+
+  /**
+   * Jobs in stages: whether they are on, the contract, the rules, the totals, and the plans, newest first. `show: "open"`
+   * keeps the ones still running; `customer` (an address) the ones it hired, and `agent` (a name or an address) the ones
+   * it was hired for.
+   */
+  async milestones(o: { show?: "open" | "all"; customer?: string; agent?: string } = {}): Promise<MilestonesAbout & { items: MilestonePlan[] }> {
+    const q = new URLSearchParams();
+    if (o.show) q.set("show", o.show);
+    if (o.customer) {
+      if (!/^0x[0-9a-fA-F]{40}$/.test(o.customer)) throw new Refusal("Give the customer's address.", "bad_address");
+      q.set("customer", o.customer.toLowerCase());
+    }
+    if (o.agent) q.set("agent", await this.agentAddress(o.agent));
+    const r = await read<MilestonesAbout & { items: MilestonePlan[] }>(this.api, `/milestones${q.size ? `?${q}` : ""}`);
+    return r ?? { enabled: false, contract: null, chainId: this.chainId, rules: { minStages: 2, maxStages: 6, minStageEth: 0.001, minTimeH: 1, maxTimeD: 30, jobFeePct: 2, advanceFeePct: 1, graceH: 12, reviewH: 24, titleChars: 80, briefChars: 12_000, termsBytes: 40_000 }, totals: null, items: [] };
+  }
+
+  /** One job in stages: every stage with its price, its desk job, its due date and where it stands. null: there is none, or milestones are off. */
+  async milestone(id: number): Promise<MilestonePlan | null> {
+    return read<MilestonePlan>(this.api, `/milestones/${planNumber(id)}`);
+  }
+
+  /** The job in stages a desk job is a stage of, with every stage. null: it is not one. */
+  async milestoneOfJob(jobId: number): Promise<MilestonePlan | null> {
+    return read<MilestonePlan>(this.api, `/milestones/job/${whole(jobId)}`);
+  }
+
+  /** An agent's jobs in stages, and the stages it was paid for. Left out: this wallet's own. */
+  async agentMilestones(agent?: string): Promise<AgentMilestones | null> {
+    const who = agent ? await this.agentAddress(agent) : this.mine();
+    return (await read<{ milestones: AgentMilestones | null }>(this.api, `/milestones/agent/${who}`))?.milestones ?? null;
+  }
+
+  /**
+   * Hire an agent for a bigger job in 2 to 6 stages, and lock the whole budget now. Each stage has its own title, brief,
+   * price (0.001 ETH or more) and time (1 hour to 30 days, counted from the moment the stage is on the desk). The first
+   * stage is locked on the desk at once as a job for the agent; each next one the moment you accept the one before it
+   * (acceptStage). If the agent misses a stage, you have it back with every stage not yet started; you cannot cancel the
+   * stages any other way. The words go to Factor, which gives each stage its title and brief because they hash to what
+   * the plan holds. `early`: the agent may draw up to half of each stage early, which is not refunded if it then does not
+   * deliver that stage. `maxEth` refuses a budget over it.
+   */
+  async hireInStages(o: { agent: string; title: string; stages: { title: string; brief: string; price: Amount; days?: number; hours?: number }[]; early?: boolean; maxEth?: Amount }): Promise<MilestonesHired> {
+    this.mine();
+    const agent = (await this.agentAddress(o.agent)) as Hex;
+    if (!Array.isArray(o.stages)) throw new Refusal("Give the stages, each with a title, a brief, a price and a time.", "bad_stages");
+    const text = checkTerms({ title: o.title, stages: o.stages.map((x) => ({ title: x.title, brief: x.brief })) });
+    const prices = o.stages.map((x, i) => {
+      const w = toWei(x.price);
+      if (w < MIN_STAGE_WEI) throw new Refusal(`Stage ${i + 1} is ${ethText(w)} ETH; the smallest stage is ${ethText(MIN_STAGE_WEI)} ETH, the desk's smallest job.`, "bad_amount");
+      return w;
+    });
+    const times = o.stages.map((x, i) => {
+      const t = Math.round(x.hours !== undefined ? x.hours * 3600 : (x.days ?? 7) * 86_400);
+      if (!(t >= MIN_STAGE_S && t <= MAX_STAGE_S)) throw new Refusal(`Stage ${i + 1}'s time is 1 hour to 30 days.`, "bad_due");
+      return BigInt(t);
+    });
+    const total = prices.reduce((n, p) => n + p, 0n);
+    if (o.maxEth !== undefined && total > toWei(o.maxEth)) throw new Refusal(`The stages come to ${ethText(total)} ETH, over the ${ethText(toWei(o.maxEth))} ETH allowed.`, "over_cap");
+    const s = await this.state();
+    if (s.paused) throw new Refusal(s.paused, "paused");
+    const contract = await this.milestonesContract();
+    const sent = await this.callMilestones(contract, "post", [agent, prices, times, !!o.early, termsHash(text)], total);
+    const posted = milestoneEvent(sent.receipt.logs, contract, "Posted"), opened = milestoneEvent(sent.receipt.logs, contract, "Opened");
+    if (!posted || !opened) throw new Refusal(`The budget is locked (${sent.hash}), and the plan's number could not be read from the transaction.`, "no_plan_id");
+    const id = Number(posted.id), job = Number(opened.job);
+    const out: MilestonesHired = { hash: sent.hash, explorer: sent.explorer, id, job, totalWei: total, stages: prices.length, termsSaved: false, url: `${this.site()}/jobs/${String(job).padStart(4, "0")}` };
+    try {
+      await this.askPatient("/milestones/terms", { id, terms: text });
+      out.termsSaved = true;
+    } catch (e) {
+      // the budget is locked all the same: the words can be sent again at any time (sendMilestoneTerms)
+      out.note = `The words did not reach Factor: ${e instanceof Refusal ? e.message : "it did not answer."} Send them again with sendMilestoneTerms; until then the stages have no brief.`;
+    }
+    return out;
+  }
+
+  /** Send a job in stages' words to Factor again: taken only when they hash to what the plan holds. Costs nothing. */
+  async sendMilestoneTerms(id: number, terms: { title: string; stages: { title: string; brief: string }[] }): Promise<void> {
+    await this.askPatient("/milestones/terms", { id: planNumber(id), terms: checkTerms(terms) });
+  }
+
+  /** As the customer: accept the stage on the desk once it is delivered. The desk pays the agent, and the next stage is locked on the desk at once. */
+  async acceptStage(id: number): Promise<MilestoneSent> {
+    return this.stageCall(id, "accept");
+  }
+
+  /**
+   * As the customer, within the desk's 24 hours of a delivery: reject the stage on the desk. The desk settles it at half:
+   * half comes back to you with every stage not yet started, and the job in stages ends there. It cannot be undone.
+   */
+  async rejectStage(id: number): Promise<MilestoneSent> {
+    return this.stageCall(id, "reject");
+  }
+
+  /**
+   * Anyone, once its time has come: step a job in stages. It does whatever is next for the stage on the desk: settles it
+   * once the customer's 24 hours after a delivery are over (the agent is paid, the next stage opens), refunds it once it
+   * is past its due time and the grace (the rest goes back to the customer), or takes up a stage the desk already
+   * settled, refunded or saw declined. Factor's keeper does it by itself.
+   */
+  async stepMilestone(id: number): Promise<MilestoneSent> {
+    return this.stageCall(id, "step");
+  }
+
+  /** Anyone: deliver a payout of the milestone contract that its wallet refused. The ETH can only go to that wallet. Left out: this wallet. */
+  async collectMilestonePayout(who?: string): Promise<Sent & { amountEth: string }> {
+    const to = (who ?? this.mine()).toLowerCase();
+    if (!/^0x[0-9a-f]{40}$/.test(to)) throw new Refusal("Give the address the payout is for.", "bad_address");
+    const contract = await this.milestonesContract();
+    const owed = (await this.pub.readContract({ address: contract, abi: MILESTONES, functionName: "owed", args: [to] })) as bigint;
+    if (owed === 0n) throw new Refusal("Nothing is waiting to be collected.", "nothing_owed");
+    return { ...this.sent(await this.callMilestones(contract, "collect", [to], 0n)), amountEth: ethText(owed) };
+  }
+
+  private async stageCall(id: number, fn: "accept" | "reject" | "step"): Promise<MilestoneSent> {
+    const n = planNumber(id);
+    const contract = await this.milestonesContract();
+    const before = await this.chainPlan(contract, n);
+    if (before.state === 0) throw new Refusal(`There is no job in stages ${n} on the chain.`, "no_plan");
+    if (fn !== "step" && before.customer !== this.mine().toLowerCase()) throw new Refusal(`Only the wallet that hired job in stages ${n} can ${fn} its stages. This wallet is not that one.`, "not_customer");
+    const sent = this.sent(await this.callMilestones(contract, fn, [BigInt(n)], 0n));
+    const after = await this.chainPlan(contract, n);
+    const job = Number(await this.pub.readContract({ address: contract, abi: MILESTONES, functionName: "currentJob", args: [BigInt(n)] }));
+    return { ...sent, id: n, state: after.state > 0 ? (MILESTONE_STATES[after.state] as MilestoneState) : null, current: after.current + 1, job };
+  }
+
+  /** The milestone contract, on and a contract on the chain. */
+  private async milestonesContract(): Promise<Hex> {
+    const about = await read<MilestonesAbout>(this.api, "/milestones/about");
+    if (!about?.enabled || !about.contract || !/^0x[0-9a-fA-F]{40}$/.test(about.contract)) throw new Refusal("Jobs in stages are not switched on yet.", "milestones_off");
+    const c = about.contract.toLowerCase() as Hex;
+    const code = await this.pub.getCode({ address: c });
+    if (!code || code === "0x") throw new Refusal(`There is no contract at ${c}, where the site says jobs in stages are. Nothing will be sent to it.`, "no_milestone_contract");
+    return c;
+  }
+
+  /** A job in stages as the contract has it. */
+  private async chainPlan(contract: Hex, id: number): Promise<{ customer: string; agent: string; state: number; current: number; count: number }> {
+    const p = (await this.pub.readContract({ address: contract, abi: MILESTONES, functionName: "plan", args: [BigInt(id)] })) as { customer: string; agent: string; state: number; current: number | bigint; count: number | bigint };
+    return { customer: p.customer.toLowerCase(), agent: p.agent.toLowerCase(), state: Number(p.state), current: Number(p.current), count: Number(p.count) };
+  }
+
+  /** One call to the milestone contract, from this wallet or its Factor account: tried, sent, followed until it is mined. */
+  private async callMilestones(contract: Hex, functionName: string, args: readonly unknown[], value: bigint): Promise<{ hash: Hex; explorer: string; receipt: { logs: unknown[] } }> {
+    if (!this.account || !this.wallet) throw new Refusal("This Factor was connected without a key: it can only read.", "read_only");
+    if (this.via) {
+      try {
+        await this.pub.simulateContract({ address: contract, abi: MILESTONES, functionName, args, account: this.via, value } as never);
+      } catch (e) {
+        if (/insufficient (funds|balance)|exceeds the balance/i.test(`${(e as { shortMessage?: string }).shortMessage} ${(e as Error).message}`)) throw new Refusal(WORDS.AccountShort!([await this.pub.getBalance({ address: this.via }), value]), "account_short");
+        throw new Refusal(milestoneWordsOf(e), "milestones_refused");
+      }
+      return this.order([{ to: contract, value, data: encodeFunctionData({ abi: MILESTONES, functionName, args } as never) }]);
+    }
+    let hash: Hex;
+    try {
+      const { request } = await this.pub.simulateContract({ address: contract, abi: MILESTONES, functionName, args, account: this.account, value } as never);
+      hash = await this.wallet.writeContract(request as never);
+    } catch (e) {
+      throw e instanceof Refusal ? e : new Refusal(milestoneWordsOf(e), "milestones_refused");
+    }
+    const receipt = await this.pub.waitForTransactionReceipt({ hash, timeout: 180_000 });
+    if (receipt.status !== "success") throw new Refusal(`The transaction ${hash} was mined and refused. Nothing changed but the gas.`, "reverted");
+    return { hash, explorer: `${this.explorer}/tx/${hash}`, receipt };
+  }
+
   // ---------- ERC-8004 ----------
 
   /**
@@ -2653,6 +2826,26 @@ function taskText(raw: string): string {
   return text;
 }
 
+/** A job in stages' number: a whole number, like 3. */
+function planNumber(id: number): number {
+  if (!Number.isSafeInteger(id) || id < 1) throw new Refusal("A job in stages' number is a whole number, like 3.", "bad_plan");
+  return id;
+}
+
+/** One of the milestone contract's events in a transaction, by its name: its arguments. */
+function milestoneEvent(logs: unknown[], contract: string, name: "Posted" | "Opened"): Record<string, bigint> | null {
+  for (const log of logs as { address: string; topics: Hex[]; data: Hex }[]) {
+    if (log.address.toLowerCase() !== contract) continue;
+    try {
+      const d = decodeEventLog({ abi: MILESTONES, topics: log.topics as [Hex, ...Hex[]], data: log.data });
+      if (d.eventName === name) return d.args as unknown as Record<string, bigint>;
+    } catch {
+      // another event
+    }
+  }
+  return null;
+}
+
 /** One of the bounty contract's events in a transaction, by its name: its arguments. */
 function bountyEvent(logs: unknown[], contract: string, name: "Posted" | "Picked"): Record<string, bigint> | null {
   for (const log of logs as { address: string; topics: Hex[]; data: Hex }[]) {
@@ -2693,6 +2886,7 @@ const LINE = factorLineAbi as Abi;
 const LINE_ACCOUNT = factorLineAccountAbi as Abi;
 const GUARANTEE = factorGuaranteeAbi as Abi;
 const BOUNTY = factorBountyAbi as Abi;
+const MILESTONES = factorMilestonesAbi as Abi;
 // The launcher's own refusals, in plain words: a few share a name with an account's, and mean something else here.
 const COIN_WORDS: Record<string, (a: readonly unknown[]) => string> = {
   NotAllowed: () => "Only the agent itself, or its maker with the agent's permission, can launch its coin.",

@@ -10,7 +10,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { formatEther } from "viem";
 import { z } from "zod";
-import { bountyParts, Factor, Refusal, toWei, type Agent, type Bounty, type CoinPermission, type Job } from "./index.js";
+import { bountyParts, Factor, Refusal, toWei, type Agent, type Bounty, type CoinPermission, type Job, type MilestonePlan } from "./index.js";
 
 export interface Limits {
   /** the most one job may cost, in wei */
@@ -35,6 +35,7 @@ const eth = (wei: bigint): string => formatEther(wei);
 const OPEN_ID = z.string().regex(/^0x[0-9a-f]{64}$/).describe("The open job's number: 0x and 64 hex characters");
 const FIRM_SLUG = z.string().regex(/^[a-z0-9](?:[a-z0-9-]{1,30})[a-z0-9]$/).describe("The firm's short name, like the-research-desk");
 const BOUNTY_ID = z.number().int().positive().describe("The bounty's number");
+const MILESTONE_ID = z.number().int().positive().describe("The job in stages' number");
 const PLAN_ID = z.string().regex(/^0x[0-9a-f]{64}$/).describe("The plan's number: 0x and 64 hex characters");
 const today = (): string => new Date().toISOString().slice(0, 10);
 
@@ -95,6 +96,9 @@ const bountyLine = (b: Bounty): string => {
   };
   return `Bounty ${b.id}${b.title ? ` "${b.title}"` : ""}: a prize of ${b.prizeEth} ETH, ${b.bondEth} ETH bond to enter${b.minScore ? `, Factor Score ${b.minScore} or more` : ""}. ${b.entries} of ${b.slots} entries; ${now[b.status] ?? b.status}.`;
 };
+const STAGE_WORD: Record<string, string> = { waiting: "not started", open: "on the desk", delivered: "delivered, waiting for the customer", paid: "paid", missed: "missed", declined: "declined", rejected: "rejected", returned: "never started, back to the customer" };
+const planLine = (m: MilestonePlan): string => `Job in stages ${m.id}${m.title ? ` "${m.title}"` : ""}: ${m.count} stages, ${m.totalEth} ETH locked by ${m.customer} for ${m.agent.name}. ${m.state === "running" ? `Stage ${m.current} is on the desk` : m.state === "done" ? "Every stage was paid" : `It ended: a stage was ${m.state}${m.returnedEth ? `, ${m.returnedEth} ETH went back to the customer` : ""}`}.`;
+const stageLines = (m: MilestonePlan): string => m.stages.map((x) => `  ${x.n}. ${x.title ?? "(no words yet)"}: ${x.priceEth} ETH, ${STAGE_WORD[x.status] ?? x.status}${x.job ? `, job ${x.job.n}` : ""}${x.dueAt ? `, due ${x.dueAt}` : x.expectedDueAt ? `, about ${x.expectedDueAt} if every stage before it is accepted on its due date` : ""}`).join("\n");
 const amount = z.string().regex(/^\d{1,9}(\.\d{1,18})?$/).describe('ETH as text, like "0.04"');
 
 export const TOOLS: Tool[] = [
@@ -1223,6 +1227,78 @@ export const TOOLS: Tool[] = [
       const r = await f.closeBounty(a.id as number);
       const how: Record<string, string> = { won: "won: the desk paid the winner", unpicked: "split between its entrants", undelivered: "ended: the winner did not deliver", empty: "ended with nobody in: everything went back to the poster", picked: "still waiting on its winner", open: "still open" };
       return `Bounty ${a.id} is ${r.state ? how[r.state] ?? r.state : "closed"}. Transaction ${r.explorer}.`;
+    },
+  },
+  {
+    name: "factor_milestones", readOnly: true,
+    input: {
+      show: z.enum(["open", "all"]).optional().describe("open: still running (the default). all: every job in stages, newest first"),
+      mine: z.enum(["customer", "agent"]).optional().describe("customer: the jobs in stages this wallet hired. agent: the ones this wallet's agent was hired for"),
+    },
+    description: "Jobs in stages on Factor: a customer splits a bigger job into 2 to 6 stages and locks the whole budget up front; each stage is a job on the desk, started when the one before it is accepted and paid when it is accepted. Each with its stages and the one on the desk now. Read one in full with factor_milestone.",
+    async run(f, a) {
+      const r = await f.milestones(a.mine === "customer" ? { customer: need(f) } : a.mine === "agent" ? { agent: need(f) } : { show: a.show === "all" ? "all" : "open" });
+      if (!r.enabled) return "Jobs in stages are not switched on on Factor yet.";
+      if (!r.items.length) return a.mine ? "None." : "No job in stages is running right now.";
+      return r.items.slice(0, 25).map(planLine).join("\n");
+    },
+  },
+  {
+    name: "factor_milestone", readOnly: true, input: { id: MILESTONE_ID },
+    description: "One job in stages in full: every stage with its title, price, desk job, due date and where it stands, and what anyone can do next.",
+    async run(f, a) {
+      const m = await f.milestone(a.id as number);
+      if (!m) return `There is no job in stages ${a.id} on Factor, or jobs in stages are not switched on.`;
+      const next: Record<string, string> = { opens: "The stage on the desk was paid: factor_step_milestone opens the next one.", returns: "The stage came back from the desk: factor_step_milestone sends the rest to the customer.", settles: "The customer's 24 hours are over: factor_step_milestone settles the stage and opens the next.", refunds: "The stage is past its due time and the grace: factor_step_milestone refunds it and sends the rest back." };
+      return [planLine(m), stageLines(m), ...(m.next ? [next[m.next]!] : [])].join("\n");
+    },
+  },
+  {
+    name: "factor_hire_in_stages", readOnly: false,
+    input: {
+      agent: z.string().describe("The agent: its name or address"),
+      title: z.string().min(3).max(80).describe("The whole job in one line, without links"),
+      stages: z.array(z.object({
+        title: z.string().min(3).max(80).describe("What this stage delivers, in one line"),
+        brief: z.string().min(1).max(12_000).describe("What the agent needs for this stage. Anyone can read it"),
+        price: amount.describe('This stage\'s price, in ETH, like "0.01": 0.001 or more'),
+        days: z.number().min(1 / 24).max(30).optional().describe("Its time, in days, from the moment it is on the desk: 1 hour to 30 days. 7 when not given"),
+      })).min(2).max(6).describe("2 to 6 stages, in order"),
+      early: z.boolean().optional().describe("Let the agent draw up to half of each stage early. Not refunded if it then does not deliver that stage. Off when not given"),
+    },
+    description: "Hire an agent for a bigger job in 2 to 6 stages. THIS SPENDS ETH: every stage's price, all locked now, held to the caps as one hire. The first stage is on the desk at once; each next one starts when the customer accepts the one before it (factor_accept_stage), and is due its own time later. If the agent misses a stage, the customer has it back with every stage not yet started; the stages cannot be cancelled any other way. Each stage pays the desk's 2% job fee out of the agent's pay. Confirm the agent, the stages and their prices with the user first unless they already gave them.",
+    async run(f, a, spending) {
+      need(f);
+      const stages = (a.stages as { title: string; brief: string; price: string; days?: number }[]);
+      const total = stages.reduce((n, x) => n + toWei(x.price), 0n);
+      spending?.check(total, true);
+      const r = await f.hireInStages({ agent: String(a.agent), title: String(a.title), stages: stages.map((x) => ({ title: x.title, brief: x.brief, price: x.price, ...(x.days !== undefined ? { days: x.days } : {}) })), early: !!a.early, maxEth: total });
+      spending?.add(total);
+      return `Job in stages ${r.id} is hired: ${eth(r.totalWei)} ETH is locked for ${r.stages} stages. Stage 1 is on the desk as job ${r.job}. ${r.termsSaved ? "Each stage carries its title and brief." : r.note ?? ""} Accept each stage with factor_accept_stage once it is delivered; the next one starts then. ${r.url} Transaction ${r.explorer}.`;
+    },
+  },
+  {
+    name: "factor_accept_stage", readOnly: false, input: { id: MILESTONE_ID },
+    description: "As the customer of a job in stages, once the stage on the desk is delivered: accept it. The desk pays the agent (less its 2% job fee) and the next stage starts at once. Nothing more leaves the wallet. Read the delivered work on the stage's page first.",
+    async run(f, a) {
+      const r = await f.acceptStage(a.id as number);
+      return `Stage accepted: the agent is paid. ${r.state === "done" ? "That was the last stage: every stage is paid." : `Stage ${r.current} is on the desk now, as job ${r.job}.`} Transaction ${r.explorer}.`;
+    },
+  },
+  {
+    name: "factor_reject_stage", readOnly: false, input: { id: MILESTONE_ID },
+    description: "As the customer of a job in stages, within 24 hours of a delivery: reject the stage on the desk. It settles at half: half of that stage comes back with every stage not yet started, the agent keeps the other half, and the job in stages ENDS. It cannot be undone. Only on the user's clear choice.",
+    async run(f, a) {
+      const r = await f.rejectStage(a.id as number);
+      return `Stage rejected: it settled at half, and half of it with every stage not yet started went back to the customer. The job in stages is over. Transaction ${r.explorer}.`;
+    },
+  },
+  {
+    name: "factor_step_milestone", readOnly: false, input: { id: MILESTONE_ID },
+    description: "Anyone, once its time has come: step a job in stages. It settles a delivered stage after the customer's 24 hours (the agent is paid, the next stage opens), refunds a stage past its due time and the grace (the rest goes back to the customer), or takes up a stage the desk already settled, refunded or saw declined. Factor's keeper does this by itself; this is for sooner. Costs only the gas.",
+    async run(f, a) {
+      const r = await f.stepMilestone(a.id as number);
+      return `Job in stages ${r.id} is ${r.state === "running" ? `on stage ${r.current} (job ${r.job})` : r.state === "done" ? "done: every stage is paid" : `over: a stage was ${r.state}, and the rest went back to the customer`}. Transaction ${r.explorer}.`;
     },
   },
 ];
