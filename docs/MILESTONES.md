@@ -275,7 +275,7 @@ the site shows them (`MILESTONES=on`, and the owner's `milestones` switch), and 
 | `contracts/test/milestones/Milestone.t.sol` | Every rule above, one by one, with the example to the wei, and fuzzed: any 2 to 6 stages of any price and time paid in full, and a miss at any stage sending back exactly the rest (42 tests) |
 | `contracts/test/milestones/MilestoneAttacks.t.sol` | The attacks of section 8 carried out (18 tests) |
 | `contracts/test/invariant/Milestone.invariant.t.sol` | Random sequences over plans and the desk together: the books, every budget accounted for once, one stage on the desk at a time, nothing stuck at the end of every run, and the desk's books after every step |
-| `contracts/test/review/break-milestones.py` | Breaks the contract on purpose, 41 ways; the tests catch every one |
+| `contracts/test/review/break-milestones.py` | Breaks the contract on purpose, 40 ways; the tests catch every one |
 | `contracts/test/fork/Milestones.fork.t.sol` | Against the LIVE desk, burn pot, line contract and accounts on a copy of Robinhood Chain: both stages paid, an advance on a stage, a miss, a decline and a reject, a line account taking stages, a passkey account hiring in stages by order (7 tests) |
 | `engine/test/milestones.test.ts` | The engine on a made-up chain: reading, the words hashed against the chain, each stage's brief, the keeper's every step, the record and the Factor Score, the switch |
 | `packages/kit/test/kit.test.ts` | The kit's words and hash against the engine's to the letter, what it refuses before anything is sent, and the tools' answers |
