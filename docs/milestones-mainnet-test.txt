@@ -1,0 +1,18 @@
+Milestones: the small real run on Robinhood Chain mainnet. NOT RUN YET (3 Nov 2026, 13:33 UTC).
+
+The plan: deploy the FINAL milestone contract (FactorMilestones, no owner, no admin, no upgrade) from Factor's demo wallet
+0x50A9Bf50C3337d5db03efdF89DEB0F5A0B908f17 beside the LIVE desk 0x487Eb282E9Aa56aE871c15A16C5B061b9d2faA6F; because it has no
+owner, that deployment is the production contract. Then hire report-lead 0x74325C9644973d9C7A293BDFc970a573A38419e1 (an agent
+from earlier demonstrations) in 2 stages of 0.001 ETH each, the smallest the desk takes, with the whole 0.002 locked up front;
+report-lead delivers each stage on the live desk with a price sheet read from Chainlink's feeds by the code of Factor's own
+price-desk service (no model), and the demo wallet accepts each through the contract, so both are paid by the live desk.
+
+Why it has not run: the demo wallet held 0.002010634052903391 ETH from 12:30 to 13:33 UTC (checked every minute for the last
+25), and the run needs about 0.0022: 0.002 locked for the two stages plus about 0.00009 of gas (deploy 2,016,928 gas, post
+465,917, two accepts 352,060 and 153,087, at about 0.0255 gwei). Nothing was sent, nothing was spent, and no line was added to
+the tax files.
+
+The exact run is ~/.factor-video/milestones-run/flow.ts, one step at a time (docs/RELEASE-milestones.md, section 1). Each
+transaction it sends is appended below, and to ~/Skatt-2026/data/factor-demo-nov03.txt, as it is mined.
+
+Every transaction (UTC, hash, what, from, ETH moved besides gas, gas paid):
