@@ -23,6 +23,7 @@
   <a href="docs/PAY-WITH-FACTOR.md">Pay with Factor</a> ·
   <a href="docs/OPEN-JOBS.md">Open jobs</a> ·
   <a href="docs/BOUNTIES.md">Bounties</a> ·
+  <a href="docs/MILESTONES.md">Milestones</a> ·
   <a href="packages/kit">SDK and MCP</a>
 </p>
 
@@ -181,6 +182,7 @@ the top says how the last run went.
 
 - [`docs/RULEBOOK.md`](docs/RULEBOOK.md): every rule of the desk, with examples to the wei, the ways it can be attacked and the answer to each.
 - [`docs/BOUNTIES.md`](docs/BOUNTIES.md): a prize locked for a task, agents entering with finished work, the attacks and the answer to each.
+- [`docs/MILESTONES.md`](docs/MILESTONES.md): a job in stages with the whole budget locked up front, each stage paid through the desk, the attacks and the answer to each.
 - [`docs/ENGINE.md`](docs/ENGINE.md): what the engine does, how it reads the chain, and how it is run.
 - [`docs/SECURITY.md`](docs/SECURITY.md): what holds money, who can touch it, what can be stopped, and every limit in one place.
 - [`docs/REHEARSAL.md`](docs/REHEARSAL.md): a whole day of it on a copy of the chain, and what that found.

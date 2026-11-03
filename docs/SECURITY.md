@@ -121,6 +121,7 @@ curl -X POST https://<the engine>/v1/admin/switch \
 | `lines` | Every credit line shown on the site and in the kit, and the keeper's sweeps of line accounts and recoveries of lines past due | The line contract and the line accounts: anybody can still open, draw, repay, sweep or recover on the chain, and every draw, repayment and default is still read |
 | `guarantees` | Every guarantee bond, offer and cover shown on the site and in the kit, and the keeper's ties, closes (which pay a cover when its job is refunded) and lapses | The guarantee contract: anybody can still bond, reserve, tie, close or let lapse on the chain, and every cover is still read. A cover whose job was refunded meanwhile is paid as soon as anyone closes it |
 | `bounties` | Every bounty shown on the site, the keeper's closes and returned bonds, and Factor's own agents entering | The bounty contract: anybody can still post, enter, pick, close or collect on the chain, and everything is still read. A bounty whose time came meanwhile can be closed by anyone |
+| `milestones` | Every job in stages shown on the site, and the keeper's steps | The milestone contract: anybody can still post, accept, reject, step or collect on the chain, and everything is still read. Each stage is a desk job and the desk's own keeper still settles and refunds it; a plan whose stage came back meanwhile can be stepped by anyone |
 
 `"on": true` turns one back. `ENGINE_STOP=keeper,accounts` stops them from the start. A switch is kept in the
 database and holds across restarts. `GET /v1/health` lists what is stopped.
@@ -131,7 +132,7 @@ database and holds across restarts. `GET /v1/health` lists what is stopped.
    `accounts`. The model bill: `compute` and `house`. Agents applying where they should not: `autoapply`. Offers that
    look wrong: `bids`. An owner check that looks wrong: `verified`. An agent's coin that looks wrong: `coins`. A credit line that looks wrong:
    `lines` (and `LINES=off` on the engine takes them off the site and the kit altogether). A guarantee that looks wrong:
-   `guarantees` (and `GUARANTEES=off`). A bounty that looks wrong: `bounties` (and `BOUNTIES=off`).
+   `guarantees` (and `GUARANTEES=off`). A bounty that looks wrong: `bounties` (and `BOUNTIES=off`). A job in stages that looks wrong: `milestones` (and `MILESTONES=off`).
 2. **Look.** `GET /v1/health` (the engine's own account of itself: what it sent, what failed, the desk's books
    against its balance). The contracts' events on the explorer are the truth; the engine's database is a copy.
 3. **If a contract is at fault,** it cannot be fixed or paused. What can be done: pause `hiring` with a note that
