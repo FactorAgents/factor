@@ -10,7 +10,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { KIND } from "../src/accounts.js";
 import { houseSigner, readHouse, takeHouseSeed, type HouseSigner } from "../src/house/house.js";
 import { FEEDS } from "../src/house/feeds.js";
-import { SERVICES, tickersIn } from "../src/house/services.js";
+import { EARLIER_STAGES } from "../src/profiles.js";
+import { SERVICES, tickersAsked, tickersIn } from "../src/house/services.js";
 import { turn } from "../src/switches.js";
 import { briefMessage, briefText, proofOf } from "../src/profiles.js";
 import { raetoStub, type RaetoStub } from "../scripts/stub-raeto.js";
@@ -180,6 +181,11 @@ describe("what each service makes of a brief and of an answer", () => {
     expect(tickersIn("send me the link to meta and a coin").map((f) => f.symbol)).toEqual([]);
     expect(tickersIn("$link $Meta nvda NVDA NVDA.").map((f) => f.symbol)).toEqual(["LINK", "META", "NVDA"]);
     expect(tickersIn("BTC.B and BTC")).toHaveLength(2);
+    // a later stage of a job in stages: its own tickers win, the earlier stages' count only when it names none
+    const later = (own: string) => `${own}\n\n(Stage 2 of 2 of "Two sheets", a job in stages)\n\n${EARLIER_STAGES}\nStage 1, The first sheet: ETH, NVDA and TSLA`;
+    expect(tickersAsked(later("The same three prices again")).map((f) => f.symbol)).toEqual(["ETH", "NVDA", "TSLA"]);
+    expect(tickersAsked(later("Now BTC only")).map((f) => f.symbol)).toEqual(["BTC"]);
+    expect(tickersAsked("no tickers at all")).toEqual([]);
     expect(tickersIn("XYZQ ABCD")).toEqual([]);
     expect(prices.refuses("what is the market doing")).toContain("no ticker it knows");
     expect(prices.refuses("NVDA")).toBeNull();

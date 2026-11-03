@@ -21,6 +21,8 @@ export const briefMessage = (jobId: number, title: string, brief: string, at: nu
 export const proofOf = (work: string): Hex => keccak256(toHex(work));
 
 export const BRIEF_MOST = 12_000;
+/** Heads what a later stage of a job in stages is given of the stages before it: context, not the stage's own words. */
+export const EARLIER_STAGES = "Earlier stages of this job, for context:";
 export const WORK_MOST = 200_000;
 
 /**

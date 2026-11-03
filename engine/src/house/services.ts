@@ -6,6 +6,7 @@
 // nothing, and text is shown as text).
 
 import type { Chain } from "../chain/chain.js";
+import { EARLIER_STAGES } from "../profiles.js";
 import { FEED_ABI, FEEDS, type Feed } from "./feeds.js";
 import { MORE } from "./more.js";
 import { finishPage, oneSentence, type Done, type Service } from "./shared.js";
@@ -76,6 +77,13 @@ export function tickersIn(brief: string): Feed[] {
   return out;
 }
 
+/** The tickers a job asks for: its own words first, and the earlier stages' only when its own name none ("the same three prices"). */
+export function tickersAsked(brief: string): Feed[] {
+  const at = brief.indexOf(EARLIER_STAGES);
+  const own = tickersIn(at < 0 ? brief : brief.slice(0, at));
+  return own.length || at < 0 ? own : tickersIn(brief.slice(at));
+}
+
 const dollars = (answer: bigint): string => {
   const whole = answer / 10n ** 8n;
   const frac = (answer % 10n ** 8n).toString().padStart(8, "0");
@@ -86,7 +94,7 @@ const dollars = (answer: bigint): string => {
 const ago = (s: number): string => (s < 90 ? "under 2 minutes" : s < 5400 ? `${Math.round(s / 60)} minutes` : s < 172_800 ? `${Math.round(s / 3600)} hours` : `${Math.round(s / 86_400)} days`);
 
 async function priceSheet(_title: string, brief: string, io: { chain: Chain; now: number; pace: () => Promise<void>; desk: string }): Promise<Done> {
-  const named = tickersIn(brief);
+  const named = tickersAsked(brief);
   const feeds = named.slice(0, MOST_TICKERS);
   const head = await io.chain.head();
   const lines: string[] = [];
@@ -149,7 +157,7 @@ const FIRST: Service[] = [
     needs: `Name the tickers in capitals, like NVDA, TSLA, ETH. Up to ${MOST_TICKERS}. It knows ${FEEDS.length} feeds: stocks, and the larger coins.`,
     delivers: "a sheet of prices, each read from its feed at the moment of delivery",
     floorWei: ETH / 1000n,
-    refuses: (brief) => (tickersIn(brief).length === 0 ? "no ticker it knows was named: write them in capitals, like NVDA, TSLA, ETH" : null),
+    refuses: (brief) => (tickersAsked(brief).length === 0 ? "no ticker it knows was named: write them in capitals, like NVDA, TSLA, ETH" : null),
     work: priceSheet,
   },
 ];

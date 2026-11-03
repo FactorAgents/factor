@@ -34,7 +34,7 @@ import type { Ctx } from "./chain/context.js";
 import type { EngineDb, EventRow } from "./chain/db.js";
 import { decode } from "./chain/watch.js";
 import { STATE } from "./desk.js";
-import { briefText, oneLine } from "./profiles.js";
+import { BRIEF_MOST, EARLIER_STAGES, briefText, oneLine } from "./profiles.js";
 import { stopped } from "./switches.js";
 
 type Env = Record<string, string | undefined>;
@@ -278,7 +278,17 @@ export class Milestones {
     const t = this.terms(id);
     const s = t?.stages[n];
     if (!p || !t || !s) return;
-    this.d.brief(job, p.customer, s.title, `${s.brief}\n\n(Stage ${n + 1} of ${p.count} of "${t.title}", a job in stages: the stages after it start once this one is accepted.)`);
+    const own = `${s.brief}\n\n(Stage ${n + 1} of ${p.count} of "${t.title}", a job in stages: the stages after it start once this one is accepted.)`;
+    // a later stage often says "the same as before": it gets the stages before it as context, within the brief's limit
+    let room = BRIEF_MOST - own.length - EARLIER_STAGES.length - 4;
+    const earlier: string[] = [];
+    for (const [i, e] of t.stages.slice(0, n).entries()) {
+      const line = `Stage ${i + 1}, ${e.title}: ${e.brief}`;
+      if (room < 80) break;
+      earlier.push(line.length <= room ? line : `${line.slice(0, room - 1)}…`);
+      room -= Math.min(line.length, room) + 2;
+    }
+    this.d.brief(job, p.customer, s.title, earlier.length ? `${own}\n\n${EARLIER_STAGES}\n${earlier.join("\n\n")}` : own);
   }
 
   /** One pass of the milestone contract's logs, from where the last stopped to the safe head. Returns the lines worth logging. */
