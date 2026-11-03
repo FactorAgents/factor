@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS engine_locks (name TEXT PRIMARY KEY, holder TEXT NOT 
 -- Everything the engine sent, would have sent (dry), or could not send: what, why, and how it ended.
 CREATE TABLE IF NOT EXISTS engine_actions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  kind TEXT NOT NULL,                -- sweep, claim_token, burn, settle_job, refund_job, collect, return_compute, erc8004, line, guarantee, bounty, unstick
+  kind TEXT NOT NULL,                -- sweep, claim_token, burn, settle_job, refund_job, collect, return_compute, erc8004, line, guarantee, bounty, milestone, unstick
   ref TEXT NOT NULL DEFAULT '',
   mode TEXT NOT NULL,                -- dry or live
   status TEXT NOT NULL,              -- dry, signed, sent, done, failed, replaced
@@ -525,6 +525,45 @@ CREATE TABLE IF NOT EXISTS bounty_entries (
 );
 CREATE INDEX IF NOT EXISTS bounty_entries_agent ON bounty_entries (agent, bounty);
 CREATE INDEX IF NOT EXISTS bounty_entries_block ON bounty_entries (block);
+-- Milestones (../milestones.ts): each plan as its logs say, and each of its stages. The words are in a table of their own.
+CREATE TABLE IF NOT EXISTS milestone_plans (
+  id INTEGER PRIMARY KEY,
+  block INTEGER NOT NULL,
+  at INTEGER NOT NULL,
+  tx_hash TEXT NOT NULL,
+  customer TEXT NOT NULL,
+  agent TEXT NOT NULL,
+  total TEXT NOT NULL,
+  count INTEGER NOT NULL,
+  allow_early INTEGER NOT NULL,
+  terms_hash TEXT NOT NULL,
+  state TEXT NOT NULL DEFAULT 'running',
+  current INTEGER NOT NULL DEFAULT 0,
+  ended_at INTEGER,
+  ended_tx TEXT,
+  from_desk TEXT NOT NULL DEFAULT '0',
+  unstarted TEXT NOT NULL DEFAULT '0'
+);
+CREATE INDEX IF NOT EXISTS milestone_plans_customer ON milestone_plans (customer, id);
+CREATE INDEX IF NOT EXISTS milestone_plans_agent ON milestone_plans (agent, id);
+CREATE INDEX IF NOT EXISTS milestone_plans_state ON milestone_plans (state);
+CREATE INDEX IF NOT EXISTS milestone_plans_block ON milestone_plans (block);
+CREATE TABLE IF NOT EXISTS milestone_stages (
+  plan INTEGER NOT NULL,
+  n INTEGER NOT NULL,                -- from 0
+  block INTEGER NOT NULL,
+  price TEXT NOT NULL,
+  time INTEGER NOT NULL,             -- seconds, from the moment the stage is locked on the desk
+  job INTEGER,
+  opened_at INTEGER,
+  due_at INTEGER,
+  opened_tx TEXT,
+  paid_at INTEGER,
+  paid_tx TEXT,
+  PRIMARY KEY (plan, n)
+);
+CREATE INDEX IF NOT EXISTS milestone_stages_job ON milestone_stages (job);
+CREATE INDEX IF NOT EXISTS milestone_stages_block ON milestone_stages (block);
 -- Each move on a guarantee: a bond in or out, an offer, a cover ended, a payout refused.
 CREATE TABLE IF NOT EXISTS guarantee_moves (
   tx_hash TEXT NOT NULL,
@@ -548,7 +587,7 @@ CREATE TABLE IF NOT EXISTS job_titles (
 );
 `;
 
-export type ActionKind = "sweep" | "retry_split" | "claim_token" | "burn" | "settle_job" | "refund_job" | "collect" | "return_compute" | "skim" | "relay" | "erc8004" | "coin_sweep" | "line" | "guarantee" | "bounty" | "unstick";
+export type ActionKind = "sweep" | "retry_split" | "claim_token" | "burn" | "settle_job" | "refund_job" | "collect" | "return_compute" | "skim" | "relay" | "erc8004" | "coin_sweep" | "line" | "guarantee" | "bounty" | "milestone" | "unstick";
 export type ActionStatus = "dry" | "signed" | "sent" | "done" | "failed" | "replaced";
 
 export interface ActionRow {
@@ -580,7 +619,7 @@ export interface EventRow {
 }
 
 // The tables a stretch of blocks writes to, all keyed by block: what a reorg or a reindex takes back.
-const BY_BLOCK = ["chain_events", "chain_splits", "chain_burns", "ledger", "desk_advances", "coins", "coin_splits", "coin_trades", "coin_transfers", "lines", "line_moves", "guarantee_bonds", "guarantee_covers", "guarantee_moves", "bounties", "bounty_entries"];
+const BY_BLOCK = ["chain_events", "chain_splits", "chain_burns", "ledger", "desk_advances", "coins", "coin_splits", "coin_trades", "coin_transfers", "lines", "line_moves", "guarantee_bonds", "guarantee_covers", "guarantee_moves", "bounties", "bounty_entries", "milestone_plans", "milestone_stages"];
 
 export class EngineDb {
   readonly holder = randomBytes(6).toString("hex"); // this process, for the locks

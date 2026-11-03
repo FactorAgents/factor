@@ -56,7 +56,7 @@ every stage is paid for, and only the agent's own miss or decline, or a reject o
 | Stages | 2 to 6 |
 | A stage's time | 1 hour to 30 days, set at the post, counted from the moment the stage is locked on the desk |
 | The first stage | locked on the desk at the post, due its time later |
-| Each later stage | locked on the desk the moment the stage before it is paid, due its time later |
+| Each later stage | locked on the desk the moment the stage before it is paid through the contract (by `accept` or `step`), due its time later |
 | Delivering | on the desk, up to the due time and through the desk's 12 hours of grace (a delivery in them is marked late) |
 | The customer's answer | within the desk's 24 hours of the delivery; after them anyone settles it as if accepted |
 | A missed stage | refunded by anyone after the due time plus 12 hours |
@@ -115,7 +115,9 @@ stage's price:
 - **Paying the contract.** `decline`, `refund` and `reject` send the customer's part to the desk's customer, with 50,000
   gas. The contract's `receive` takes ETH from the desk and from nobody else, and costs almost nothing, so it never
   lands in the desk's `owed`. A stage the desk settled or refunded by itself (anyone may call the desk directly) is taken
-  up by the next `step`.
+  up by the next `step`: when somebody settles a stage on the desk directly, the agent is paid at once and the next
+  stage is locked at that step, which the engine sends within a minute or so. The next stage's time starts at its lock,
+  so the agent loses none of it.
 - **Advances.** The early half is the customer's choice at the post, and goes to every stage alike. The agent can draw
   on the stage on the desk, early or from the pool, exactly as on any desk job: up to half of that stage, against its
   own limit. A stage not yet on the desk is not a desk job and cannot be drawn on.
@@ -170,7 +172,7 @@ The words are public, as a job's brief is. The owner can hide a plan's words tha
 | 7 | **An agent whose wallet refuses its pay.** | The desk keeps it in its own `owed`; the next stage still opens. |
 | 8 | **Answering for the contract on the desk**, or delivering for the agent. | The desk refuses both: only the contract is the stage's customer, and only the agent delivers. |
 | 9 | **Settling or refunding on the desk directly**, around the contract. | Allowed, as for any job; the desk sends the customer's part to the contract, and the next `step` takes it up. Nothing is lost in between. |
-| 10 | **Force ETH into the contract**, by a contract that self-destructs, or send it plainly. | Forced ETH adds to nobody's claim; plain ETH from anybody but the desk is refused. |
+| 10 | **Force ETH into the contract**, by a contract that self-destructs, or send it plainly. | Forced ETH adds to nobody's claim; plain ETH from anybody but the desk is refused. ETH that comes through the desk without a stage behind it (the desk's `collectTo` can send a wallet's own refused payout anywhere) is kept like forced ETH: nobody's, and harmless. |
 | 11 | **A step with too little gas**, to push a payout into `owed`. | Refused whole before anything moves. |
 | 12 | **The agent is barred after the post**, so the next stage would fail. | The desk locks jobs for barred agents too (it refuses them only pool advances), so the next stage always opens. The customer can see the agent's state on its page and reject or wait for a miss. |
 | 13 | **Using stages to farm a score.** | Each stage pays the desk's 2% like any job, and all stages are one customer. It is never cheaper than hiring yourself on the desk directly. |

@@ -176,6 +176,19 @@ export class Profiles {
     return true;
   }
 
+  /**
+   * The title and brief of a stage of a plan in stages (../milestones.ts). The desk's customer is the milestone contract,
+   * which signs nothing, so the engine stores the words as the plan's customer's own: they were taken only because they
+   * hash to what the plan holds on the chain. Never over a brief already there.
+   */
+  stageBrief(jobId: number, by: string, title: string, brief: string): void {
+    const at = Math.floor(this.now() / 1000);
+    this.db.tx(() => {
+      this.db.q("INSERT INTO job_briefs (job_id, brief, by, signed_at) VALUES (?, ?, ?, ?) ON CONFLICT(job_id) DO NOTHING").run(jobId, brief, by, at);
+      this.db.q("INSERT INTO job_titles (job_id, title, by, signed_at) VALUES (?, ?, ?, ?) ON CONFLICT(job_id) DO NOTHING").run(jobId, title, by, at);
+    });
+  }
+
   /** Whether `address` signed the text, for the other things people sign (an agent made on the site). */
   signed(address: string, message: string, signature: unknown): Promise<boolean> {
     return this.signedBy(address, message, signature);

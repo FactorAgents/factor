@@ -49,6 +49,7 @@ import { Coins } from "./coins.js";
 import { Lines } from "./lines.js";
 import { Guarantees } from "./guarantees.js";
 import { Bounties } from "./bounties.js";
+import { Milestones } from "./milestones.js";
 import { DeskStore } from "./desk.js";
 import { scoreOf } from "./score.js";
 import { sourceOf } from "./api.js";
@@ -134,6 +135,8 @@ export class Engine {
   guarantees: Guarantees | null = null;
   /** bounties (./bounties.ts): prizes, hidden entries and picks, read, closed by the keeper, entered by Factor's own agents */
   bounties: Bounties | null = null;
+  /** milestones (./milestones.ts): plans in stages, each stage a desk job, read and stepped by the keeper */
+  milestones: Milestones | null = null;
   /** the splitter's admin, read at the boot check: Factor's own wallet, which sets the rules of Factor's own agents */
   private splitterAdmin: string | null = null;
   /** the key that signs agents' records for other apps (./record.ts), or null */
@@ -196,7 +199,7 @@ export class Engine {
     for (const [name, l] of this.loops) loops[name] = { lastRunAt: l.lastRunAt, lastOkAt: l.lastOkAt, runs: l.runs, failures: l.failures, waitMs: l.waitMs, backingOff: l.backingOff };
     return {
       config: this.config, state: this.state, problems: this.problems, warnings: this.warnings, lastError: this.lastError, loops, ctx: this.ctx, rpc: this.chain?.health() ?? null, now: this.now,
-      links: { pons: link(this.env.FACTOR_PONS_URL), github: link(this.env.FACTOR_GITHUB_URL), x: link(this.env.FACTOR_X_URL) }, dataDirSet: !!this.env.FACTOR_DATA_DIR?.trim(), profiles: this.profiles, gateway: this.gateway, accounts: this.accounts, house: this.house, demo: this.demo, pulse: this.pulse, deskMind: this.deskMind, launchList: this.launchList, activity: this.activity, matcher: this.matcher, pay: this.pay, subjobs: this.subjobs, recordSigner: this.recordSigner, firms: this.firms, plans: this.plans, erc8004: this.erc8004, openjobs: this.openjobs, autoapply: this.autoapply, verified: this.verified, coins: this.coins, lines: this.lines, guarantees: this.guarantees, bounties: this.bounties,
+      links: { pons: link(this.env.FACTOR_PONS_URL), github: link(this.env.FACTOR_GITHUB_URL), x: link(this.env.FACTOR_X_URL) }, dataDirSet: !!this.env.FACTOR_DATA_DIR?.trim(), profiles: this.profiles, gateway: this.gateway, accounts: this.accounts, house: this.house, demo: this.demo, pulse: this.pulse, deskMind: this.deskMind, launchList: this.launchList, activity: this.activity, matcher: this.matcher, pay: this.pay, subjobs: this.subjobs, recordSigner: this.recordSigner, firms: this.firms, plans: this.plans, erc8004: this.erc8004, openjobs: this.openjobs, autoapply: this.autoapply, verified: this.verified, coins: this.coins, lines: this.lines, guarantees: this.guarantees, bounties: this.bounties, milestones: this.milestones,
     };
   }
 
@@ -334,7 +337,7 @@ export class Engine {
       params: c.params,
       chainId: c.chainId,
       explorer: c.explorer,
-      addr: { splitter: c.splitter, burnPot: c.burnPot, desk: c.desk, accounts: c.accounts.factory, skimTo: c.skimTo, line: c.lines.enabled ? c.lines.line : null, guarantee: c.guarantees.enabled ? c.guarantees.guarantee : null, bounty: c.bounties.enabled ? c.bounties.bounty : null },
+      addr: { splitter: c.splitter, burnPot: c.burnPot, desk: c.desk, accounts: c.accounts.factory, skimTo: c.skimTo, line: c.lines.enabled ? c.lines.line : null, guarantee: c.guarantees.enabled ? c.guarantees.guarantee : null, bounty: c.bounties.enabled ? c.bounties.bounty : null, milestones: c.milestones.enabled ? c.milestones.milestones : null },
       accounts: c.accounts,
       deployBlock: c.deployBlock,
       chain: this.chain,
@@ -447,6 +450,10 @@ export class Engine {
         const b = this.bounties?.reading() ? this.bounties.ofJob(job) : null;
         return b ? { id: b.id, contract: c.bounties.bounty! } : null;
       },
+      milestoneOf: (job) => {
+        const x = this.milestones?.reading() ? this.milestones.ofJob(job) : null;
+        return x ? { id: x.plan.id, stage: x.stage.n + 1, of: x.plan.count, contract: c.milestones.milestones! } : null;
+      },
       log: this.log,
     });
     this.ctx.erc8004 = this.erc8004;
@@ -540,6 +547,18 @@ export class Engine {
     this.accounts.bounty = () => (this.bounties?.reading() ? c.bounties.bounty : null);
     if (c.bounties.enabled && c.bounties.note) this.log(`[bounties] NOT ON: ${c.bounties.note}`);
     else if (c.bounties.enabled) this.log(`[bounties] on: bounties are read from ${c.bounties.bounty}; the keeper closes them and sends bonds back${c.bounties.house ? `, and Factor's own agents enter on their own, up to $${c.bounties.houseDailyMicro / 1e6} a day on models` : ""}`);
+    // milestones: made whether or not they are on, and read nothing until MILESTONES=on and the contract is given
+    this.milestones = new Milestones({
+      cfg: c.milestones, db, chain: this.chain, chainId: c.chainId, nowS, now: this.now, log: this.log,
+      names: () => this.profiles!.all(),
+      scoreOf: (address) => { const row = new DeskStore(db).agent(address); return row ? scoreOf(row.record, nowS()) : 0; },
+      barred: (address) => !!new DeskStore(db).agent(address)?.record.barred,
+      brief: (job, by, title, brief) => this.profiles!.stageBrief(job, by, title, brief),
+    });
+    this.ctx.milestones = this.milestones;
+    this.accounts.milestones = () => (this.milestones?.reading() ? c.milestones.milestones : null);
+    if (c.milestones.enabled && c.milestones.note) this.log(`[milestones] NOT ON: ${c.milestones.note}`);
+    else if (c.milestones.enabled) this.log(`[milestones] on: plans in stages are read from ${c.milestones.milestones}; the keeper steps a plan once the stage on the desk has come to its time`);
     if (c.coins.enabled && c.coins.note) this.log(`[coins] NOT ON: ${c.coins.note}`);
     else if (c.coins.enabled) this.log(`[coins] on: agents' coins are read from the launcher ${c.coins.launcher}, and a coin's fees are swept once they are worth ${c.coins.gasMultiple} times the gas`);
     const checks = this.verified.sources();
@@ -745,6 +764,11 @@ export class Engine {
     if (this.bounties?.reading()) {
       if ((await this.bounties.watch(this.ctx, pass.head)).length && this.api) this.api.forget();
       await this.bounties.refresh();
+    }
+    // milestones: their logs, then what is read of them (./milestones.ts)
+    if (this.milestones?.reading()) {
+      if ((await this.milestones.watch(this.ctx, pass.head)).length && this.api) this.api.forget();
+      await this.milestones.refresh();
     }
     // an open job whose rule is the best Factor Score is picked as soon as its moment has come (./openjobs.ts)
     try { this.openjobs?.pickDue(); } catch (e) { this.log(`[openjobs] picking failed: ${e instanceof Error ? e.message : String(e)}`); }

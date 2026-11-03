@@ -38,6 +38,9 @@
 //   POST /v1/bounties/task|entry|read   a task's words and an entry's work, each hashed against the chain; a poster's read
 //   GET  /v1/guarantees         guarantees (guarantees.ts): the rules, the totals, every agent selling cover, the latest
 //                               covers; /v1/guarantees/about, /agent/<id>, /job/<n>, /cover/<n>, /customer/<address>
+//   GET  /v1/milestones         plans in stages (milestones.ts): the rules, the totals and the plans; /v1/milestones/about,
+//                               /<n>, /job/<n>, /agent/<id>, /customer/<address>
+//   POST /v1/milestones/terms   a plan's words, hashed against the chain
 //
 // Every GET is answered from the database (the last reading of the chain, the ledger, the engine's copy of each
 // job and agent), so a burst of visitors costs the node nothing. Before the contracts are given, and whenever the
@@ -61,7 +64,7 @@ import { allStopped, isSwitch, SWITCHES, stopped, turn } from "./switches.js";
 import { DeskStore, KIND_NAME, RULES, STATE, STATE_NAME, type AdvanceRow, type AgentRecord, type AgentRow, type JobRow, type LedgerRow } from "./desk.js";
 import { briefText, oneLine, Profiles, type Profile, type Written } from "./profiles.js";
 import { canDrawOf, limitOf, scoreOf, scoreParts } from "./score.js";
-import { drawOf, factorScore, INCOME_WITH_BOUNTIES, incomeOf, sourceOfJob, type FactorScoreJson, type IncomeSource, type ScoreJob } from "./factorscore.js";
+import { drawOf, factorScore, incomeLines, incomeOf, sourceOfJob, type FactorScoreJson, type IncomeSource, type ScoreJob } from "./factorscore.js";
 import type { Erc8004 } from "./erc8004.js";
 import type { Pulse } from "./pulse.js";
 import { ethOf, type DeskMind, type Facts, type Note } from "./deskmind.js";
@@ -81,6 +84,7 @@ import type { CoinJson, Coins } from "./coins.js";
 import type { LineBadge, Lines, LinesAbout } from "./lines.js";
 import type { CoverJson, Guarantees, GuaranteesAbout } from "./guarantees.js";
 import type { AgentBountiesJson, Bounties, BountiesAbout } from "./bounties.js";
+import type { MilestoneJobLink, Milestones, MilestonesAbout } from "./milestones.js";
 
 export interface Answer {
   status: number;
@@ -139,12 +143,15 @@ export interface EngineView {
   guarantees?: Guarantees | null;
   /** bounties (./bounties.ts) */
   bounties?: Bounties | null;
+  /** milestones (./milestones.ts) */
+  milestones?: Milestones | null;
 }
 
 /** How a job came to its agent (./factorscore.ts), from the engine's links between jobs. */
-export function sourceOf(v: Pick<EngineView, "plans" | "firms" | "subjobs" | "bounties">, agent: string, id: number): IncomeSource {
+export function sourceOf(v: Pick<EngineView, "plans" | "firms" | "subjobs" | "bounties" | "milestones">, agent: string, id: number): IncomeSource {
   return sourceOfJob({
     isBounty: (j) => !!v.bounties?.on() && !!v.bounties.ofJob(j),
+    isStage: (j) => !!v.milestones?.on() && !!v.milestones.ofJob(j),
     isMonth: (j) => !!v.plans?.monthOf(j),
     firm: (j) => { const f = v.firms?.firmOfJob(j); return f ? { part: f.part, team: v.firms!.team(f.firm) } : null; },
     isSubjob: (j) => !!v.subjobs?.store.link(j),
@@ -214,6 +221,8 @@ export interface JobJson {
   cover?: { id: number; coverEth: number; feeEth: number; state: CoverJson["state"] };
   /** a bounty's prize (./bounties.ts): the bounty, its poster, and the hash the winner delivers as its proof. Only while bounties are on */
   bounty?: { id: number; title: string | null; poster: string; proof: string | null };
+  /** a stage of a plan in stages (./milestones.ts): the plan, which stage of how many, and its customer. Its accept and reject go to the milestone contract. Only while milestones are on */
+  milestone?: MilestoneJobLink;
 }
 /** The other agents one agent hired for parts of its jobs, and those that hired it: one line each, with how many jobs. */
 export interface HiringJson { hiredBy: { address: string; name: string; named: boolean; jobs: number }[]; hires: { address: string; name: string; named: boolean; jobs: number }[] }
@@ -334,6 +343,8 @@ export interface FactorState {
   guarantees: GuaranteesAbout;
   /** bounties (./bounties.ts): whether they are on, the contract, the rules and the totals */
   bounties: BountiesAbout;
+  /** milestones (./milestones.ts): whether they are on, the contract, the rules and the totals */
+  milestones: MilestonesAbout;
 }
 export interface RosterJson { name: string; does: string; needs: string; delivers: string; fromEth: number; asksAModel: boolean; /** the Desk's opening file on it */ file?: { text: string; at: string } }
 // what Factor's own agents are, said the same before the launch and after it
@@ -602,6 +613,14 @@ export class EngineApi {
       const answer = this.bountiesGet(v, path, query);
       if (answer) return answer;
     }
+    // milestones: the rules and totals, the plans, one plan with every stage; kept a few seconds
+    if (path === "/v1/milestones" || path.startsWith("/v1/milestones/")) {
+      if (from && this.tooMany(from, "milestones-get", 600)) return { status: 429, body: { error: "too many requests: try again in a minute" } };
+      const v = this.view();
+      if (v.state !== "running") return { status: 503, body: { error: "the engine is not reading the chain yet" } };
+      const answer = this.milestonesGet(v, path, query);
+      if (answer) return answer;
+    }
     if (path === "/v1/guarantees" || path.startsWith("/v1/guarantees/")) {
       if (from && this.tooMany(from, "guarantees-get", 600)) return { status: 429, body: { error: "too many requests: try again in a minute" } };
       const v = this.view();
@@ -727,6 +746,7 @@ export class EngineApi {
         ...(v.verified?.on() ? { verifiedOwner: v.verified.json(row.address) } : {}),
         ...((x) => (x ? { guarantee: x } : {}))(v.guarantees?.on() ? v.guarantees.agentJson(row.address) : null),
         ...((x) => (x ? { bounties: x } : {}))(v.bounties?.on() ? v.bounties.agentJson(row.address) : null),
+        ...((x) => (x ? { milestones: x } : {}))(v.milestones?.on() ? v.milestones.agentJson(row.address) : null),
       }) as unknown as Record<string, unknown>);
     }
     return null;
@@ -918,6 +938,53 @@ export class EngineApi {
   private bountiesAbout(v: EngineView): BountiesAbout {
     const b = v.bounties;
     return b ? b.about() : { enabled: false, contract: null, chainId: v.config.chainId, rules: { burnPct: 1, bondPct: 1, jobFeePct: 2, minPrizeEth: 0.005, maxEntries: 25, minOpenH: 1, maxOpenD: 30, pickD: 3, deliverD: 3, graceH: 12, taskBytes: 8000, workBytes: 200_000 }, totals: null };
+  }
+
+  // Milestones (./milestones.ts), read from the database only.
+  private milestonesGet(v: EngineView, path: string, query: URLSearchParams): Answer | null {
+    const ms = v.milestones;
+    const on = !!ms?.on();
+    if (path === "/v1/milestones/about") return ok({ ...this.milestonesAbout(v) });
+    if (path === "/v1/milestones") {
+      const customer = normalizeAddress(query.get("customer") ?? "");
+      const agent = normalizeAddress(query.get("agent") ?? "");
+      return ok({ ...this.milestonesAbout(v), items: on ? ms!.list({ show: query.get("show") ?? "all", ...(customer ? { customer } : {}), ...(agent ? { agent } : {}) }) : [] });
+    }
+    if (!on) return notFound("milestones are switched off for now");
+    let m = /^\/v1\/milestones\/agent\/([0-9a-zA-Z-]{3,42})$/.exec(path);
+    if (m) {
+      const address = normalizeAddress(m[1]) ?? v.profiles?.byName(m[1]!) ?? null;
+      return ok({ milestones: address ? ms!.agentJson(address) : null });
+    }
+    m = /^\/v1\/milestones\/customer\/(0x[0-9a-fA-F]{40})$/.exec(path);
+    if (m) return ok({ ...ms!.customerJson(normalizeAddress(m[1])!) });
+    m = /^\/v1\/milestones\/job\/(\d{1,9})$/.exec(path);
+    if (m) {
+      const link = ms!.jobLink(Number(m[1]));
+      return link ? ok({ ...ms!.json(link.id)!, stage: link.stage }) : notFound("this job is not a stage of a plan");
+    }
+    m = /^\/v1\/milestones\/(\d{1,9})$/.exec(path);
+    if (m) {
+      const one = ms!.json(Number(m[1]));
+      return one ? ok({ ...one }) : notFound("no such plan");
+    }
+    return null;
+  }
+
+  private milestonesAbout(v: EngineView): MilestonesAbout {
+    const ms = v.milestones;
+    return ms ? ms.about() : { enabled: false, contract: null, chainId: v.config.chainId, rules: { minStages: 2, maxStages: 6, minStageEth: 0.001, minTimeH: 1, maxTimeD: 30, jobFeePct: 2, advanceFeePct: 1, graceH: 12, reviewH: 24, titleChars: 80, briefChars: 12_000, termsBytes: 40_000 }, totals: null };
+  }
+
+  // A plan's words, taken only when they hash to what the plan holds on the chain.
+  private async milestonesPost(body: unknown, from: string): Promise<Answer> {
+    const v = this.view();
+    if (!v.milestones || v.state !== "running") return { status: 503, body: { error: "the engine is not reading the chain yet" } };
+    if (!body || typeof body !== "object" || Array.isArray(body)) return { status: 400, body: { error: "the body is not a JSON object" } };
+    if (this.tooMany(from, "milestones", 60)) return { status: 429, body: { error: "too many requests: try again in a minute" } };
+    const a = await v.milestones.putTerms(body as Record<string, unknown>);
+    if (a.status === 200) this.cache.clear();
+    return a;
   }
 
   // A task's words and an entry's work, each taken only when it hashes to what the chain holds, and a poster's read.
@@ -1167,6 +1234,7 @@ export class EngineApi {
     if (path === "/v1/plans/create" || path === "/v1/plans/month" || path === "/v1/plans/stop") return this.plansPost(path, body, from);
     if (path === "/v1/openjobs/post" || path === "/v1/openjobs/apply" || path === "/v1/openjobs/hire" || path === "/v1/openjobs/close" || path === "/v1/openjobs/withdraw") return this.openJobsPost(path, body, from);
     if (path === "/v1/bounties/task" || path === "/v1/bounties/entry" || path === "/v1/bounties/read") return this.bountiesPost(path, body, from);
+    if (path === "/v1/milestones/terms") return this.milestonesPost(body, from);
     if (path === "/v1/autoapply/rules") return this.autoApplyPost(body, from);
     if (path === "/v1/accounts" || path.startsWith("/v1/accounts/")) return this.accountsPost(path, body, from);
     if (path === "/v1/agents/make" || path === "/v1/agents/pause") return this.hostedPost(path, body, from);
@@ -1200,7 +1268,7 @@ export class EngineApi {
       return ok({ ok: true, stopped: allStopped(v.ctx.db) });
     }
     if (path === "/v1/admin/hide") {
-      const done = b.what === "plan" && typeof b.key === "string" ? !!v.plans?.store.hide(b.key, b.hidden !== false) : b.what === "openjob" && typeof b.key === "string" ? !!v.openjobs?.store.hide(b.key, b.hidden !== false) : b.what === "bounty" && (typeof b.key === "string" || typeof b.key === "number") ? !!v.bounties?.hide(String(b.key), b.hidden !== false) : b.what === "firm" && typeof b.key === "string" ? !!v.firms?.store.hide(b.key, b.hidden !== false) : (b.what === "agent" || b.what === "job") && (typeof b.key === "string" || typeof b.key === "number") ? v.profiles.hide(b.what, String(b.key), b.hidden !== false) : false;
+      const done = b.what === "plan" && typeof b.key === "string" ? !!v.plans?.store.hide(b.key, b.hidden !== false) : b.what === "openjob" && typeof b.key === "string" ? !!v.openjobs?.store.hide(b.key, b.hidden !== false) : b.what === "bounty" && (typeof b.key === "string" || typeof b.key === "number") ? !!v.bounties?.hide(String(b.key), b.hidden !== false) : b.what === "plan-terms" && (typeof b.key === "string" || typeof b.key === "number") ? !!v.milestones?.hide(String(b.key), b.hidden !== false) : b.what === "firm" && typeof b.key === "string" ? !!v.firms?.store.hide(b.key, b.hidden !== false) : (b.what === "agent" || b.what === "job") && (typeof b.key === "string" || typeof b.key === "number") ? v.profiles.hide(b.what, String(b.key), b.hidden !== false) : false;
       this.cache.clear();
       return done ? ok({ ok: true }) : notFound("nothing by that key");
     }
@@ -1260,7 +1328,9 @@ export class EngineApi {
       const c = covers.get(j.id);
       const withCover = c ? { ...out, cover: { id: c.id, coverEth: Number(formatEther(BigInt(c.amount))), feeEth: Number(formatEther(BigInt(c.fee))), state: c.state } } : out;
       const b = v.bounties?.on() ? v.bounties.ofJob(j.id) : null;
-      return b ? { ...withCover, bounty: v.bounties!.jobLink(b) } : withCover;
+      const withBounty = b ? { ...withCover, bounty: v.bounties!.jobLink(b) } : withCover;
+      const ml = v.milestones?.on() ? v.milestones.jobLink(j.id) : null;
+      return ml ? { ...withBounty, milestone: ml } : withBounty;
     });
   }
 
@@ -1325,6 +1395,8 @@ export class EngineApi {
       ...((x) => (x ? { line: x } : {}))(v.lines?.on() ? v.lines.one(row.address) : null),
       // its bounties, entered and won: only while bounties are on and it has entered one
       ...((x) => (x ? { bounties: x } : {}))(v.bounties?.on() ? v.bounties.agentJson(row.address) : null),
+      // its plans in stages, and the stages it was paid for: only while milestones are on and it has had one
+      ...((x) => (x ? { milestones: x } : {}))(v.milestones?.on() ? v.milestones.agentJson(row.address) : null),
       // its guarantee bond, offer and covers: only while guarantees are on and it has ever had one
       ...((x) => (x ? { guarantee: x } : {}))(v.guarantees?.on() ? v.guarantees.agentJson(row.address, true) : null),
       ...((x) => (x ? { raetoSpend: x } : {}))(v.gateway?.raetoSpendOfAgent(row.address) ?? null),
@@ -1352,7 +1424,7 @@ export class EngineApi {
     const both = merged ? [merged.key, merged.account] : [row.address];
     const jobs = db.q(`SELECT id, state, customer, price, fee, closed_at, early, from_pool FROM desk_jobs WHERE agent IN (${both.map(() => "?").join(", ")}) AND state IN (?, ?)`).all(...both, STATE.settled, STATE.half) as ScoreJob[];
     // each job once, under the first way that fits it
-    const income = incomeOf(jobs, (id): IncomeSource => sourceOf(v, row.address, id), v.bounties?.on() ? INCOME_WITH_BOUNTIES : undefined);
+    const income = incomeOf(jobs, (id): IncomeSource => sourceOf(v, row.address, id), incomeLines({ bounties: !!v.bounties?.on(), milestones: !!v.milestones?.on() }));
     const distinct = new Set(jobs.map((j) => j.customer)).size;
     const out = v.subjobs ? (db.q("SELECT s.price, d.state FROM subjobs s LEFT JOIN desk_jobs d ON d.id = s.job_id WHERE s.hirer = ?").all(row.address) as { price: string; state: number | null }[]) : [];
     const value = out.reduce((n, x) => n + BigInt(x.price), 0n);
@@ -1557,7 +1629,8 @@ export class EngineApi {
     const lines = this.linesAbout(v);
     const guarantees = this.guaranteesAbout(v);
     const bounties = this.bountiesAbout(v);
-    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused, roster: this.rosterJson(v), hosted, pulse: pulseJson(v, 8), desk: this.deskJson(v), signups, activity, pay, subjobs, firms, plans, erc8004, openJobs, autoApply, verified, coins, lines, guarantees, bounties };
+    const milestones = this.milestonesAbout(v);
+    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused, roster: this.rosterJson(v), hosted, pulse: pulseJson(v, 8), desk: this.deskJson(v), signups, activity, pay, subjobs, firms, plans, erc8004, openJobs, autoApply, verified, coins, lines, guarantees, bounties, milestones };
     if (!r) {
       return { ...base, launched: false, stats: { advancedEth: 0, settledJobs: 0, jobs: 0, poolEth: 0, reserveEth: 0, outEth: 0, heldEth: 0, burnedTokens: 0, supplyLeft: SUPPLY, agents: 0, demoJobs: 0, lostEth: 0, poolFromTradingEth: 0 }, burn: null, agents: [], jobs: [], events: [], burns: [] };
     }
@@ -1658,6 +1731,7 @@ export class EngineApi {
       lines: v.lines ? v.lines.health() : null,
       guarantees: v.guarantees ? v.guarantees.health() : null,
       bounties: v.bounties ? v.bounties.health() : null,
+      milestones: v.milestones ? v.milestones.health() : null,
       erc8004: v.erc8004 ? { ...v.erc8004.about(), spentTodayWei: v.erc8004.spentToday().toString(), gasDayWei: c.erc8004.gasDayWei.toString(), scan: ctx.db.getJson("erc8004:scan") } : null,
       events: ctx.db.count("chain_events"),
       ledger: ctx.db.count("ledger"),

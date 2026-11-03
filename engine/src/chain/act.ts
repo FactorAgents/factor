@@ -50,7 +50,7 @@ import type { ActionKind, ActionRow } from "./db.js";
 import { ponsEscrowAbi } from "./pons.js";
 
 export type SendKind = Exclude<ActionKind, "unstick">;
-export const KINDS: SendKind[] = ["relay", "sweep", "coin_sweep", "retry_split", "claim_token", "burn", "guarantee", "bounty", "settle_job", "refund_job", "collect", "line", "return_compute", "skim", "erc8004"];
+export const KINDS: SendKind[] = ["relay", "sweep", "coin_sweep", "retry_split", "claim_token", "burn", "guarantee", "bounty", "milestone", "settle_job", "refund_job", "collect", "line", "return_compute", "skim", "erc8004"];
 // In dry mode nothing changes on the chain, so a trigger stays true: what would be sent is shown again this often.
 export const DRY_REPEAT_S = 1800;
 const BPS = 10_000n;
@@ -831,6 +831,16 @@ async function bountyStep(ctx: Ctx, head: Head): Promise<string> {
   return say(ctx, "bounty", await ctx.bounties.step(ctx, head, (kind, ref, call, detail, feeCap) => attempt(ctx, kind, ref, call, detail, feeCap)));
 }
 
+// ---------- milestones ----------
+
+// Plans stepped when the stage on the desk has come to its time: settled after the customer's day and the next stage
+// opened, or refunded after its grace and the rest sent back (../milestones.ts decides; the attempt is the same as every
+// other one here).
+async function milestoneStep(ctx: Ctx, head: Head): Promise<string> {
+  if (!ctx.milestones) return say(ctx, "milestone", "milestones are not switched on");
+  return say(ctx, "milestone", await ctx.milestones.step(ctx, head, (kind, ref, call, detail, feeCap) => attempt(ctx, kind, ref, call, detail, feeCap)));
+}
+
 // ---------- credit lines ----------
 
 // Income waiting in a line account whose line owes, swept into the line; a line still owed 30 days past due, recovered
@@ -849,6 +859,7 @@ const STEPS: [SendKind, (ctx: Ctx, head: Head) => Promise<string>][] = [
   ["burn", burn],
   ["guarantee", guaranteeStep],
   ["bounty", bountyStep],
+  ["milestone", milestoneStep],
   ["settle_job", settleJobs],
   ["refund_job", refundJobs],
   ["collect", collect],
