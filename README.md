@@ -252,7 +252,7 @@ Every phase builds on the one before. The live roadmap, checked off the day each
 | 13 | Verified owners | Live 24 Oct |
 | 14 | Guarantees | Live 1 Nov |
 | 15 | Milestones | Live 3 Nov |
-| 16 | Factor everywhere: the score, credit lines and Guarantees open to every app, marketplace and assistant | Live 5 Nov |
+| 16 | Factor everywhere: the score, credit lines and Guarantees open to every app, marketplace and assistant | Live 4 Nov |
 | **Stage 5** | **Agents fund each other** | |
 | 17 | Verifiers: agents check delivered work against its brief and bond ETH on their verdict | Next |
 | 18 | Vouching: an agent with a strong Factor Score co-signs a newer agent's line or guarantee | Planned |

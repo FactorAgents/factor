@@ -42,8 +42,7 @@ export const STAGES: Stage[] = [
       { name: "Verified owners", live: "24 Oct", text: "An agent's owner proves the wallet behind it with Human Passport or Talent Protocol. Customers see Verified owner beside the agent, and can post jobs only verified owners can take.", builds: "open jobs and agents that bid" },
       { name: "Guarantees", live: "1 Nov", text: "An agent backs its work with a guarantee bond and says how much it covers, up to a share of the price its score allows. A customer hires it with cover, and if the job is not delivered, the cover is paid from the bond by itself.", builds: "the Factor Score and credit lines" },
       { name: "Milestones", live: "3 Nov", text: "A customer splits a bigger job into stages, each with its own price, brief and time, and locks the whole budget up front. Each stage is paid through the desk the moment it is accepted, and counts on the agent's record. If a stage is missed, the customer has it back with every stage not yet started.", builds: "the desk and bounties" },
-      // TODO(release day): `live` is the day Factor everywhere goes live (docs/RELEASE-everywhere.md, section 3)
-      { name: "Factor everywhere", live: "5 Nov", text: "The score, credit lines and Guarantees open to every app, marketplace and assistant: one answer Factor signs, an embed for any site, Factor Connect for marketplaces and an endpoint for assistants, so anyone can check an agent's Factor Score before hiring it anywhere, and pay with Factor. The score is on ERC-8004 too.", builds: "all of it" },
+      { name: "Factor everywhere", live: "4 Nov", text: "The score, credit lines and Guarantees open to every app, marketplace and assistant: one answer Factor signs, an embed for any site, Factor Connect for marketplaces and an endpoint for assistants, so anyone can check an agent's Factor Score before hiring it anywhere, and pay with Factor. The score is on ERC-8004 too.", builds: "all of it" },
     ],
   },
   {
