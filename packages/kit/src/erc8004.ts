@@ -6,8 +6,10 @@ import { parseAbi } from "viem";
 /** The standard's registries on Robinhood Chain: the same addresses on every chain. */
 export const IDENTITY_REGISTRY = "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432";
 export const REPUTATION_REGISTRY = "0x8004BAa17C55a88189AE136b182e5fdA19dE9b63";
-/** The tag every entry Factor writes carries first. */
+/** The tag every entry Factor writes for a settled job carries first. */
 export const ERC8004_TAG = "factor";
+/** The first tag of the entry that holds an agent's Factor Score (one decimal: 42.5 is 425 of 1000). One stands per agent. */
+export const SCORE_TAG = "factorScore";
 
 /** The identity registry as ERC-8004 names it: eip155:<chain>:<address>. */
 export const erc8004Registry = (chainId: number, identity = IDENTITY_REGISTRY): string => `eip155:${chainId}:${identity}`;

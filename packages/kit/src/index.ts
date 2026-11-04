@@ -41,6 +41,7 @@ import { KINDS, rulesMessage, type AutoApplyRules, type BidRule } from "./autoap
 import { verifyOwnerMessage } from "./verified.js";
 import { ERC8004_TAG, erc8004LinkMessage, erc8004Registry, IDENTITY_REGISTRY, identityAbi, REPUTATION_REGISTRY, reputationAbi } from "./erc8004.js";
 import { explain, Refusal, WORDS } from "./words.js";
+import { checkAgent, checkAgents, hireLink, type CheckedAgent, type CheckedAgents, type HireLinkOptions } from "./everywhere.js";
 
 import { encodePayLink, LINK_BRIEF_MOST, readPayLink, tokenOf, verifyRecord, x402PaymentHeader, X402_NETWORK, X402_SCHEME, type AgentRecord, type PayLink, type X402Requirements, payLinkMessage } from "./pay.js";
 
@@ -59,7 +60,9 @@ export { coverFee, GUARANTEE_WORDS } from "./guarantees.js";
 export { BOUNTY_WORDS, bountyEntryHash, bountyParts, bountyReadMessage, MIN_PRIZE_WEI, TASK_BYTES, WORK_BYTES } from "./bounties.js";
 export { checkTerms, MAX_STAGES, MILESTONE_WORDS, MIN_STAGE_WEI, MIN_STAGES, termsHash, termsText } from "./milestones.js";
 export type { Terms } from "./milestones.js";
-export { ERC8004_TAG, erc8004LinkMessage, erc8004Registry, IDENTITY_REGISTRY, REPUTATION_REGISTRY } from "./erc8004.js";
+export { ERC8004_TAG, erc8004LinkMessage, erc8004Registry, IDENTITY_REGISTRY, REPUTATION_REGISTRY, SCORE_TAG } from "./erc8004.js";
+export { checkAgent, checkAgents, embedSnippet, everywhereAbout, everywhereSigner, FactorConnect, hireLink, verifyAnswer, verifyWebhook } from "./everywhere.js";
+export type { AgentAnswer, AnswerEnvelope, CheckedAgent, CheckedAgents, ConnectHire, ConnectTicket, EmbedPart, HireLinkOptions, SealedAnswer } from "./everywhere.js";
 export type { PlanText } from "./plans.js";
 export { applyMessage, closeJobMessage, openJobId, pickWords, postJobMessage, priceWords, withdrawMessage } from "./openjobs.js";
 export { bidWords, hoursWords, KINDS, rulesMessage } from "./autoapply.js";
@@ -672,6 +675,25 @@ export class Factor {
     const r = await read<AgentRecord>(this.api, `/record/${agent}`);
     if (!r) throw new Refusal(`There is no agent "${agent}" on Factor.`, "no_agent");
     return r;
+  }
+
+  /**
+   * Factor everywhere: one agent's Factor Score, record, credit line headroom and Guarantee, by its address, its name or
+   * its ERC-8004 identity ("8004:42"), in an answer Factor signs; the signature is checked against `signer` (keep your own
+   * copy of Factor's address), or the one Factor's site names.
+   */
+  checkAgent(id: string, signer?: string): Promise<CheckedAgent> {
+    return checkAgent(id, { api: this.api, signer });
+  }
+
+  /** Up to 25 agents in one signed answer, checked. */
+  checkAgents(ids: string[], signer?: string): Promise<CheckedAgents> {
+    return checkAgents(ids, { api: this.api, signer });
+  }
+
+  /** The address of Factor's pay flow filled in for one agent: a person opens it, locks the payment and signs there. */
+  hireLink(o: Omit<HireLinkOptions, "site">): string {
+    return hireLink({ ...o, site: this.api });
   }
 
   /** The address Factor signs records with, as its site says. An app that checks records should keep its own copy of it. */

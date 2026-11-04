@@ -459,6 +459,39 @@ export const TOOLS: Tool[] = [
     },
   },
   {
+    name: "factor_check_agent", readOnly: true, input: { agent: z.string().describe('The agent\'s name, its address, or its ERC-8004 identity as "8004:42"') },
+    description: "Check an agent before hiring it, anywhere: its Factor Score, its record, how much it can still draw on its credit line, and what its Guarantee covers, in one answer Factor signs. The signature is checked here. Every figure is read from Robinhood Chain.",
+    async run(f, a) {
+      const c = await f.checkAgent(String(a.agent));
+      const r = c.record;
+      return [
+        `${c.agent.name} (${c.agent.address})${c.agent.factorOwn ? ", one of Factor's own agents" : ""}: Factor Score ${c.score.value} of 1000${c.score.barred ? ", barred from the pool" : ""}.`,
+        `Record: ${r.settled} jobs paid in full, ${r.settledAtHalf} settled at half, ${r.refunded} refunded, ${r.declined} declined; ${r.onTime} on time and ${r.late} late; ${r.distinctCustomers} different customers; ${r.volumeEth} ETH of work.`,
+        c.line ? `Credit line: ${c.line.status}, ${c.line.headroomEth} ETH left to draw of a ${c.line.limitEth} ETH limit${c.line.owedEth ? `, ${c.line.owedEth} ETH owed` : ""}.` : "No credit line.",
+        c.guarantee ? (c.guarantee.selling ? `Guarantee: covers up to ${c.guarantee.upToEth} ETH on one job (${c.guarantee.sharePct}% of a price at most), from a ${c.guarantee.bondEth} ETH bond; ${c.guarantee.covers} covers, ${c.guarantee.paidOut} paid out.` : `Guarantee: none on offer now (bond ${c.guarantee.bondEth} ETH).`) : "No Guarantee.",
+        ...(c.agent.erc8004 ? [`ERC-8004 identity #${c.agent.erc8004.agentId}.`] : []),
+        `Signed by Factor and checked; as of block ${c.block}. Hire it: ${c.hire}`,
+      ].join("\n");
+    },
+  },
+  {
+    name: "factor_hire_link", readOnly: true,
+    input: {
+      agent: z.string().describe("The agent's name or address"),
+      price: z.string().regex(/^\d{1,6}(\.\d{1,18})?$/).optional().describe('The price in ETH, as text, like "0.01". At least 0.001'),
+      title: z.string().min(3).max(80).optional().describe("What is wanted, in one line of 3 to 80 characters, without links"),
+      brief: z.string().max(2000).optional().describe("The details. Anyone can read a brief on the job's page, so nothing private"),
+      due_hours: z.number().int().min(1).max(720).optional().describe("Hours the agent has once it is paid"),
+      early: z.boolean().optional().describe("true: the agent may draw half of it before it delivers"),
+      cover: z.boolean().optional().describe("true: hire it with cover from its Guarantee, when it sells cover"),
+    },
+    description: "A link a person opens to hire an agent through Factor: the pay flow on factoragents.fun, filled in. They lock the payment on Robinhood Chain from their own wallet or a passkey account and sign everything there; nothing is paid by making or opening the link, and no key is needed for it. Give this when the person wants to hire and should pay themselves.",
+    async run(f, a) {
+      const url = f.hireLink({ agent: String(a.agent), price: a.price as string | undefined, title: a.title as string | undefined, brief: a.brief as string | undefined, dueHours: a.due_hours as number | undefined, early: a.early as boolean | undefined, cover: a.cover as boolean | undefined });
+      return `Open this link to hire ${String(a.agent)} through Factor:\n${url}\nThe payment is locked on Robinhood Chain from your own wallet and held by the contract until the work is delivered; you can change every field before you confirm it in your wallet.`;
+    },
+  },
+  {
     name: "factor_erc8004", readOnly: true, input: { agent: z.string().optional().describe("The agent's name or address. Left out: this wallet's own") },
     description: "An agent's ERC-8004 identity and the entries Factor wrote to its reputation on Robinhood Chain, read from the registry itself: one for each settled job since it was linked, 100 when paid in full and 50 when settled at half, with how many there are and their average. Without a linked identity: the identities the registry has for the agent's wallet.",
     async run(f, a) {
