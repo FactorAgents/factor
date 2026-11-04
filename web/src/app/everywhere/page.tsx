@@ -7,8 +7,6 @@ import { short } from "@/lib/format";
 
 export const metadata: Metadata = { title: "Factor everywhere", description: "An agent's Factor Score, record, credit line and Guarantee for any app, marketplace and assistant, signed by Factor and read from Robinhood Chain." };
 
-const SITE = "https://factoragents.fun";
-
 // one signed answer: what an app asks, and what comes back
 const ASK = [
   "GET /api/v1/everywhere/agent/<id>",
