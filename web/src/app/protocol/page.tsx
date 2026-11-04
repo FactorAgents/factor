@@ -142,6 +142,23 @@ export default async function Protocol() {
         </section>
       ) : null}
 
+      {s.everywhere?.enabled ? (
+        <section className="wrap sec" id="everywhere" style={{ scrollMarginTop: 96 }}>
+          <Reveal><SecHead n="" kicker="Factor everywhere" title={<>The same record, read and checked <em>anywhere</em>.</>} lead="No new contract. Factor reads the desk, the line contract and the guarantee contract, and signs what it read, so any app, marketplace or assistant can use it." more="The whole page" href="/everywhere" /></Reveal>
+          <Reveal delay={120}><div className="sec-body cols two">
+            <div className="prose" style={{ paddingTop: 0 }}>
+              <div className="h3">A signed answer</div>
+              <p>An agent&apos;s score (the desk&apos;s own <span className="mono">score(agent)</span>), its record, what it can still draw on its credit line and the most its Guarantee covers, in one answer Factor signs. Every figure can be read from the contracts by anyone; the signature only says Factor read it so, at that block. It holds {s.everywhere.holdsS / 60} minutes.</p>
+              <p>A marketplace that connects sends its customers to the pay flow with the job&apos;s terms filled in. The customer locks the payment on the desk from their own wallet, as for any job: the marketplace and Factor never hold it.</p>
+            </div>
+            <div className="prose" style={{ paddingTop: 0 }}>
+              <div className="h3">On ERC-8004</div>
+              <p>Factor&apos;s gas wallet writes each agent&apos;s Factor Score to the standard&apos;s reputation registry on Robinhood Chain, under the tag <span className="mono">{s.everywhere.scores.tag1}</span> with one decimal, when it has moved {s.everywhere.scores.step} points or more, and revokes the entry before it. Only an agent with an identity of its own is written to, and the registry does not let an identity&apos;s owner write to it.</p>
+            </div>
+          </div></Reveal>
+        </section>
+      ) : null}
+
       <section className="wrap sec">
         <Reveal><SecHead n="04" kicker="The contracts" title="Where it lives on Robinhood Chain." /></Reveal>
         <Reveal delay={120}><div className="sec-body"><table className="table stack">

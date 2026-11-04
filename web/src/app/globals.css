@@ -1071,3 +1071,9 @@ a.coin-mark:hover, .agent:hover .coin-mark { border-color: var(--gilt); color: v
   .stages > li { grid-template-columns: 26px minmax(0, 1fr); }
   .stages > li .tag { grid-column: 2; }
 }
+
+/* Factor everywhere (app/everywhere): the live embeds, side by side, each at most the width an embed takes on a site */
+.everywhere-live { padding-top: 0 !important; }
+.everywhere-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 14px; align-items: start; }
+.everywhere-pair > div { min-width: 0; }
+@media (max-width: 1080px) { .everywhere-pair { grid-template-columns: 1fr; } }

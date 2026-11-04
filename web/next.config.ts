@@ -55,6 +55,8 @@ const nextConfig: NextConfig = {
       // the mark, the token picture and the fonts change only with a deploy: a day in the browser, then checked again
       { source: "/:file(mark.png|mark-light.png|factor.png)", headers: [{ key: "Cache-Control", value: "public, max-age=86400, stale-while-revalidate=604800" }] },
       { source: "/fonts/:path*", headers: [{ key: "Cache-Control", value: "public, max-age=2592000, immutable" }] },
+      // the embeds' script (app/everywhere): loaded by other sites, so it says it may be, and is kept an hour
+      { source: "/embed.js", headers: [{ key: "Cache-Control", value: "public, max-age=3600, stale-while-revalidate=86400" }, { key: "Cross-Origin-Resource-Policy", value: "cross-origin" }, { key: "Access-Control-Allow-Origin", value: "*" }] },
     ];
   },
 };

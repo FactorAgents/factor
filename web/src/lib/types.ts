@@ -365,6 +365,8 @@ export interface FactorState {
   bounties?: BountiesAbout;
   /** milestones: whether they are on, the contract, the rules and the totals */
   milestones?: MilestonesAbout;
+  /** Factor everywhere: whether it is on, the address that signs answers, Connect, and the score on ERC-8004 */
+  everywhere?: EverywhereAbout;
 }
 
 /** One of a firm's agents and its part of the firm's work: the lead's is the firm's jobs, a member's the sub-jobs it took under them. */
@@ -440,7 +442,31 @@ export interface Erc8004 {
   links: { registry: string };
 }
 /** One agent with what the page about it shows. */
-export interface AgentPage { raetoSpend?: RaetoSpend; /** bounties entered and won */ bounties?: AgentBounties; /** its jobs in stages */ milestones?: AgentMilestones; agent: Agent; /** its Factor Score: the desk's number, the parts, the income behind it, what it can draw */ factorScore?: FactorScore; jobs: Job[]; events: LedgerEvent[]; hiring?: Hiring; /** the firms it leads, belongs to or is invited to */ firms?: { slug: string; name: string; house: boolean; role: "lead" | "member" | "invited" }[]; /** its monthly clients, when it has any plan */ plans?: PlansSummary; /** its ERC-8004 identity and the entries written to it, when one is linked */ erc8004?: Erc8004; /** its own coin, when it has one listed */ coin?: Coin; /** its credit line, from either side, while lines are on */ line?: CreditLine; /** its guarantee bond, offer and covers, while guarantees are on and it has had one */ guarantee?: AgentGuarantee }
+/** Factor everywhere (engine/src/api.ts, EverywhereAbout): whether it is on, the signer, Connect, the score on ERC-8004. */
+export interface EverywhereAbout {
+  enabled: boolean;
+  signer: string | null;
+  holdsS: number;
+  mostAtOnce: number;
+  perMinute: number;
+  connect: { enabled: boolean; marketplaces: number };
+  scores: { enabled: boolean; tag1: string; reviewer: string | null; entries: number; agents: number; step: number };
+}
+
+/** One agent as a signed answer carries it (engine/src/everywhere.ts, AgentAnswer). */
+export interface AgentAnswer {
+  agent: { address: string; name: string; named: boolean; does: string; since: string; page: string; factorOwn: boolean; erc8004: { agentId: string; registry: string } | null };
+  score: { value: number; of: 1000; barred: boolean; check: string };
+  record: { settled: number; settledAtHalf: number; delivered: number; onTime: number; late: number; refunded: number; declined: number; customers: number; distinctCustomers: number; volumeEth: string; advancesRepaid: number; advancesNotRepaid: number };
+  line: { status: LineStatus; limitEth: number; owedEth: number; headroomEth: number; dueAt: string | null } | null;
+  guarantee: { selling: boolean; upToEth: number; sharePct: number; bondEth: number; freeEth: number; covers: number; delivered: number; paidOut: number; paidOutEth: number } | null;
+  hire: string;
+}
+
+/** An agent's Factor Score as Factor last wrote it to ERC-8004 (engine/src/erc8004score.ts, ScoreJson). */
+export interface ScoreOnChain { score: number; value: string; tag1: string; agentId: string; reviewer: string; tx: string; index: number | null; at: string; written: number }
+
+export interface AgentPage { /** its Factor Score on ERC-8004, while that is on and one was written */ scoreOnChain?: ScoreOnChain; raetoSpend?: RaetoSpend; /** bounties entered and won */ bounties?: AgentBounties; /** its jobs in stages */ milestones?: AgentMilestones; agent: Agent; /** its Factor Score: the desk's number, the parts, the income behind it, what it can draw */ factorScore?: FactorScore; jobs: Job[]; events: LedgerEvent[]; hiring?: Hiring; /** the firms it leads, belongs to or is invited to */ firms?: { slug: string; name: string; house: boolean; role: "lead" | "member" | "invited" }[]; /** its monthly clients, when it has any plan */ plans?: PlansSummary; /** its ERC-8004 identity and the entries written to it, when one is linked */ erc8004?: Erc8004; /** its own coin, when it has one listed */ coin?: Coin; /** its credit line, from either side, while lines are on */ line?: CreditLine; /** its guarantee bond, offer and covers, while guarantees are on and it has had one */ guarantee?: AgentGuarantee }
 
 /** One job in a chain of work: the customer's job at depth 0, the jobs its agent hired for at 1, and so on. */
 export interface TreeNode {

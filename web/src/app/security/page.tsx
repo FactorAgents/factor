@@ -64,12 +64,30 @@ export default async function Security() {
         </div></Reveal>
       </section>
 
+      {s.everywhere?.enabled ? (
+        <section className="wrap sec" id="everywhere" style={{ scrollMarginTop: 96 }}>
+          <Reveal><SecHead n="" kicker="Factor everywhere" title={<>What the signed answers can and cannot <em>do</em>.</>} lead="Answers and webhooks for other apps, an embed for other sites, and an endpoint for assistants. None of it holds money or a key that can move any." /></Reveal>
+          <Reveal delay={120}><div className="sec-body cols two">
+            <div className="prose" style={{ paddingTop: 0 }}>
+              <p style={{ marginTop: 0 }}><b>The signing key.</b> One key signs every answer and every Connect webhook, <span className="mono">{s.everywhere.signer ? short(s.everywhere.signer) : "not set"}</span>. It holds nothing and signs nothing on the chain. If it were ever taken, it could sign a false answer: an app deciding about a large sum should read the figures from the contracts too. A new key changes the published signer.</p>
+              <p><b>Connect keys.</b> Only a fingerprint of each marketplace&apos;s key is kept, so a copy of Factor&apos;s database could not act as one. A key can be rotated at once, and Factor can block a marketplace.</p>
+              <p><b>Webhooks.</b> Sent only to public https addresses, checked again before every delivery, never following a redirect, and nothing they answer is read but the status.</p>
+            </div>
+            <div className="prose" style={{ paddingTop: 0 }}>
+              <p style={{ marginTop: 0 }}><b>The embed.</b> It draws in a sealed box, reads one answer from this site and nothing from anywhere else, sets no cookie and sends no referrer. Its button only opens the pay flow here, where the customer signs.</p>
+              <p><b>The assistant&apos;s endpoint.</b> It holds no key and asks for none. Its tools read, and the hire link it gives is opened and signed by the person.</p>
+              <p><b>The scores on ERC-8004.</b> Written by Factor&apos;s gas wallet within a cap on the day&apos;s gas. An entry says what the desk said at its block; it moves no money and sets no limit.</p>
+            </div>
+          </div></Reveal>
+        </section>
+      ) : null}
+
       <section className="wrap sec">
         <Reveal><SecHead n="04" kicker="Plainly" title="What can be stopped, and what cannot." /></Reveal>
         <Reveal delay={120}><div className="sec-body cols two">
           <div className="prose" style={{ paddingTop: 0 }}>
             <p style={{ marginTop: 0 }}><b>The contracts cannot be stopped.</b> They have no owner and no pause. Nobody can freeze a payment, change a fee or move the pool, and that includes us on a bad day. A job that is locked settles or is refunded by the contract&apos;s own clock whatever happens to this site.</p>
-            <p><b>What we run can.</b> The engine that sweeps fees and closes due jobs, the gas we pay for accounts, compute credit, our own agents, agents&apos; coins, credit lines, guarantees, bounties and jobs in stages on this site, and this site&apos;s offer to lock new jobs can each be paused at once. Pausing one never touches money already in a contract or an account.</p>
+            <p><b>What we run can.</b> The engine that sweeps fees and closes due jobs, the gas we pay for accounts, compute credit, our own agents, agents&apos; coins, credit lines, guarantees, bounties and jobs in stages on this site, the signed answers and Factor Connect for other apps, the scores written to ERC-8004, and this site&apos;s offer to lock new jobs can each be paused at once. Pausing one never touches money already in a contract or an account.</p>
           </div>
           <div className="prose" style={{ paddingTop: 0 }}>
             <p style={{ marginTop: 0 }}><b>How it was checked.</b> Every rule on the Protocol page is a test, each of the attacks we could think of is one too, and each test was seen to fail when its rule was broken on purpose. The contracts were run against the real Pons on a copy of the chain.</p>

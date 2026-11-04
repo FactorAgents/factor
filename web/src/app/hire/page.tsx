@@ -1,15 +1,40 @@
 import type { Metadata } from "next";
-import { deskOf, getState } from "@/lib/data";
+import { deskOf, engineUrl, getState } from "@/lib/data";
 import { PageHead } from "@/components/Bits";
 import AccountPanel from "@/components/Account";
-import HireForm, { MyJobs } from "@/components/HireForm";
+import HireForm, { MyJobs, type Prefill } from "@/components/HireForm";
 import { Reveal } from "@/components/Motion";
 
 export const metadata: Metadata = { title: "Hire an agent" };
 
-export default async function Hire({ searchParams }: { searchParams: Promise<{ agent?: string; firm?: string; monthly?: string; cover?: string; stages?: string }> }) {
+/** A marketplace's hire link (Factor Connect), as the engine keeps it; null when there is none, or it cannot be used. */
+async function ticketOf(id: string | undefined): Promise<{ id: string; agent: string; priceWei: string; dueHours: number; early: boolean; coverWei: string; title: string; brief: string; open: boolean; market: { name: string; site: string } | null } | null> {
+  const engine = engineUrl();
+  if (!id || !/^[0-9a-f]{20}$/.test(id) || !engine) return null;
+  try {
+    const r = await fetch(`${engine}/v1/connect/ticket/${id}`, { cache: "no-store", signal: AbortSignal.timeout(8000) });
+    return r.ok ? await r.json() : null;
+  } catch {
+    return null;
+  }
+}
+
+const ethOf = (wei: string): string => { const w = BigInt(wei); const whole = w / 10n ** 18n, frac = (w % 10n ** 18n).toString().padStart(18, "0").replace(/0+$/, ""); return frac ? `${whole}.${frac}` : `${whole}`; };
+
+export default async function Hire({ searchParams }: { searchParams: Promise<{ agent?: string; firm?: string; monthly?: string; cover?: string; stages?: string; price?: string; title?: string; brief?: string; due?: string; early?: string; ticket?: string }> }) {
   const s = await getState();
-  const { agent, firm, monthly, cover, stages } = await searchParams;
+  const q = await searchParams;
+  const { firm, monthly, cover, stages } = q;
+  // a marketplace's hire link fixes the agent and the terms; a plain link only fills them in (the kit's hireLink)
+  const t = await ticketOf(q.ticket);
+  const ticket = t && t.open ? t : null;
+  const agent = ticket ? ticket.agent : q.agent;
+  const hours = Number(q.due);
+  const prefill: Prefill | null = ticket
+    ? { price: ethOf(ticket.priceWei), title: ticket.title, brief: ticket.brief, dueS: ticket.dueHours * 3600, early: ticket.early, ticket: { id: ticket.id, market: ticket.market, cover: ticket.coverWei } }
+    : q.price || q.title || q.brief || q.due || q.early
+      ? { ...(q.price && /^\d{1,6}(\.\d{1,18})?$/.test(q.price) ? { price: q.price } : {}), ...(q.title ? { title: q.title.slice(0, 80) } : {}), ...(q.brief ? { brief: q.brief.slice(0, 2000) } : {}), ...(Number.isInteger(hours) && hours >= 1 && hours <= 720 ? { dueS: hours * 3600 } : {}), ...(q.early === "1" ? { early: true } : {}) }
+      : null;
   // the firms that can be hired: while firms are on, each through its lead, who must be on the desk
   const firms = s.firms?.enabled ? (s.firms.items ?? []).filter((f) => s.agents.some((a) => a.address === f.lead.address)).map((f) => ({ slug: f.slug, name: f.name, does: f.does, house: f.house, lead: f.lead.address, leadName: f.lead.name, members: f.members.filter((m) => m.role === "member").map((m) => m.name), fromEth: f.fromEth })) : [];
   const pickedFirm = firms.find((f) => f.slug === (firm ?? "").toLowerCase())?.slug ?? "";
@@ -25,7 +50,8 @@ export default async function Hire({ searchParams }: { searchParams: Promise<{ a
             <div className="h3">Lock a payment</div>
             <p className="small" style={{ margin: "8px 0 30px" }}>Nothing leaves your wallet until you confirm it there.</p>
             <AccountPanel explorer={s.contracts.explorer} />
-            <HireForm agents={agents} firms={firms} pickedFirm={pickedFirm} picked={picked?.address ?? ""} desk={deskOf(s)} explorer={s.contracts.explorer} params={s.params} paused={!!s.paused} monthly={s.plans?.enabled ? { mostMonths: s.plans.mostMonths } : null} burnPot={s.contracts.burnPot} pickedMonthly={monthly === "1"} guarantees={s.guarantees?.enabled && s.guarantees.contract ? s.guarantees : null} pickedCover={cover === "1"} milestones={s.milestones?.enabled ? s.milestones : null} pickedStages={stages === "1"} />
+            <HireForm agents={agents} firms={firms} pickedFirm={pickedFirm} picked={picked?.address ?? ""} desk={deskOf(s)} explorer={s.contracts.explorer} params={s.params} paused={!!s.paused} monthly={s.plans?.enabled ? { mostMonths: s.plans.mostMonths } : null} burnPot={s.contracts.burnPot} pickedMonthly={monthly === "1"} guarantees={s.guarantees?.enabled && s.guarantees.contract ? s.guarantees : null} pickedCover={cover === "1"} milestones={s.milestones?.enabled ? s.milestones : null} pickedStages={stages === "1"} prefill={prefill} />
+            {q.ticket && !ticket ? <p className="note">{t ? (t.open ? "" : "This hire link was used already, or it ran out. You can still hire the agent here yourself.") : "This hire link is not known to Factor. You can still hire an agent here yourself."}</p> : null}
           </Reveal>
           <Reveal delay={140} className="side">
             <div>

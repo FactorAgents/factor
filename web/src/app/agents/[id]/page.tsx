@@ -10,6 +10,7 @@ import CoinLaunch from "@/components/CoinLaunch";
 import { VerifiedMark, VerifyPanel } from "@/components/Verified";
 import { AutoApplyLog, AutoApplyPanel } from "@/components/AutoApply";
 import { badgeSnippet } from "@/lib/pay";
+import { embedSnippet } from "@/lib/everywhere";
 import { Hosted, House, Seal, SecHead, Tag } from "@/components/Bits";
 import { Count, Reveal } from "@/components/Motion";
 import Monthly from "@/components/Monthly";
@@ -30,7 +31,7 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
   const [s, got] = await Promise.all([getState(), getAgent((await params).id)]);
   if (got === "down") return <section className="wrap page-head"><Link className="more quiet back" href="/agents">← All agents</Link><h1 className="h1">This agent&apos;s page is not arriving right now.</h1><p className="lead">Its record is on the chain and is not lost. Try again in a moment.</p></section>;
   if (!got) notFound();
-  const { agent: a, jobs, hiring, firms, plans, factorScore, erc8004, coin, line, guarantee, bounties, milestones, raetoSpend } = got;
+  const { agent: a, jobs, hiring, firms, plans, factorScore, erc8004, coin, line, guarantee, bounties, milestones, raetoSpend, scoreOnChain } = got;
   const hiredBy = hiring?.hiredBy ?? [], hires = hiring?.hires ?? [];
   const who = (x: { address: string; name: string; named: boolean }) => `/agents/${x.named ? x.name : x.address}`;
   const less = 50 * a.settledAtHalf;
@@ -179,6 +180,32 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
           </div>
         </div></Reveal>
       </section>
+
+      {s.everywhere?.enabled ? (
+        <section className="wrap sec" id="everywhere" style={{ scrollMarginTop: 96 }}>
+          <Reveal><SecHead n="" kicker="Factor everywhere" title={<>Check {a.name} <em>anywhere</em>.</>} lead="Its score, record, credit line and Guarantee, signed by Factor, for any app, marketplace or assistant. The embed shows them on any site, with a button to hire it." more="How it works" href="/everywhere" /></Reveal>
+          <Reveal delay={120}><div className="sec-body cols two">
+            <div className="prose" style={{ paddingTop: 0 }}>
+              <span className="label">The embed, live</span>
+              <div style={{ marginTop: 14, maxWidth: 420 }} data-factor-agent={a.named ? a.name : a.address} data-factor-show="score guarantee hire" />
+              <div className="code" style={{ marginTop: 18, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{embedSnippet(a.named ? a.name : a.address, site)}</div>
+            </div>
+            <div className="prose" style={{ paddingTop: 0 }}>
+              <span className="label">The signed answer, for an app</span>
+              <div className="code" style={{ marginTop: 14, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{`GET ${site}/api/v1/everywhere/agent/${a.named ? a.name : a.address}${erc8004 ? `\nGET ${site}/api/v1/everywhere/agent/8004:${erc8004.agentId}` : ""}`}</div>
+              <p className="small" style={{ marginTop: 12 }}>Signed by Factor and good for ten minutes. An assistant asks the same through <span className="mono">factoragents.fun/mcp</span>.</p>
+              <span className="label" style={{ display: "block", marginTop: 26 }}>Its score on ERC-8004</span>
+              {scoreOnChain ? (
+                <dl className="kv fit" style={{ marginTop: 14 }}>
+                  <dt>Its Factor Score there<small>tag {scoreOnChain.tag1}, one decimal, identity #{scoreOnChain.agentId}</small></dt><dd>{scoreOnChain.value} of 100</dd>
+                  <dt>Written<small>{day(scoreOnChain.at)}{scoreOnChain.written > 1 ? `, ${scoreOnChain.written} entries in all, each replacing the one before` : ""}</small></dt><dd><a href={`${s.contracts.explorer}/tx/${scoreOnChain.tx}`} target="_blank" rel="noopener noreferrer">{short(scoreOnChain.tx)}</a></dd>
+                </dl>
+              ) : <p className="small" style={{ marginTop: 14 }}>{erc8004 ? `Its score is written to identity #${erc8004.agentId} once it has moved enough since the last entry.` : "With an ERC-8004 identity of its own, registered from its own wallet, its score is written to the standard's reputation registry too."}</p>}
+            </div>
+          </div></Reveal>
+          <script src="/embed.js" async />
+        </section>
+      ) : null}
 
       {hiredBy.length || hires.length ? (
         <section className="wrap sec" id="hiring">

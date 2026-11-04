@@ -11,12 +11,12 @@ import { existsSync, readFileSync } from "node:fs";
 import { createServer } from "node:http";
 
 const PORT = Number(process.env.SMOKE_PORT) || 3611, BASE = `http://127.0.0.1:${PORT}`, BARE = `http://127.0.0.1:${PORT + 1}`;
-const PAGES = ["/bounties", "/bounties/1", "/bounties/2", "/bounties/3", "/bounties/4", "/", "/agents/orbit-ops", "/ledger", "/ledger?show=burned", "/agents", "/agents/lumen-07", "/jobs/0412", "/jobs/0406", "/jobs/0404", "/jobs/0403", "/hire", "/hire?agent=page-smith", "/hire?agent=lumen-07&cover=1", "/work", "/protocol", "/token", "/burn", "/docs", "/log", "/security", "/pay", "/firms/night-desk", "/hire?firm=night-desk", "/plans/0x5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a", "/open-jobs", "/open-jobs/0x0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b", "/coins", "/coins?sort=new", "/coins/page-smith", "/jobs/0416", "/jobs/0408", "/agents/page-smith", "/hire?stages=1"];
+const PAGES = ["/bounties", "/bounties/1", "/bounties/2", "/bounties/3", "/bounties/4", "/", "/agents/orbit-ops", "/ledger", "/ledger?show=burned", "/agents", "/agents/lumen-07", "/jobs/0412", "/jobs/0406", "/jobs/0404", "/jobs/0403", "/hire", "/hire?agent=page-smith", "/hire?agent=lumen-07&cover=1", "/work", "/protocol", "/token", "/burn", "/docs", "/log", "/security", "/pay", "/firms/night-desk", "/hire?firm=night-desk", "/plans/0x5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a", "/open-jobs", "/open-jobs/0x0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b", "/coins", "/coins?sort=new", "/coins/page-smith", "/jobs/0416", "/jobs/0408", "/agents/page-smith", "/hire?stages=1", "/everywhere", "/hire?agent=lumen-07&price=0.01&title=Summarise+one+contract&due=48&early=1"];
 // The header's five groups and the pages in each, in order. A group of one page is a plain link.
-const GROUPS = { Hire: ["/hire", "/open-jobs", "/bounties"], Agents: ["/agents", "/coins", "/work"], Ledger: ["/ledger"], Protocol: ["/protocol", "/docs", "/roadmap"], Token: ["/token", "/burn"] };
+const GROUPS = { Hire: ["/hire", "/open-jobs", "/bounties"], Agents: ["/agents", "/coins", "/work"], Ledger: ["/ledger"], Protocol: ["/protocol", "/docs", "/everywhere", "/roadmap"], Token: ["/token", "/burn"] };
 const NAV = Object.values(GROUPS).flat();
 // the group each page is in, which the header marks as the current one (none for a page of no group)
-const CURRENT = { "/bounties": "Hire", "/bounties/1": "Hire", "/hire": "Hire", "/open-jobs": "Hire", "/agents": "Agents", "/agents/lumen-07": "Agents", "/jobs/0412": "Agents", "/coins/page-smith": "Agents", "/work": "Agents", "/ledger": "Ledger", "/protocol": "Protocol", "/docs": "Protocol", "/token": "Token", "/burn": "Token", "/": null, "/log": null, "/security": null, "/pay": null };
+const CURRENT = { "/bounties": "Hire", "/bounties/1": "Hire", "/hire": "Hire", "/open-jobs": "Hire", "/agents": "Agents", "/agents/lumen-07": "Agents", "/jobs/0412": "Agents", "/coins/page-smith": "Agents", "/work": "Agents", "/ledger": "Ledger", "/protocol": "Protocol", "/docs": "Protocol", "/everywhere": "Protocol", "/token": "Token", "/burn": "Token", "/": null, "/log": null, "/security": null, "/pay": null };
 // Words the copy does not use: no long dash, no promise of gain. A list kept beside this file and out of the repo
 // (forbidden.local.json, pairs of pattern and flags) adds to them on the machine it is on.
 const LOCAL = new URL("./forbidden.local.json", import.meta.url);
@@ -558,7 +558,8 @@ test("agent firms: listed with the agents, a firm's page with its members and ea
 test("each page is small enough for a phone, and nothing loads from another site", async () => {
   for (const path of PAGES) {
     const { html, headers } = await get(path);
-    assert.ok(html.length < 220_000, `${path} is ${html.length} bytes`);
+    // the docs, with every section on, are the largest page: still a fraction of one picture
+    assert.ok(html.length < 225_000, `${path} is ${html.length} bytes`);
     assert.doesNotMatch(html, /(src|href)="https?:\/\/(?!ponsfamily\.com|github\.com|x\.com|robinhoodchain\.blockscout\.com\/(tx|address)\/0x)/, `${path} loads from another site`);
     assert.match(headers.get("content-security-policy") ?? "", /default-src 'self'/, `${path} has no content policy`);
   }
@@ -768,14 +769,14 @@ test("the roadmap: on the home page, every phase in order, what is live checked 
   assert.match(html, /id="roadmap"/);
   const t = text(html);
   assert.match(t, /07 Roadmap The credit layer for AI agents \./);
-  assert.match(t, /15 of 20 phases live/);
+  assert.match(t, /16 of 20 phases live/);
   // the intro counts from the roadmap itself, so it never goes stale
-  assert.match(t, /Fifteen phases are live, the next five are planned, and more will follow\./);
-  assert.doesNotMatch(t, /Thirteen phases|Fourteen phases/);
+  assert.match(t, /Sixteen phases are live, the next four are planned, and more will follow\./);
+  assert.doesNotMatch(t, /Thirteen phases|Fourteen phases|Fifteen phases/);
   const names = ["Launch", "Compute on credit", "Pay with Factor", "Agents hire agents", "Agent firms", "Monthly clients", "Agents find their own work", "Agents that bid", "Bounties", "Agent coins", "Factor Score", "Credit lines", "Verified owners", "Guarantees", "Milestones", "Factor everywhere", "Verifiers", "Vouching", "Selling locked pay", "Agent treasury"];
   let at = t.indexOf("Stage 1");
   names.forEach((name, i) => { const k = t.indexOf(`Phase ${String(i + 1).padStart(2, "0")} ${name}`, at); assert.ok(k > at, `phase ${i + 1} ${name} in order`); at = k; });
-  for (const day of ["14 Oct", "15 Oct", "16 Oct", "17 Oct", "18 Oct", "19 Oct", "20 Oct", "22 Oct", "23 Oct", "24 Oct", "28 Oct", "30 Oct", "1 Nov", "2 Nov", "3 Nov"]) assert.match(t, new RegExp(`Live ${day}`));
+  for (const day of ["14 Oct", "15 Oct", "16 Oct", "17 Oct", "18 Oct", "19 Oct", "20 Oct", "22 Oct", "23 Oct", "24 Oct", "28 Oct", "30 Oct", "1 Nov", "2 Nov", "3 Nov", "5 Nov"]) assert.match(t, new RegExp(`Live ${day}`));
   assert.match(t, /Live 20 Oct Phase 11 Factor Score/);
   assert.match(t, /Live 28 Oct Phase 10 Agent coins/);
   assert.match(t, /Live 30 Oct Phase 12 Credit lines/);
@@ -783,9 +784,11 @@ test("the roadmap: on the home page, every phase in order, what is live checked 
   assert.match(t, /Live 1 Nov Phase 14 Guarantees/);
   assert.match(t, /Live 2 Nov Phase 09 Bounties/);
   assert.match(t, /Live 3 Nov Phase 15 Milestones/);
-  assert.match(t, /Next Phase 16 Factor everywhere/);
-  assert.equal((t.match(/Planned Phase/g) ?? []).length, 4);
-  for (const name of ["Verifiers", "Vouching", "Selling locked pay", "Agent treasury"]) assert.match(t, new RegExp(`Planned Phase \\d+ ${name} The plan is`));
+  assert.match(t, /Live 5 Nov Phase 16 Factor everywhere/);
+  assert.match(t, /Next Phase 17 Verifiers/);
+  assert.equal((t.match(/Planned Phase/g) ?? []).length, 3);
+  assert.match(t, /Next Phase 17 Verifiers The plan is/);
+  for (const name of ["Vouching", "Selling locked pay", "Agent treasury"]) assert.match(t, new RegExp(`Planned Phase \\d+ ${name} The plan is`));
   assert.match(t, /Stage 5 Agents fund each other/);
   for (const w of ["October", "November", "December"]) assert.ok(!t.slice(t.indexOf("Stage 2")).includes(w), `no planned date: ${w}`);
   // the line runs on past the last phase into a stage still being planned, with no phase number and no date
@@ -914,4 +917,84 @@ test("open jobs: the board, a listing with its applicants ranked by Factor Score
   assert.match(bare, /No open job right now/);
   assert.doesNotMatch(bare, /quarterly note/);
   assert.equal((await get("/open-jobs/0x0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b", BARE)).status, 404);
+});
+
+test("Factor everywhere: its page under Protocol with a snippet for each case, the signed answer and the embed on the sample, the assistant's endpoint, a filled-in pay flow, an agent's page, the docs, the protocol, the security page and the log", async () => {
+  const { status, html } = await get("/everywhere");
+  assert.equal(status, 200);
+  const t = text(html).replace(/<!-- -->/g, "");
+  assert.match(t, /Check an agent before you hire it, anywhere ?\./);
+  for (const head of ["01 One answer", "02 Check the signature", "03 Embed it", "04 Factor Connect", "05 In every assistant", "06 On ERC-8004", "07 What it is"]) assert.match(t, new RegExp(head), head);
+  for (const snippet of ["/api/v1/everywhere/agent/", "verifyMessage", "checkAgent", "data-factor-agent", "embed.js", "/api/v1/connect/", "register", "verifyWebhook", "claude mcp add --transport http factor", "mcpServers", "factorScore"]) assert.ok(t.includes(snippet), snippet);
+  // the sample's own signer, and live embeds of the best agent, drawn by the script from this site
+  assert.match(t, /0xa4cedcbc8f7718430b68e5c3a8363a6c258fc976/);
+  assert.match(html, /data-factor-agent="[a-z0-9-]+"[^>]*data-factor-theme="dark"/);
+  assert.match(html, /<script src="\/embed\.js" async/);
+  assert.doesNotMatch(t, /\bdemo\b/i);
+  assert.doesNotMatch(t, /holds? (your|the customer's|their) (money|payment)(?! )/i);
+  // the header lists it under Protocol, and nowhere else
+  assert.match(html, /data-pages="Protocol"[\s\S]*?href="\/everywhere"/);
+
+  // the signed answer, checked the way an app checks it, against the signer the about names
+  const about = await (await fetch(`${BASE}/api/v1/everywhere`)).json();
+  assert.equal(about.enabled, true);
+  const r = await fetch(`${BASE}/api/v1/everywhere/agent/lumen-07`);
+  assert.equal(r.headers.get("access-control-allow-origin"), "*");
+  const sealed = await r.json();
+  const { verifyMessage } = await import("viem");
+  assert.ok(await verifyMessage({ address: about.signer, message: sealed.answer, signature: sealed.signature }));
+  const a = JSON.parse(sealed.answer);
+  assert.equal(a.kind, "factor.agent");
+  assert.equal(a.agent.name, "lumen-07");
+  assert.ok(a.expiresAt - a.issuedAt === 600);
+  assert.ok(typeof a.score.value === "number" && "line" in a && "guarantee" in a);
+  assert.equal((await fetch(`${BASE}/api/v1/everywhere/agent/nobody-here`)).status, 404);
+  assert.equal((await fetch(`${BASE}/api/v1/everywhere/agent/8004%3A42`)).status, 200);
+  assert.equal((await fetch(`${BASE}/api/v1/everywhere/whatever`)).status, 404);
+  assert.equal((await fetch(`${BASE}/api/v1/everywhere`, { method: "OPTIONS" })).headers.get("access-control-allow-headers"), "content-type, authorization");
+
+  // the embeds' script: from this site, loading nothing else, keeping nothing
+  const js = await fetch(`${BASE}/embed.js`);
+  assert.equal(js.status, 200);
+  assert.equal(js.headers.get("cross-origin-resource-policy"), "cross-origin");
+  const code = await js.text();
+  assert.match(code, /attachShadow/);
+  assert.match(code, /credentials: "omit"/);
+  assert.doesNotMatch(code, /localStorage|document\.cookie|sendBeacon|https?:\/\/(?!factoragents\.fun)[a-z]/);
+
+  // the assistant's endpoint: the kit's tools, none of which sends anything
+  const mcp = async (body) => (await fetch(`${BASE}/mcp`, { method: "POST", headers: { "content-type": "application/json", accept: "application/json, text/event-stream" }, body: JSON.stringify(body) })).json();
+  const init = await mcp({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "smoke", version: "1" } } });
+  assert.equal(init.result.serverInfo.name, "factor");
+  const tools = (await mcp({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} })).result.tools;
+  assert.deepEqual(tools.map((x) => x.name).sort(), ["factor_agent", "factor_agents", "factor_check_agent", "factor_erc8004", "factor_firm_record", "factor_guarantee", "factor_hire_link", "factor_line", "factor_open_jobs", "factor_overview", "factor_record"]);
+  assert.ok(tools.every((x) => x.annotations.readOnlyHint === true));
+  assert.equal((await fetch(`${BASE}/mcp`)).status, 405);
+
+  // the pay flow, filled in by a link (the kit's hireLink): every field still the customer's to change
+  const hire = (await get("/hire?agent=lumen-07&price=0.01&title=Summarise+one+contract&due=48&early=1")).html;
+  assert.match(hire, /value="0\.01"/);
+  assert.match(hire, /value="Summarise one contract"/);
+  assert.match(hire, /<option value="172800" selected="">48 hours<\/option>/);
+
+  // an agent's page: check it anywhere, with its embed and its signed answer
+  const agentHtml = (await get("/agents/lumen-07")).html;
+  const agent = text(agentHtml).replace(/<!-- -->/g, "");
+  assert.match(agent, /Factor everywhere (?:How it works → )?Check lumen-07 anywhere ?\./);
+  assert.match(agent, /api\/v1\/everywhere\/agent\/lumen-07/);
+  assert.match(agentHtml, /<div style="[^"]*" data-factor-agent="lumen-07" data-factor-show="score guarantee hire"><\/div>/);
+  assert.match(agent, /data-factor-agent=&quot;lumen-07&quot;/);
+
+  const docs = text((await get("/docs")).html).replace(/<!-- -->/g, "");
+  assert.match(docs, /Factor everywhere (?:The whole page → )?The score, the line and the Guarantee, for any app ?\./);
+  assert.match(docs, /factor_check_agent/);
+  assert.match(text((await get("/protocol")).html).replace(/<!-- -->/g, ""), /Factor everywhere (?:The whole page → )?The same record, read and checked anywhere ?\./);
+  assert.match(text((await get("/security")).html).replace(/<!-- -->/g, ""), /Factor everywhere What the signed answers can and cannot do ?\./);
+  assert.match(text((await get("/log")).html), /Factor everywhere Any app, marketplace or assistant can check an agent before hiring it/);
+
+  // with no engine: the page says it is off, and nothing is answered
+  const bare = text((await get("/everywhere", BARE)).html);
+  assert.match(bare, /Factor everywhere is switched off right now/);
+  assert.equal((await fetch(`${BARE}/api/v1/everywhere/agent/lumen-07`)).status, 503);
+  assert.doesNotMatch(text((await get("/docs", BARE)).html), /Factor everywhere The score/);
 });

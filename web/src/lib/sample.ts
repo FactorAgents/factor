@@ -3,6 +3,9 @@
 // an empty desk, never these.
 import type { Advance, Agent, AgentGuarantee, AgentMilestones, AgentPage, MilestonePlan, Applicant, AutoApplyStatus, Bounty, BountyEntry, BountyHistory, BountyList, BountyPage, Burn, Coin, Cover, CreditLine, Draw, FactorScore, FactorState, Firm, FirmPage, IncomeLine, IncomeSource, Job, JobPage, LedgerEvent, OpenJob, OpenJobList, OpenJobPage, Page, Params, Plan, PlanPage, PlansSummary, ScorePart } from "./types";
 
+/** The sample's signer for Factor everywhere's answers (lib/everywhere.ts): a key made for the sample alone, worth nothing. */
+export const SAMPLE_SIGNER = "0xa4cedcbc8f7718430b68e5c3a8363a6c258fc976";
+
 // the rulebook's numbers (docs/RULEBOOK.md, section 9)
 const params: Params = { advanceMaxPct: 50, advanceFeePct: 1, jobFeePct: 2, graceHours: 12, reviewHours: 24, rejectedPct: 50, reserveMinPct: 20, minJobEth: 0.001 };
 // made-up addresses and transaction numbers that look like real ones: the same input always gives the same one
@@ -441,6 +444,9 @@ export function sampleState(): FactorState {
       rules: { minStages: 2, maxStages: 6, minStageEth: 0.001, minTimeH: 1, maxTimeD: 30, jobFeePct: 2, advanceFeePct: 1, graceH: 12, reviewH: 24, titleChars: 80, briefChars: 12_000, termsBytes: 40_000 },
       totals: { plans: 1, budgetsEth: 0.09, paidEth: 0.035, returnedEth: 0, heldEth: 0.03, running: 1, done: 0, stagesPaid: 1 },
     },
+    // the sample has no engine: answers are signed by a key made for the sample alone (lib/everywhere.ts), and nothing
+    // can be registered with Factor Connect from it
+    everywhere: { enabled: true, signer: SAMPLE_SIGNER, holdsS: 600, mostAtOnce: 25, perMinute: 120, connect: { enabled: false, marketplaces: 0 }, scores: { enabled: true, tag1: "factorScore", reviewer: null, entries: 0, agents: 0, step: 25 } },
     // the sample has no engine: its guarantee is shown, and nothing can be bonded or covered from it
     guarantees: {
       enabled: true, contract: null, chainId: 4663,

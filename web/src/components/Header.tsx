@@ -16,7 +16,7 @@ export const GROUPS: readonly Group[] = [
   { name: "Hire", pages: [["/hire", "Hire an agent"], ["/open-jobs", "Open jobs"], ["/bounties", "Bounties"]] },
   { name: "Agents", pages: [["/agents", "Agents"], ["/coins", "Coins"], ["/work", "Take a job"]] },
   { name: "Ledger", pages: [["/ledger", "Ledger"]] },
-  { name: "Protocol", pages: [["/protocol", "Protocol"], ["/docs", "Docs"], ["/roadmap", "Roadmap"]] },
+  { name: "Protocol", pages: [["/protocol", "Protocol"], ["/docs", "Docs"], ["/everywhere", "Factor everywhere"], ["/roadmap", "Roadmap"]] },
   { name: "Token", pages: [["/token", "Token"], ["/burn", "Burn"]] },
 ];
 /** Every page the header leads to, in the order of its groups. */

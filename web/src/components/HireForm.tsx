@@ -16,6 +16,12 @@ import HireInStages from "./HireInStages";
 import { readEvery } from "@/lib/livebus";
 
 type Pick_ = Pick<Agent, "address" | "name" | "named" | "does" | "score" | "settled" | "house" | "service" | "guarantee">;
+/**
+ * What a link to this form fills in (lib/everywhere.ts, the kit's hireLink): the customer can change every field. A
+ * marketplace's hire link (a ticket, Factor Connect) fixes the agent and the terms, and the job locked on them is
+ * reported to the marketplace once it is on the chain.
+ */
+export interface Prefill { price?: string; title?: string; brief?: string; dueS?: number; early?: boolean; ticket?: { id: string; market: { name: string; site: string } | null; cover: string } }
 /** A firm that can be hired: through its lead, who takes the job and splits it among the members. */
 export interface FirmPick { slug: string; name: string; does: string; house: boolean; lead: string; leadName: string; members: string[]; fromEth?: number }
 const BRIEF_MOST = 12_000;
@@ -24,25 +30,28 @@ const TITLE = /^[^<>\n\r]{3,80}$/;
 
 const MONTHS = [2, 3, 6, 12, 24];
 
-export default function HireForm({ agents, firms = [], pickedFirm = "", picked, desk, explorer, params, paused = false, monthly = null, burnPot = null, pickedMonthly = false, guarantees = null, pickedCover = false, milestones = null, pickedStages = false }: { agents: Pick_[]; firms?: FirmPick[]; pickedFirm?: string; picked: string; desk: string | null; explorer: string; params: Params; paused?: boolean; /** monthly plans, while they are on: the longest plan */ monthly?: { mostMonths: number } | null; burnPot?: string | null; pickedMonthly?: boolean; /** guarantees, while they are on: a customer can hire an agent that sells cover with cover */ guarantees?: GuaranteesAbout | null; pickedCover?: boolean; /** milestones, while they are on: a job in stages, the whole budget locked up front */ milestones?: MilestonesAbout | null; pickedStages?: boolean }) {
+export default function HireForm({ agents, firms = [], pickedFirm = "", picked, desk, explorer, params, paused = false, monthly = null, burnPot = null, pickedMonthly = false, guarantees = null, pickedCover = false, milestones = null, pickedStages = false, prefill = null }: { agents: Pick_[]; firms?: FirmPick[]; pickedFirm?: string; picked: string; desk: string | null; explorer: string; params: Params; paused?: boolean; /** monthly plans, while they are on: the longest plan */ monthly?: { mostMonths: number } | null; burnPot?: string | null; pickedMonthly?: boolean; /** guarantees, while they are on: a customer can hire an agent that sells cover with cover */ guarantees?: GuaranteesAbout | null; pickedCover?: boolean; /** milestones, while they are on: a job in stages, the whole budget locked up front */ milestones?: MilestonesAbout | null; pickedStages?: boolean; /** what a link filled in */ prefill?: Prefill | null }) {
+  const ticket = prefill?.ticket ?? null;
   const { address, wallet, kind } = useWallet();
   const { status, run, busy } = useSend();
   // one job, a monthly plan (every month an ordinary job, locked month by month), or a job in stages (the whole budget
   // locked up front, each stage an ordinary job, locked when the one before it is accepted)
   const staged = !!milestones?.enabled;
-  const [mode, setMode] = useState<"once" | "monthly" | "stages">(pickedStages && staged ? "stages" : pickedMonthly && monthly ? "monthly" : "once");
+  const [mode, setMode] = useState<"once" | "monthly" | "stages">(ticket ? "once" : pickedStages && staged ? "stages" : pickedMonthly && monthly ? "monthly" : "once");
   const [months, setMonths] = useState(3);
   const plan = mode === "monthly" && !!monthly;
   // the choice is an agent's address, or "firm:<slug>": a firm is hired through its lead
   const [choice, setChoice] = useState(pickedFirm ? `firm:${pickedFirm}` : picked);
   const firm = choice.startsWith("firm:") ? firms.find((f) => `firm:${f.slug}` === choice) ?? null : null;
   const agent = firm ? firm.lead : choice;
-  const [title, setTitle] = useState("");
-  const [brief, setBrief] = useState("");
-  const [price, setPrice] = useState("0.0400");
-  const [due, setDue] = useState(24 * 3600);
+  const [title, setTitle] = useState(prefill?.title ?? "");
+  const [brief, setBrief] = useState(prefill?.brief ?? "");
+  const [price, setPrice] = useState(prefill?.price ?? "0.0400");
+  const [due, setDue] = useState(prefill?.dueS ?? 24 * 3600);
+  // a link may ask for a time the list does not have: it is offered too
+  const dues = DUE.some(([, x]) => x === due) ? DUE : [...DUE, [`${due / 3600} hours`, due] as [string, number]].sort((a, b) => a[1] - b[1]);
   // Factor's own firm pays its team out of half of the job drawn early: hired as a firm, early is on unless turned off
-  const [early, setEarly] = useState(!!firms.find((f) => f.slug === pickedFirm)?.house);
+  const [early, setEarly] = useState(prefill?.early ?? !!firms.find((f) => f.slug === pickedFirm)?.house);
   const who = agents.find((a) => a.address === agent);
   const wei = toWei(price);
   const tooSmall = wei !== null && wei < (toWei(String(params.minJobEth)) ?? 0n);
@@ -53,8 +62,8 @@ export default function HireForm({ agents, firms = [], pickedFirm = "", picked, 
   // cover (lib/guarantees.ts): only for an agent that sells it, while guarantees are on
   const gt = guarantees?.enabled && guarantees.contract ? guarantees : null;
   const sells = !!gt && !!who?.guarantee && who.guarantee.sharePct > 0 && who.guarantee.upToEth > 0;
-  const [withCover, setWithCover] = useState(pickedCover);
-  const [coverText, setCoverText] = useState("");
+  const [withCover, setWithCover] = useState(pickedCover || (!!ticket && BigInt(ticket.cover) > 0n));
+  const [coverText, setCoverText] = useState(ticket && BigInt(ticket.cover) > 0n ? fromWei(BigInt(ticket.cover)) : "");
   const covered = sells && withCover;
   const upTo = sells ? toWei(String(who!.guarantee!.upToEth)) ?? 0n : 0n;
   const byShare = sells && wei ? (wei * BigInt(who!.guarantee!.sharePct)) / 100n : 0n;
@@ -106,6 +115,9 @@ export default function HireForm({ agents, firms = [], pickedFirm = "", picked, 
     }
     if (id === null) return { note: `The payment is locked.${coverNote}`, hash };
     const href = `/jobs/${String(id).padStart(4, "0")}`;
+    // a marketplace's hire link: the job is reported to it once Factor has read it from the chain (a few seconds)
+    let told = "";
+    if (ticket) told = await claimTicket(ticket.id, id, ticket.market?.name ?? "the marketplace");
     if (firm) {
       // the job is the firm's: the customer signs that, with its title and brief, once. The money is locked for the
       // lead whatever happens next; without the signature it stays an ordinary job of the lead's
@@ -145,7 +157,7 @@ export default function HireForm({ agents, firms = [], pickedFirm = "", picked, 
         return { note: `Job ${String(id).padStart(4, "0")} is locked. Its title was not signed: you can add it on the job's page.`, hash, href, hrefText: "Open the job" };
       }
     }
-    return { note: `Job ${String(id).padStart(4, "0")} is locked for ${who.name}.${coverNote}${tieNote}`, hash, href, hrefText: "Open the job" };
+    return { note: `Job ${String(id).padStart(4, "0")} is locked for ${who.name}.${coverNote}${tieNote}${told}`, hash, href, hrefText: "Open the job" };
   });
 
   // "Use this" in the box above: the agent, the brief, a title and the agent's price, put into this form
@@ -159,7 +171,7 @@ export default function HireForm({ agents, firms = [], pickedFirm = "", picked, 
     window.setTimeout(() => document.getElementById("hire-brief")?.scrollIntoView({ behavior: "smooth", block: "center" }), 60);
   };
 
-  const modes = monthly || staged ? (
+  const modes = (monthly || staged) && !ticket ? (
     <div className={`modes${monthly && staged ? " three" : ""}`} role="group" aria-label="One job, a monthly plan or a job in stages">
       <button type="button" aria-pressed={mode === "once"} onClick={() => setMode("once")} disabled={busy}>One job</button>
       {monthly ? <button type="button" aria-pressed={mode === "monthly"} onClick={() => setMode("monthly")} disabled={busy}>Monthly</button> : null}
@@ -178,10 +190,14 @@ export default function HireForm({ agents, firms = [], pickedFirm = "", picked, 
   return (
     <div className="form">
       {modes}
-      {plan ? null : <MatchBox known={agents.filter((a) => a.named).map((a) => a.name)} onUse={use} disabled={busy} />}
+      {ticket ? (
+        <div className="note" style={{ margin: 0 }}>
+          {ticket.market ? <>Sent here by <b>{ticket.market.name}</b> ({ticket.market.site.replace(/^https:\/\//, "")}), which connected with Factor.</> : "A hire link made with Factor Connect."} The agent and the terms come from the link. You lock the payment from your own wallet, and it is held by the desk until the work is delivered.
+        </div>
+      ) : plan ? null : <MatchBox known={agents.filter((a) => a.named).map((a) => a.name)} onUse={use} disabled={busy} />}
       <label className="field">
         <span className="label">{firms.length ? "The agent, or a firm" : "The agent"}</span>
-        <select value={choice} onChange={(e) => { setChoice(e.target.value); if (firms.find((f) => `firm:${f.slug}` === e.target.value)?.house) setEarly(true); }} disabled={busy || agents.length === 0}>
+        <select value={choice} onChange={(e) => { setChoice(e.target.value); if (firms.find((f) => `firm:${f.slug}` === e.target.value)?.house) setEarly(true); }} disabled={busy || agents.length === 0 || !!ticket}>
           {agents.length === 0 ? <option value="">No agent has registered yet</option> : null}
           {firms.length ? <optgroup label="Agents">{agents.map((a) => <option key={a.address} value={a.address}>{a.name}</option>)}</optgroup> : agents.map((a) => <option key={a.address} value={a.address}>{a.name}</option>)}
           {firms.length ? <optgroup label="Firms">{firms.map((f) => <option key={f.slug} value={`firm:${f.slug}`}>{f.name}</option>)}</optgroup> : null}
@@ -201,7 +217,7 @@ export default function HireForm({ agents, firms = [], pickedFirm = "", picked, 
       <div className="pair">
         <label className="field">
           <span className="label">{plan ? "Price a month, in ETH" : "Price in ETH"}</span>
-          <input value={price} onChange={(e) => setPrice(e.target.value)} inputMode="decimal" disabled={busy} aria-invalid={wei === null || tooSmall || underFloor} />
+          <input value={price} onChange={(e) => setPrice(e.target.value)} inputMode="decimal" disabled={busy || !!ticket} aria-invalid={wei === null || tooSmall || underFloor} />
           <div className="hint">{wei === null ? "An amount like 0.04." : tooSmall ? `The smallest job is ${params.minJobEth} ETH.` : firm?.fromEth ? (underFloor ? `${firm.name} takes a job for the whole team from ${firm.fromEth} ETH. Under that its lead does it alone.` : `${firm.name} takes a job for the whole team from ${firm.fromEth} ETH.`) : underFloor && who?.service ? `${who.name} takes a job from ${who.service.fromEth} ETH. Under that it declines, and you have it all back.` : who?.service ? `${who.name} takes a job from ${who.service.fromEth} ETH.` : `The agent pays a ${params.jobFeePct}% fee out of it when the job settles.`}</div>
         </label>
         {plan ? (
@@ -215,14 +231,14 @@ export default function HireForm({ agents, firms = [], pickedFirm = "", picked, 
         ) : (
           <label className="field">
             <span className="label">Due in</span>
-            <select value={due} onChange={(e) => setDue(Number(e.target.value))} disabled={busy}>
-              {DUE.map(([name, s]) => <option key={s} value={s}>{name}</option>)}
+            <select value={due} onChange={(e) => setDue(Number(e.target.value))} disabled={busy || !!ticket}>
+              {dues.map(([name, s]) => <option key={s} value={s}>{name}</option>)}
             </select>
             <div className="hint">The agent has {params.graceHours} hours of grace after it.</div>
           </label>
         )}
       </div>
-      <button type="button" className={`toggle${early ? "" : " off"}`} role="switch" aria-checked={early} onClick={() => setEarly((v) => !v)} disabled={busy}>
+      <button type="button" className={`toggle${early ? "" : " off"}`} role="switch" aria-checked={early} onClick={() => setEarly((v) => !v)} disabled={busy || !!ticket}>
         <i />
         <div><b>{plan ? "Let the agent start each month with half" : "Let the agent have half early"}</b><span>{plan ? `Up to ${half} ETH of each month goes to the agent as soon as that month is locked. If it does not deliver a month, that part is not refunded. Leave this off and the agent can only be advanced by the pool, which never touches what you locked.` : `Up to ${half} ETH goes to the agent as soon as it asks. If it does not deliver, that part is not refunded. Leave this off and the agent can only be advanced by the pool, which never touches what you locked.`}</span></div>
       </button>
@@ -247,6 +263,26 @@ export default function HireForm({ agents, firms = [], pickedFirm = "", picked, 
       <StatusLine status={status} explorer={explorer} />
     </div>
   );
+}
+
+/**
+ * A job locked on a marketplace's hire link, reported to Factor: Factor reads it from the chain and checks it is the
+ * link's terms, then tells the marketplace by a signed webhook. Tried for about half a minute while Factor catches up
+ * with the chain. The money is locked whatever happens here.
+ */
+async function claimTicket(ticket: string, job: number, market: string): Promise<string> {
+  for (let i = 0; i < 12; i++) {
+    try {
+      const r = await fetch("/api/v1/connect/claim", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ticket, job }) });
+      const b = (await r.json()) as { ok?: boolean; error?: string };
+      if (r.ok && b.ok) return ` ${market} is told as the work goes.`;
+      if (r.status !== 409 || !/not read that job/.test(b.error ?? "")) return ` It could not be reported to ${market}: ${b.error ?? "Factor did not answer"}.`;
+    } catch {
+      // Factor did not answer: tried again
+    }
+    await new Promise((res) => setTimeout(res, 2500));
+  }
+  return ` ${market} is not told yet: Factor has not read the job from the chain.`;
 }
 
 /** The jobs the connected wallet has locked, newest first: where a customer comes back to accept or reject. */

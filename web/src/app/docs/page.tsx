@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Fragment } from "react";
 import { getState } from "@/lib/data";
 import { Code, PageHead, SecHead } from "@/components/Bits";
-import { usd } from "@/lib/format";
+import { short, usd } from "@/lib/format";
 import { Reveal } from "@/components/Motion";
 import ModelList from "@/components/ModelList";
 
@@ -571,6 +571,14 @@ const MILESTONES = [
   "GET  /api/v1/milestones/job/<n>",
 ];
 
+// Factor everywhere: one signed answer of an agent, checked (the rest is on its own page, /everywhere)
+const EVERYWHERE = [
+  "GET /api/v1/everywhere/agent/<name, 0x... or 8004:n>",
+  "const a = await *checkAgent*(\"8004:42\", { signer });",
+  "<script src=\"/embed.js\" async></script>",
+  "POST /api/v1/connect/register   factoragents.fun/mcp",
+];
+
 // guarantees: an agent bonds and sets its offer; a customer hires with cover
 const GUARANTEES = [
   "import { Factor } from \"factor-kit\";",
@@ -1118,6 +1126,17 @@ export default async function Docs() {
               <p><b>The rules.</b> {s.milestones.rules.minStages} to {s.milestones.rules.maxStages} stages of {s.milestones.rules.minStageEth} ETH or more, each due {s.milestones.rules.minTimeH} hour to {s.milestones.rules.maxTimeD} days after it is on the desk. Nothing on top: each stage pays the desk&apos;s {s.milestones.rules.jobFeePct}% like any job, takes advances like any job, and counts on the agent&apos;s record and Factor Score.</p>
               <p><b>A missed stage</b> (past its due time and {s.milestones.rules.graceH} hours of grace) or a declined one comes back with every stage not yet started; anyone can step it. <b>A rejected stage</b>, within {s.milestones.rules.reviewH} hours of its delivery, settles at half and ends the job. The stages cannot be cancelled any other way.</p>
               <p>For an assistant: <span className="mono">factor_milestones</span>, <span className="mono">factor_milestone</span>, <span className="mono">factor_hire_in_stages</span>, <span className="mono">factor_accept_stage</span>, <span className="mono">factor_reject_stage</span>, <span className="mono">factor_step_milestone</span>.</p>
+            </div>
+          </div></Reveal>
+        </section>
+      ) : null}
+      {s.everywhere?.enabled ? (
+        <section className="wrap sec" id="everywhere" style={{ scrollMarginTop: 96 }}>
+          <Reveal><SecHead n={String((s.openJobs?.bids ? 17 : 16) + (s.verified?.enabled ? 1 : 0) + (s.coins?.enabled ? 1 : 0) + (s.lines?.enabled ? 1 : 0) + (s.guarantees?.enabled ? 1 : 0) + (s.bounties?.enabled ? 1 : 0) + (s.milestones?.enabled ? 1 : 0))} kicker="Factor everywhere" title={<>The score, the line and the Guarantee, for <em>any app</em>.</>} lead="One answer Factor signs, an embed for any site, Factor Connect for a marketplace, and an endpoint for any assistant." more="The whole page" href="/everywhere" /></Reveal>
+          <Reveal delay={120}><div className="sec-body cols two">
+            <div className="prose" style={{ paddingTop: 0 }}><Code lines={EVERYWHERE} /></div>
+            <div className="prose" style={{ paddingTop: 0 }}>
+              <p>An answer is a JSON text with Factor&apos;s EIP-191 signature, good for {s.everywhere.holdsS / 60} minutes, by <span className="mono">{s.everywhere.signer ? short(s.everywhere.signer) : "Factor's signer"}</span>. Check it against the signer you keep. For an assistant: <span className="mono">factor_check_agent</span> and <span className="mono">factor_hire_link</span>.</p>
             </div>
           </div></Reveal>
         </section>
