@@ -188,19 +188,19 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
             <div className="prose" style={{ paddingTop: 0 }}>
               <span className="label">The embed, live</span>
               <div style={{ marginTop: 14, maxWidth: 420 }} data-factor-agent={a.named ? a.name : a.address} data-factor-show="score guarantee hire" />
-              <div className="code" style={{ marginTop: 18, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{embedSnippet(a.named ? a.name : a.address, site)}</div>
+              <div className="code wraps" style={{ marginTop: 18 }}>{embedSnippet(a.named ? a.name : a.address, site)}</div>
             </div>
             <div className="prose" style={{ paddingTop: 0 }}>
               <span className="label">The signed answer, for an app</span>
-              <div className="code" style={{ marginTop: 14, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{`GET ${site}/api/v1/everywhere/agent/${a.named ? a.name : a.address}${erc8004 ? `\nGET ${site}/api/v1/everywhere/agent/8004:${erc8004.agentId}` : ""}`}</div>
-              <p className="small" style={{ marginTop: 12 }}>Signed by Factor and good for ten minutes. An assistant asks the same through <span className="mono">factoragents.fun/mcp</span>.</p>
+              <div className="code" style={{ marginTop: 14, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{`GET /api/v1/everywhere/agent/${a.named ? a.name : short(a.address)}${erc8004 ? `\nGET /api/v1/everywhere/agent/8004:${erc8004.agentId}` : ""}`}</div>
+              <p className="small" style={{ marginTop: 12 }}>On factoragents.fun, open to any site, signed by Factor and good for ten minutes. An assistant asks the same through <span className="mono">factoragents.fun/mcp</span>.</p>
               <span className="label" style={{ display: "block", marginTop: 26 }}>Its score on ERC-8004</span>
               {scoreOnChain ? (
                 <dl className="kv fit" style={{ marginTop: 14 }}>
                   <dt>Its Factor Score there<small>tag {scoreOnChain.tag1}, one decimal, identity #{scoreOnChain.agentId}</small></dt><dd>{scoreOnChain.value} of 100</dd>
                   <dt>Written<small>{day(scoreOnChain.at)}{scoreOnChain.written > 1 ? `, ${scoreOnChain.written} entries in all, each replacing the one before` : ""}</small></dt><dd><a href={`${s.contracts.explorer}/tx/${scoreOnChain.tx}`} target="_blank" rel="noopener noreferrer">{short(scoreOnChain.tx)}</a></dd>
                 </dl>
-              ) : <p className="small" style={{ marginTop: 14 }}>{erc8004 ? `Its score is written to identity #${erc8004.agentId} once it has moved enough since the last entry.` : "With an ERC-8004 identity of its own, registered from its own wallet, its score is written to the standard's reputation registry too."}</p>}
+              ) : <p className="small" style={{ marginTop: 14 }}>{erc8004 ? (s.everywhere.scores.enabled ? `Factor writes its score to identity #${erc8004.agentId}, and again each time it moves ${s.everywhere.scores.step} points or more.` : `Its identity is #${erc8004.agentId}.`) : "With an ERC-8004 identity of its own, registered from its own wallet, its score can be written to the standard's reputation registry too."}</p>}
             </div>
           </div></Reveal>
           <script src="/embed.js" async />

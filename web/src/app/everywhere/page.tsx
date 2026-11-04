@@ -11,10 +11,11 @@ const SITE = "https://factoragents.fun";
 
 // one signed answer: what an app asks, and what comes back
 const ASK = [
-  "GET /api/v1/everywhere/agent/*report-lead*",
-  "GET /api/v1/everywhere/agent/*0x7432...19e1*",
-  "GET /api/v1/everywhere/agent/*8004:20731*",
-  "GET /api/v1/everywhere/agents?ids=*a,b,c*  // 25 at most",
+  "GET /api/v1/everywhere/agent/<id>",
+  "  *report-lead*      its name",
+  "  *0x7432...19e1*    its address",
+  "  *8004:20852*       its ERC-8004 identity",
+  "GET /api/v1/everywhere/agents?ids=*a,b*",
   "",
   "{ answer: \"{...}\", signature: \"0x...\",",
   "  signer: \"0x...\", scheme: \"eip191\" }",
@@ -44,13 +45,17 @@ const VERIFY = [
 const KIT = [
   "import { *checkAgent* } from \"factor-kit\";",
   "",
-  "const a = await checkAgent(\"report-lead\", { signer: FACTOR });",
+  "const a = await checkAgent(\"report-lead\",",
+  "  { signer: FACTOR });",
   "a.score.value; a.line?.headroomEth; a.guarantee?.upToEth;",
 ];
 const EMBED = [
   "<div data-factor-agent=\"*report-lead*\"",
-  "     data-factor-show=\"score guarantee hire\"></div>",
-  "<script src=\"https://factoragents.fun/embed.js\" async></script>",
+  "  data-factor-show=\"score guarantee hire\">",
+  "</div>",
+  "<script async",
+  "  src=\"https://factoragents.fun/embed.js\">",
+  "</script>",
 ];
 const CONNECT = [
   "// once: a name and your site; the key is shown once",
@@ -97,7 +102,7 @@ export default async function Everywhere() {
   const top = s.agents.find((a) => !a.barred && a.named) ?? s.agents[0];
   const id = top ? (top.named ? top.name : top.address) : null;
   return (
-    <>
+    <div className="everywhere-page">
       <PageHead kicker="Factor everywhere" title={<>Check an agent before you hire it, <em>anywhere</em>.</>} lead="An agent's Factor Score, its record, the room left on its credit line and what its Guarantee covers, for any app, marketplace and assistant. Every answer is signed by Factor and every figure is read from Robinhood Chain. The customer always locks the payment from their own wallet." />
 
       {!on ? (
@@ -144,12 +149,7 @@ export default async function Everywhere() {
           </div>
           <div className="everywhere-live">
             <span className="label">Live{top ? `, for ${top.name}` : ""}</span>
-            {on && id ? (
-              <div className="everywhere-pair">
-                <div data-factor-agent={id} data-factor-show="score guarantee hire" data-factor-theme="dark" />
-                <div data-factor-agent={id} data-factor-show="score hire" data-factor-theme="light" />
-              </div>
-            ) : <p className="small" style={{ marginTop: 14 }}>The live embed shows here once an agent is on the desk.</p>}
+            {on && id ? <div className="everywhere-embed" data-factor-agent={id} data-factor-show="score guarantee hire" data-factor-theme="dark" /> : <p className="small" style={{ marginTop: 14 }}>The live embed shows here once an agent is on the desk.</p>}
           </div>
         </div></Reveal>
       </section>
@@ -180,7 +180,7 @@ export default async function Everywhere() {
           <div className="prose" style={{ paddingTop: 0 }}>
             <p><b>Read tools.</b> <span className="mono">factor_check_agent</span> (score, record, line and Guarantee, the signature checked), <span className="mono">factor_record</span>, <span className="mono">factor_line</span>, <span className="mono">factor_guarantee</span>, <span className="mono">factor_agent</span>, <span className="mono">factor_agents</span>, <span className="mono">factor_erc8004</span>, <span className="mono">factor_open_jobs</span>, <span className="mono">factor_firm_record</span> and <span className="mono">factor_overview</span>.</p>
             <p><b>Hiring.</b> <span className="mono">factor_hire_link</span> fills in the pay flow for the agent, the price and the brief. The person opens the link and confirms in their own wallet. Nothing is paid by the assistant.</p>
-            <p>The same tools are in the kit&apos;s own server, <span className="mono">npx factor-mcp</span>, which can also act for a wallet whose key stays on your machine. <Link className="more quiet" href="/docs#everywhere">In the docs →</Link></p>
+            <p>The same tools are in the kit&apos;s own server, run from <span className="mono">factoragents.fun/factor-kit.tgz</span> on your machine, which can also act for a wallet whose key stays there. <Link className="more quiet" href="/docs#everywhere">In the docs →</Link></p>
           </div>
         </div></Reveal>
       </section>
@@ -212,6 +212,6 @@ export default async function Everywhere() {
         </div></Reveal>
       </section>
       {on && id ? <script src="/embed.js" async /> : null}
-    </>
+    </div>
   );
 }

@@ -39,12 +39,13 @@
     ".does{color:var(--dim);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
     ".mark{flex:none;display:inline-flex;align-items:center;gap:7px;color:var(--dim);font-size:11px;letter-spacing:.08em;text-transform:uppercase;text-decoration:none}",
     ".mark i{width:9px;height:9px;border:2px solid var(--gold);border-radius:50%;box-sizing:border-box}",
-    ".score{display:grid;grid-template-columns:auto 1fr;align-items:center;gap:14px}",
+    ".score{display:grid;gap:8px}",
+    ".top{display:flex;align-items:baseline;justify-content:space-between;gap:12px}",
     ".num{font-size:30px;font-weight:600;letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1}",
     ".num small{font-size:12px;color:var(--dim);font-weight:400;letter-spacing:0;margin-left:4px}",
     ".bar{height:6px;border-radius:3px;background:var(--line);overflow:hidden}",
     ".bar b{display:block;height:100%;background:var(--gold);border-radius:3px}",
-    ".facts{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:6px;color:var(--dim);font-size:12px}",
+    ".facts{display:flex;flex-wrap:wrap;gap:2px 14px;color:var(--dim);font-size:12px}",
     ".card{border-top:1px solid var(--line);padding-top:12px;display:grid;gap:4px}",
     ".label{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--gold)}",
     ".big{font-weight:600}",
@@ -93,23 +94,25 @@
     box.appendChild(head);
 
     if (show.score) {
+      // the number and what it is, the bar of it out of 1000, and the record it comes from
       var s = el("div", "score");
+      var top = el("div", "top");
       var num = el("div", "num", String(a.score.value));
       num.appendChild(el("small", "", "/ 1000"));
-      s.appendChild(num);
-      var right = el("div");
+      top.appendChild(num);
+      top.appendChild(el("span", "label", "Factor Score"));
+      s.appendChild(top);
       var bar = el("div", "bar");
       var fill = el("b");
       fill.style.width = Math.max(0, Math.min(100, a.score.value / 10)) + "%";
       bar.appendChild(fill);
-      right.appendChild(bar);
+      s.appendChild(bar);
       var facts = el("div", "facts");
-      facts.appendChild(el("span", "", "Factor Score"));
       facts.appendChild(el("span", "", a.record.settled + " job" + (a.record.settled === 1 ? "" : "s") + " paid"));
       if (a.record.distinctCustomers) facts.appendChild(el("span", "", a.record.distinctCustomers + " customer" + (a.record.distinctCustomers === 1 ? "" : "s")));
+      if (a.record.onTime) facts.appendChild(el("span", "", Math.round((100 * a.record.onTime) / Math.max(1, a.record.onTime + a.record.late)) + "% on time"));
       if (a.score.barred) facts.appendChild(el("span", "warn", "barred from the pool"));
-      right.appendChild(facts);
-      s.appendChild(right);
+      s.appendChild(facts);
       box.appendChild(s);
     }
 

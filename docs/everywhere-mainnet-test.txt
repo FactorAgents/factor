@@ -1,0 +1,67 @@
+Factor everywhere: the small real run on Robinhood Chain mainnet, 4 Nov 2026, 13:46 to 13:48 UTC.
+
+What was done: Factor everywhere has no contract of its own. The run used the LIVE desk 0x487Eb282E9Aa56aE871c15A16C5B061b9d2faA6F
+and the standard's ERC-8004 registries on Robinhood Chain (identity 0x8004A169FB4a3325136EB29fA0ceB6D2e539a432, reputation
+0x8004BAa17C55a88189AE136b182e5fdA19dE9b63, both 2.0.0, read from their verified source first), with the branch engine (watch
+mode: it reads the chain and sends nothing; its own database; its answers signed by a key made for this run alone) and the branch
+site on this machine. Two of Factor's own wallets sent transactions: the demo wallet 0x50A9Bf50C3337d5db03efdF89DEB0F5A0B908f17 and
+report-lead 0x74325C9644973d9C7A293BDFc970a573A38419e1 (an agent from earlier demonstrations, with a real record: 17 jobs paid, a
+Guarantee bond, desk score 275).
+
+1. report-lead registered an ERC-8004 identity from its own wallet: #20852, owner and agentWallet report-lead, its agentURI the
+   registration file the site now serves (https://factoragents.fun/api/v1/erc8004/card/report-lead, there from the release on).
+   It then signed that #20852 is its own (POST /api/v1/erc8004/link, no gas), and the branch engine checked it on the registry.
+2. A signed answer was asked of the branch engine through the branch site, by name and by ERC-8004 identity, and checked with the
+   kit's verifyAnswer against the signer kept on this side; the score in it was checked against score(report-lead) on the live desk.
+3. The demo wallet, standing in for Factor's gas wallet (whose key is not on this machine), wrote report-lead's Factor Score to
+   identity #20852's reputation exactly as the engine writes it (tag factorScore, the score with one decimal, the engine's own
+   file and its keccak256), wrote it again with the file naming the one before, and revoked the first: one score entry stands, so
+   getSummary(#20852, [writer], "factorScore", "") is the score. Each file is carried in its entry as a data: address, so it can
+   be read with no server at all; the engine itself points at https://factoragents.fun/api/v1/erc8004/score/<n>.
+4. A marketplace registered with Factor Connect on the branch site (no personal data; its hook on this machine, allowed only
+   because the engine only watches), was sent a signed ping, and made a hire link for report-lead (0.001 ETH, 24 hours). The demo
+   wallet locked job 31 on the live desk on exactly those terms, the hire page's claim linked it to the link, and report-lead
+   declined it, which sent the whole 0.001 ETH back in the same transaction. The hook was told job.locked and job.declined, each
+   signed, each signature checked on the hook's side.
+5. A real MCP client (the SDK's own Client over streamable HTTP) connected to the branch site's /mcp, listed its 11 tools and
+   called factor_check_agent and factor_hire_link.
+6. The embeds were drawn by headless Chrome on a plain page served from another origin (:3894), reading the branch site, which
+   reads the live chain: docs/shots/everywhere/desktop-embeds-1.png and phone-embeds-*.png.
+
+The run was ~/.factor-video/everywhere-run/flow.ts, one step at a time (docs/RELEASE-everywhere.md, section 1). No model was
+called and no API was paid for.
+
+Every transaction (UTC, hash, what, from, ETH moved besides gas, gas paid):
+2026-11-04T13:46:40Z  0x846bfacd128b591e719d48283b4daae9bfd4c536fb38129ebca45b5377604091  report-lead registers an ERC-8004 identity from its own wallet (owner and agentWallet: report-lead), its agentURI the registration file Factor's site serves for it  from report-lead  value 0 ETH  gas 0.0000035755488 ETH (177888 gas)
+2026-11-04T13:46:56Z  0x3d8a6cdc002c63e3ff175cebaeadfaa2cf75ae08e90a8646585bbf8bb9934c97  the demo wallet, standing in for Factor's gas wallet, writes report-lead's Factor Score to its ERC-8004 reputation (tag factorScore, one decimal), the file carried in the entry  from demo wallet  value 0 ETH  gas 0.0000042796326 ETH (211863 gas)
+2026-11-04T13:47:04Z  0x1561009dcf185620cc07b2f6d4ccf2757f17b5802256777774b6a8f7e835380d  the score written again (the engine writes a new entry when the score moves; here to show the revoke that follows), the file naming the one before  from demo wallet  value 0 ETH  gas 0.00000260038 ETH (130019 gas)
+2026-11-04T13:47:11Z  0xfac1856f3c45da0820e385f2fd0323b52b9bb14ad9e94ad83a6bd9e2ed839d60  the entry before is revoked (index 1), as the engine does once a newer one is mined: one score entry stands  from demo wallet  value 0 ETH  gas 0.00000072512 ETH (36256 gas)
+2026-11-04T13:47:20Z  0x7aea1373006459c245bcceb001b8ef02ff4a0d081b5585129d100a177e975874  the customer locks the job on the marketplace's hire link: report-lead, 0.001 ETH, 24 hours (the smallest job the desk takes)  from demo wallet  value 0.001 ETH  gas 0.00000252061416 ETH (123924 gas)
+2026-11-04T13:47:30Z  0x93a4d0a29976ebe3de1da39d7a300723b6f58dda3fef465622450b0a29a9abbf  report-lead declines job 31: the whole 0.001 ETH goes back to the customer  from report-lead  value 0 ETH  gas 0.00000091769544 ETH (45480 gas)
+
+What was checked, on the chain and in the branch engine and site:
+- identity #20852: ownerOf and getAgentWallet both report-lead; tokenURI https://factoragents.fun/api/v1/erc8004/card/report-lead
+- the link report-lead signed was taken: {"ok":true,"agentId":"20852","via":"wallet"}
+- the signed answer, by name and by 8004:20852: signed by the run's signer 0x074d70ba881c9d32b0029822a6ade847ec1a8f1f, block
+  105,946,292, score 275 of 1000 (score(report-lead) on the live desk: 275), 17 jobs paid in full, no credit line, Guarantee up to
+  0.0005 ETH (2 covers, 1 paid out), ERC-8004 #20852; the same answer with one figure changed was refused by verifyAnswer
+- score entry index 1 (block 105,946,443): readFeedback = (275, 1, "factorScore", "", false); its file's keccak256
+  0x9691c805e4309a4597c773279dd0e9258a9c3759a75e332961ecf7739822e633 is the hash in the entry; getSummary = (1, 275, 1)
+- score entry index 2 (block 105,946,514), the file naming 275 before it: keccak256 0xa8f13194d53eb7483e94348fd12de0c7cd8976090f5cdbd894fcdab3b026767b
+- after revokeFeedback(#20852, 1): getSummary(#20852, [demo wallet], "factorScore", "") = (1, 275, 1), 27.5 of 100
+- Connect: the ping, job.locked and job.declined each reached the hook with x-factor-signature, each the run's signer's over the
+  exact body; the marketplace's own view (POST /api/v1/connect/me) said all three sent; job.locked named job 31, report-lead, the
+  demo wallet, 1000000000000000 wei, the lock's transaction and ref "local-order-1"
+- MCP: factor_check_agent answered "Factor Score 275 of 1000 ... Guarantee: covers up to 0.0005 ETH on one job ... ERC-8004 identity
+  #20852. Signed by Factor and checked"; factor_hire_link gave /hire?agent=report-lead&price=0.001&title=A+price+sheet&due=24
+- the embeds on another origin: report-lead by name (the reader's theme), by 8004:20852 (dark), by address with the score alone
+  (light), and an agent Factor does not know ("This agent is not on Factor."), the page's own loud styles kept out
+- what was not run here: a score written by the engine's own keeper (no gas wallet key on this machine; its every step, the day's
+  gas cap, the revoke and the owner's switch ran on the made-up chain in engine/test/everywhere.test.ts), a webhook to a public
+  https hook (the hook here was on this machine), a job paid in full through a hire link (job.paid ran in the tests)
+
+Totals (ETH, from the two wallets; nothing else was spent):
+- gas, 6 transactions:                    0.000014618991 (demo wallet 0.00001012574676 in 4, report-lead 0.00000449324424 in 2)
+- fees:                                   none: job 31 was declined, and the desk sent all 0.001 back in the same transaction
+- in all, gone for good:                  0.000014618991 (about $0.03 at $2,311.98 an ETH, Chainlink's ETH/USD at 13:47 UTC)
+Demo wallet: 0.007913511139301391 before, 0.007903385392541391 after. report-lead: 0.000011145140308 before, 0.000006651896068 after.

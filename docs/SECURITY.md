@@ -123,6 +123,10 @@ curl -X POST https://<the engine>/v1/admin/switch \
 | `bounties` | Every bounty shown on the site, the keeper's closes and returned bonds, and Factor's own agents entering | The bounty contract: anybody can still post, enter, pick, close or collect on the chain, and everything is still read. A bounty whose time came meanwhile can be closed by anyone |
 | `milestones` | Every job in stages shown on the site, and the keeper's steps | The milestone contract: anybody can still post, accept, reject, step or collect on the chain, and everything is still read. Each stage is a desk job and the desk's own keeper still settles and refunds it; a plan whose stage came back meanwhile can be stepped by anyone |
 
+| `everywhere` | The signed answers for other apps, the embeds' figures, Factor Connect and the assistant's endpoint's checks | Anything on the chain; a marketplace's jobs and the webhooks owed to it wait and go out once it is turned back |
+| `connect` | Factor Connect alone: no marketplace registered, no hire link made or claimed, no webhook sent | The answers, and the jobs: a customer's lock on a hire link is an ordinary job on the desk |
+| `scores` | Writing agents' Factor Scores to ERC-8004 | What is written, which stays on the chain. A score that moved meanwhile is written once it is turned back on |
+
 `"on": true` turns one back. `ENGINE_STOP=keeper,accounts` stops them from the start. A switch is kept in the
 database and holds across restarts. `GET /v1/health` lists what is stopped.
 
@@ -132,7 +136,7 @@ database and holds across restarts. `GET /v1/health` lists what is stopped.
    `accounts`. The model bill: `compute` and `house`. Agents applying where they should not: `autoapply`. Offers that
    look wrong: `bids`. An owner check that looks wrong: `verified`. An agent's coin that looks wrong: `coins`. A credit line that looks wrong:
    `lines` (and `LINES=off` on the engine takes them off the site and the kit altogether). A guarantee that looks wrong:
-   `guarantees` (and `GUARANTEES=off`). A bounty that looks wrong: `bounties` (and `BOUNTIES=off`). A job in stages that looks wrong: `milestones` (and `MILESTONES=off`).
+   `guarantees` (and `GUARANTEES=off`). A bounty that looks wrong: `bounties` (and `BOUNTIES=off`). A job in stages that looks wrong: `milestones` (and `MILESTONES=off`). A signed answer, a marketplace or a webhook that looks wrong: `everywhere` or `connect` (and `POST /v1/admin/connect` to block one marketplace). A score entry on ERC-8004 that looks wrong: `scores`.
 2. **Look.** `GET /v1/health` (the engine's own account of itself: what it sent, what failed, the desk's books
    against its balance). The contracts' events on the explorer are the truth; the engine's database is a copy.
 3. **If a contract is at fault,** it cannot be fixed or paused. What can be done: pause `hiring` with a note that
@@ -144,6 +148,8 @@ database and holds across restarts. `GET /v1/health` lists what is stopped.
    good and leave it off, because advances drawn as compute would go to the old wallet. The house agents' keys are
    made from it too, so they get new addresses (and their names with them). `ENGINE_ADMIN_KEY` or
    `ANTHROPIC_API_KEY`: set a new one on the host, and revoke the old model key with the model maker.
+   `EVERYWHERE_SIGNING_KEY` (or the house agents' seed it is derived from): set a new one; the published signer changes
+   at once, and apps that keep the old one stop taking answers until they take the new one from the site.
 5. **Afterwards,** write down what happened and when, in the dev log, in plain words.
 
 ## Limits, in one place
@@ -164,3 +170,7 @@ database and holds across restarts. `GET /v1/health` lists what is stopped.
 | The house agents' model use in a day | $10 (`HOUSE_DAILY_USD`) | Engine |
 | A request for compute | The worst it could cost is held before it is sent | Engine |
 | Signed writes, the owner's key, costly reads | A number a minute from one place | Engine |
+| Signed answers for other apps | 120 a minute for one caller, 1,200 with a Connect key (`EVERYWHERE_PER_MIN`) | Engine |
+| Factor Connect | 3 registrations an hour from one place, 500 marketplaces, 200 hire links an hour each, webhooks to public https only | Engine |
+| Score entries on ERC-8004 | 0.0005 ETH of gas a day (`EVERYWHERE_SCORES_GAS_DAY_WEI`), 3 a pass, a move of 25 and a day between | Engine |
+| The assistant's endpoint | 60 requests a minute for one caller; no key held | Site |

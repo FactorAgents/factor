@@ -578,6 +578,36 @@ version 2.0.0). Three parts:
 `/v1/erc8004`, `/v1/erc8004/<agent>`, the agent's page (`erc8004`) and its record (`erc8004`, outside the attestation)
 say what was linked and written. The tables are never taken back by a reindex.
 
+## Factor everywhere
+
+`src/everywhere.ts` and `src/erc8004score.ts`, off until `EVERYWHERE=on` (and `EVERYWHERE_SCORES=on` for the scores). The
+rules are `docs/EVERYWHERE.md`.
+
+- **The answers.** `GET /v1/everywhere/agent/<address | name | 8004:n>` and `/v1/everywhere/agents?ids=` (25 at most): an
+  agent's score (the Factor Score's number), its record (from `recordOf`), its credit line's headroom (`lines.json`) and
+  its Guarantee (`guarantees.agentJson`), as a JSON text with an EIP-191 signature by the everywhere key
+  (`EVERYWHERE_SIGNING_KEY`, or one derived from the house agents' seed for this use alone), good for ten minutes and kept
+  15 seconds. An identity not linked here is read from the registry. `EVERYWHERE_PER_MIN` (120) a minute for one caller,
+  ten times that with a Connect key (`Authorization`, passed on by `src/main.ts`). `GET /v1/everywhere` says the signer.
+- **Connect.** `connect_markets` (the key's SHA-256 only), `connect_tickets`, `connect_jobs` (the events told) and
+  `connect_hooks` (every webhook as it was signed and sent, its tries and its answer), none of them taken back by a
+  reindex. `POST /v1/connect/register|rotate|hook|hire|me|ping|claim`, `GET /v1/connect/ticket/<id>`. After every reading
+  of the chain, a pass that is never waited on queues the events of each connected job from the desk's copy and sends what
+  is due, one send at a time; a hook is checked to be a public https address before every delivery.
+  `CONNECT_MOST`, `CONNECT_REGISTER_HOUR`, `CONNECT_TICKETS_HOUR`; `CONNECT_LOCAL_HOOKS=on` only on an engine that does not
+  send or with a local node. The owner: `POST /v1/admin/connect` (`list`, `block`).
+- **Scores on ERC-8004** (action `erc8004_score`, after `erc8004`, `src/chain/act.ts`). Revokes first (a mined entry with
+  a newer one beside it), then each linked agent with a settled job whose score moved `EVERYWHERE_SCORES_STEP` (25) after
+  `EVERYWHERE_SCORES_EVERY_H` (24) hours, or four steps, or to 0: `giveFeedback(agentId, score, 1, "factorScore", "", "",
+  <site>/api/v1/erc8004/score/<n>, keccak256(file))` from the gas wallet. The file is written down in `erc8004_scores`
+  before anything is sent and served at `/v1/erc8004/score/<n>`. The identity is checked to be the agent's before each one;
+  one the gas wallet owns is never written; a refusal for good sets that identity aside. `EVERYWHERE_SCORES_GAS_DAY_WEI`
+  (0.0005 ETH) caps entries and revokes together in a day; `EVERYWHERE_SCORES_PER_PASS` (3); gas cap 400,000 a call. It
+  needs `ERC8004=on`, whose pass finds the identities. The agent's page carries `scoreOnChain`.
+- **State and switches.** `state.everywhere` (on, the signer, Connect, the scores). The owner's `everywhere` switch stops
+  the answers and Connect; `connect` stops Connect alone; `scores` stops the score entries. Nothing is lost: webhooks owed
+  and scores that moved go out once it is turned back.
+
 ## Settings
 
 `engine/.env.example` lists every one. The three secrets, `BOT_PRIVATE_KEY`, `ENGINE_ADMIN_KEY` and

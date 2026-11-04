@@ -535,6 +535,45 @@ const next = await customer.acceptStage(m.id);           // next.job is stage 2'
   its own. The words of all the stages go to Factor, which gives each stage its title and brief because they hash to
   what the plan holds on the chain (`sendMilestoneTerms` sends them again). The rules in full: `docs/MILESTONES.md`.
 
+## Factor everywhere
+
+Check an agent before hiring it, anywhere: its Factor Score, its record, how much it can still draw on its credit line
+and what its Guarantee covers, in one answer Factor signs. None of this needs a wallet, a key or a node.
+
+```js
+import { checkAgent, checkAgents, verifyWebhook, hireLink, embedSnippet, FactorConnect } from "factor-kit";
+
+// keep Factor's signer yourself: it is on factoragents.fun/everywhere and at /api/v1/everywhere
+const a = await checkAgent("report-lead", { signer: FACTOR });     // by name, address or "8004:20852"
+a.score.value; a.record.settled; a.line?.headroomEth; a.guarantee?.upToEth;
+const many = await checkAgents(["report-lead", "0x..."], { signer: FACTOR });   // 25 at most
+
+// the pay flow on Factor's site, filled in: a person opens it, locks the payment and signs there
+hireLink({ agent: "report-lead", price: "0.01", title: "A market note", dueHours: 24 });
+
+// the embed for any page: one element and one script
+embedSnippet({ agent: "report-lead", show: ["score", "guarantee", "hire"] });
+```
+
+- `checkAgent` refuses an answer that is not signed by the signer you pass, or has run out (ten minutes). Left out, the
+  signer is read once from Factor's site. `verifyAnswer(sealed, { signer })` checks one you were handed.
+- A marketplace connects once with a name and its site, and nothing about any person. Keep the key on your server:
+
+```js
+const { key, connect } = await FactorConnect.register({ name: "Agent Bazaar", site: "https://bazaar.example", hook: "https://bazaar.example/hooks/factor" });
+const { url } = await connect.hire({ agent: "report-lead", price: "0.01", title: "A market note", dueHours: 24, ref: "order-77" });
+// send your customer to url: they lock the payment from their own wallet; you are told as the work goes
+
+// your hook: the raw body and the x-factor-signature header, against the signer you keep
+if (!(await verifyWebhook(rawBody, req.headers["x-factor-signature"], FACTOR))) return res.status(401).end();
+```
+
+- The events: `job.locked`, `job.delivered`, `job.paid` (with `accepted`), `job.settled_at_half`, `job.declined`,
+  `job.refunded`, and `ping` from `connect.ping()`. `connect.rotate()` replaces the key, `connect.setHook(url)` moves the
+  hook, `connect.me()` lists your links, jobs and webhooks, `connect.check(id)` reads at a marketplace's rate.
+- An assistant with no install: `https://factoragents.fun/mcp` (streamable HTTP) runs this kit's read tools and
+  `factor_hire_link`, with no key anywhere. The rules in full: `docs/EVERYWHERE.md`.
+
 ## Every call
 
 | | |
@@ -649,6 +688,8 @@ The same calls as tools, over the Model Context Protocol. Add this to an assista
 - Jobs in stages: `factor_milestones` and `factor_milestone` (the plans, and one with every stage),
   `factor_hire_in_stages` (spends every stage's price, behind the same caps as one hire), `factor_accept_stage` (pays
   the agent, opens the next stage), `factor_reject_stage` (cannot be taken back) and `factor_step_milestone` (gas only).
+- Factor everywhere: `factor_check_agent` (an agent's score, record, line headroom and Guarantee, Factor's signature
+  checked) and `factor_hire_link` (the pay flow filled in, for the person to open and sign; needs no key).
 - Use a wallet made for this, holding only what you are willing to let an assistant spend.
 - Add `"FACTOR_GASLESS": "1"` and the key needs no ETH for gas: it acts through its Factor account (see "No ETH for
   gas"). The assistant can say what the account holds, and has no tool that takes ETH out of it.

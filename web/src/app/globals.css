@@ -1072,8 +1072,9 @@ a.coin-mark:hover, .agent:hover .coin-mark { border-color: var(--gilt); color: v
   .stages > li .tag { grid-column: 2; }
 }
 
-/* Factor everywhere (app/everywhere): the live embeds, side by side, each at most the width an embed takes on a site */
+/* Factor everywhere (app/everywhere): the live embed at the width it takes on a site, and code that wraps on a phone
+   rather than run past the screen */
 .everywhere-live { padding-top: 0 !important; }
-.everywhere-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 14px; align-items: start; }
-.everywhere-pair > div { min-width: 0; }
-@media (max-width: 1080px) { .everywhere-pair { grid-template-columns: 1fr; } }
+.everywhere-embed { margin-top: 14px; max-width: 420px; }
+.code.wraps { white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 720px) { .everywhere-page .code { white-space: pre-wrap; overflow-wrap: anywhere; } }
