@@ -50,6 +50,8 @@ import { Lines } from "./lines.js";
 import { Guarantees } from "./guarantees.js";
 import { Bounties } from "./bounties.js";
 import { Milestones } from "./milestones.js";
+import { answerSigner, Connect, type AnswerSigner } from "./everywhere.js";
+import { Erc8004Scores } from "./erc8004score.js";
 import { DeskStore } from "./desk.js";
 import { scoreOf } from "./score.js";
 import { sourceOf } from "./api.js";
@@ -137,6 +139,12 @@ export class Engine {
   bounties: Bounties | null = null;
   /** milestones (./milestones.ts): plans in stages, each stage a desk job, read and stepped by the keeper */
   milestones: Milestones | null = null;
+  /** Factor Connect (./everywhere.ts): marketplaces, their hire links and the webhooks they are sent */
+  connect: Connect | null = null;
+  /** the Factor Score written to ERC-8004 (./erc8004score.ts) */
+  erc8004Scores: Erc8004Scores | null = null;
+  /** the key that signs Factor everywhere's answers and Connect's webhooks (./everywhere.ts), or null */
+  readonly answerSigner: AnswerSigner | null;
   /** the splitter's admin, read at the boot check: Factor's own wallet, which sets the rules of Factor's own agents */
   private splitterAdmin: string | null = null;
   /** the key that signs agents' records for other apps (./record.ts), or null */
@@ -168,6 +176,7 @@ export class Engine {
     this.api = new EngineApi(() => this.view());
     // the sign-ups are kept in the same file whatever the mode, so they are there at the launch
     this.recordSigner = recordSigner(this.env);
+    this.answerSigner = this.config.everywhere.keyProblem ? null : answerSigner(this.env);
     this.launchList = new LaunchList(sqlite, { perOwner: this.config.house.hosted.perOwner, most: this.config.house.hosted.most, floorWei: this.config.house.hosted.floorWei, now: this.now });
   }
 
@@ -200,12 +209,13 @@ export class Engine {
     return {
       config: this.config, state: this.state, problems: this.problems, warnings: this.warnings, lastError: this.lastError, loops, ctx: this.ctx, rpc: this.chain?.health() ?? null, now: this.now,
       links: { pons: link(this.env.FACTOR_PONS_URL), github: link(this.env.FACTOR_GITHUB_URL), x: link(this.env.FACTOR_X_URL) }, dataDirSet: !!this.env.FACTOR_DATA_DIR?.trim(), profiles: this.profiles, gateway: this.gateway, accounts: this.accounts, house: this.house, demo: this.demo, pulse: this.pulse, deskMind: this.deskMind, launchList: this.launchList, activity: this.activity, matcher: this.matcher, pay: this.pay, subjobs: this.subjobs, recordSigner: this.recordSigner, firms: this.firms, plans: this.plans, erc8004: this.erc8004, openjobs: this.openjobs, autoapply: this.autoapply, verified: this.verified, coins: this.coins, lines: this.lines, guarantees: this.guarantees, bounties: this.bounties, milestones: this.milestones,
+      connect: this.connect, erc8004Scores: this.erc8004Scores, answerSigner: this.answerSigner,
     };
   }
 
   // The answer to one of the engine's API routes, or null when the path is not one of them.
-  handle(path: string, query?: URLSearchParams, from?: string): Promise<Answer | null> {
-    return this.api.handle(path, query, from);
+  handle(path: string, query?: URLSearchParams, from?: string, connectKey?: string): Promise<Answer | null> {
+    return this.api.handle(path, query, from, connectKey);
   }
 
   // Everything under /v1/compute/: the gateway answers the request itself (a model's answer may be a stream).
@@ -228,8 +238,8 @@ export class Engine {
   // The answer to a signed write (an agent's name, a job's title), or null when the path is not one.
   // A write that was taken is a change the site should show at once (./live.ts): asking a model to match a job, or
   // checking an order before it is sent, changes nothing.
-  post(path: string, body: unknown, from: string, adminKey?: string): Promise<Answer | null> {
-    return this.api.post(path, body, from, adminKey).then((a) => {
+  post(path: string, body: unknown, from: string, adminKey?: string, connectKey?: string): Promise<Answer | null> {
+    return this.api.post(path, body, from, adminKey, connectKey).then((a) => {
       if (a && a.status >= 200 && a.status < 300 && path !== "/v1/match" && path !== "/v1/accounts/check") this.live?.poke();
       return a;
     });
@@ -457,6 +467,23 @@ export class Engine {
       log: this.log,
     });
     this.ctx.erc8004 = this.erc8004;
+    // the Factor Score on ERC-8004: made whether or not it is on, so what was written still shows after it is switched off
+    this.erc8004Scores = new Erc8004Scores(c.scores, { db, erc8004: () => this.erc8004, chainId: c.chainId, desk: c.desk, now: this.now, nowS, nameOf: (a) => { return this.profiles?.all().get(a)?.name ?? null; }, log: this.log });
+    this.ctx.erc8004Scores = this.erc8004Scores;
+    if (c.scores.enabled && !c.erc8004.enabled) this.log("[scores] NOT ON: EVERYWHERE_SCORES needs ERC8004=on, which finds the agents' identities");
+    else if (c.scores.enabled) this.log(`[scores] on: an agent's Factor Score is written to its ERC-8004 reputation when it moves ${c.scores.step} points or more, up to ${Number(c.scores.gasDayWei / 10n ** 12n) / 1e6} ETH of gas a day`);
+    // Factor Connect: made whether or not it is on, so a marketplace's jobs are still known after it is switched off
+    this.connect = new Connect(c.everywhere, {
+      db, chainId: c.chainId, desk: c.desk, now: this.now, signer: () => this.answerSigner,
+      isAgent: (a) => !!new DeskStore(db).agent(a),
+      nameOf: (a) => { return this.profiles?.all().get(a)?.name ?? `${a.slice(0, 6)}...${a.slice(-4)}`; },
+      jobOf: (job) => new DeskStore(db).job(job),
+      coverOf: (job) => { const g = this.guarantees; const cv = g?.reading() ? g.coverOfJob(job) : null; return cv ? { amount: cv.amount } : null; },
+      paused: () => { const h = stopped(db, "hiring"); return h ? h.note || "New jobs are paused for now." : null; },
+      log: this.log,
+    });
+    if (c.everywhere.enabled && !this.answerSigner) this.log("[everywhere] NOT ON: there is no key to sign answers with (EVERYWHERE_SIGNING_KEY, or the house agents' seed)");
+    else if (c.everywhere.enabled) this.log(`[everywhere] on: answers for any app and Factor Connect, signed by ${this.answerSigner!.address}`);
     if (c.erc8004.enabled) this.log(`[erc8004] on: every settled job of an agent linked to an ERC-8004 identity is written to its reputation (${c.erc8004.reputation})${c.erc8004.backfill ? ", and the jobs from before its link once" : ""}`);
     if (c.plans.enabled) this.log(`[plans] on: customers can put an agent or a firm on a monthly plan of up to ${c.plans.mostMonths} months`);
     if (c.firms.enabled) this.log(`[firms] on: agents can form firms of up to ${c.firms.mostMembers + 1}, and customers hire them through their lead`);
@@ -775,6 +802,8 @@ export class Engine {
     // agents with auto-apply on look at the open jobs, and those Factor runs apply (./autoapply.ts)
     try { if ((await this.autoapply?.pass()) && this.api) this.api.forget(); } catch (e) { this.log(`[autoapply] the pass failed: ${e instanceof Error ? e.message : String(e)}`); }
     // owners whose outcome is old are checked again, a few at a time (./verified.ts). Never waited on: a slow service holds nothing up
+    // Factor Connect: a marketplace's jobs that moved are told, by a signed webhook (./everywhere.ts). Never waited on
+    if (this.config.everywhere.enabled && this.connect && !stopped(this.ctx.db, "everywhere") && !stopped(this.ctx.db, "connect")) void this.connect.pass().catch((e: unknown) => this.log(`[connect] the pass failed: ${e instanceof Error ? e.message : String(e)}`));
     if (this.verified?.on()) void this.verified.pass().then((n) => { if (n) this.api.forget(); }).catch((e: unknown) => this.log(`[verified] the pass failed: ${e instanceof Error ? e.message : String(e)}`));
     if (this.config.rehearsalClock) {
       const offset = pass.head.timestamp * 1000 - Date.now();

@@ -17,6 +17,8 @@
 //                   with this wallet paying the gas. First in every pass: somebody is waiting for it.
 //   erc8004         a settled job of an agent linked to an ERC-8004 identity: one entry written to the agent's
 //                   reputation in the standard's registry (../erc8004.ts). Last in every pass: nobody waits on it.
+//   erc8004_score   an agent's Factor Score, written to its ERC-8004 reputation when it has moved meaningfully, and the
+//                   entry it replaces revoked (../erc8004score.ts). After the job entries.
 //   coin_sweep      an agent's coin has gathered fees worth the gas: its splitter's sweep() collects and splits them,
 //                   and its retry() delivers a share a wallet refused (../coins.ts). Right after $FACTOR's own sweep,
 //                   so the burn share it sends to the burn pot is burned in the same pass.
@@ -50,7 +52,7 @@ import type { ActionKind, ActionRow } from "./db.js";
 import { ponsEscrowAbi } from "./pons.js";
 
 export type SendKind = Exclude<ActionKind, "unstick">;
-export const KINDS: SendKind[] = ["relay", "sweep", "coin_sweep", "retry_split", "claim_token", "burn", "guarantee", "bounty", "milestone", "settle_job", "refund_job", "collect", "line", "return_compute", "skim", "erc8004"];
+export const KINDS: SendKind[] = ["relay", "sweep", "coin_sweep", "retry_split", "claim_token", "burn", "guarantee", "bounty", "milestone", "settle_job", "refund_job", "collect", "line", "return_compute", "skim", "erc8004", "erc8004_score"];
 // In dry mode nothing changes on the chain, so a trigger stays true: what would be sent is shown again this often.
 export const DRY_REPEAT_S = 1800;
 const BPS = 10_000n;
@@ -219,6 +221,7 @@ function landed(ctx: Ctx, a: ActionRow, r: Receipt): void {
     }
   }
   if (a.kind === "erc8004" && a.tx_hash && ctx.erc8004) ctx.erc8004.landed(Number(a.ref), a.tx_hash, r);
+  if (a.kind === "erc8004_score" && a.tx_hash && ctx.erc8004Scores) ctx.erc8004Scores.landed(a.ref, a.tx_hash, r);
   if (r.ok) say(ctx, a.kind, `sent and mined (${a.tx_hash})`, { fails: 0, nextAt: 0, tx: a.tx_hash });
   else say(ctx, a.kind, `the transaction reverted on the chain (${a.tx_hash})`, { tx: a.tx_hash });
 }
@@ -235,6 +238,7 @@ function unsent(ctx: Ctx, a: ActionRow, why: string): void {
   }
   // an entry that never reached the chain goes back in the queue, with the same file
   if (a.kind === "erc8004" && ctx.erc8004) ctx.erc8004.store.mark(Number(a.ref), { status: "queued", tx_hash: null, error: why }, ctx.now());
+  if (a.kind === "erc8004_score" && ctx.erc8004Scores) ctx.erc8004Scores.unsent(a.ref, why);
   say(ctx, a.kind, why, { lastAt: 0 });
   ctx.log(`[${a.kind}] ${why} (${a.tx_hash}): it will be tried again`);
 }
@@ -804,6 +808,15 @@ async function writeErc8004(ctx: Ctx, head: Head): Promise<string> {
   return say(ctx, "erc8004", `${did}${left ? `, ${left} more waiting` : ""}${note ? ` (${note})` : ""}`, { lastAt: wrote + shown > 0 ? head.timestamp : st.lastAt, fails: 0, nextAt: 0, tx });
 }
 
+// ---------- the Factor Score on ERC-8004 ----------
+
+// An agent's score written to the standard's reputation registry when it has moved meaningfully, and the entry it
+// replaces revoked (../erc8004score.ts decides; the attempt is the same as every other one here). Last: nobody waits on it.
+async function writeScores(ctx: Ctx, head: Head): Promise<string> {
+  if (!ctx.erc8004Scores) return say(ctx, "erc8004_score", "the score on ERC-8004 is not switched on");
+  return say(ctx, "erc8004_score", await ctx.erc8004Scores.step(ctx, head, (kind, ref, call, detail, feeCap, pre) => attempt(ctx, kind, ref, call, detail, feeCap, pre)));
+}
+
 // ---------- agent coins ----------
 
 // What an agent's coin has gathered, collected and split once it is worth the gas (../coins.ts decides; the attempt is
@@ -867,6 +880,7 @@ const STEPS: [SendKind, (ctx: Ctx, head: Head) => Promise<string>][] = [
   ["return_compute", returnCompute],
   ["skim", skim],
   ["erc8004", writeErc8004],
+  ["erc8004_score", writeScores],
 ];
 
 // One pass over the actions, one after the other: there is one gas wallet, and one transaction at a time.

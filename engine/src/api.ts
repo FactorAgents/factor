@@ -41,6 +41,11 @@
 //   GET  /v1/milestones         plans in stages (milestones.ts): the rules, the totals and the plans; /v1/milestones/about,
 //                               /<n>, /job/<n>, /agent/<id>, /customer/<address>
 //   POST /v1/milestones/terms   a plan's words, hashed against the chain
+//   GET  /v1/everywhere         Factor everywhere (everywhere.ts): whether it is on, the signer, how to check an answer
+//   GET  /v1/everywhere/agent/<id>   one agent's score, record, line and Guarantee, signed; /v1/everywhere/agents?ids=
+//   GET  /v1/erc8004/score/<n>  the file a score entry on ERC-8004 points at, word for word (erc8004score.ts)
+//   POST /v1/connect/register|rotate|hook|hire|me|ping   Factor Connect for a marketplace, with its key
+//   GET  /v1/connect/ticket/<id>, POST /v1/connect/claim   a marketplace's hire link, and the job locked on it
 //
 // Every GET is answered from the database (the last reading of the chain, the ledger, the engine's copy of each
 // job and agent), so a burst of visitors costs the node nothing. Before the contracts are given, and whenever the
@@ -85,6 +90,8 @@ import type { LineBadge, Lines, LinesAbout } from "./lines.js";
 import type { CoverJson, Guarantees, GuaranteesAbout } from "./guarantees.js";
 import type { AgentBountiesJson, Bounties, BountiesAbout } from "./bounties.js";
 import type { MilestoneJobLink, Milestones, MilestonesAbout } from "./milestones.js";
+import { envelope, hireUrl, MOST_AT_ONCE, ANSWER_HOLDS_S, parseId, seal, type AgentAnswer, type AnswerSigner, type Connect } from "./everywhere.js";
+import type { Erc8004Scores } from "./erc8004score.js";
 
 export interface Answer {
   status: number;
@@ -145,6 +152,25 @@ export interface EngineView {
   bounties?: Bounties | null;
   /** milestones (./milestones.ts) */
   milestones?: Milestones | null;
+  /** Factor Connect (./everywhere.ts) */
+  connect?: Connect | null;
+  /** the Factor Score written to ERC-8004 (./erc8004score.ts) */
+  erc8004Scores?: Erc8004Scores | null;
+  /** the key that signs Factor everywhere's answers and Connect's webhooks (./everywhere.ts) */
+  answerSigner?: AnswerSigner | null;
+}
+
+/** Factor everywhere, as the site reads it: web/src/lib/types.ts keeps the same shape by hand. */
+export interface EverywhereAbout {
+  enabled: boolean;
+  /** the address that signs every answer and webhook (EIP-191) */
+  signer: string | null;
+  holdsS: number;
+  mostAtOnce: number;
+  perMinute: number;
+  connect: { enabled: boolean; marketplaces: number };
+  /** the Factor Score on ERC-8004: whether it is written, the tag, and the address it comes from */
+  scores: { enabled: boolean; tag1: string; reviewer: string | null; entries: number; agents: number; step: number };
 }
 
 /** How a job came to its agent (./factorscore.ts), from the engine's links between jobs. */
@@ -345,6 +371,8 @@ export interface FactorState {
   bounties: BountiesAbout;
   /** milestones (./milestones.ts): whether they are on, the contract, the rules and the totals */
   milestones: MilestonesAbout;
+  /** Factor everywhere (./everywhere.ts): whether it is on, the signer, Connect and the score on ERC-8004 */
+  everywhere: EverywhereAbout;
 }
 export interface RosterJson { name: string; does: string; needs: string; delivers: string; fromEth: number; asksAModel: boolean; /** the Desk's opening file on it */ file?: { text: string; at: string } }
 // what Factor's own agents are, said the same before the launch and after it
@@ -518,7 +546,12 @@ export class EngineApi {
 
   // The answer for a path, or null when the path is not one of the engine's. `query` is what followed the ? in the
   // address; a value in it that makes no sense is ignored, never an error.
-  async handle(path: string, query: URLSearchParams = new URLSearchParams(), from = ""): Promise<Answer | null> {
+  async handle(path: string, query: URLSearchParams = new URLSearchParams(), from = "", connectKey?: string): Promise<Answer | null> {
+    // Factor everywhere: one agent's (or a few agents') score, record, line and Guarantee in an answer Factor signs
+    if (path === "/v1/everywhere" || path.startsWith("/v1/everywhere/") || path.startsWith("/v1/connect/ticket/")) return this.everywhereGet(this.view(), path, query, from, connectKey);
+    // the file a score entry on ERC-8004 points at (./erc8004score.ts)
+    const sm = /^\/v1\/erc8004\/score\/(\d{1,9})$/.exec(path);
+    if (sm) { const body = this.view().erc8004Scores?.file(Number(sm[1])) ?? null; return body ? ok(JSON.parse(body) as Record<string, unknown>) : notFound("no score entry by that number"); }
     // accounts are asked about as they change (an order on its way): never answered from the cache
     if (path.startsWith("/v1/accounts/")) {
       // what an account holds is asked of the chain: one caller gets a few a second, not as many as it likes
@@ -1226,8 +1259,10 @@ export class EngineApi {
   }
 
   // A signed write. `from` is the caller's address on the network, for the limit on how many one may send.
-  async post(path: string, body: unknown, from: string, adminKey?: string): Promise<Answer | null> {
+  async post(path: string, body: unknown, from: string, adminKey?: string, connectKey?: string): Promise<Answer | null> {
     if (path === "/v1/match") return this.matchPost(body, from);
+    if (path.startsWith("/v1/connect/")) return this.connectPost(path, body, from, connectKey);
+    if (path === "/v1/admin/connect") return this.connectAdmin(body, from, adminKey);
     if (path === "/v1/pay/deal" || path === "/v1/pay/links") return this.payPost(path, body, from);
     if (path === "/v1/subjobs/plan" || path === "/v1/subjobs/link") return this.subjobsPost(path, body, from);
     if (path === "/v1/firms/form" || path === "/v1/firms/join" || path === "/v1/firms/leave" || path === "/v1/firms/hire") return this.firmsPost(path, body, from);
@@ -1400,7 +1435,161 @@ export class EngineApi {
       // its guarantee bond, offer and covers: only while guarantees are on and it has ever had one
       ...((x) => (x ? { guarantee: x } : {}))(v.guarantees?.on() ? v.guarantees.agentJson(row.address, true) : null),
       ...((x) => (x ? { raetoSpend: x } : {}))(v.gateway?.raetoSpendOfAgent(row.address) ?? null),
+      // its Factor Score as Factor last wrote it to ERC-8004: only while that is on and one was written
+      ...((x) => (x ? { scoreOnChain: x } : {}))(this.everywhereOn(v) && v.erc8004Scores?.on() ? v.erc8004Scores.json(row.address) : null),
     });
+  }
+
+  // ---- Factor everywhere (./everywhere.ts) ----
+
+  private everywhereOn(v: EngineView): boolean {
+    return v.config.everywhere.enabled && !!v.answerSigner && !!v.ctx && !stopped(v.ctx.db, "everywhere");
+  }
+
+  private connectOn(v: EngineView): boolean {
+    return this.everywhereOn(v) && !!v.connect && !stopped(v.ctx!.db, "connect");
+  }
+
+  everywhereAbout(v: EngineView): EverywhereAbout {
+    const on = this.everywhereOn(v);
+    const sc = v.erc8004Scores?.about(v.ctx?.facts.bot ?? null) as { enabled: boolean; tag1: string; reviewer: string | null; entries: number; agents: number; step: number } | undefined;
+    return {
+      enabled: on, signer: on ? v.answerSigner!.address : null, holdsS: ANSWER_HOLDS_S, mostAtOnce: MOST_AT_ONCE, perMinute: v.config.everywhere.perMinute,
+      connect: { enabled: on && this.connectOn(v), marketplaces: on && v.connect ? v.connect.store.count() : 0 },
+      scores: { enabled: on && !!sc?.enabled, tag1: sc?.tag1 ?? "factorScore", reviewer: on ? (sc?.reviewer ?? null) : null, entries: on ? (sc?.entries ?? 0) : 0, agents: on ? (sc?.agents ?? 0) : 0, step: sc?.step ?? v.config.scores.step },
+    };
+  }
+
+  /** One agent, as an answer carries it: every figure the desk's or a contract's (./everywhere.ts). */
+  private async agentAnswer(v: EngineView, r: { ctx: Ctx; snap: Snapshot; store: DeskStore }, row: AgentRow): Promise<AgentAnswer> {
+    const p = v.profiles?.all().get(row.address);
+    const named = !!p;
+    const site = v.config.everywhere.site;
+    const rec = await recordOf({ db: r.ctx.db, row, name: named ? p!.name : shortAddress(row.address), named, does: named ? p!.does : "", chainId: v.config.chainId, desk: r.ctx.addr.desk, block: r.snap.block, nowS: this.chainNow(v, r.snap), site, pay: { deals: 0, burnedWei: 0n }, signer: null });
+    const fs = this.factorScoreOf(v, r, row);
+    const link = v.erc8004?.store.link(row.address);
+    const lineRow = v.lines?.on() ? v.lines.of(row.address) : null;
+    const line = lineRow ? v.lines!.json(lineRow) : null;
+    const g = v.guarantees?.on() ? v.guarantees.agentJson(row.address) : null;
+    const house = new Set([...v.config.houseAgents, ...(v.house?.addresses() ?? [])]);
+    return {
+      agent: { address: row.address, name: rec.name, named, does: rec.does, since: rec.since, page: rec.page, factorOwn: house.has(row.address), erc8004: link?.agent_id && !link.lost ? { agentId: link.agent_id, registry: v.erc8004!.registry } : null },
+      score: { value: fs.score, of: 1000, barred: row.record.barred, check: fs.check },
+      record: { settled: rec.jobs.settled, settledAtHalf: rec.jobs.settledAtHalf, delivered: rec.jobs.delivered, onTime: rec.jobs.onTime, late: rec.jobs.late, refunded: rec.jobs.refunded, declined: rec.jobs.declined, customers: rec.customers, distinctCustomers: rec.distinctCustomers, volumeEth: rec.volumeEth, advancesRepaid: rec.advances.repaid, advancesNotRepaid: rec.advances.notRepaid },
+      line: line ? { status: line.status, limitEth: line.limitEth, owedEth: line.debtEth, headroomEth: line.canDrawEth, dueAt: line.dueAt } : null,
+      guarantee: g ? { selling: g.selling, upToEth: g.upToEth, sharePct: g.sharePct, bondEth: g.bondEth, freeEth: g.freeEth, covers: g.covers, delivered: g.released, paidOut: g.paid, paidOutEth: g.paidOutEth } : null,
+      hire: hireUrl(site, { agent: named ? p!.name : row.address }),
+    };
+  }
+
+  /** An agent by its address, its name, or its ERC-8004 identity, or why not. */
+  private async resolveAgent(v: EngineView, r: { store: DeskStore }, raw: string): Promise<AgentRow | string> {
+    const id = parseId(raw);
+    if (!id) return `"${raw.slice(0, 60)}" is not an address, a name or an ERC-8004 identity (8004:<number>)`;
+    if (id.kind === "address") return r.store.agent(id.address) ?? `${id.address} has not registered as an agent on the desk`;
+    if (id.kind === "name") { const a = v.profiles?.byName(id.name); return (a && r.store.agent(a)) || `no agent is called ${id.name}`; }
+    const linked = v.ctx!.db.q("SELECT agent FROM erc8004_links WHERE agent_id = ? AND lost IS NULL").get(id.agentId) as { agent: string } | undefined;
+    if (linked) return r.store.agent(linked.agent) ?? `ERC-8004 identity #${id.agentId} is not an agent on the desk`;
+    // not linked here yet: the registry is asked whose it is, and an agent on the desk that is its agentWallet or owner answers
+    if (!v.erc8004) return `ERC-8004 identity #${id.agentId} is not linked to an agent on Factor`;
+    const [who] = await v.erc8004.identities([Number(id.agentId)]).catch(() => [null]);
+    if (!who?.owner) return `there is no ERC-8004 identity #${id.agentId} on Robinhood Chain`;
+    return (who.wallet && r.store.agent(who.wallet)) || r.store.agent(who.owner) || `ERC-8004 identity #${id.agentId} is not an agent on Factor`;
+  }
+
+  private async everywhereGet(v: EngineView, path: string, query: URLSearchParams, from: string, key?: string): Promise<Answer | null> {
+    const market = key ? v.connect?.marketOf(key) ?? null : null;
+    const most = market ? v.config.everywhere.perMinute * 10 : v.config.everywhere.perMinute;
+    if ((market ? this.tooMany(market.id, "everywhere-key", most) : from && this.tooMany(from, "everywhere", most))) return { status: 429, body: { error: "too many requests: try again in a minute" } };
+    if (path === "/v1/everywhere") {
+      const about = this.everywhereAbout(v);
+      return ok({
+        ...about, scheme: "eip191", chainId: v.config.chainId, desk: v.ctx?.addr.desk ?? v.config.desk,
+        ids: ["0x<the agent's address>", "<its name on Factor>", "8004:<its ERC-8004 identity>"],
+        verify: "verifyMessage({ address: <the signer, kept by the app>, message: answer, signature }) in viem, then JSON.parse(answer) and check expiresAt",
+        site: v.config.everywhere.site, connect: { ...about.connect, ...(v.connect && about.enabled ? v.connect.about() : {}) },
+      });
+    }
+    if (!this.everywhereOn(v)) return { status: 503, body: { error: "Factor everywhere is switched off for now" } };
+    let m = /^\/v1\/connect\/ticket\/([0-9a-f]{20})$/.exec(path);
+    if (m) {
+      const t = v.connect?.store.ticket(m[1]!);
+      return t ? ok(v.connect!.ticketJson(t)) : notFound("no such hire link");
+    }
+    const r = this.running(v);
+    if (!r) return { status: 503, body: { error: "the engine is not reading the chain yet" } };
+    // an answer holds ten minutes; the same one is handed out for a few seconds, so a busy page costs the engine little
+    const ids = path === "/v1/everywhere/agents" ? (query.get("ids") ?? "").split(",").map((x) => x.trim()).filter(Boolean) : null;
+    const cacheKey = `${path}?ids=${(ids ?? []).join(",")}`;
+    const hit = this.cache.get(cacheKey);
+    if (hit && Date.now() - hit.at < 15_000) return hit.answer;
+    const env = (kind: "factor.agent" | "factor.agents") => envelope(kind, { chainId: v.config.chainId, desk: r.ctx.addr.desk, block: r.snap.block, nowS: this.chainNow(v, r.snap) });
+    let answer: Answer;
+    m = /^\/v1\/everywhere\/agent\/([^/]{3,120})$/.exec(path);
+    if (m) {
+      const row = await this.resolveAgent(v, r, m[1]!);
+      if (typeof row === "string") return notFound(row);
+      answer = ok({ ...(await seal(v.answerSigner!, { ...env("factor.agent"), ...(await this.agentAnswer(v, r, row)) })) });
+    } else if (ids) {
+      if (!ids.length || ids.length > MOST_AT_ONCE) return { status: 400, body: { error: `ids is 1 to ${MOST_AT_ONCE} agents, with commas between them` } };
+      const items: AgentAnswer[] = [], missing: string[] = [];
+      for (const x of ids) {
+        const row = await this.resolveAgent(v, r, x);
+        if (typeof row === "string") missing.push(x.slice(0, 120));
+        else items.push(await this.agentAnswer(v, r, row));
+      }
+      answer = ok({ ...(await seal(v.answerSigner!, { ...env("factor.agents"), items, missing })) });
+    } else return null;
+    if (this.cache.size > 2000) this.cache.clear();
+    this.cache.set(cacheKey, { at: Date.now(), answer });
+    return answer;
+  }
+
+  // Factor Connect: a marketplace with its key, or the hire page claiming a job for a hire link.
+  private async connectPost(path: string, body: unknown, from: string, key?: string): Promise<Answer | null> {
+    const v = this.view();
+    const c = v.connect;
+    if (!this.connectOn(v) || !c) return { status: 503, body: { error: "Factor Connect is switched off for now" } };
+    if (v.state !== "running") return { status: 503, body: { error: "the engine is not reading the chain yet" } };
+    const b = (body && typeof body === "object" && !Array.isArray(body) ? body : {}) as Record<string, unknown>;
+    if (path === "/v1/connect/register") {
+      if (this.tooMany(from, "connect-register", 10)) return { status: 429, body: { error: "too many requests: try again in a minute" } };
+      return c.register(b, from);
+    }
+    if (path === "/v1/connect/claim") {
+      if (this.tooMany(from, "connect-claim", 30)) return { status: 429, body: { error: "too many requests: try again in a minute" } };
+      return c.claim(b);
+    }
+    if (!["/v1/connect/rotate", "/v1/connect/hook", "/v1/connect/hire", "/v1/connect/me", "/v1/connect/ping"].includes(path)) return null;
+    const m = c.marketOf(key);
+    if (!m) {
+      if (this.tooMany(from, "connect-badkey", 20)) return { status: 429, body: { error: "too many requests: try again in a minute" } };
+      return { status: 401, body: { error: "send the marketplace's key: Authorization: Bearer fc_..." } };
+    }
+    if (m.blocked) return { status: 403, body: { error: `this marketplace is blocked: ${m.blocked}` } };
+    if (this.tooMany(m.id, "connect", 120)) return { status: 429, body: { error: "too many requests: try again in a minute" } };
+    if (path === "/v1/connect/rotate") return c.rotate(m);
+    if (path === "/v1/connect/hook") return c.setHook(m, b);
+    if (path === "/v1/connect/hire") return c.hire(m, b);
+    if (path === "/v1/connect/ping") return c.ping(m);
+    return c.me(m);
+  }
+
+  // The owner: every marketplace, and blocking one. { "what": "list" } or { "what": "block", "id": "...", "blocked": true, "note": "why" }
+  private async connectAdmin(body: unknown, from: string, adminKey?: string): Promise<Answer> {
+    const v = this.view();
+    if (this.tooMany(from, "admin", 10)) return { status: 429, body: { error: "too many requests: try again in a minute" } };
+    const want = v.config.adminKey;
+    const given = Buffer.from(adminKey ?? ""), held = Buffer.from(want ?? "");
+    if (!want || given.length !== held.length || !timingSafeEqual(given, held)) return { status: 401, body: { error: "not the owner" } };
+    if (!v.connect) return { status: 503, body: { error: "the engine is not reading the chain yet" } };
+    const b = (body && typeof body === "object" && !Array.isArray(body) ? body : {}) as Record<string, unknown>;
+    if (b.what === "list") return ok({ items: v.connect.list() });
+    if (b.what === "block" && typeof b.id === "string") {
+      const done = v.connect.block(b.id, b.blocked === false ? null : typeof b.note === "string" && b.note.trim() ? b.note : "blocked by the owner");
+      return done ? ok({ ok: true }) : notFound("no marketplace by that id");
+    }
+    return { status: 400, body: { error: 'what is "list", or "block" with the marketplace\'s id' } };
   }
 
   /** The agents one agent hired for parts of its jobs, and those that hired it, with names. */
@@ -1630,7 +1819,8 @@ export class EngineApi {
     const guarantees = this.guaranteesAbout(v);
     const bounties = this.bountiesAbout(v);
     const milestones = this.milestonesAbout(v);
-    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused, roster: this.rosterJson(v), hosted, pulse: pulseJson(v, 8), desk: this.deskJson(v), signups, activity, pay, subjobs, firms, plans, erc8004, openJobs, autoApply, verified, coins, lines, guarantees, bounties, milestones };
+    const everywhere = this.everywhereAbout(v);
+    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused, roster: this.rosterJson(v), hosted, pulse: pulseJson(v, 8), desk: this.deskJson(v), signups, activity, pay, subjobs, firms, plans, erc8004, openJobs, autoApply, verified, coins, lines, guarantees, bounties, milestones, everywhere };
     if (!r) {
       return { ...base, launched: false, stats: { advancedEth: 0, settledJobs: 0, jobs: 0, poolEth: 0, reserveEth: 0, outEth: 0, heldEth: 0, burnedTokens: 0, supplyLeft: SUPPLY, agents: 0, demoJobs: 0, lostEth: 0, poolFromTradingEth: 0 }, burn: null, agents: [], jobs: [], events: [], burns: [] };
     }

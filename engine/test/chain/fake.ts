@@ -88,7 +88,7 @@ export class FakeChain implements Chain {
   // ERC-8004, as the deployed 2.0.0 keeps it: identities numbered from 0, each with an owner, an agentWallet and one
   // approved address; entries by identity and writer, numbered from 1
   identities: { owner: string; wallet: string | null; approved: string | null }[] = [];
-  feedback = new Map<string, { value: bigint; decimals: number; tag1: string; tag2: string; uri: string; hash: string }[]>();
+  feedback = new Map<string, { value: bigint; decimals: number; tag1: string; tag2: string; uri: string; hash: string; revoked?: boolean }[]>();
   // accounts for people without a wallet that exist, with the number their next order must carry
   made = new Map<string, { nonce: number; kind: number; a: string; b: string }>();
 
@@ -366,6 +366,18 @@ export class FakeChain implements Chain {
       }
       return undefined;
     }
+    if (to === A.reputation && fn === "revokeFeedback") {
+      const [agentId, index] = args as [bigint, bigint];
+      const list = this.feedback.get(`${agentId}:${from.toLowerCase()}`) ?? [];
+      const e = list[Number(index) - 1];
+      if (Number(index) < 1 || !e) throw new Reverted("index out of bounds");
+      if (e.revoked) throw new Reverted("Already revoked");
+      if (commit) {
+        e.revoked = true;
+        this.emit("reputation", "FeedbackRevoked", { agentId, clientAddress: from, feedbackIndex: index }, txHash);
+      }
+      return undefined;
+    }
     if (to === A.accounts && fn === "create") {
       const key = args[0] as { kind: number; a: string; b: string };
       const account = FakeChain.accountOf(key);
@@ -455,7 +467,7 @@ export class FakeChain implements Chain {
   }
 
   /** The entries one writer gave an identity. */
-  entriesOf(agentId: number, writer: string): { value: bigint; decimals: number; tag1: string; tag2: string; uri: string; hash: string }[] {
+  entriesOf(agentId: number, writer: string): { value: bigint; decimals: number; tag1: string; tag2: string; uri: string; hash: string; revoked?: boolean }[] {
     return this.feedback.get(`${agentId}:${writer.toLowerCase()}`) ?? [];
   }
 

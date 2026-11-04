@@ -40,13 +40,19 @@
 //   milestones milestones (../milestones.ts): every plan hidden, and no step by the keeper. Off unless MILESTONES=on,
 //             which is how it starts: this switch only stops it. The chain is still read, so nothing is missed, and
 //             anyone can still post, accept, reject or step on the chain itself; each stage is a desk job as always.
+//   everywhere Factor everywhere (../everywhere.ts): the signed answers for other apps, the embeds' reads, the assistant's
+//             endpoint and Factor Connect. Off unless EVERYWHERE=on, which is how it starts: this switch only stops it.
+//             Nothing is lost: a marketplace's jobs and the webhooks owed to it wait, and go out once it is turned back.
+//   connect   Factor Connect alone: no marketplace registered, no hire link made or claimed, no webhook sent. They wait.
+//   scores    writing agents' Factor Scores to ERC-8004 (../erc8004score.ts). What was written stays on the chain; a
+//             score that moved meanwhile is written once it is turned back on.
 //
 // A switch is turned with POST /v1/admin/switch and the owner's key, or set at start with ENGINE_STOP (names with
 // commas between them). It is kept in the database, so it holds across a restart until it is turned back.
 
 import type { EngineDb } from "./chain/db.js";
 
-export const SWITCHES = ["keeper", "accounts", "compute", "house", "hiring", "erc8004", "autoapply", "bids", "verified", "coins", "lines", "guarantees", "bounties", "raeto", "milestones"] as const;
+export const SWITCHES = ["keeper", "accounts", "compute", "house", "hiring", "erc8004", "autoapply", "bids", "verified", "coins", "lines", "guarantees", "bounties", "raeto", "milestones", "everywhere", "connect", "scores"] as const;
 export type Switch = (typeof SWITCHES)[number];
 const key = (name: Switch) => `switch:${name}`;
 

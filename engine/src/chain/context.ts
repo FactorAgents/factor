@@ -3,6 +3,7 @@
 
 import type { AccountsConfig } from "../accounts.js";
 import type { Erc8004 } from "../erc8004.js";
+import type { Erc8004Scores } from "../erc8004score.js";
 import type { Coins } from "../coins.js";
 import type { Lines } from "../lines.js";
 import type { Guarantees } from "../guarantees.js";
@@ -62,6 +63,7 @@ export interface Ctx {
   stopping: () => boolean; // the server is shutting down: nothing new is started, and no receipt is waited for
   accounts?: AccountsConfig; // what the gas wallet pays for on accounts, and how much
   erc8004?: Erc8004 | null; // settled jobs written to the agents' ERC-8004 reputation (../erc8004.ts)
+  erc8004Scores?: Erc8004Scores | null; // agents' Factor Scores written to ERC-8004 (../erc8004score.ts)
   coins?: Coins | null; // agent coins: read, swept and credited (../coins.ts)
   lines?: Lines | null; // credit lines: read, swept, recovered and credited (../lines.ts)
   guarantees?: Guarantees | null; // guarantees: read, covers tied, closed and let lapse (../guarantees.ts)

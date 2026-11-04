@@ -587,7 +587,7 @@ CREATE TABLE IF NOT EXISTS job_titles (
 );
 `;
 
-export type ActionKind = "sweep" | "retry_split" | "claim_token" | "burn" | "settle_job" | "refund_job" | "collect" | "return_compute" | "skim" | "relay" | "erc8004" | "coin_sweep" | "line" | "guarantee" | "bounty" | "milestone" | "unstick";
+export type ActionKind = "sweep" | "retry_split" | "claim_token" | "burn" | "settle_job" | "refund_job" | "collect" | "return_compute" | "skim" | "relay" | "erc8004" | "coin_sweep" | "line" | "guarantee" | "bounty" | "milestone" | "erc8004_score" | "unstick";
 export type ActionStatus = "dry" | "signed" | "sent" | "done" | "failed" | "replaced";
 
 export interface ActionRow {

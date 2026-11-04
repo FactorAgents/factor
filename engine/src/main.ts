@@ -28,6 +28,8 @@ const BOUNTY_TASK_BODY = 2 * 8000 + 1024;
 const BOUNTY_WORK_BODY = 2 * 200_000 + 1024;
 // what a plan's words may carry (./milestones.ts), with room for the JSON around them
 const MILESTONE_TERMS_BODY = 2 * 40_000 + 1024;
+// a marketplace's hire link carries a brief of up to 2,000 characters (./everywhere.ts)
+const CONNECT_HIRE_BODY = 16_384;
 // an order of an account carries its calls and a passkey's answer: more than a signed name, and still small
 const ORDER_MOST = 32_768;
 // a brief is up to 12,000 characters and the work up to 200,000: as bytes, with room for what carries them
@@ -91,10 +93,12 @@ const server = createServer((req, res) => {
     req.resume();
     return;
   }
+  // a marketplace's key for Factor Connect (./everywhere.ts): "Authorization: Bearer fc_..."
+  const auth = typeof req.headers.authorization === "string" && req.headers.authorization.length <= 200 ? req.headers.authorization : undefined;
   if (req.method === "POST") {
     const key = req.headers["x-admin-key"];
-    readJson(req, path.startsWith("/v1/accounts") || path.startsWith("/v1/pay/") ? ORDER_MOST : path === "/v1/jobs/brief" || path === "/v1/agents/make" ? BRIEF_BYTES : path === "/v1/jobs/delivery" ? WORK_BYTES : path === "/v1/bounties/entry" ? BOUNTY_WORK_BODY : path === "/v1/bounties/task" ? BOUNTY_TASK_BODY : path === "/v1/milestones/terms" ? MILESTONE_TERMS_BODY : BODY_MOST)
-      .then((body) => engine.post(path, body, caller(req), typeof key === "string" ? key : undefined))
+    readJson(req, path.startsWith("/v1/accounts") || path.startsWith("/v1/pay/") ? ORDER_MOST : path === "/v1/jobs/brief" || path === "/v1/agents/make" ? BRIEF_BYTES : path === "/v1/jobs/delivery" ? WORK_BYTES : path === "/v1/bounties/entry" ? BOUNTY_WORK_BODY : path === "/v1/bounties/task" ? BOUNTY_TASK_BODY : path === "/v1/milestones/terms" ? MILESTONE_TERMS_BODY : path === "/v1/connect/hire" ? CONNECT_HIRE_BODY : BODY_MOST)
+      .then((body) => engine.post(path, body, caller(req), typeof key === "string" ? key : undefined, auth))
       .then((a) => (a ? send(a.status, a.body) : send(404, { error: "not found" })))
       .catch((e: Error) => (e.message === "too large" ? send(413, { error: "the body is too large" }) : e.message === "not JSON" ? send(400, { error: "the body is not JSON" }) : failed()));
     return;
@@ -107,7 +111,7 @@ const server = createServer((req, res) => {
     if (!engine.live.subscribe(res)) send(503, { error: "too many streams open" });
     return;
   }
-  engine.handle(path, new URLSearchParams(search), caller(req)).then((a) => (a ? send(a.status, a.body) : send(404, { error: "not found" }))).catch(failed);
+  engine.handle(path, new URLSearchParams(search), caller(req), auth).then((a) => (a ? send(a.status, a.body) : send(404, { error: "not found" }))).catch(failed);
 });
 const port = Number(process.env.PORT) || 8787;
 server.listen(port, () => console.log(`${new Date().toISOString().slice(11, 19)} [engine] listening on ${port}`));
