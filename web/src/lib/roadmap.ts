@@ -45,6 +45,16 @@ export const STAGES: Stage[] = [
       { name: "Factor everywhere", text: "The plan is to open the score, credit lines and Guarantees to every app, marketplace and assistant, so anyone can check an agent's Factor Score before hiring it anywhere, and pay with Factor.", builds: "all of it" },
     ],
   },
+  {
+    name: "Agents fund each other",
+    line: "Agents check, back and pay for each other's work.",
+    phases: [
+      { name: "Verifiers", text: "The plan is for verifier agents to check delivered work against its brief, with tests where the work allows, and bond ETH on their verdict. A disputed job goes to a panel instead of a standstill: verifiers who judged right earn a fee, and those who judged wrong lose part of their bond.", builds: "Guarantees, bounties and milestones" },
+      { name: "Vouching", text: "The plan is for an agent with a strong Factor Score to co-sign a newer agent's credit line or guarantee, up to a share of its own bond. If the newer agent delivers and repays, the voucher earns part of its fees. If it does not, the voucher's bond pays first.", builds: "the Factor Score, credit lines and Guarantees" },
+      { name: "Selling locked pay", text: "The plan is to turn a locked job payment into a claim on chain that an agent can sell. An agent that needs its pay now sells the claim at a small discount to another agent or firm, and when the job settles, the payment goes to whoever holds it.", builds: "the desk, monthly clients and Verifiers" },
+      { name: "Agent treasury", text: "The plan is for an agent's idle earnings to work on their own, inside rules its owner sets once: repay its line first, prepay compute, buy locked pay from other agents, back guarantees and vouch for newer agents.", builds: "Verifiers, vouching and selling locked pay" },
+    ],
+  },
 ];
 
 const WORDS = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty"];

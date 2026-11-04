@@ -768,11 +768,11 @@ test("the roadmap: on the home page, every phase in order, what is live checked 
   assert.match(html, /id="roadmap"/);
   const t = text(html);
   assert.match(t, /07 Roadmap The credit layer for AI agents \./);
-  assert.match(t, /15 of 16 phases live/);
+  assert.match(t, /15 of 20 phases live/);
   // the intro counts from the roadmap itself, so it never goes stale
-  assert.match(t, /Fifteen phases are live, the next one is planned, and more will follow\./);
+  assert.match(t, /Fifteen phases are live, the next five are planned, and more will follow\./);
   assert.doesNotMatch(t, /Thirteen phases|Fourteen phases/);
-  const names = ["Launch", "Compute on credit", "Pay with Factor", "Agents hire agents", "Agent firms", "Monthly clients", "Agents find their own work", "Agents that bid", "Bounties", "Agent coins", "Factor Score", "Credit lines", "Verified owners", "Guarantees", "Milestones", "Factor everywhere"];
+  const names = ["Launch", "Compute on credit", "Pay with Factor", "Agents hire agents", "Agent firms", "Monthly clients", "Agents find their own work", "Agents that bid", "Bounties", "Agent coins", "Factor Score", "Credit lines", "Verified owners", "Guarantees", "Milestones", "Factor everywhere", "Verifiers", "Vouching", "Selling locked pay", "Agent treasury"];
   let at = t.indexOf("Stage 1");
   names.forEach((name, i) => { const k = t.indexOf(`Phase ${String(i + 1).padStart(2, "0")} ${name}`, at); assert.ok(k > at, `phase ${i + 1} ${name} in order`); at = k; });
   for (const day of ["14 Oct", "15 Oct", "16 Oct", "17 Oct", "18 Oct", "19 Oct", "20 Oct", "22 Oct", "23 Oct", "24 Oct", "28 Oct", "30 Oct", "1 Nov", "2 Nov", "3 Nov"]) assert.match(t, new RegExp(`Live ${day}`));
@@ -784,15 +784,17 @@ test("the roadmap: on the home page, every phase in order, what is live checked 
   assert.match(t, /Live 2 Nov Phase 09 Bounties/);
   assert.match(t, /Live 3 Nov Phase 15 Milestones/);
   assert.match(t, /Next Phase 16 Factor everywhere/);
-  assert.equal((t.match(/Planned Phase/g) ?? []).length, 0);
+  assert.equal((t.match(/Planned Phase/g) ?? []).length, 4);
+  for (const name of ["Verifiers", "Vouching", "Selling locked pay", "Agent treasury"]) assert.match(t, new RegExp(`Planned Phase \\d+ ${name} The plan is`));
+  assert.match(t, /Stage 5 Agents fund each other/);
   for (const w of ["October", "November", "December"]) assert.ok(!t.slice(t.indexOf("Stage 2")).includes(w), `no planned date: ${w}`);
   // the line runs on past the last phase into a stage still being planned, with no phase number and no date
-  const more = t.slice(t.indexOf("Phase 16 Factor everywhere"));
-  assert.match(more, /Stage 5 Coming What comes next/);
+  const more = t.slice(t.indexOf("Phase 20 Agent treasury"));
+  assert.match(more, /Stage 6 Coming What comes next/);
   assert.match(more, /The next stage is being planned\. New phases are added here as we get close to finishing the ones above/);
-  assert.ok(!/Phase 17/.test(t), "no phase number for what comes next");
+  assert.ok(!/Phase 21/.test(t), "no phase number for what comes next");
   assert.equal((t.match(/checked off the day it goes live/g) ?? []).length, 1);
-  assert.equal((t.match(/Builds on/g) ?? []).length, 7);
+  assert.equal((t.match(/Builds on/g) ?? []).length, 11);
   // the footer leads to it on every page, as the header does
   assert.match(html, /<footer[\s\S]*href="\/roadmap"/);
 });
