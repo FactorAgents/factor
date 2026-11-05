@@ -1,0 +1,151 @@
+{
+  "contract": "FactorAccount",
+  "events": [
+    {
+      "name": "Executed",
+      "signature": "Executed(uint256,bytes32,uint256)",
+      "topic0": "0xbb68f99b128655353d9e301a2e6fbd3ca535fc7a32ed524f4fea959f904d89d6",
+      "inputs": [
+        {
+          "name": "nonce",
+          "type": "uint256",
+          "indexed": true,
+          "internalType": "uint256"
+        },
+        {
+          "name": "key",
+          "type": "bytes32",
+          "indexed": true,
+          "internalType": "bytes32"
+        },
+        {
+          "name": "calls",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        }
+      ]
+    },
+    {
+      "name": "KeyAdded",
+      "signature": "KeyAdded(bytes32,uint8,bytes32,bytes32,bytes)",
+      "topic0": "0xe00238cbe652fdeeaeece3b47d2789a6aaaa12df27cb6142524722b2a23f896d",
+      "inputs": [
+        {
+          "name": "id",
+          "type": "bytes32",
+          "indexed": true,
+          "internalType": "bytes32"
+        },
+        {
+          "name": "kind",
+          "type": "uint8",
+          "indexed": false,
+          "internalType": "enum FactorAccount.Kind"
+        },
+        {
+          "name": "a",
+          "type": "bytes32",
+          "indexed": false,
+          "internalType": "bytes32"
+        },
+        {
+          "name": "b",
+          "type": "bytes32",
+          "indexed": false,
+          "internalType": "bytes32"
+        },
+        {
+          "name": "credential",
+          "type": "bytes",
+          "indexed": false,
+          "internalType": "bytes"
+        }
+      ]
+    },
+    {
+      "name": "KeyRemoved",
+      "signature": "KeyRemoved(bytes32)",
+      "topic0": "0x9fa04aa9ce3b7b1f7b91bdb4c87c108902d9fb582499ba652e492e32b2edc19b",
+      "inputs": [
+        {
+          "name": "id",
+          "type": "bytes32",
+          "indexed": true,
+          "internalType": "bytes32"
+        }
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "name": "BadKey",
+      "signature": "BadKey()",
+      "selector": "0xee9f2d53"
+    },
+    {
+      "name": "BadSignature",
+      "signature": "BadSignature()",
+      "selector": "0x5cd5d233"
+    },
+    {
+      "name": "CallFailed",
+      "signature": "CallFailed(uint256)",
+      "selector": "0x3f9a3b48"
+    },
+    {
+      "name": "Expired",
+      "signature": "Expired(uint256)",
+      "selector": "0xf80dbaea"
+    },
+    {
+      "name": "KeyExists",
+      "signature": "KeyExists()",
+      "selector": "0xadb8cab5"
+    },
+    {
+      "name": "LastKey",
+      "signature": "LastKey()",
+      "selector": "0x04724bda"
+    },
+    {
+      "name": "NoCalls",
+      "signature": "NoCalls()",
+      "selector": "0xc42f6531"
+    },
+    {
+      "name": "NoSuchKey",
+      "signature": "NoSuchKey()",
+      "selector": "0xa1a69807"
+    },
+    {
+      "name": "NotAKey",
+      "signature": "NotAKey()",
+      "selector": "0xe139f3fb"
+    },
+    {
+      "name": "OnlyFactory",
+      "signature": "OnlyFactory()",
+      "selector": "0x0c6d42ae"
+    },
+    {
+      "name": "OnlySelf",
+      "signature": "OnlySelf()",
+      "selector": "0x14d4a4e8"
+    }
+  ],
+  "functions": {
+    "addKey((uint8,bytes32,bytes32),bytes)": "0xba674046",
+    "digest((address,uint256,bytes)[],uint256,uint256)": "0x1f3219a0",
+    "execute((address,uint256,bytes)[],uint256,bytes)": "0x143ca9b0",
+    "factory()": "0xc45a0155",
+    "initialize((uint8,bytes32,bytes32),bytes)": "0xfb09049d",
+    "isValidSignature(bytes32,bytes)": "0x1626ba7e",
+    "key(bytes32)": "0xfbda8c3f",
+    "keyCount()": "0xfac750e0",
+    "keyId((uint8,bytes32,bytes32))": "0x8fd34af8",
+    "nonce()": "0xaffed0e0",
+    "removeKey(bytes32)": "0x862642f5",
+    "run((address,uint256,bytes)[])": "0xb06f1eb4"
+  }
+}

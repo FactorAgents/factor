@@ -1,0 +1,24 @@
+$ forge test --fork-url http://127.0.0.1:18545 -vv
+# anvil --fork-url https://rpc.mainnet.chain.robinhood.com (fork block 106731902, 2026-11-05T12:19:25Z); forge Version: 1.8.1
+No files changed, compilation skipped
+
+Ran 16 tests for test/FactorDeskFork.t.sol:FactorDeskForkTest
+[PASS] test_F01_registerTwice_reverts() (gas: 78187)
+[PASS] test_F02_lockRefusals() (gas: 214922)
+[PASS] test_F03_drawOverHalf_reverts() (gas: 395908)
+[PASS] test_F04_drawOverLimit_reverts() (gas: 523201)
+[PASS] test_F05_earlyNotAllowed_and_zero() (gas: 259673)
+[PASS] test_F06_deliverAfterDueAndGrace_reverts() (gas: 281922)
+[PASS] test_F07_declineAfterDrawing_reverts() (gas: 310937)
+[PASS] test_F08_wrongCaller_reverts() (gas: 395964)
+[PASS] test_F09_rejectAfterReview_reverts() (gas: 271791)
+[PASS] test_F10_drawnUndelivered_refund_barsForGood() (gas: 876221)
+[PASS] test_F11_payoutRefused_landsInOwed_thenCollectTo() (gas: 884506)
+[PASS] test_T01_happyPath_lock_register_draw_deliver_accept() (gas: 981911)
+[PASS] test_T02_happyPath_earlyDraw_thenSettleAfterReview() (gas: 624736)
+[PASS] test_T03_reject_settlesAtHalf() (gas: 395964)
+[PASS] test_T04_decline_beforeDrawing() (gas: 289069)
+[PASS] test_T05_deliverInGrace_isLate() (gas: 285268)
+Suite result: ok. 16 passed; 0 failed; 0 skipped; finished in 3.26s (17.77s CPU time)
+
+Ran 1 test suite in 3.26s (3.26s CPU time): 16 tests passed, 0 failed, 0 skipped (16 total tests)

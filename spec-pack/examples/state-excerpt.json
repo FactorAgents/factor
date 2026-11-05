@@ -1,0 +1,34 @@
+{
+ "asOf": "2026-11-05T12:20:21.554Z",
+ "paused": null,
+ "contracts": {
+  "desk": "0x487eb282e9aa56ae871c15a16c5b061b9d2faa6f",
+  "explorer": "https://robinhoodchain.blockscout.com"
+ },
+ "params": {
+  "advanceMaxPct": 50,
+  "advanceFeePct": 1,
+  "jobFeePct": 2,
+  "graceHours": 12,
+  "reviewHours": 24,
+  "rejectedPct": 50,
+  "reserveMinPct": 20,
+  "minJobEth": 0.001
+ },
+ "accounts": {
+  "enabled": true,
+  "factory": "0x3417a303dcb62a84965a641f894ff5803502f8fa",
+  "ordersPerDay": 40
+ },
+ "compute": {
+  "enabled": true
+ },
+ "openJobs": {
+  "enabled": true,
+  "maxApplicants": 20,
+  "open": 0,
+  "applicants": 0,
+  "hired": 0,
+  "bids": true
+ }
+}

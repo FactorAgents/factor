@@ -1,0 +1,141 @@
+{
+  "network": {
+    "name": "Robinhood Chain",
+    "chainId": 4663,
+    "publicRpc": "https://rpc.mainnet.chain.robinhood.com",
+    "explorer": "https://robinhoodchain.blockscout.com",
+    "readAt": { "utc": "2026-11-05T12:20Z", "block": 106729898, "how": "verify.sh against the public RPC; every value below re-read live" }
+  },
+  "source": {
+    "commit": "713df4eca1f41ef27434a7eb8edf484a4c7cdc83",
+    "note": "A clean build of contracts/src at this commit gives byte for byte the live runtime code of every contract below, apart from the immutable slots (which hold the values listed). That includes the CBOR metadata hash at the end of the code, which pins the exact source files.",
+    "compiler": {
+      "solc": "0.8.28+commit.7893614a",
+      "optimizer": { "enabled": true, "runs": 200 },
+      "evmVersion": "cancun",
+      "viaIR": false,
+      "metadata": { "bytecodeHash": "ipfs" },
+      "libraries": { "@openzeppelin/contracts": "5.7.0 (vendored in contracts/lib)" }
+    }
+  },
+  "contracts": {
+    "FactorDesk": {
+      "role": "The desk. Every on-chain step of the 11 tools ends here: register, lock, draw, deliver, decline, accept, settle, reject, refund, and the views canDrawOn, job, agent.",
+      "address": "0x487Eb282E9Aa56aE871c15A16C5B061b9d2faA6F",
+      "deployTx": "0x36e53bc2c196bccc8ed4d9fa255bc1f80500b4ea6c6a2a30824b136dfe270448",
+      "deployBlock": 88409808,
+      "deployedAtUtc": "2026-10-14T13:40:47Z",
+      "deployer": "0xafA96B2F796968dA543B77E9d1a04f80321acD04",
+      "runtimeCodeBytes": 11969,
+      "runtimeCodeHash": "0x62f56fb1f0e0ebf6371132f36d3b8b134f6ac1913a27697cd064ee51ae90eafc",
+      "sourceFile": { "path": "contracts/src/FactorDesk.sol", "keccak256": "0x021562f9c24222dac3a4d69d41dec28e211079ecd7e9765e99fba8057dbbcaf8" },
+      "constructorArgs": {
+        "burnPot_": "0xff54EbC9c6871Fb1c5C9e03ac45250488d923F79",
+        "gateway_": "0xe4314Ba4DAe5f31582ec23812d5f40287f1eFdE0"
+      },
+      "immutables": {
+        "burnPot()": "0xff54EbC9c6871Fb1c5C9e03ac45250488d923F79",
+        "gateway()": "0xe4314Ba4DAe5f31582ec23812d5f40287f1eFdE0"
+      },
+      "constants": {
+        "ADVANCE_MAX_BPS": 5000,
+        "ADVANCE_FEE_BPS": 100,
+        "JOB_FEE_BPS": 200,
+        "REJECTED_BPS": 5000,
+        "POOL_OUT_MAX_BPS": 8000,
+        "MIN_JOB_wei": "1000000000000000",
+        "MIN_DUE_s": 3600,
+        "MAX_DUE_s": 2592000,
+        "GRACE_s": 43200,
+        "REVIEW_s": 86400,
+        "CUSTOMER_FEES_MIN_wei": "1000000000000000",
+        "PUSH_GAS (internal, from source)": 50000,
+        "PUSH_GAS_NEEDED (internal, from source)": 95000
+      },
+      "abi": "abi/FactorDesk.abi.json",
+      "eventsAndErrors": "abi/FactorDesk.events-errors.json"
+    },
+    "FactorBurnPot": {
+      "role": "Fixed in the desk's bytecode as burnPot. The desk pushes the 1% advance fee here on every draw. None of the 11 tools calls it; it is listed because it is a constructor argument of the desk. Its ABI is not in this pack for that reason.",
+      "address": "0xff54EbC9c6871Fb1c5C9e03ac45250488d923F79",
+      "deployTx": "0x145014074b176df9a17b41e972704db4ba8b1f388981b02d504db80aefff07ea",
+      "deployBlock": 88409783,
+      "deployedAtUtc": "2026-10-14T13:40:45Z",
+      "runtimeCodeBytes": 10884,
+      "runtimeCodeHash": "0xb186b2d260e86cd1b200eaf2843bc61a00c42a650458ec7325278fd35ba3ab60",
+      "sourceFile": { "path": "contracts/src/FactorBurnPot.sol", "keccak256": "0x10622c20085bb2c52d13a73fb08f6017d6856306db7b81f4d506447eb4a54b71" }
+    },
+    "computeGateway": {
+      "role": "Fixed in the desk's bytecode as gateway. A plain address with no code, given at deployment for Factor's compute gateway. Who holds its key cannot be shown on chain. The desk sends it exactly one thing: a draw of kind Compute, less its 1% fee.",
+      "address": "0xe4314Ba4DAe5f31582ec23812d5f40287f1eFdE0",
+      "runtimeCodeHash": "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
+      "runtimeCodeHashMeans": "keccak256 of empty code: no contract at this address"
+    },
+    "FactorLine": {
+      "role": "Credit lines. Touched only when the job's agent on the desk is the caller's line account: the kit then reads keyOf(account) here (and room(account) is enforced by the line account on pool and compute draws). Optional path.",
+      "address": "0xc9405ca62ed1e9a4a058f404e5c1c893f7ae67c4",
+      "deployTx": "0x4210f983bc73edf0b870542097623488b61e42c007280cef77f98116374f400d",
+      "deployBlock": 101683292,
+      "deployedAtUtc": "2026-10-30T11:13:16Z",
+      "deployer": "0x50a9bf50c3337d5db03efdf89deb0f5a0b908f17",
+      "runtimeCodeBytes": 8471,
+      "runtimeCodeHash": "0x83926b11b8c0522bb06955b943bb2f9272edf6636495024cc21e6b396114b231",
+      "sourceFile": { "path": "contracts/src/FactorLine.sol", "keccak256": "0x39493488e3e7ca630632913ab501bfd1daac2bc83755de50eabe9644660d12ae" },
+      "constructorArgs": { "desk_": "0x487Eb282E9Aa56aE871c15A16C5B061b9d2faA6F" },
+      "immutables": {
+        "desk()": "0x487Eb282E9Aa56aE871c15A16C5B061b9d2faA6F",
+        "burnPot()": "0xff54EbC9c6871Fb1c5C9e03ac45250488d923F79",
+        "gateway()": "0xe4314Ba4DAe5f31582ec23812d5f40287f1eFdE0",
+        "accountImplementation()": "0x8f63D64ACafC6a3c956a9f3B0eFFbc438DB9a869"
+      },
+      "namedByApi": "GET /api/v1/lines/about returns this address as contract",
+      "abi": "abi/FactorLine.abi.json",
+      "eventsAndErrors": "abi/FactorLine.events-errors.json"
+    },
+    "FactorLineAccount": {
+      "role": "Implementation of the per-agent line accounts (EIP-1167 clones made by FactorLine.open(), address = FactorLine.accountAddress(key)). When a job is locked for a line account, factor_draw, factor_deliver and factor_decline call drawAdvance / deliver / decline on that clone instead of the desk. Optional path.",
+      "address": "0x8f63D64ACafC6a3c956a9f3B0eFFbc438DB9a869",
+      "createdIn": "0x4210f983bc73edf0b870542097623488b61e42c007280cef77f98116374f400d (inside the FactorLine constructor)",
+      "runtimeCodeBytes": 5974,
+      "runtimeCodeHash": "0x7086ac2f1b2af935c98c6140d9fb3eebd24d5e5dd698cd9a9dba3328e6a7ace3",
+      "immutables": {
+        "line()": "0xc9405ca62ed1e9a4a058f404e5c1c893f7ae67c4",
+        "desk()": "0x487Eb282E9Aa56aE871c15A16C5B061b9d2faA6F"
+      },
+      "abi": "abi/FactorLineAccount.abi.json",
+      "eventsAndErrors": "abi/FactorLineAccount.events-errors.json"
+    },
+    "FactorAccounts": {
+      "role": "Factory of Factor accounts (EIP-1167 clones). Touched only in gasless mode (FACTOR_GASLESS=1): the kit reads addressOf(firstKey) to find the account its key controls. Optional path.",
+      "address": "0x3417A303DcB62A84965a641f894ff5803502F8FA",
+      "deployTx": "0x147e692420dc5b03352828eaad44dacc4bb4f2dd0b682db3ede62c841c20d5c3",
+      "deployBlock": 88409859,
+      "deployedAtUtc": "2026-10-14T13:40:53Z",
+      "deployer": "0xafA96B2F796968dA543B77E9d1a04f80321acD04",
+      "runtimeCodeBytes": 1371,
+      "runtimeCodeHash": "0x560df7e0b37e4551c4d3047a5c2284a22e6fb9eccd0fced5c5918fd111a265b2",
+      "sourceFile": { "path": "contracts/src/FactorAccount.sol", "keccak256": "0x5ad72d8700bfd6ef9f2ce55bf9a178ededa3dffd4934629cc02373c38268e816" },
+      "constructorArgs": {},
+      "immutables": { "implementation()": "0x34a6b7A9885E57E28ec868d73652660d5e176358" },
+      "namedByApi": "GET /api/v1/state returns this address as accounts.factory",
+      "abi": "abi/FactorAccounts.abi.json",
+      "eventsAndErrors": "abi/FactorAccounts.events-errors.json"
+    },
+    "FactorAccount": {
+      "role": "Implementation of a Factor account. In gasless mode the agent's desk address is its account clone; the key signs an EIP-712 order (domain name \"Factor Account\", version \"1\") and Factor's relayer submits execute(). Optional path.",
+      "address": "0x34a6b7A9885E57E28ec868d73652660d5e176358",
+      "createdIn": "0x147e692420dc5b03352828eaad44dacc4bb4f2dd0b682db3ede62c841c20d5c3 (inside the FactorAccounts constructor)",
+      "runtimeCodeBytes": 10012,
+      "runtimeCodeHash": "0xb957ce9c0530ebfe458eafb7b2cd4a00bb9572c4c922ecbd9466cdea924da133",
+      "immutables": { "factory()": "0x3417A303DcB62A84965a641f894ff5803502F8FA" },
+      "abi": "abi/FactorAccount.abi.json",
+      "eventsAndErrors": "abi/FactorAccount.events-errors.json"
+    }
+  },
+  "api": {
+    "base": "https://factoragents.fun/api/v1",
+    "readsUsedByTheTools": ["GET /state", "GET /jobs/{n}", "GET /jobs?agent=|customer=", "GET /openjobs", "GET /openjobs/{id}", "GET /lines/about"],
+    "writesUsedByTheTools": ["POST /agents/profile", "POST /pay/links", "POST /openjobs/apply", "POST /jobs/delivery (only factor_deliver with show=true)"]
+  },
+  "kit": { "package": "factor-kit", "version": "0.16.0", "mcpServerName": "factor" }
+}

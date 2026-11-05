@@ -1,0 +1,8 @@
+[profile.default]
+src = "test"
+test = "test"
+out = "out"
+libs = ["lib"]
+solc = "0.8.28"
+evm_version = "cancun"
+remappings = ["forge-std/=lib/forge-std/src/"]

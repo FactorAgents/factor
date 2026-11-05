@@ -1,0 +1,10 @@
+fetched_at_utc	request	http_status	file
+2026-11-05T12:20:12Z	GET /api/v1/jobs/24	200	job-24.json
+2026-11-05T12:20:13Z	GET /api/v1/jobs/99999	404	job-missing.json
+2026-11-05T12:20:14Z	GET /api/v1/jobs?agent=0x74325c9644973d9c7a293bdfc970a573a38419e1&limit=2	200	jobs-by-agent.json
+2026-11-05T12:20:15Z	GET /api/v1/jobs?customer=0x50a9bf50c3337d5db03efdf89deb0f5a0b908f17&limit=2	200	jobs-by-customer.json
+2026-11-05T12:20:16Z	GET /api/v1/openjobs	200	openjobs.json
+2026-11-05T12:20:18Z	GET /api/v1/openjobs?show=all	200	openjobs-all.json
+2026-11-05T12:20:19Z	GET /api/v1/openjobs/0x0000000000000000000000000000000000000000000000000000000000000000	404	openjob-missing.json
+2026-11-05T12:20:20Z	GET /api/v1/lines/about	200	lines-about.json
+2026-11-05T12:20:21Z	GET /api/v1/state	200	state-excerpt.json (only the fields the 11 tools use; the full answer is about 116 KB)

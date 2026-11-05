@@ -1,0 +1,47 @@
+Node: https://rpc.mainnet.chain.robinhood.com
+  ok    chain id = 4663
+  block  106729898
+Runtime code hashes (keccak256 of eth_getCode)
+  ok    FactorDesk         0x487Eb282E9Aa56aE871c15A16C5B061b9d2faA6F = 0x62f56fb1f0e0ebf6371132f36d3b8b134f6ac1913a27697cd064ee51ae90eafc
+  ok    FactorBurnPot      0xff54EbC9c6871Fb1c5C9e03ac45250488d923F79 = 0xb186b2d260e86cd1b200eaf2843bc61a00c42a650458ec7325278fd35ba3ab60
+  ok    FactorLine         0xc9405ca62ed1e9a4a058f404e5c1c893f7ae67c4 = 0x83926b11b8c0522bb06955b943bb2f9272edf6636495024cc21e6b396114b231
+  ok    FactorLineAccount  0x8f63D64ACafC6a3c956a9f3B0eFFbc438DB9a869 (implementation) = 0x7086ac2f1b2af935c98c6140d9fb3eebd24d5e5dd698cd9a9dba3328e6a7ace3
+  ok    FactorAccounts     0x3417A303DcB62A84965a641f894ff5803502F8FA = 0x560df7e0b37e4551c4d3047a5c2284a22e6fb9eccd0fced5c5918fd111a265b2
+  ok    FactorAccount      0x34a6b7A9885E57E28ec868d73652660d5e176358 (implementation) = 0xb957ce9c0530ebfe458eafb7b2cd4a00bb9572c4c922ecbd9466cdea924da133
+  ok    gateway has no code (a plain address) 0xe4314Ba4DAe5f31582ec23812d5f40287f1eFdE0 = 0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470
+Immutables
+  ok    desk.burnPot() = 0xff54EbC9c6871Fb1c5C9e03ac45250488d923F79
+  ok    desk.gateway() = 0xe4314Ba4DAe5f31582ec23812d5f40287f1eFdE0
+  ok    line.desk() = 0x487Eb282E9Aa56aE871c15A16C5B061b9d2faA6F
+  ok    line.burnPot() = 0xff54EbC9c6871Fb1c5C9e03ac45250488d923F79
+  ok    line.gateway() = 0xe4314Ba4DAe5f31582ec23812d5f40287f1eFdE0
+  ok    line.accountImplementation() = 0x8f63D64ACafC6a3c956a9f3B0eFFbc438DB9a869
+  ok    lineAccountImpl.line() = 0xc9405ca62ed1e9a4a058f404e5c1c893f7ae67c4
+  ok    lineAccountImpl.desk() = 0x487Eb282E9Aa56aE871c15A16C5B061b9d2faA6F
+  ok    accounts.implementation() = 0x34a6b7A9885E57E28ec868d73652660d5e176358
+  ok    accountImpl.factory() = 0x3417A303DcB62A84965a641f894ff5803502F8FA
+Desk constants
+  ok    ADVANCE_MAX_BPS = 5000
+  ok    ADVANCE_FEE_BPS = 100
+  ok    JOB_FEE_BPS = 200
+  ok    REJECTED_BPS = 5000
+  ok    POOL_OUT_MAX_BPS = 8000
+  ok    MIN_JOB (wei) = 1000000000000000
+  ok    MIN_DUE (s) = 3600
+  ok    MAX_DUE (s) = 2592000
+  ok    GRACE (s) = 43200
+  ok    REVIEW (s) = 86400
+Deploy transactions (the receipt's created address and block)
+  ok    FactorDesk created by 0x36e53bc2c196bccc8ed4d9fa255bc1f80500b4ea6c6a2a30824b136dfe270448 = 0x487Eb282E9Aa56aE871c15A16C5B061b9d2faA6F
+  ok    FactorDesk block = 88409808
+  ok    FactorBurnPot created by 0x145014074b176df9a17b41e972704db4ba8b1f388981b02d504db80aefff07ea = 0xff54EbC9c6871Fb1c5C9e03ac45250488d923F79
+  ok    FactorBurnPot block = 88409783
+  ok    FactorAccounts created by 0x147e692420dc5b03352828eaad44dacc4bb4f2dd0b682db3ede62c841c20d5c3 = 0x3417A303DcB62A84965a641f894ff5803502F8FA
+  ok    FactorAccounts block = 88409859
+  ok    FactorLine created by 0x4210f983bc73edf0b870542097623488b61e42c007280cef77f98116374f400d = 0xc9405ca62ed1e9a4a058f404e5c1c893f7ae67c4
+  ok    FactorLine block = 101683292
+The desk's constructor arguments, read from the end of its deploy transaction's input
+  ok    constructor arg 1 (burnPot_) = 000000000000000000000000ff54ebc9c6871fb1c5c9e03ac45250488d923f79
+  ok    constructor arg 2 (gateway_) = 000000000000000000000000e4314ba4dae5f31582ec23812d5f40287f1efde0
+
+All checks passed.

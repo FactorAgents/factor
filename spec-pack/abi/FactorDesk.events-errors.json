@@ -1,0 +1,553 @@
+{
+  "contract": "FactorDesk",
+  "events": [
+    {
+      "name": "Advanced",
+      "signature": "Advanced(uint256,address,uint8,uint256,uint256)",
+      "topic0": "0x1a5dcea7aa793cc742c1b4a58172daf052e917f71a9e1cac1e3de51dd35d0ff5",
+      "inputs": [
+        {
+          "name": "id",
+          "type": "uint256",
+          "indexed": true,
+          "internalType": "uint256"
+        },
+        {
+          "name": "agent",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "kind",
+          "type": "uint8",
+          "indexed": false,
+          "internalType": "enum FactorDesk.Kind"
+        },
+        {
+          "name": "amount",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        },
+        {
+          "name": "fee",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        }
+      ]
+    },
+    {
+      "name": "BondAdded",
+      "signature": "BondAdded(address,uint256,uint256)",
+      "topic0": "0xc84b1b191804173928786f9eaeba32c3390af9a8be366c1567ec5c27c45bf7d0",
+      "inputs": [
+        {
+          "name": "agent",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "amount",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        },
+        {
+          "name": "bond",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        }
+      ]
+    },
+    {
+      "name": "BondTaken",
+      "signature": "BondTaken(address,uint256,uint256)",
+      "topic0": "0xf09a29a819999c65ffec3d97c79456c0ccaf92fc9b86031f56b3d9d704a208b4",
+      "inputs": [
+        {
+          "name": "agent",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "amount",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        },
+        {
+          "name": "bond",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        }
+      ]
+    },
+    {
+      "name": "Collected",
+      "signature": "Collected(address,address,uint256)",
+      "topic0": "0x484decdc1e9549e1866295f6f86c889ded3f7de410e7488a7a415978589dc8fd",
+      "inputs": [
+        {
+          "name": "who",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "to",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "amount",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        }
+      ]
+    },
+    {
+      "name": "Declined",
+      "signature": "Declined(uint256,address,uint256)",
+      "topic0": "0x9ac853bf8a368b327a217cb33373cac776d93c200c4d6e29fc4f275ab1ef6706",
+      "inputs": [
+        {
+          "name": "id",
+          "type": "uint256",
+          "indexed": true,
+          "internalType": "uint256"
+        },
+        {
+          "name": "agent",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "toCustomer",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        }
+      ]
+    },
+    {
+      "name": "Delivered",
+      "signature": "Delivered(uint256,address,bytes32,bool)",
+      "topic0": "0x74a102ace5c859cc1bc971a701fcd32294b0ed9dfedc77fb0d2307945382e746",
+      "inputs": [
+        {
+          "name": "id",
+          "type": "uint256",
+          "indexed": true,
+          "internalType": "uint256"
+        },
+        {
+          "name": "agent",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "proof",
+          "type": "bytes32",
+          "indexed": false,
+          "internalType": "bytes32"
+        },
+        {
+          "name": "late",
+          "type": "bool",
+          "indexed": false,
+          "internalType": "bool"
+        }
+      ]
+    },
+    {
+      "name": "Locked",
+      "signature": "Locked(uint256,address,address,uint256,uint256,bool)",
+      "topic0": "0x5029bc3a88a9f0b34b30a3f1ad2d2716e2d4a8ee9cb1eb127f56b1ed8326da96",
+      "inputs": [
+        {
+          "name": "id",
+          "type": "uint256",
+          "indexed": true,
+          "internalType": "uint256"
+        },
+        {
+          "name": "customer",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "agent",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "price",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        },
+        {
+          "name": "dueAt",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        },
+        {
+          "name": "allowEarly",
+          "type": "bool",
+          "indexed": false,
+          "internalType": "bool"
+        }
+      ]
+    },
+    {
+      "name": "Owed",
+      "signature": "Owed(address,uint256)",
+      "topic0": "0x7393c924ac30f9256e6cebcfb78841b1e7ef11bf8b09d87c2257b32b8063c979",
+      "inputs": [
+        {
+          "name": "who",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "amount",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        }
+      ]
+    },
+    {
+      "name": "PoolIn",
+      "signature": "PoolIn(address,uint256)",
+      "topic0": "0x7c8915cecdf3dd1ba3480f1d4f362f4aa25bdab99ee9b930f9ebd19456d0a837",
+      "inputs": [
+        {
+          "name": "from",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "amount",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        }
+      ]
+    },
+    {
+      "name": "Refunded",
+      "signature": "Refunded(uint256,address,uint256,uint256,uint256,uint256)",
+      "topic0": "0x20e3f6a3fcfb0f55548121f4807fadb16036da02980845711d4197706a18344f",
+      "inputs": [
+        {
+          "name": "id",
+          "type": "uint256",
+          "indexed": true,
+          "internalType": "uint256"
+        },
+        {
+          "name": "agent",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "toCustomer",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        },
+        {
+          "name": "notRepaid",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        },
+        {
+          "name": "fromBond",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        },
+        {
+          "name": "lost",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        }
+      ]
+    },
+    {
+      "name": "Registered",
+      "signature": "Registered(address)",
+      "topic0": "0x2d3734a8e47ac8316e500ac231c90a6e1848ca2285f40d07eaa52005e4b3a0e9",
+      "inputs": [
+        {
+          "name": "agent",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        }
+      ]
+    },
+    {
+      "name": "Settled",
+      "signature": "Settled(uint256,address,uint256,uint256,uint256)",
+      "topic0": "0xb2790cfbb501cb5d139a6d2e6b8157f1e9fc7043f1354b6645d9accfa9d95582",
+      "inputs": [
+        {
+          "name": "id",
+          "type": "uint256",
+          "indexed": true,
+          "internalType": "uint256"
+        },
+        {
+          "name": "agent",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "toAgent",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        },
+        {
+          "name": "poolRepaid",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        },
+        {
+          "name": "jobFee",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        }
+      ]
+    },
+    {
+      "name": "SettledAtHalf",
+      "signature": "SettledAtHalf(uint256,address,uint256,uint256,uint256,uint256)",
+      "topic0": "0x5d1002ad7714ccb86f44d018f319366ce1e2fa26a5029ad204a5f33ba47b17a4",
+      "inputs": [
+        {
+          "name": "id",
+          "type": "uint256",
+          "indexed": true,
+          "internalType": "uint256"
+        },
+        {
+          "name": "agent",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "toCustomer",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        },
+        {
+          "name": "toAgent",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        },
+        {
+          "name": "poolRepaid",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        },
+        {
+          "name": "jobFee",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        }
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "name": "AlreadyRegistered",
+      "signature": "AlreadyRegistered()",
+      "selector": "0x3a81d6fc"
+    },
+    {
+      "name": "BadDueTime",
+      "signature": "BadDueTime()",
+      "selector": "0xcd28e417"
+    },
+    {
+      "name": "Barred",
+      "signature": "Barred()",
+      "selector": "0x544a0b76"
+    },
+    {
+      "name": "EarlyNotAllowed",
+      "signature": "EarlyNotAllowed()",
+      "selector": "0xeed0c0f9"
+    },
+    {
+      "name": "GasShort",
+      "signature": "GasShort()",
+      "selector": "0x882f2cb8"
+    },
+    {
+      "name": "NotAgent",
+      "signature": "NotAgent()",
+      "selector": "0x0d9ab13f"
+    },
+    {
+      "name": "NotCustomer",
+      "signature": "NotCustomer()",
+      "selector": "0xa8df5f3e"
+    },
+    {
+      "name": "NotRegistered",
+      "signature": "NotRegistered()",
+      "selector": "0xaba47339"
+    },
+    {
+      "name": "NothingOwed",
+      "signature": "NothingOwed()",
+      "selector": "0x797dba54"
+    },
+    {
+      "name": "OverBond",
+      "signature": "OverBond(uint256)",
+      "selector": "0xcd145a99"
+    },
+    {
+      "name": "OverHalf",
+      "signature": "OverHalf(uint256)",
+      "selector": "0x7bb6a5c2"
+    },
+    {
+      "name": "OverLimit",
+      "signature": "OverLimit(uint256)",
+      "selector": "0xe7f39408"
+    },
+    {
+      "name": "OwesThePool",
+      "signature": "OwesThePool(uint256)",
+      "selector": "0xd95b1267"
+    },
+    {
+      "name": "PoolShort",
+      "signature": "PoolShort(uint256)",
+      "selector": "0x6edca26e"
+    },
+    {
+      "name": "PushFailed",
+      "signature": "PushFailed()",
+      "selector": "0x3ececff8"
+    },
+    {
+      "name": "ReentrancyGuardReentrantCall",
+      "signature": "ReentrancyGuardReentrantCall()",
+      "selector": "0x3ee5aeb5"
+    },
+    {
+      "name": "TooLate",
+      "signature": "TooLate()",
+      "selector": "0xecdd1c29"
+    },
+    {
+      "name": "TooSmall",
+      "signature": "TooSmall(uint256)",
+      "selector": "0x42128ec3"
+    },
+    {
+      "name": "TooSoon",
+      "signature": "TooSoon(uint256)",
+      "selector": "0xe86f59ea"
+    },
+    {
+      "name": "WrongState",
+      "signature": "WrongState(uint8)",
+      "selector": "0xe37d4aeb"
+    },
+    {
+      "name": "ZeroAddress",
+      "signature": "ZeroAddress()",
+      "selector": "0xd92e233d"
+    },
+    {
+      "name": "ZeroAmount",
+      "signature": "ZeroAmount()",
+      "selector": "0x1f2a2005"
+    }
+  ],
+  "functions": {
+    "ADVANCE_FEE_BPS()": "0x49daceec",
+    "ADVANCE_MAX_BPS()": "0xf744ccc0",
+    "BPS()": "0x249d39e9",
+    "CUSTOMER_FEES_MIN()": "0x9344b334",
+    "GRACE()": "0x137d29d9",
+    "JOB_FEE_BPS()": "0xfccabf07",
+    "MAX_DUE()": "0xe73ae51e",
+    "MIN_DUE()": "0x4194d96d",
+    "MIN_JOB()": "0x671627cb",
+    "POOL_OUT_MAX_BPS()": "0xabc55864",
+    "REJECTED_BPS()": "0x2783d89e",
+    "REVIEW()": "0xd816edc2",
+    "accept(uint256)": "0x19b05f49",
+    "addBond()": "0xeec1a391",
+    "agent(address)": "0x92e423b5",
+    "bonds()": "0x135c404e",
+    "burnPot()": "0xdd428d4d",
+    "canDraw(address)": "0x96f73b92",
+    "canDrawOn(uint256)": "0xdf9343f0",
+    "collect(address)": "0x06ec16f8",
+    "collectTo(address)": "0x55e40ca1",
+    "customers(address)": "0x336989ae",
+    "decline(uint256)": "0xa0355f4e",
+    "deliver(uint256,bytes32)": "0xd9b42a7f",
+    "draw(uint256,uint256,uint8)": "0xe895a7a7",
+    "feesFrom(address,address)": "0xf02a2bf0",
+    "gateway()": "0x116191b6",
+    "held()": "0xa285aed7",
+    "job(uint256)": "0x2329e48c",
+    "jobCount()": "0x4c5d8a0f",
+    "limit(address)": "0xd8797262",
+    "lock(address,uint256,bool)": "0x507bb14d",
+    "out()": "0xb2a1449b",
+    "owed(address)": "0xdf18e047",
+    "owedTotal()": "0xfa1f0442",
+    "pool()": "0x16f0115b",
+    "poolRoom()": "0x0636b5eb",
+    "refund(uint256)": "0x278ecde1",
+    "register()": "0x1aa3a008",
+    "reject(uint256)": "0xb8adaa11",
+    "score(address)": "0x776f3843",
+    "settle(uint256)": "0x8df82800",
+    "takeBond(uint256)": "0xcef45489",
+    "totalAdvanceFees()": "0x83729533",
+    "totalAdvanced()": "0x43d9fa84",
+    "totalJobFees()": "0x166124e0",
+    "totalLost()": "0x93d6855c",
+    "totalPoolIn()": "0xef6d0b7f",
+    "totalSettled()": "0xeace4c91"
+  }
+}

@@ -1,0 +1,65 @@
+{
+  "contract": "FactorAccounts",
+  "events": [
+    {
+      "name": "Created",
+      "signature": "Created(address,bytes32,uint8,bytes32,bytes32,bytes)",
+      "topic0": "0xec6d8ab3fe26bd7502eb52fc6fda026122c08a405e7f82ef3bcdf2d476c06e51",
+      "inputs": [
+        {
+          "name": "account",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "keyId",
+          "type": "bytes32",
+          "indexed": true,
+          "internalType": "bytes32"
+        },
+        {
+          "name": "kind",
+          "type": "uint8",
+          "indexed": false,
+          "internalType": "enum FactorAccount.Kind"
+        },
+        {
+          "name": "a",
+          "type": "bytes32",
+          "indexed": false,
+          "internalType": "bytes32"
+        },
+        {
+          "name": "b",
+          "type": "bytes32",
+          "indexed": false,
+          "internalType": "bytes32"
+        },
+        {
+          "name": "credential",
+          "type": "bytes",
+          "indexed": false,
+          "internalType": "bytes"
+        }
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "name": "FailedDeployment",
+      "signature": "FailedDeployment()",
+      "selector": "0xb06ebf3d"
+    },
+    {
+      "name": "InsufficientBalance",
+      "signature": "InsufficientBalance(uint256,uint256)",
+      "selector": "0xcf479181"
+    }
+  ],
+  "functions": {
+    "addressOf((uint8,bytes32,bytes32))": "0x44d4385a",
+    "create((uint8,bytes32,bytes32),bytes)": "0x7e7e2718",
+    "implementation()": "0x5c60da1b"
+  }
+}

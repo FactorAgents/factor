@@ -1,0 +1,44 @@
+$ RPC=http://127.0.0.1:18545 ./happy-path.sh
+anvil fork of chain 4663 at block 106731903, client anvil/v1.8.1
+agent 0x9c5821CED2308F92d5917170737Cc877640AbeD1  customer 0x5eaE24e885A51721D963032963f14D13EE340fBd  stranger 0x046af0025EA1F2E094290EFef947119032591DE6
+
+1. factor_sign_up
+  desk.register()                                gasUsed   44763  tx 0x91b215ed55d05777455d5f9ca4bb38694c8fe3e3ecde639aa57fa5745e114413
+  profile signature (EIP-191) recovers to the agent: ok
+  the body POST /api/v1/agents/profile would take (NOT sent from this script):
+  {"address":"0x9c5821ced2308f92d5917170737cc877640abed1","name":"kit-test-agent","does":"Answers test questions on a fork","at":1793881170,"signature":"0x083da4e360072f6553..."}
+
+2. customer locks 0.01 ETH for the agent, due in 24 hours, no early advance
+  desk.lock(agent, dueAt, false) value 0.01 ETH  gasUsed  123924  tx 0xaafa39c4cd874dc7126f691a9cc514eaad82e51d1129e6bb7cd53ec7a8494301
+  job 33 is Locked (state 1)
+
+3. factor_can_draw, then factor_draw from the pool
+  desk.addBond() value 0.002 ETH                 gasUsed   72211  tx 0x41fc3e1b7800f96562072feafea137d2c60fb9460eae80649f1e1f1cf94b469b
+  canDrawOn(33) = (early, fromPool) = (0 2000000000000000) wei
+  desk.draw(job, 0.002 ETH, 1 = Pool)            gasUsed  145957  tx 0x91a878604326e6224c8592c25fd5b3d0505d0c26b1b1e09d89dac4f234eec620
+  burn pot received 20000000000000 wei (1% of 0.002 ETH = 20000000000000)
+  job 33 is Advanced (state 2)
+
+4. factor_deliver: only the fingerprint goes on chain
+  desk.deliver(job, keccak256(work))             gasUsed   56886  tx 0x02351c070b906d9282afdbbe9dba42394e1a29fb39190057be8c3aa978116dc9
+  proof 0x8f715be223489886c524646a99fbe481e04bc92de258d045fb47aaef650ab1c6, job 33 is Delivered (state 3)
+
+5. customer accepts: pool repaid first, 2% job fee, the agent gets the rest
+  desk.accept(job)                               gasUsed  186813  tx 0x79c1cfa19c58d05d69cb5530a759b756afb9f4c18ff67f2b7faa415008bc2e10
+  agent received 7800000000000000 wei (0.01 - 0.002 - 0.0002 = 7800000000000000)
+  job 33 is Settled (state 4)
+
+6. second job: early advance allowed, delivered, 24 hours pass, a stranger settles
+  desk.lock(agent, dueAt, true) value 0.004 ETH  gasUsed  123936  tx 0x5df37962b211176225484e66874cc5c2afcb73ca74a8111d9822c2287e249fe0
+  desk.draw(job2, 0.002 ETH, 0 = Early)          gasUsed   93661  tx 0x87bf0c5df4d6015b9689c108bc2c0fc78563d06b1bdf51859458ce19c2f17ed6
+  desk.deliver(job2, proof)                      gasUsed   56886  tx 0xb93c91e9b99ceddda0d474e069610213176505b1262a38cb8bf998917990d26c
+  desk.settle(job2) by anyone                    gasUsed   95002  tx 0x929de59a4d66fbcdb1560ef125cd9f3e2448ee7e60a2e1443f2d711aa6c64e59
+  job 34 is Settled (state 4)
+
+7. third job: factor_decline before drawing
+  desk.lock(agent, dueAt, false) value 0.002 ETH gasUsed  123924  tx 0x55834b295054df5b1efa0da3306dc181cf85eb8be5a18b66db4b4c15acbac632
+  desk.decline(job3)                             gasUsed   45480  tx 0x046af1eab7411ddbc763154cbe659ef92bdc5e928499d06e6c91eb6a237c0545
+  customer got 2000000000000000 wei back; job 35 is Declined (state 6)
+
+desk balance 1101657149385849783 >= pool + held + bonds + owedTotal 1101657149385849783: ok
+ALL STEPS PASSED

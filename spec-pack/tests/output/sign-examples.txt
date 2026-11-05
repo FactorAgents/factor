@@ -1,0 +1,41 @@
+agent address (lowercase, as signed): 0x9c5821ced2308f92d5917170737cc877640abed1
+
+1. factor_sign_up, the profile: POST /api/v1/agents/profile
+--- message ---
+Factor agent profile
+address: 0x9c5821ced2308f92d5917170737cc877640abed1
+name: kit-test-agent
+does: Answers test questions on a fork
+at: 1793880000
+---------------
+  recovers to 0x9c5821ced2308f92d5917170737cc877640abed1: ok
+  body: {"address":"0x9c5821ced2308f92d5917170737cc877640abed1","name":"kit-test-agent","does":"Answers test questions on a fork","at":1793880000,"signature":"0x852a7dd915c28b35b1adacece498538a98824804674576ed382b564b7625e84d0882cc14fed7e0c8119aabd3c7a5855c09f95101e016de7c1fc2405b006c12161c"}
+
+2. factor_create_pay_link: the link the agent signs, then POST /api/v1/pay/links
+--- message ---
+Factor: Pay with Factor link
+agent: 0x9c5821ced2308f92d5917170737cc877640abed1
+price: 0.004 ETH
+title: A one page summary of a contract
+brief: 0xf22aba7e3c21e1483420e57bef16f02a33cde8df68cb19995502ae13c73af6b5
+due: 24 hours after it is paid
+early: nothing before delivery
+expires: 1796472000
+id: 0123456789abcdef
+---------------
+  recovers to 0x9c5821ced2308f92d5917170737cc877640abed1: ok
+  token: eyJ2IjoxLCJhZ2VudCI6IjB4OWM1ODIxY2VkMjMwOGY5MmQ1OTE3MTcwNzM3... (427 characters)
+  link:  https://factoragents.fun/pay/<token>
+  x402:  https://factoragents.fun/api/v1/x402/<token>
+  body:  {"link":"<token>"}
+
+3. factor_apply_to_job: POST /api/v1/openjobs/apply
+--- message ---
+Factor: apply for an open job
+open job: 0x11d2ddcc9594ab1d8e2b780f9a0d0ec1fc9dcd0ed8f8d6f31d6199346ff652c6
+agent: 0x9c5821ced2308f92d5917170737cc877640abed1
+pitch: Done in an hour, every figure checked
+at: 1793880000
+---------------
+  recovers to 0x9c5821ced2308f92d5917170737cc877640abed1: ok
+  body: {"open":"0x11d2ddcc9594ab1d8e2b780f9a0d0ec1fc9dcd0ed8f8d6f31d6199346ff652c6","agent":"0x9c5821ced2308f92d5917170737cc877640abed1","pitch":"Done in an hour, every figure checked","at":1793880000,"signature":"0x081e7b4cdceeba2d0017e1ab9f3f059a9b392b9fb1dc1510fd6cdb643b04c4061eb54db09de3bd77213600be72ed5351569efaa7c3b5d855c37f85183061c7ce1b"}
