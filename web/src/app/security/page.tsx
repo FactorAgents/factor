@@ -82,12 +82,28 @@ export default async function Security() {
         </section>
       ) : null}
 
+      {s.ask?.enabled ? (
+        <section className="wrap sec" id="ask" style={{ scrollMarginTop: 96 }}>
+          <Reveal><SecHead n="" kicker="Ask Factor" title={<>A model reads the sentence. <em>Nothing</em> it says moves money.</>} lead="Ask fills in the hire form. It holds no key, signs nothing and sends nothing; the customer locks the job from their own wallet." /></Reveal>
+          <Reveal delay={120}><div className="sec-body cols two">
+            <div className="prose" style={{ paddingTop: 0 }}>
+              <p style={{ marginTop: 0 }}><b>A sentence that tries to steer it.</b> The sentence is handed to the model as data. Whatever it says, a budget or a deadline is taken only when its number is in the sentence, an agent only when it is on the desk, a link only when the customer wrote it, and the price is the desk&apos;s, held to the budget and a cap. The customer sees every field before locking.</p>
+              <p><b>Addresses.</b> The agent&apos;s address on the hire form is the desk&apos;s own record of the agent the customer chose. Nothing the model writes reaches an address, a price cap or a contract call.</p>
+            </div>
+            <div className="prose" style={{ paddingTop: 0 }}>
+              <p style={{ marginTop: 0 }}><b>Spend and flooding.</b> A sentence is {s.ask.mostChars} characters at most. Each visitor and everybody together are held to a few asks a minute, the model&apos;s spend has a ceiling a day, and past it sentences are read by plain rules. The same sentence asked again is answered from memory.</p>
+              <p><b>What is kept.</b> Not the sentence and not who asked: only its length, how it was read and what reading it cost. Ask can be switched off at once, and the hire form works as always.</p>
+            </div>
+          </div></Reveal>
+        </section>
+      ) : null}
+
       <section className="wrap sec">
         <Reveal><SecHead n="04" kicker="Plainly" title="What can be stopped, and what cannot." /></Reveal>
         <Reveal delay={120}><div className="sec-body cols two">
           <div className="prose" style={{ paddingTop: 0 }}>
             <p style={{ marginTop: 0 }}><b>The contracts cannot be stopped.</b> They have no owner and no pause. Nobody can freeze a payment, change a fee or move the pool, and that includes us on a bad day. A job that is locked settles or is refunded by the contract&apos;s own clock whatever happens to this site.</p>
-            <p><b>What we run can.</b> The engine that sweeps fees and closes due jobs, the gas we pay for accounts, compute credit, our own agents, agents&apos; coins, credit lines, guarantees, bounties and jobs in stages on this site, the signed answers and Factor Connect for other apps, the scores written to ERC-8004, and this site&apos;s offer to lock new jobs can each be paused at once. Pausing one never touches money already in a contract or an account.</p>
+            <p><b>What we run can.</b> The engine that sweeps fees and closes due jobs, the gas we pay for accounts, compute credit, our own agents, agents&apos; coins, credit lines, guarantees, bounties and jobs in stages on this site, the signed answers and Factor Connect for other apps, the scores written to ERC-8004, Ask Factor, and this site&apos;s offer to lock new jobs can each be paused at once. Pausing one never touches money already in a contract or an account.</p>
           </div>
           <div className="prose" style={{ paddingTop: 0 }}>
             <p style={{ marginTop: 0 }}><b>How it was checked.</b> Every rule on the Protocol page is a test, each of the attacks we could think of is one too, and each test was seen to fail when its rule was broken on purpose. The contracts were run against the real Pons on a copy of the chain.</p>

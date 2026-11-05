@@ -4,6 +4,7 @@ import { PageHead } from "@/components/Bits";
 import AccountPanel from "@/components/Account";
 import HireForm, { MyJobs, type Prefill } from "@/components/HireForm";
 import { Reveal } from "@/components/Motion";
+import { stagesFromLink } from "@/lib/ask";
 
 export const metadata: Metadata = { title: "Hire an agent" };
 
@@ -21,7 +22,7 @@ async function ticketOf(id: string | undefined): Promise<{ id: string; agent: st
 
 const ethOf = (wei: string): string => { const w = BigInt(wei); const whole = w / 10n ** 18n, frac = (w % 10n ** 18n).toString().padStart(18, "0").replace(/0+$/, ""); return frac ? `${whole}.${frac}` : `${whole}`; };
 
-export default async function Hire({ searchParams }: { searchParams: Promise<{ agent?: string; firm?: string; monthly?: string; cover?: string; stages?: string; price?: string; title?: string; brief?: string; due?: string; early?: string; ticket?: string }> }) {
+export default async function Hire({ searchParams }: { searchParams: Promise<{ agent?: string; firm?: string; monthly?: string; cover?: string; stages?: string; price?: string; title?: string; brief?: string; due?: string; early?: string; ticket?: string; plan?: string; via?: string }> }) {
   const s = await getState();
   const q = await searchParams;
   const { firm, monthly, cover, stages } = q;
@@ -30,10 +31,13 @@ export default async function Hire({ searchParams }: { searchParams: Promise<{ a
   const ticket = t && t.open ? t : null;
   const agent = ticket ? ticket.agent : q.agent;
   const hours = Number(q.due);
+  // Ask Factor's link (lib/ask.ts): the same fields, and a job in stages with each stage's title, brief, price and time
+  const plan = q.stages === "1" ? stagesFromLink(q.plan) : null;
+  const fromAsk = q.via === "ask";
   const prefill: Prefill | null = ticket
     ? { price: ethOf(ticket.priceWei), title: ticket.title, brief: ticket.brief, dueS: ticket.dueHours * 3600, early: ticket.early, ticket: { id: ticket.id, market: ticket.market, cover: ticket.coverWei } }
     : q.price || q.title || q.brief || q.due || q.early
-      ? { ...(q.price && /^\d{1,6}(\.\d{1,18})?$/.test(q.price) ? { price: q.price } : {}), ...(q.title ? { title: q.title.slice(0, 80) } : {}), ...(q.brief ? { brief: q.brief.slice(0, 2000) } : {}), ...(Number.isInteger(hours) && hours >= 1 && hours <= 720 ? { dueS: hours * 3600 } : {}), ...(q.early === "1" ? { early: true } : {}) }
+      ? { ...(q.price && /^\d{1,6}(\.\d{1,18})?$/.test(q.price) ? { price: q.price } : {}), ...(q.title ? { title: q.title.slice(0, 80) } : {}), ...(q.brief ? { brief: q.brief.slice(0, 2000) } : {}), ...(Number.isInteger(hours) && hours >= 1 && hours <= 720 ? { dueS: hours * 3600 } : {}), ...(q.early === "1" ? { early: true } : {}), ...(plan ? { stages: plan } : {}), ...(fromAsk ? { via: "ask" as const } : {}) }
       : null;
   // the firms that can be hired: while firms are on, each through its lead, who must be on the desk
   const firms = s.firms?.enabled ? (s.firms.items ?? []).filter((f) => s.agents.some((a) => a.address === f.lead.address)).map((f) => ({ slug: f.slug, name: f.name, does: f.does, house: f.house, lead: f.lead.address, leadName: f.lead.name, members: f.members.filter((m) => m.role === "member").map((m) => m.name), fromEth: f.fromEth })) : [];
@@ -49,6 +53,7 @@ export default async function Hire({ searchParams }: { searchParams: Promise<{ a
           <Reveal>
             <div className="h3">Lock a payment</div>
             <p className="small" style={{ margin: "8px 0 30px" }}>Nothing leaves your wallet until you confirm it there.</p>
+            {fromAsk && !ticket ? <p className="note" style={{ margin: "0 0 30px" }}>Filled in by Ask Factor from your sentence. Check every field and change what you like: nothing is locked until you confirm it in your wallet.</p> : null}
             <AccountPanel explorer={s.contracts.explorer} />
             <HireForm agents={agents} firms={firms} pickedFirm={pickedFirm} picked={picked?.address ?? ""} desk={deskOf(s)} explorer={s.contracts.explorer} params={s.params} paused={!!s.paused} monthly={s.plans?.enabled ? { mostMonths: s.plans.mostMonths } : null} burnPot={s.contracts.burnPot} pickedMonthly={monthly === "1"} guarantees={s.guarantees?.enabled && s.guarantees.contract ? s.guarantees : null} pickedCover={cover === "1"} milestones={s.milestones?.enabled ? s.milestones : null} pickedStages={stages === "1"} prefill={prefill} />
             {q.ticket && !ticket ? <p className="note">{t ? (t.open ? "" : "This hire link was used already, or it ran out. You can still hire the agent here yourself.") : "This hire link is not known to Factor. You can still hire an agent here yourself."}</p> : null}

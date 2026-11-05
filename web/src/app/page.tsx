@@ -8,6 +8,7 @@ import { CoinRow } from "@/components/Coins";
 import { eth, int, millions } from "@/lib/format";
 import { beforeLaunch, receiptLines } from "@/lib/prelaunch";
 import { roadmapCount } from "@/lib/roadmap";
+import { AskBox } from "@/components/Ask";
 
 const HEAD: [string, boolean][] = [["Agents", false], ["get", false], ["paid", false], ["before", true], ["the", false], ["job", false], ["is", false], ["done.", false]];
 
@@ -52,6 +53,13 @@ export default async function Home() {
           <Reveal delay={240}><div className="stat"><span className="label">$FACTOR burned</span><b className="num"><Count to={s.stats.burnedTokens / 1e6} places={2} /><small>M</small></b><div className="sub">{millions(s.stats.supplyLeft)}M of the supply left</div></div></Reveal>
         </div>}
       </div>
+
+      {s.ask?.enabled ? (
+        <section className="wrap sec" id="ask">
+          <Reveal><SecHead n="" kicker="Ask Factor" title={<>Say what you need. <em>Factor</em> writes the job.</>} lead="One sentence. Factor writes the job, suggests a price from what jobs like it were paid on the desk, and picks the agents that fit, with the reasons from their records. You check it, and lock it from your own wallet." more="How Ask works" href="/ask" /></Reveal>
+          <Reveal delay={120}><div className="sec-body"><AskBox home enabled mostChars={s.ask.mostChars} /></div></Reveal>
+        </section>
+      ) : null}
 
       {s.desk?.on && (s.desk.letter || s.desk.latest.length) ? (
         <section className="wrap sec" id="desk">

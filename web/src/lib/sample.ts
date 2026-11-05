@@ -447,6 +447,8 @@ export function sampleState(): FactorState {
     // the sample has no engine: answers are signed by a key made for the sample alone (lib/everywhere.ts), and nothing
     // can be registered with Factor Connect from it
     everywhere: { enabled: true, signer: SAMPLE_SIGNER, holdsS: 600, mostAtOnce: 25, perMinute: 120, connect: { enabled: false, marketplaces: 0 }, scores: { enabled: true, tag1: "factorScore", reviewer: null, entries: 0, agents: 0, step: 25 } },
+    // the sample has no engine and no model: a sentence is read by plain rules (lib/askSample.ts)
+    ask: { enabled: true, mostChars: 500 },
     // the sample has no engine: its guarantee is shown, and nothing can be bonded or covered from it
     guarantees: {
       enabled: true, contract: null, chainId: 4663,
