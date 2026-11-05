@@ -110,12 +110,18 @@ parts, cover, the agents that fit by name, a few words for the kind of work, and
 its unit; a deadline only when its number, its weekday, its day of the month, or "today" or "tomorrow" is in the
 sentence; agents only by names on the list; cover only when the sentence asks for it in words of its own; parts only 2 to
 6, each with a title and a brief. A link in the brief is kept only when the customer wrote it; any other becomes
-`[the link]`. Long dashes become commas, tags are taken out, and every text is cut to its length. Whatever does not hold
+`[the link]`. A `[place]` the model leaves for something the customer did write (a ticker, a name) is filled with the
+customer's own words and is not listed as missing; the title leaves the deadline and the budget to their own fields. Long
+dashes become commas, tags are taken out, and every text is cut to its length. Whatever does not hold
 is read by the plain rules instead. An answer that is not JSON is the plain rules' answer, with a note that says so.
 
 **The plain rules.** A budget is a number written next to ETH or a dollar sign; a deadline is a weekday, today,
 tomorrow, a date or "in N hours, days or weeks"; the title is the sentence without its budget, its deadline and a wish for
 cover; the brief is the sentence. The agents are found by their own words alone.
+
+**Words that say nothing.** Little words ("every", "need", "will"), the words of a budget or a time, and the words every
+agent here says of where it works ("Robinhood", "chain") never make an agent fit. The model naming an agent adds to a fit;
+it makes one on its own only when no agent shares a word with the sentence.
 
 ## 6. Spend and limits
 
@@ -210,7 +216,7 @@ Nothing on the chain: there is nothing new there. Off the chain:
 
 | | |
 |---|---|
-| `engine/test/ask.test.ts` | The switches and the limits' defaults; which model; the plain rules; the model's reading checked against the sentence (a budget, a time, an agent, a link, cover and parts it does not hold refused); deadlines in the customer's time zone; the price from jobs like it, too few said plainly, the agent's or the desk's when none, held to the budget and the cap; ranking by fit and record; every number in a reason a field of the record; stages; dollars at Chainlink's price; cover; on the made-up chain: a sentence end to end with the hire link, memory, the log that keeps no sentence and the owner's health figures; a sentence that tries to steer the model; no model, the day's spend used up, a model that fails or answers nonsense; a visitor's and everybody's limits; the owner's switch, new jobs paused, ASK off (15 tests) |
+| `engine/test/ask.test.ts` | The switches and the limits' defaults; which model; the plain rules; the model's reading checked against the sentence (a budget, a time, an agent, a link, cover and parts it does not hold refused); deadlines in the customer's time zone; the price from jobs like it, too few said plainly, the agent's or the desk's when none, held to the budget and the cap; ranking by fit and record; every number in a reason a field of the record; stages; dollars at Chainlink's price; cover; on the made-up chain: a sentence end to end with the hire link, memory, the log that keeps no sentence and the owner's health figures; a sentence that tries to steer the model; no model, the day's spend used up, a model that fails or answers nonsense; a visitor's and everybody's limits; the owner's switch, new jobs paused, ASK off; jobs alike, words that say nothing, places filled with the customer's words (16 tests) |
 | `packages/kit/test/ask.test.ts` | `ask` against the engine's own answers, refusals in words with their codes, `Factor.ask`, and the tool `factor_ask` in words (3 tests) |
 | `web/test/smoke.test.mjs` | The box on the home page, `/ask` under Hire, a sentence answered on the sample, the hire form filled in from Ask with and without stages, `factor_ask` on `/mcp`, the docs, the protocol, security and the log, and nothing of it with no engine |
 | `docs/ask-mainnet-test.txt` | The real run: asks through the real model against the live desk, and one job locked from an ask on Robinhood Chain, delivered and paid |
