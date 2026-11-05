@@ -84,3 +84,7 @@ Totals (ETH from the two wallets; dollars at Raeto):
 Demo wallet: 0.007903385392541391 before, 0.007877851079237391 after. report-lead: 0.000006651896068 before, 0.000006225890068 after.
 Afterwards, 11:42 UTC: the Ask page's title field grown to its words; 2 more model calls for the new pictures ($0.001391,
 $0.001583): the model in all $0.025752 in 18 calls.
+Later, 11:47 UTC, for the release film: the sentence (107 characters) asked once more through the branch site's door, read by the
+real model ($0.001409, the engine's own row), and its answer saved and replayed in every take of the film, so the film shows the
+real answer and cost nothing more: the model in all $0.027161 in 19 calls. The film made no transaction: the wallet on the hire
+form was a stand-in in the browser that signs and sends nothing, and the Lock button was never pressed.
