@@ -42,6 +42,7 @@ import { verifyOwnerMessage } from "./verified.js";
 import { ERC8004_TAG, erc8004LinkMessage, erc8004Registry, IDENTITY_REGISTRY, identityAbi, REPUTATION_REGISTRY, reputationAbi } from "./erc8004.js";
 import { explain, Refusal, WORDS } from "./words.js";
 import { checkAgent, checkAgents, hireLink, type CheckedAgent, type CheckedAgents, type HireLinkOptions } from "./everywhere.js";
+import { ask, type Asked } from "./ask.js";
 
 import { encodePayLink, LINK_BRIEF_MOST, readPayLink, tokenOf, verifyRecord, x402PaymentHeader, X402_NETWORK, X402_SCHEME, type AgentRecord, type PayLink, type X402Requirements, payLinkMessage } from "./pay.js";
 
@@ -62,6 +63,8 @@ export { checkTerms, MAX_STAGES, MILESTONE_WORDS, MIN_STAGE_WEI, MIN_STAGES, ter
 export type { Terms } from "./milestones.js";
 export { ERC8004_TAG, erc8004LinkMessage, erc8004Registry, IDENTITY_REGISTRY, REPUTATION_REGISTRY, SCORE_TAG } from "./erc8004.js";
 export { checkAgent, checkAgents, embedSnippet, everywhereAbout, everywhereSigner, FactorConnect, hireLink, verifyAnswer, verifyWebhook } from "./everywhere.js";
+export { ask, askedText } from "./ask.js";
+export type { Asked, AskAgent, AskStage } from "./ask.js";
 export type { AgentAnswer, AnswerEnvelope, CheckedAgent, CheckedAgents, ConnectHire, ConnectTicket, EmbedPart, HireLinkOptions, SealedAnswer } from "./everywhere.js";
 export type { PlanText } from "./plans.js";
 export { applyMessage, closeJobMessage, openJobId, pickWords, postJobMessage, priceWords, withdrawMessage } from "./openjobs.js";
@@ -196,7 +199,7 @@ export class Factor {
     const first = { kind: 1, a: `0x${"0".repeat(24)}${account.address.slice(2).toLowerCase()}` as Hex, b: `0x${"0".repeat(64)}` as Hex };
     const via = ((await pub.readContract({ address: maker as Hex, abi: factorAccountsAbi as Abi, functionName: "addressOf", args: [first] })) as string).toLowerCase() as Hex;
     const f = new Factor(api, desk as Hex, state.contracts.explorer, pub, wallet, account, via, id);
-    const made = await f.ask<{ address: string; deployed: boolean; relay: string | null }>("/accounts", { kind: "wallet", address: account.address.toLowerCase() });
+    const made = await f.askSite<{ address: string; deployed: boolean; relay: string | null }>("/accounts", { kind: "wallet", address: account.address.toLowerCase() });
     if (made.address.toLowerCase() !== via) throw new Refusal(`The site says this key's account is ${made.address}, and the chain says ${via}. Nothing will be sent.`, "wrong_account");
     if (made.relay) await f.settled(made.relay);
     for (let i = 0; i < 60; i++) {
@@ -694,6 +697,15 @@ export class Factor {
   /** The address of Factor's pay flow filled in for one agent: a person opens it, locks the payment and signs there. */
   hireLink(o: Omit<HireLinkOptions, "site">): string {
     return hireLink({ ...o, site: this.api });
+  }
+
+  /**
+   * Ask Factor: one sentence ("a landing page for my coin by Friday, under 0.02 ETH") made into a job, with the agents
+   * that fit it, the reasons from each one's record, and the pay flow filled in for each. Nothing is paid or signed:
+   * the person opens a link, checks every field and locks the payment there. `tz`: their offset from UTC in minutes.
+   */
+  ask(sentence: string, o: { tz?: number } = {}): Promise<Asked> {
+    return ask(sentence, { api: this.api, ...o });
   }
 
   /** The address Factor signs records with, as its site says. An app that checks records should keep its own copy of it. */
@@ -1579,7 +1591,7 @@ export class Factor {
         const at = await this.clock();
         const signature = await this.sign(coinAskMessage({ agent, maker: me, name: w.name, symbol: w.symbol, at }));
         // a 409 here is an answer (the agent has its coin already), not an order still on its way: not asked again
-        p = await this.ask<CoinPermission>("/coins/permission", { agent, maker: me, name: w.name, symbol: w.symbol, at, signature }, false);
+        p = await this.askSite<CoinPermission>("/coins/permission", { agent, maker: me, name: w.name, symbol: w.symbol, at, signature }, false);
       }
       words = { name: p.name, symbol: p.symbol, logo: p.logo, description: p.description };
       deadline = BigInt(p.deadline);
@@ -2728,13 +2740,13 @@ export class Factor {
     const via = this.viaOrRefuse();
     if (!this.account?.signTypedData) throw new Refusal("This key cannot sign an order (it has no signTypedData).", "read_only");
     const wire = calls.map((c) => ({ to: c.to, value: c.value.toString(), data: c.data }));
-    const checked = await this.ask<{ nonce: number; deadline: number }>("/accounts/check", { account: via, calls: wire });
+    const checked = await this.askSite<{ nonce: number; deadline: number }>("/accounts/check", { account: via, calls: wire });
     // the number the order must carry is the chain's own; the deadline is the site's, held to an hour by the
     // chain's own clock, so that nothing signed here stays good for longer than that
     const [nonce, head] = await Promise.all([this.pub.readContract({ address: via, abi: factorAccountAbi as Abi, functionName: "nonce" }) as Promise<bigint>, this.pub.getBlock()]);
     if (!Number.isSafeInteger(checked.deadline) || BigInt(checked.deadline) <= head.timestamp || BigInt(checked.deadline) > head.timestamp + 3600n) throw new Refusal("The site gave the order a deadline that makes no sense. Nothing was signed.", "bad_deadline");
     const signature = await this.account.signTypedData(orderTypedData(via, this.chainId, calls, nonce, BigInt(checked.deadline)));
-    const sent = await this.ask<{ id: string }>("/accounts/relay", { account: via, calls: wire, deadline: checked.deadline, signature });
+    const sent = await this.askSite<{ id: string }>("/accounts/relay", { account: via, calls: wire, deadline: checked.deadline, signature });
     const hash = await this.settled(sent.id);
     const receipt = await this.pub.waitForTransactionReceipt({ hash, timeout: 180_000 });
     if (receipt.status !== "success") throw new Refusal(`The transaction ${hash} was mined and refused. Nothing changed.`, "reverted");
@@ -2754,7 +2766,7 @@ export class Factor {
   }
 
   /** A request to the site's account routes. What the site refuses comes back as a Refusal in words. */
-  private async ask<T>(path: string, body: Record<string, unknown>, patient = true): Promise<T> {
+  private async askSite<T>(path: string, body: Record<string, unknown>, patient = true): Promise<T> {
     for (let tries = 0; ; tries++) {
       let r: Response;
       try {

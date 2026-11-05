@@ -46,6 +46,8 @@
 //   GET  /v1/erc8004/score/<n>  the file a score entry on ERC-8004 points at, word for word (erc8004score.ts)
 //   POST /v1/connect/register|rotate|hook|hire|me|ping   Factor Connect for a marketplace, with its key
 //   GET  /v1/connect/ticket/<id>, POST /v1/connect/claim   a marketplace's hire link, and the job locked on it
+//   GET  /v1/ask                whether Ask Factor is on (ask.ts), how long a sentence may be, and what reads it
+//   POST /v1/ask { text, tz? }  one sentence made into a job, the agents that fit it with their reasons, a hire link each
 //
 // Every GET is answered from the database (the last reading of the chain, the ledger, the engine's copy of each
 // job and agent), so a burst of visitors costs the node nothing. Before the contracts are given, and whenever the
@@ -92,6 +94,7 @@ import type { AgentBountiesJson, Bounties, BountiesAbout } from "./bounties.js";
 import type { MilestoneJobLink, Milestones, MilestonesAbout } from "./milestones.js";
 import { envelope, hireUrl, MOST_AT_ONCE, ANSWER_HOLDS_S, parseId, seal, type AgentAnswer, type AnswerSigner, type Connect } from "./everywhere.js";
 import type { Erc8004Scores } from "./erc8004score.js";
+import type { Ask, AskCandidate, AskData, SettledJob } from "./ask.js";
 
 export interface Answer {
   status: number;
@@ -158,6 +161,8 @@ export interface EngineView {
   erc8004Scores?: Erc8004Scores | null;
   /** the key that signs Factor everywhere's answers and Connect's webhooks (./everywhere.ts) */
   answerSigner?: AnswerSigner | null;
+  /** Ask Factor (./ask.ts) */
+  ask?: Ask | null;
 }
 
 /** Factor everywhere, as the site reads it: web/src/lib/types.ts keeps the same shape by hand. */
@@ -373,6 +378,8 @@ export interface FactorState {
   milestones: MilestonesAbout;
   /** Factor everywhere (./everywhere.ts): whether it is on, the signer, Connect and the score on ERC-8004 */
   everywhere: EverywhereAbout;
+  /** Ask Factor (./ask.ts): whether the box answers, and how long a sentence may be */
+  ask: { enabled: boolean; mostChars: number };
 }
 export interface RosterJson { name: string; does: string; needs: string; delivers: string; fromEth: number; asksAModel: boolean; /** the Desk's opening file on it */ file?: { text: string; at: string } }
 // what Factor's own agents are, said the same before the launch and after it
@@ -547,6 +554,8 @@ export class EngineApi {
   // The answer for a path, or null when the path is not one of the engine's. `query` is what followed the ? in the
   // address; a value in it that makes no sense is ignored, never an error.
   async handle(path: string, query: URLSearchParams = new URLSearchParams(), from = "", connectKey?: string): Promise<Answer | null> {
+    // Ask Factor (./ask.ts): whether it answers, and what a sentence may be
+    if (path === "/v1/ask") { const v = this.view(); return ok(v.ask ? v.ask.about(this.askOn(v)) : { enabled: false }); }
     // Factor everywhere: one agent's (or a few agents') score, record, line and Guarantee in an answer Factor signs
     if (path === "/v1/everywhere" || path.startsWith("/v1/everywhere/") || path.startsWith("/v1/connect/ticket/")) return this.everywhereGet(this.view(), path, query, from, connectKey);
     // the file a score entry on ERC-8004 points at (./erc8004score.ts)
@@ -1194,6 +1203,69 @@ export class EngineApi {
     return r.ok ? ok({ ...r.match, cached: r.cached }) : { status: r.status, body: { error: r.error } };
   }
 
+  // ---- Ask Factor (./ask.ts) ----
+
+  private askOn(v: EngineView): boolean {
+    return v.config.ask.enabled && !!v.ask && !!v.ctx && !stopped(v.ctx.db, "ask");
+  }
+
+  // One sentence made into a job, with the agents that fit it. Nothing is hired here: the customer opens the hire form
+  // it fills in, changes what they like, and locks the job from their own wallet or passkey account.
+  private async askPost(body: unknown, from: string): Promise<Answer> {
+    const v = this.view();
+    if (!this.askOn(v)) return { status: 503, body: { error: "Ask Factor is resting just now: pick an agent from the list and hire it from the form" } };
+    if (from && this.tooMany(from, "ask", 30)) return { status: 429, body: { error: "too many requests: try again in a minute" } };
+    const data = this.askData(v);
+    if (!data) return { status: 503, body: { error: "the engine is not reading the chain yet" } };
+    const r = await v.ask!.ask(body, from || "unknown", data);
+    if (!r.ok) return { status: r.status, body: { error: r.error } };
+    const paused = stopped(v.ctx!.db, "hiring");
+    return ok({ ...r.answer, ...(paused ? { notes: [...r.answer.notes, `New jobs are paused for now${paused.note ? `: ${paused.note}` : "."}`] } : {}) } as unknown as Record<string, unknown>);
+  }
+
+  /** What Ask reads: the agents and firms on the desk with their records, and every job paid in full with its title. */
+  private askData(v: EngineView): AskData | null {
+    const r = this.running(v);
+    if (!r) return null;
+    const names = this.names(v);
+    const t = this.chainNow(v, r.snap);
+    const weiOfEth = (n: number) => BigInt(Math.round(n * 1e6)) * 10n ** 12n;
+    const candidates: AskCandidate[] = [];
+    const byAddress = new Map<string, AgentJson>();
+    for (const row of r.store.agents()) {
+      const a = agentJson(row, names, t);
+      byAddress.set(a.address, a);
+      if (!a.named || !a.does.trim() || a.barred) continue;
+      // one of Factor's own agents says what its brief needs and what it takes a job for, whether or not this engine runs it
+      const own = a.house && !a.service ? SERVICES.find((x) => x.name === a.name) ?? null : null;
+      candidates.push({
+        kind: "agent", name: a.name, address: a.address, does: a.does, needs: a.service?.needs ?? own?.needs, delivers: a.service?.delivers ?? own?.delivers,
+        fromWei: a.service ? weiOfEth(a.service.fromEth) : own ? own.floorWei : null, score: a.score, settled: a.settled, settledAtHalf: a.settledAtHalf, customers: a.customers,
+        onTime: row.record.onTime, late: row.record.late, house: a.house, guarantee: a.guarantee ?? null, verified: a.verifiedOwner ? a.verifiedOwner.sources : null,
+      });
+    }
+    // a firm is hired through its lead: it fits by its own line, and its record is the firm's
+    if (v.config.firms.enabled && v.firms) {
+      for (const f of v.firms.list()) {
+        const lead = byAddress.get(f.lead.address);
+        if (!lead || lead.barred || !f.does.trim()) continue;
+        candidates.push({
+          kind: "firm", name: f.slug, title: f.name, address: f.lead.address, lead: f.lead.name, members: f.members.filter((m) => m.role === "member").map((m) => m.name), does: f.does,
+          fromWei: f.fromEth ? weiOfEth(f.fromEth) : null, score: f.score, settled: f.settled, settledAtHalf: 0, customers: 0, onTime: null, late: null, house: f.house,
+          guarantee: lead.guarantee ?? null, verified: f.verifiedOwner ? f.verifiedOwner.sources : null,
+        });
+      }
+    }
+    const rows = r.ctx.db.q("SELECT id, agent, price FROM desk_jobs WHERE state = ? ORDER BY id DESC LIMIT 2000").all(STATE.settled) as { id: number; agent: string; price: string }[];
+    const titles = v.profiles?.titles(rows.map((j) => j.id)) ?? new Map<number, string>();
+    const settled: SettledJob[] = rows.map((j) => ({ id: j.id, agent: j.agent, priceWei: BigInt(j.price), title: titles.get(j.id) ?? "" }));
+    return {
+      candidates, settled, ethUsd8: r.snap.ethUsd8 ?? null, nowS: t,
+      stages: v.config.milestones.enabled && !!v.milestones?.on(),
+      covers: v.config.guarantees.enabled && !!v.guarantees?.on(),
+    };
+  }
+
   private async accountsPost(path: string, body: unknown, from: string): Promise<Answer | null> {
     const what = path.slice("/v1/accounts".length);
     if (what !== "" && what !== "/check" && what !== "/call" && what !== "/relay") return null;
@@ -1261,6 +1333,7 @@ export class EngineApi {
   // A signed write. `from` is the caller's address on the network, for the limit on how many one may send.
   async post(path: string, body: unknown, from: string, adminKey?: string, connectKey?: string): Promise<Answer | null> {
     if (path === "/v1/match") return this.matchPost(body, from);
+    if (path === "/v1/ask") return this.askPost(body, from);
     if (path.startsWith("/v1/connect/")) return this.connectPost(path, body, from, connectKey);
     if (path === "/v1/admin/connect") return this.connectAdmin(body, from, adminKey);
     if (path === "/v1/pay/deal" || path === "/v1/pay/links") return this.payPost(path, body, from);
@@ -1820,7 +1893,8 @@ export class EngineApi {
     const bounties = this.bountiesAbout(v);
     const milestones = this.milestonesAbout(v);
     const everywhere = this.everywhereAbout(v);
-    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused, roster: this.rosterJson(v), hosted, pulse: pulseJson(v, 8), desk: this.deskJson(v), signups, activity, pay, subjobs, firms, plans, erc8004, openJobs, autoApply, verified, coins, lines, guarantees, bounties, milestones, everywhere };
+    const ask = { enabled: !!r && this.askOn(v), mostChars: c.ask.mostChars };
+    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused, roster: this.rosterJson(v), hosted, pulse: pulseJson(v, 8), desk: this.deskJson(v), signups, activity, pay, subjobs, firms, plans, erc8004, openJobs, autoApply, verified, coins, lines, guarantees, bounties, milestones, everywhere, ask };
     if (!r) {
       return { ...base, launched: false, stats: { advancedEth: 0, settledJobs: 0, jobs: 0, poolEth: 0, reserveEth: 0, outEth: 0, heldEth: 0, burnedTokens: 0, supplyLeft: SUPPLY, agents: 0, demoJobs: 0, lostEth: 0, poolFromTradingEth: 0 }, burn: null, agents: [], jobs: [], events: [], burns: [] };
     }
@@ -1922,6 +1996,7 @@ export class EngineApi {
       guarantees: v.guarantees ? v.guarantees.health() : null,
       bounties: v.bounties ? v.bounties.health() : null,
       milestones: v.milestones ? v.milestones.health() : null,
+      ask: v.ask ? v.ask.health() : null,
       erc8004: v.erc8004 ? { ...v.erc8004.about(), spentTodayWei: v.erc8004.spentToday().toString(), gasDayWei: c.erc8004.gasDayWei.toString(), scan: ctx.db.getJson("erc8004:scan") } : null,
       events: ctx.db.count("chain_events"),
       ledger: ctx.db.count("ledger"),

@@ -367,6 +367,8 @@ export interface FactorState {
   milestones?: MilestonesAbout;
   /** Factor everywhere: whether it is on, the address that signs answers, Connect, and the score on ERC-8004 */
   everywhere?: EverywhereAbout;
+  /** Ask Factor (lib/ask.ts): whether the box answers, and how long a sentence may be */
+  ask?: { enabled: boolean; mostChars: number };
 }
 
 /** One of a firm's agents and its part of the firm's work: the lead's is the firm's jobs, a member's the sub-jobs it took under them. */

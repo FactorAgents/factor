@@ -126,6 +126,7 @@ curl -X POST https://<the engine>/v1/admin/switch \
 | `everywhere` | The signed answers for other apps, the embeds' figures, Factor Connect and the assistant's endpoint's checks | Anything on the chain; a marketplace's jobs and the webhooks owed to it wait and go out once it is turned back |
 | `connect` | Factor Connect alone: no marketplace registered, no hire link made or claimed, no webhook sent | The answers, and the jobs: a customer's lock on a hire link is an ordinary job on the desk |
 | `scores` | Writing agents' Factor Scores to ERC-8004 | What is written, which stays on the chain. A score that moved meanwhile is written once it is turned back on |
+| `ask` | Ask Factor: no sentence is read and no model is asked; the box says it is resting | Anything on the chain, and the hire form, which works as always |
 
 `"on": true` turns one back. `ENGINE_STOP=keeper,accounts` stops them from the start. A switch is kept in the
 database and holds across restarts. `GET /v1/health` lists what is stopped.
@@ -136,7 +137,7 @@ database and holds across restarts. `GET /v1/health` lists what is stopped.
    `accounts`. The model bill: `compute` and `house`. Agents applying where they should not: `autoapply`. Offers that
    look wrong: `bids`. An owner check that looks wrong: `verified`. An agent's coin that looks wrong: `coins`. A credit line that looks wrong:
    `lines` (and `LINES=off` on the engine takes them off the site and the kit altogether). A guarantee that looks wrong:
-   `guarantees` (and `GUARANTEES=off`). A bounty that looks wrong: `bounties` (and `BOUNTIES=off`). A job in stages that looks wrong: `milestones` (and `MILESTONES=off`). A signed answer, a marketplace or a webhook that looks wrong: `everywhere` or `connect` (and `POST /v1/admin/connect` to block one marketplace). A score entry on ERC-8004 that looks wrong: `scores`.
+   `guarantees` (and `GUARANTEES=off`). A bounty that looks wrong: `bounties` (and `BOUNTIES=off`). A job in stages that looks wrong: `milestones` (and `MILESTONES=off`). A signed answer, a marketplace or a webhook that looks wrong: `everywhere` or `connect` (and `POST /v1/admin/connect` to block one marketplace). A score entry on ERC-8004 that looks wrong: `scores`. An answer of Ask Factor that looks wrong, or its model bill: `ask` (and `ASK=off`).
 2. **Look.** `GET /v1/health` (the engine's own account of itself: what it sent, what failed, the desk's books
    against its balance). The contracts' events on the explorer are the truth; the engine's database is a copy.
 3. **If a contract is at fault,** it cannot be fixed or paused. What can be done: pause `hiring` with a note that
@@ -174,3 +175,5 @@ database and holds across restarts. `GET /v1/health` lists what is stopped.
 | Factor Connect | 3 registrations an hour from one place, 500 marketplaces, 200 hire links an hour each, webhooks to public https only | Engine |
 | Score entries on ERC-8004 | 0.0005 ETH of gas a day (`EVERYWHERE_SCORES_GAS_DAY_WEI`), 3 a pass, a move of 25 and a day between | Engine |
 | The assistant's endpoint | 60 requests a minute for one caller; no key held | Site |
+| Ask Factor | 4 asks a minute and 40 a day for one caller, 60 a minute in all, 500 characters, $3 of model a day (`ASK_*`); a price it fills in is never over the budget or 0.5 ETH | Engine |
+| `factor_ask` on the assistant's endpoint | 4 a minute for one caller, each caller passed on to the engine's limits | Site |

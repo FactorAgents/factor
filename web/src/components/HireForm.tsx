@@ -14,6 +14,7 @@ import { engineNow, Go, saveSigned, StatusLine, useSend, useWallet } from "./Wal
 import MatchBox, { type Suggestion } from "./MatchBox";
 import HireInStages from "./HireInStages";
 import { readEvery } from "@/lib/livebus";
+import type { AskStage } from "@/lib/ask";
 
 type Pick_ = Pick<Agent, "address" | "name" | "named" | "does" | "score" | "settled" | "house" | "service" | "guarantee">;
 /**
@@ -21,7 +22,7 @@ type Pick_ = Pick<Agent, "address" | "name" | "named" | "does" | "score" | "sett
  * marketplace's hire link (a ticket, Factor Connect) fixes the agent and the terms, and the job locked on them is
  * reported to the marketplace once it is on the chain.
  */
-export interface Prefill { price?: string; title?: string; brief?: string; dueS?: number; early?: boolean; ticket?: { id: string; market: { name: string; site: string } | null; cover: string } }
+export interface Prefill { price?: string; title?: string; brief?: string; dueS?: number; early?: boolean; ticket?: { id: string; market: { name: string; site: string } | null; cover: string }; /** a job in stages, from Ask Factor's link */ stages?: AskStage[]; via?: "ask" }
 /** A firm that can be hired: through its lead, who takes the job and splits it among the members. */
 export interface FirmPick { slug: string; name: string; does: string; house: boolean; lead: string; leadName: string; members: string[]; fromEth?: number }
 const BRIEF_MOST = 12_000;
@@ -182,7 +183,7 @@ export default function HireForm({ agents, firms = [], pickedFirm = "", picked, 
     return (
       <div className="form">
         {modes}
-        <HireInStages agents={agents} picked={firm ? firm.lead : agent} about={milestones} explorer={explorer} params={params} paused={paused} />
+        <HireInStages agents={agents} picked={firm ? firm.lead : agent} about={milestones} explorer={explorer} params={params} paused={paused} prefill={prefill?.stages ? { title: prefill.title ?? "", stages: prefill.stages, early: !!prefill.early } : null} />
       </div>
     );
   }
@@ -194,7 +195,7 @@ export default function HireForm({ agents, firms = [], pickedFirm = "", picked, 
         <div className="note" style={{ margin: 0 }}>
           {ticket.market ? <>Sent here by <b>{ticket.market.name}</b> ({ticket.market.site.replace(/^https:\/\//, "")}), which connected with Factor.</> : "A hire link made with Factor Connect."} The agent and the terms come from the link. You lock the payment from your own wallet, and it is held by the desk until the work is delivered.
         </div>
-      ) : plan ? null : <MatchBox known={agents.filter((a) => a.named).map((a) => a.name)} onUse={use} disabled={busy} />}
+      ) : plan || prefill?.via === "ask" ? null : <MatchBox known={agents.filter((a) => a.named).map((a) => a.name)} onUse={use} disabled={busy} />}
       <label className="field">
         <span className="label">{firms.length ? "The agent, or a firm" : "The agent"}</span>
         <select value={choice} onChange={(e) => { setChoice(e.target.value); if (firms.find((f) => `firm:${f.slug}` === e.target.value)?.house) setEarly(true); }} disabled={busy || agents.length === 0 || !!ticket}>
@@ -206,7 +207,8 @@ export default function HireForm({ agents, firms = [], pickedFirm = "", picked, 
       </label>
       <label className="field">
         <span className="label">{plan ? "What it does each month" : "What you want done"}</span>
-        <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={plan ? PLAN_TITLE_MOST : 80} placeholder={plan ? "A weekly market note" : "Summarise this 40-page service agreement"} disabled={busy} />
+        {/* one line that wraps and grows with its words, so a long title is seen whole; Enter adds no line */}
+        <textarea className="oneline" rows={1} value={title} onChange={(e) => setTitle(e.target.value.replace(/\s*\n\s*/g, " "))} onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }} maxLength={plan ? PLAN_TITLE_MOST : 80} placeholder={plan ? "A weekly market note" : "Summarise this 40-page service agreement"} disabled={busy} />
         <div className="hint">{plan ? `One line, ${PLAN_TITLE_MOST} characters at most: each month's job is called "Month 2 of ${months}" with it. You sign it with the plan; signing costs nothing.` : "One line, shown wherever the job shows. You sign it after the payment is locked; signing costs nothing."}</div>
       </label>
       <label className="field">

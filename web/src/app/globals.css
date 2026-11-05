@@ -1078,3 +1078,79 @@ a.coin-mark:hover, .agent:hover .coin-mark { border-color: var(--gilt); color: v
 .everywhere-embed { margin-top: 14px; max-width: 420px; }
 .code.wraps { white-space: pre-wrap; overflow-wrap: anywhere; }
 @media (max-width: 720px) { .everywhere-page .code { white-space: pre-wrap; overflow-wrap: anywhere; } }
+
+/* Ask Factor (components/Ask.tsx): one sentence, the job written, the agents that fit */
+.askbox { display: grid; gap: 16px; padding: 26px 28px 22px; border: 1px solid var(--line-2); border-radius: 4px; background: var(--paper); }
+.askbox-in { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 24px; align-items: end; }
+.askbox-in .label { grid-column: 1 / -1; }
+.askbox textarea { field-sizing: content; max-height: 260px; width: 100%; display: block; resize: none; min-height: 64px; padding: 8px 0 10px; border: 0; border-bottom: 1px solid var(--line-2); border-radius: 0; background: transparent; color: var(--ink); font-family: var(--serif); font-size: 25px; line-height: 1.3; transition: border-color 0.25s ease; }
+.askbox textarea:focus { outline: none; border-bottom-color: var(--gilt); }
+.askbox textarea::placeholder { color: var(--dim); }
+.askbox textarea:disabled { opacity: 0.6; }
+.asktries { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; }
+.asktries .label { margin-right: 4px; }
+.asktries button { font-family: var(--mono); font-size: 12px; line-height: 1.4; color: var(--mid); background: transparent; border: 1px solid var(--line); border-radius: 999px; padding: 6px 13px; cursor: pointer; text-align: left; transition: color 0.25s ease, border-color 0.25s ease; }
+.asktries button:hover { color: var(--ink); border-color: var(--line-2); }
+.asktries button:focus-visible, .askagent:focus-visible { outline: 1px solid var(--gilt); outline-offset: 3px; }
+.askwait { margin-top: 24px; }
+.askresult { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 56px; margin-top: 48px; animation: askin 0.7s var(--ease) both; }
+.askjob, .askpicks { display: grid; gap: 24px; align-content: start; min-width: 0; }
+.askpicks { animation: askin 0.7s var(--ease) 0.12s both; }
+.askhead { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; border-top: 1px solid var(--line-2); padding-top: 14px; }
+.askresult .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; }
+.askwhy { display: grid; gap: 8px; }
+.askwhy p { margin: 0; font-size: 13.5px; line-height: 1.55; color: var(--mid); }
+.askwhy b { color: var(--ink); font-weight: 500; }
+.askstages { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+.askstages li { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 14px; padding: 12px 0; border-bottom: 1px solid var(--line); align-items: baseline; font-size: 14px; }
+.askstages li > .mono:first-child { color: var(--gilt); font-size: 12px; }
+.askstages b { font-weight: 500; }
+.askstages p { margin: 2px 0 0; font-size: 13px; color: var(--mid); }
+.askstages li > .mono:last-child { text-align: right; font-size: 13px; }
+.askstages small { display: block; color: var(--dim); font-size: 11.5px; }
+.asknotes { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+.asknotes li { font-size: 13px; color: var(--mid); padding-left: 14px; position: relative; line-height: 1.5; }
+.asknotes li::before, .askagent .reasons li::before { content: ""; position: absolute; left: 0; top: 0.68em; width: 6px; height: 1px; background: var(--gilt); }
+.askagents { display: grid; gap: 12px; }
+.askagent { display: grid; gap: 12px; width: 100%; padding: 16px 18px 14px; text-align: left; border: 1px solid var(--line); border-radius: 4px; background: transparent; color: var(--ink); font: inherit; cursor: pointer; transition: border-color 0.25s ease, background 0.25s ease; }
+.askagent:hover { border-color: var(--line-2); }
+.askagent[aria-checked="true"] { border-color: var(--gilt); background: var(--gilt-soft); }
+.askagent-top { display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; gap: 14px; align-items: center; }
+.askagent .seal { width: 40px; height: 40px; font-size: 15px; }
+.askagent[aria-checked="true"] .seal { border-color: var(--gilt); }
+.askagent .who { min-width: 0; }
+.askagent .who b { font-family: var(--serif); font-weight: 400; font-size: 22px; line-height: 1.1; }
+.askagent .who .house { margin-left: 10px; vertical-align: 0.3em; }
+.askagent .r { text-align: right; }
+.askagent .r b { display: block; margin-top: 3px; font-size: 18px; font-weight: 400; }
+.askagent .score { margin-top: 0; }
+.askagent .reasons { margin: 0; padding: 0; list-style: none; display: grid; gap: 5px; }
+.askagent .reasons li { position: relative; padding-left: 14px; font-size: 13.5px; line-height: 1.45; color: var(--mid); }
+.askagent .reasons li:first-child { color: var(--ink); }
+.askagent-foot { display: flex; gap: 8px 16px; align-items: baseline; flex-wrap: wrap; font-size: 13.5px; }
+.askagent-foot .pickmark { margin-left: auto; font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--dim); }
+.askagent[aria-checked="true"] .pickmark { color: var(--gilt); }
+.askgo { display: grid; gap: 12px; justify-items: start; }
+.askgo .small { margin: 0; max-width: 520px; }
+.askrules { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 40px; }
+.askrules .h3 { margin-top: 12px; }
+.askrules p { margin-top: 10px; }
+@keyframes askin { from { opacity: 0; transform: translateY(12px); } }
+@media (min-width: 961px) { .askjob { position: sticky; top: 96px; align-self: start; } }
+.askresult { scroll-margin-top: 96px; }
+@media (max-width: 960px) { .askresult { grid-template-columns: 1fr; gap: 44px; } .askrules { grid-template-columns: 1fr; gap: 30px; } }
+@media (max-width: 720px) {
+  .askbox { padding: 18px 16px 16px; }
+  .askbox-in { grid-template-columns: 1fr; }
+  .askbox-in .btn { width: 100%; }
+  .askbox textarea { font-size: 21px; }
+  .askresult { margin-top: 36px; }
+  .askresult .pair { grid-template-columns: 1fr; gap: 22px; }
+  .askagent { padding: 14px 14px 12px; }
+  .askagent .who b { font-size: 20px; }
+  .askagent .who .house { display: inline-block; margin: 4px 0 0; vertical-align: 0; }
+}
+@media (prefers-reduced-motion: reduce) { .askresult, .askpicks { animation: none; } }
+/* a one-line field that wraps and grows with its words (a title): it looks like an input, never cuts the words off */
+.field textarea.oneline { field-sizing: content; resize: none; min-height: 42px; padding: 10px 0 9px; line-height: 1.45; overflow: hidden; }
+@media (max-width: 600px) { .askhead { flex-direction: column; align-items: flex-start; gap: 6px; } }

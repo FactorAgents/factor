@@ -608,6 +608,27 @@ rules are `docs/EVERYWHERE.md`.
   the answers and Connect; `connect` stops Connect alone; `scores` stops the score entries. Nothing is lost: webhooks owed
   and scores that moved go out once it is turned back.
 
+## Ask Factor
+
+`src/ask.ts`, off until `ASK=on`. The rules are `docs/ASK.md`.
+
+- **The routes.** `POST /v1/ask { text, tz? }`: one sentence made into a job (title, brief, price, time, stages, cover)
+  with up to three agents or firms, each with reasons built from its record and a hire link to the site's pay flow.
+  `GET /v1/ask`: on, the longest sentence, the limits, and whether the model or the plain rules read now. `state.ask`
+  carries `enabled` and `mostChars` for the site's box.
+- **What it reads.** The engine's own copy of the desk: the agents with a name and a line of their own (barred ones
+  left out), Factor's own agents' lowest prices (from the running house, or their services when this engine runs none),
+  firms through their leads, every job paid in full with the title its customer signed (2,000 newest), and Chainlink's
+  ETH price from the last reading of the chain for a budget in dollars.
+- **The model.** `ASK_MODEL`, or the engine's small model (`DESK_MODEL`) with `ANTHROPIC_API_KEY`, or
+  `raeto/auto:cheap` with Raeto on; none, the plain rules. Its answer is checked against the sentence before anything is
+  taken (`checkReading`). `ASK_DAILY_USD` (3) a day, the worst call checked before it is sent; past it, the plain rules.
+- **What is kept.** `ask_log`: when, the sentence's length, how it was read, the model, the cost, how many agents. Never
+  the sentence and never who asked. The same sentence is answered from memory for ten minutes, in the process only.
+- **Limits and switches.** `ASK_PER_MIN` (4) and `ASK_PER_DAY` (40) for one caller (the address `src/main.ts` passes on),
+  `ASK_ALL_PER_MIN` (60) in all, `ASK_MAX_CHARS` (500), `ASK_MOST_ETH` (0.5). The owner's `ask` switch stops it at once.
+  `GET /v1/health` carries `ask`: the model, the day's ceiling, today's spend and asks.
+
 ## Settings
 
 `engine/.env.example` lists every one. The three secrets, `BOT_PRIVATE_KEY`, `ENGINE_ADMIN_KEY` and

@@ -11,12 +11,12 @@ import { existsSync, readFileSync } from "node:fs";
 import { createServer } from "node:http";
 
 const PORT = Number(process.env.SMOKE_PORT) || 3611, BASE = `http://127.0.0.1:${PORT}`, BARE = `http://127.0.0.1:${PORT + 1}`;
-const PAGES = ["/bounties", "/bounties/1", "/bounties/2", "/bounties/3", "/bounties/4", "/", "/agents/orbit-ops", "/ledger", "/ledger?show=burned", "/agents", "/agents/lumen-07", "/jobs/0412", "/jobs/0406", "/jobs/0404", "/jobs/0403", "/hire", "/hire?agent=page-smith", "/hire?agent=lumen-07&cover=1", "/work", "/protocol", "/token", "/burn", "/docs", "/log", "/security", "/pay", "/firms/night-desk", "/hire?firm=night-desk", "/plans/0x5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a", "/open-jobs", "/open-jobs/0x0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b", "/coins", "/coins?sort=new", "/coins/page-smith", "/jobs/0416", "/jobs/0408", "/agents/page-smith", "/hire?stages=1", "/everywhere", "/hire?agent=lumen-07&price=0.01&title=Summarise+one+contract&due=48&early=1"];
+const PAGES = ["/bounties", "/bounties/1", "/bounties/2", "/bounties/3", "/bounties/4", "/", "/agents/orbit-ops", "/ledger", "/ledger?show=burned", "/agents", "/agents/lumen-07", "/jobs/0412", "/jobs/0406", "/jobs/0404", "/jobs/0403", "/hire", "/hire?agent=page-smith", "/hire?agent=lumen-07&cover=1", "/work", "/protocol", "/token", "/burn", "/docs", "/log", "/security", "/pay", "/firms/night-desk", "/hire?firm=night-desk", "/plans/0x5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a", "/open-jobs", "/open-jobs/0x0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b", "/coins", "/coins?sort=new", "/coins/page-smith", "/jobs/0416", "/jobs/0408", "/agents/page-smith", "/hire?stages=1", "/everywhere", "/hire?agent=lumen-07&price=0.01&title=Summarise+one+contract&due=48&early=1", "/ask", "/ask?q=A+landing+page+for+my+coin", "/hire?agent=page-smith&price=0.003&title=A+landing+page&due=38&via=ask"];
 // The header's five groups and the pages in each, in order. A group of one page is a plain link.
-const GROUPS = { Hire: ["/hire", "/open-jobs", "/bounties"], Agents: ["/agents", "/coins", "/work"], Ledger: ["/ledger"], Protocol: ["/protocol", "/docs", "/everywhere", "/roadmap"], Token: ["/token", "/burn"] };
+const GROUPS = { Hire: ["/ask", "/hire", "/open-jobs", "/bounties"], Agents: ["/agents", "/coins", "/work"], Ledger: ["/ledger"], Protocol: ["/protocol", "/docs", "/everywhere", "/roadmap"], Token: ["/token", "/burn"] };
 const NAV = Object.values(GROUPS).flat();
 // the group each page is in, which the header marks as the current one (none for a page of no group)
-const CURRENT = { "/bounties": "Hire", "/bounties/1": "Hire", "/hire": "Hire", "/open-jobs": "Hire", "/agents": "Agents", "/agents/lumen-07": "Agents", "/jobs/0412": "Agents", "/coins/page-smith": "Agents", "/work": "Agents", "/ledger": "Ledger", "/protocol": "Protocol", "/docs": "Protocol", "/everywhere": "Protocol", "/token": "Token", "/burn": "Token", "/": null, "/log": null, "/security": null, "/pay": null };
+const CURRENT = { "/ask": "Hire", "/bounties": "Hire", "/bounties/1": "Hire", "/hire": "Hire", "/open-jobs": "Hire", "/agents": "Agents", "/agents/lumen-07": "Agents", "/jobs/0412": "Agents", "/coins/page-smith": "Agents", "/work": "Agents", "/ledger": "Ledger", "/protocol": "Protocol", "/docs": "Protocol", "/everywhere": "Protocol", "/token": "Token", "/burn": "Token", "/": null, "/log": null, "/security": null, "/pay": null };
 // Words the copy does not use: no long dash, no promise of gain. A list kept beside this file and out of the repo
 // (forbidden.local.json, pairs of pattern and flags) adds to them on the machine it is on.
 const LOCAL = new URL("./forbidden.local.json", import.meta.url);
@@ -559,7 +559,7 @@ test("each page is small enough for a phone, and nothing loads from another site
   for (const path of PAGES) {
     const { html, headers } = await get(path);
     // the docs, with every section on, are the largest page: still a fraction of one picture
-    assert.ok(html.length < 225_000, `${path} is ${html.length} bytes`);
+    assert.ok(html.length < 235_000, `${path} is ${html.length} bytes`);
     assert.doesNotMatch(html, /(src|href)="https?:\/\/(?!ponsfamily\.com|github\.com|x\.com|robinhoodchain\.blockscout\.com\/(tx|address)\/0x)/, `${path} loads from another site`);
     assert.match(headers.get("content-security-policy") ?? "", /default-src 'self'/, `${path} has no content policy`);
   }
@@ -924,7 +924,7 @@ test("Factor everywhere: its page under Protocol with a snippet for each case, t
   assert.equal(status, 200);
   const t = text(html).replace(/<!-- -->/g, "");
   assert.match(t, /Check an agent before you hire it, anywhere ?\./);
-  for (const head of ["01 One answer", "02 Check the signature", "03 Embed it", "04 Factor Connect", "05 In every assistant", "06 On ERC-8004", "07 What it is"]) assert.match(t, new RegExp(head), head);
+  for (const head of ["01 One answer", "02 Check the signature", "03 Embed it", "04 Factor Connect", "05 In every assistant", "06 Ask Factor", "07 On ERC-8004", "08 What it is"]) assert.match(t, new RegExp(head), head);
   for (const snippet of ["/api/v1/everywhere/agent/", "verifyMessage", "checkAgent", "data-factor-agent", "embed.js", "/api/v1/connect/", "register", "verifyWebhook", "claude mcp add --transport http factor", "mcpServers", "factorScore"]) assert.ok(t.includes(snippet), snippet);
   // the sample's own signer, and live embeds of the best agent, drawn by the script from this site
   assert.match(t, /0xa4cedcbc8f7718430b68e5c3a8363a6c258fc976/);
@@ -967,14 +967,14 @@ test("Factor everywhere: its page under Protocol with a snippet for each case, t
   const init = await mcp({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "smoke", version: "1" } } });
   assert.equal(init.result.serverInfo.name, "factor");
   const tools = (await mcp({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} })).result.tools;
-  assert.deepEqual(tools.map((x) => x.name).sort(), ["factor_agent", "factor_agents", "factor_check_agent", "factor_erc8004", "factor_firm_record", "factor_guarantee", "factor_hire_link", "factor_line", "factor_open_jobs", "factor_overview", "factor_record"]);
+  assert.deepEqual(tools.map((x) => x.name).sort(), ["factor_agent", "factor_agents", "factor_ask", "factor_check_agent", "factor_erc8004", "factor_firm_record", "factor_guarantee", "factor_hire_link", "factor_line", "factor_open_jobs", "factor_overview", "factor_record"]);
   assert.ok(tools.every((x) => x.annotations.readOnlyHint === true));
   assert.equal((await fetch(`${BASE}/mcp`)).status, 405);
 
   // the pay flow, filled in by a link (the kit's hireLink): every field still the customer's to change
   const hire = (await get("/hire?agent=lumen-07&price=0.01&title=Summarise+one+contract&due=48&early=1")).html;
   assert.match(hire, /value="0\.01"/);
-  assert.match(hire, /value="Summarise one contract"/);
+  assert.match(hire, /<textarea class="oneline"[^>]*>Summarise one contract<\/textarea>/);
   assert.match(hire, /<option value="172800" selected="">48 hours<\/option>/);
 
   // an agent's page: check it anywhere, with its embed and its signed answer
@@ -997,4 +997,77 @@ test("Factor everywhere: its page under Protocol with a snippet for each case, t
   assert.match(bare, /Factor everywhere is switched off right now/);
   assert.equal((await fetch(`${BARE}/api/v1/everywhere/agent/lumen-07`)).status, 503);
   assert.doesNotMatch(text((await get("/docs", BARE)).html), /Factor everywhere The score/);
+});
+
+test("Ask Factor: the box on the home page and its own page under Hire, a sentence answered with the job and the agents, the hire form filled in with stages, the assistant's tool, the docs, the protocol, the security page and the log", async () => {
+  // the home page: the box, and the page it leads to
+  const home = text((await get("/")).html).replace(/<!-- -->/g, "");
+  assert.match(home, /Ask Factor (?:How Ask works → )?Say what you need\. Factor writes the job ?\./);
+  assert.match(home, /Say what you need, in one sentence/);
+  assert.match(home, /A landing page for my coin by Friday, under 0\.02 ETH/);
+  // its own page, in the Hire group of the header and nowhere else
+  const { status, html } = await get("/ask");
+  assert.equal(status, 200);
+  const t = text(html).replace(/<!-- -->/g, "");
+  assert.match(t, /Say what you need\. Factor writes the job ?\./);
+  for (const rule of ["It writes, you lock", "Every figure is the desk's", "Nothing of it is kept"]) assert.ok(t.includes(rule), rule);
+  assert.match(t, /never signs, never moves money and never chooses an address/);
+  assert.match(html, /data-pages="Hire"[\s\S]*?href="\/ask"/);
+  assert.doesNotMatch(t, /\bdemo\b/i);
+  assert.doesNotMatch(t, /holds? (your|the customer's|their) (money|payment)(?! )/i);
+
+  // a sentence, as the page sends it: the job written and the agents that fit, each with its reasons and a price
+  assert.deepEqual(await (await fetch(`${BASE}/api/v1/ask`)).json(), { enabled: true, mostChars: 500, perMinute: 4, perDay: 40, reads: "plain" });
+  const r = await fetch(`${BASE}/api/v1/ask`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "A landing page for my coin by Friday", tz: 60 }) });
+  assert.equal(r.status, 200);
+  const a = await r.json();
+  assert.equal(a.job.title, "A landing page for my coin by Friday");
+  assert.ok(a.agents.length >= 1 && a.agents.length <= 3);
+  assert.equal(a.agents[0].name, "page-smith");
+  assert.ok(a.agents[0].reasons.some((x) => /^Factor Score \d+ of 1000\.$/.test(x)));
+  assert.equal((await fetch(`${BASE}/api/v1/ask`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "hi" }) })).status, 400);
+
+  // the hire form, filled in from Ask: said so, every field the customer's, and no second box to match the job
+  const hire = (await get("/hire?agent=page-smith&price=0.003&title=A+landing+page&due=38&via=ask")).html;
+  assert.match(text(hire), /Filled in by Ask Factor from your sentence\. Check every field/);
+  assert.match(hire, /value="0\.003"/);
+  assert.match(hire, /<textarea class="oneline"[^>]*>A landing page<\/textarea>/);
+  assert.match(hire, /<option value="136800" selected="">38 hours<\/option>/);
+  assert.doesNotMatch(text(hire), /Just say what you need/);
+  // a job in stages from Ask: the stage form, each stage as Ask wrote it, a time it does not list offered too
+  const plan = encodeURIComponent(JSON.stringify([["The words", "Write every page", "0.002", 72], ["The pages", "Build them", "0.003", 96]]));
+  const staged = (await get(`/hire?agent=page-smith&price=0.005&title=A+shop+site&due=168&stages=1&plan=${plan}&via=ask`)).html;
+  assert.match(staged, /value="A shop site"/);
+  assert.match(staged, /value="The words"/);
+  assert.match(staged, /value="The pages"/);
+  assert.match(staged, /value="0\.003"/);
+  assert.match(staged, /<option value="345600" selected="">4 days<\/option>/);
+  // a plan that is not one is ignored, and the form is the plain one
+  assert.equal((await get(`/hire?agent=page-smith&stages=1&plan=${encodeURIComponent("[[1,2]]")}&via=ask`)).status, 200);
+
+  const docs = text((await get("/docs")).html).replace(/<!-- -->/g, "");
+  assert.match(docs, /Ask Factor (?:Try it → )?One sentence in, a job out ?\./);
+  assert.match(docs, /factor_ask/);
+  assert.match(text((await get("/protocol")).html).replace(/<!-- -->/g, ""), /Ask Factor (?:Try it → )?It writes the job\. You lock it ?\./);
+  assert.match(text((await get("/security")).html).replace(/<!-- -->/g, ""), /Ask Factor A model reads the sentence\. Nothing it says moves money ?\./);
+  assert.match(text((await get("/log")).html), /Ask Factor Say what you need in one sentence/);
+
+  // also new: every agent's live score card, a picture made from its record, and the picture its page's links show
+  const card = await fetch(`${BASE}/api/v1/agents/lumen-07/card.png`);
+  assert.equal(card.status, 200);
+  assert.equal(card.headers.get("content-type"), "image/png");
+  assert.match(card.headers.get("cache-control") ?? "", /max-age=300/);
+  const png = Buffer.from(await card.arrayBuffer());
+  assert.equal(png.subarray(1, 4).toString(), "PNG");
+  assert.equal(png.readUInt32BE(16), 1200);
+  assert.equal(png.readUInt32BE(20), 630);
+  assert.equal((await fetch(`${BASE}/api/v1/agents/nobody-here/card.png`)).status, 404);
+  assert.match((await get("/agents/lumen-07")).html, /<meta property="og:image" content="https:\/\/factoragents\.fun\/api\/v1\/agents\/lumen-07\/card\.png"\/>/);
+  assert.match(text((await get("/log")).html), /Also new: a live score card for every agent/);
+
+  // with no engine: no box on the home page, the page says it is resting, and nothing is answered
+  assert.doesNotMatch(text((await get("/", BARE)).html), /Say what you need, in one sentence/);
+  assert.match(text((await get("/ask", BARE)).html), /Ask Factor is resting just now/);
+  assert.equal((await fetch(`${BARE}/api/v1/ask`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "A landing page for my coin" }) })).status, 503);
+  assert.doesNotMatch(text((await get("/docs", BARE)).html), /One sentence in, a job out/);
 });

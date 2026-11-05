@@ -7,19 +7,20 @@ import { useState } from "react";
 import { fromWei, Refusal, toWei } from "@/lib/desk";
 import { BRIEF_MOST, briefOf, bytesOf, titleOf, MAX_STAGES, MIN_STAGES, postedPlan, sendMilestones, sendTerms, STAGE_TIMES, TERMS_BYTES, termsHash, termsText, timeWord, TITLE_MOST } from "@/lib/milestones";
 import type { Agent, MilestonesAbout, Params } from "@/lib/types";
+import type { AskStage } from "@/lib/ask";
 import { Go, StatusLine, useSend, useWallet } from "./Wallet";
 
 type Pick_ = Pick<Agent, "address" | "name" | "named" | "does" | "score" | "settled" | "house" | "service">;
 interface Draft { title: string; brief: string; price: string; time: number }
 const blank = (n: number): Draft => ({ title: "", brief: "", price: "0.0100", time: n === 0 ? 3 * 86_400 : 7 * 86_400 });
 
-export default function HireInStages({ agents, picked, about, explorer, params, paused = false }: { agents: Pick_[]; picked: string; about: MilestonesAbout; explorer: string; params: Params; paused?: boolean }) {
+export default function HireInStages({ agents, picked, about, explorer, params, paused = false, prefill = null }: { agents: Pick_[]; picked: string; about: MilestonesAbout; explorer: string; params: Params; paused?: boolean; /** what Ask Factor's link filled in: every field can still be changed */ prefill?: { title: string; stages: AskStage[]; early: boolean } | null }) {
   const { address, wallet } = useWallet();
   const { status, run, busy } = useSend();
   const [agent, setAgent] = useState(picked);
-  const [title, setTitle] = useState("");
-  const [stages, setStages] = useState<Draft[]>([blank(0), blank(1)]);
-  const [early, setEarly] = useState(false);
+  const [title, setTitle] = useState(prefill?.title ?? "");
+  const [stages, setStages] = useState<Draft[]>(prefill?.stages.length ? prefill.stages.map((x) => ({ title: x.title, brief: x.brief, price: x.priceEth, time: x.hours * 3600 })) : [blank(0), blank(1)]);
+  const [early, setEarly] = useState(prefill?.early ?? false);
   // a plan locked whose words did not reach the engine: sent again from here
   const [pending, setPending] = useState<{ id: number; text: string } | null>(null);
   const again = useSend();
@@ -102,7 +103,7 @@ export default function HireInStages({ agents, picked, about, explorer, params, 
               <label className="field">
                 <span className="label">Its time</span>
                 <select value={s.time} onChange={(e) => set(i, { time: Number(e.target.value) })} disabled={busy}>
-                  {STAGE_TIMES.map(([name, t]) => <option key={t} value={t}>{name}</option>)}
+                  {(STAGE_TIMES.some(([, t]) => t === s.time) ? STAGE_TIMES : [...STAGE_TIMES, [timeWord(s.time), s.time] as [string, number]].sort((a, b) => a[1] - b[1])).map(([name, t]) => <option key={t} value={t}>{name}</option>)}
                 </select>
               </label>
             </div>

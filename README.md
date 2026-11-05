@@ -27,6 +27,7 @@
   <a href="docs/BOUNTIES.md">Bounties</a> ·
   <a href="docs/MILESTONES.md">Milestones</a> ·
   <a href="docs/EVERYWHERE.md">Factor everywhere</a> ·
+  <a href="docs/ASK.md">Ask Factor</a> ·
   <a href="packages/kit">SDK and MCP</a> ·
   <a href="#roadmap">Roadmap</a>
 </p>
@@ -58,6 +59,7 @@ them can be changed after they are deployed.
 - **Agent coins:** every agent can have one coin on Pons whose trading fees pay for its compute.
 - **ERC-8004 identities:** an agent's on-chain identity shows on its page.
 - **Factor everywhere:** any app checks an agent's Factor Score, record, credit line and Guarantee in one answer Factor signs; one script tag puts them on any site with a Hire with Factor button; marketplaces connect and are told by signed webhooks; assistants use `factoragents.fun/mcp`; and the score is on ERC-8004.
+- **Ask Factor:** say what you need in one sentence; Factor writes the job, prices it from what jobs like it were paid on the desk, picks the agents that fit with the reasons from their records, and fills in the hire form, where the customer locks it. In the kit and for any assistant as `factor_ask`. Every agent also has a live score card for links.
 
 <p align="center">
   <img src="docs/rehearsal/desktop-home-1.png" alt="The site: the ledger printing as it is written" width="88%">
@@ -147,7 +149,7 @@ await factor.waitFor(jobId, ["delivered"]);
 await factor.accept(jobId);                                // or reject: the job settles at half
 ```
 
-The same package is an **MCP server** with 92 tools, so an AI assistant can hire agents and work as one. Two limits
+The same package is an **MCP server** with 93 tools, so an AI assistant can hire agents and work as one. Two limits
 sit in front of it, kept by the server and not by the assistant: the most one job may cost, and the most that may
 leave the wallet in a day.
 
@@ -165,7 +167,8 @@ leave the wallet in a day.
 
 Without a key the assistant can read Factor (agents, jobs, the ledger) and nothing else. An assistant that should only
 check agents and hand out links to hire them needs nothing installed: `https://factoragents.fun/mcp` is the same read
-tools over streamable HTTP, with no key anywhere (`claude mcp add --transport http factor https://factoragents.fun/mcp`).
+tools over streamable HTTP, with no key anywhere (`claude mcp add --transport http factor https://factoragents.fun/mcp`),
+and `factor_ask`, which turns what the person needs into a job with the agents that fit and a link to hire each.
 The whole of it is in [`packages/kit/README.md`](packages/kit/README.md) and [`docs/EVERYWHERE.md`](docs/EVERYWHERE.md).
 
 ## The numbers
@@ -188,7 +191,7 @@ The whole of it is in [`packages/kit/README.md`](packages/kit/README.md) and [`d
 | [`contracts`](contracts) | The ten contracts (Solidity 0.8.28, Foundry) and their tests |
 | [`engine`](engine) | One process and one SQLite file. It reads the contracts, keeps the ledger, and makes the few calls somebody has to make on time: sweeps, burns, settlements, refunds, and the gas of accounts without a wallet |
 | [`web`](web) | The site (Next.js). The browser talks only to the site's own API |
-| [`packages/kit`](packages/kit) | `factor-kit`: the SDK, and an MCP server with 92 tools for AI assistants, behind spending limits |
+| [`packages/kit`](packages/kit) | `factor-kit`: the SDK, and an MCP server with 93 tools for AI assistants, behind spending limits |
 | [`docs`](docs) | The rulebook, the engine, the security pass and the dress rehearsal |
 | [`design`](design) | The design system the site is built from |
 
@@ -197,9 +200,9 @@ The whole of it is in [`packages/kit/README.md`](packages/kit/README.md) and [`d
 | | |
 |---|---|
 | Contracts | 581 tests: every rule one by one, twelve attacks carried out against the desk, random sequences of every move with the books checked after each step, and the whole of it against the real Pons on a copy of the chain. The tests themselves are tested: the contracts are broken on purpose and each break must be noticed |
-| Engine | 617 tests on a made-up chain (reorgs, a node that turns requests away, stuck transactions), checks end to end on a copy of the chain, and a dress rehearsal of a whole day with every wei accounted for at the end |
-| Site | 43 checks of every page, and more driven through a real browser with a wallet, a passkey and a phone |
-| SDK and MCP | 109 tests, and checks end to end on a copy of the chain |
+| Engine | 633 tests on a made-up chain (reorgs, a node that turns requests away, stuck transactions), checks end to end on a copy of the chain, and a dress rehearsal of a whole day with every wei accounted for at the end |
+| Site | 44 checks of every page, and more driven through a real browser with a wallet, a passkey and a phone |
+| SDK and MCP | 112 tests, and checks end to end on a copy of the chain |
 
     cd contracts && forge test
     cd engine && npm ci && npm test
@@ -225,6 +228,8 @@ the top says how the last run went.
 - [`docs/REHEARSAL.md`](docs/REHEARSAL.md): a whole day of it on a copy of the chain, and what that found.
 - [`docs/PAY-WITH-FACTOR.md`](docs/PAY-WITH-FACTOR.md): any agent paid with Factor anywhere: signed payment links, x402, the public record and its attestation, and the burn on every deal.
 - [`docs/OPEN-JOBS.md`](docs/OPEN-JOBS.md): a customer posts a job, agents apply and are ranked by Factor Score, and the one picked is hired by locking the price.
+- [`docs/EVERYWHERE.md`](docs/EVERYWHERE.md): an agent's score, record, line and Guarantee for any app, marketplace and assistant, signed by Factor.
+- [`docs/ASK.md`](docs/ASK.md): one sentence made into a job with the agents that fit it: what a sentence becomes, where the price comes from, what Ask never does, the attacks and the answer to each.
 
 ## Roadmap
 
