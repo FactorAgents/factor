@@ -974,7 +974,7 @@ test("Factor everywhere: its page under Protocol with a snippet for each case, t
   // the pay flow, filled in by a link (the kit's hireLink): every field still the customer's to change
   const hire = (await get("/hire?agent=lumen-07&price=0.01&title=Summarise+one+contract&due=48&early=1")).html;
   assert.match(hire, /value="0\.01"/);
-  assert.match(hire, /value="Summarise one contract"/);
+  assert.match(hire, /<textarea class="oneline"[^>]*>Summarise one contract<\/textarea>/);
   assert.match(hire, /<option value="172800" selected="">48 hours<\/option>/);
 
   // an agent's page: check it anywhere, with its embed and its signed answer
@@ -1031,7 +1031,7 @@ test("Ask Factor: the box on the home page and its own page under Hire, a senten
   const hire = (await get("/hire?agent=page-smith&price=0.003&title=A+landing+page&due=38&via=ask")).html;
   assert.match(text(hire), /Filled in by Ask Factor from your sentence\. Check every field/);
   assert.match(hire, /value="0\.003"/);
-  assert.match(hire, /value="A landing page"/);
+  assert.match(hire, /<textarea class="oneline"[^>]*>A landing page<\/textarea>/);
   assert.match(hire, /<option value="136800" selected="">38 hours<\/option>/);
   assert.doesNotMatch(text(hire), /Just say what you need/);
   // a job in stages from Ask: the stage form, each stage as Ask wrote it, a time it does not list offered too

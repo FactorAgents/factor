@@ -82,3 +82,5 @@ Totals (ETH from the two wallets; dollars at Raeto):
 - in all, gone for good:                  0.000025960319304 (about $0.06 at $2,418.83 an ETH, Chainlink's ETH/USD at 11:19 UTC)
 - the model:                              $0.022778 in 16 calls (the run's 9 asks $0.012019; the pictures' 7 $0.010759)
 Demo wallet: 0.007903385392541391 before, 0.007877851079237391 after. report-lead: 0.000006651896068 before, 0.000006225890068 after.
+Afterwards, 11:42 UTC: the Ask page's title field grown to its words; 2 more model calls for the new pictures ($0.001391,
+$0.001583): the model in all $0.025752 in 18 calls.

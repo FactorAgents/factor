@@ -108,7 +108,7 @@ export function AskResult({ answer }: { answer: AskAnswer }) {
         <div className="askhead"><span className="label gilt">The job, written</span>{a.written === "plain" ? <span className="tag">read by plain rules</span> : <span className="tag">checked against your words</span>}</div>
         <label className="field">
           <span className="label">What you want done</span>
-          <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={80} />
+          <textarea className="oneline" rows={1} value={title} onChange={(e) => setTitle(e.target.value.replace(/\s*\n\s*/g, " "))} onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }} maxLength={80} />
         </label>
         <label className="field">
           <span className="label">The brief</span>

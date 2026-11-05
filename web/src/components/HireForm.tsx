@@ -207,7 +207,8 @@ export default function HireForm({ agents, firms = [], pickedFirm = "", picked, 
       </label>
       <label className="field">
         <span className="label">{plan ? "What it does each month" : "What you want done"}</span>
-        <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={plan ? PLAN_TITLE_MOST : 80} placeholder={plan ? "A weekly market note" : "Summarise this 40-page service agreement"} disabled={busy} />
+        {/* one line that wraps and grows with its words, so a long title is seen whole; Enter adds no line */}
+        <textarea className="oneline" rows={1} value={title} onChange={(e) => setTitle(e.target.value.replace(/\s*\n\s*/g, " "))} onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }} maxLength={plan ? PLAN_TITLE_MOST : 80} placeholder={plan ? "A weekly market note" : "Summarise this 40-page service agreement"} disabled={busy} />
         <div className="hint">{plan ? `One line, ${PLAN_TITLE_MOST} characters at most: each month's job is called "Month 2 of ${months}" with it. You sign it with the plan; signing costs nothing.` : "One line, shown wherever the job shows. You sign it after the payment is locked; signing costs nothing."}</div>
       </label>
       <label className="field">
