@@ -132,6 +132,10 @@ describe("the rules and the words", () => {
     // a weekday the sentence does not name is not taken; a unit the sentence does not say is not taken
     expect(checkReading({ deadline: { weekday: "monday" } }, SENTENCE, names).deadline).toEqual({ weekday: 5 });
     expect(checkReading({ budget: { amount: 0.02, unit: "USD" } }, SENTENCE, names).budget).toEqual({ amount: 0.02, unit: "ETH" });
+    // a place left open for what the customer did write is no place: their words stand
+    const priced = checkReading({ brief: "A price sheet of [ETH], [NVDA] and [TSLA] for [your site]", missing: ["NVDA", "your site"] }, "A price sheet of ETH, NVDA and TSLA by Friday", names);
+    expect(priced.brief).toBe("A price sheet of ETH, NVDA and TSLA for [your site]");
+    expect(priced.missing).toEqual(["your site"]);
     // parts: 2 to 6, each with a title and a brief
     expect(checkReading({ parts: [{ title: "Only one", brief: "x" }] }, SENTENCE, names).parts).toEqual([]);
     expect(checkReading({ parts: Array.from({ length: 9 }, (_, i) => ({ title: `Part number ${i + 1}`, brief: "Do it" })) }, SENTENCE, names).parts).toHaveLength(6);
@@ -174,6 +178,8 @@ describe("the price and the agents", () => {
     expect(priceFor(ranked, reading, jobs, 2n * 10n ** 15n, 10n ** 18n).wei).toBe(2n * 10n ** 15n);
     expect(priceFor(ranked, reading, jobs, 10n ** 14n, 10n ** 18n)).toMatchObject({ wei: 10n ** 15n, notes: ["Your budget is under the desk's smallest job, 0.001 ETH."] });
     expect(priceFor(ranked, reading, jobs, null, 3n * 10n ** 15n).wei).toBe(3n * 10n ** 15n);
+    const same = [7, 8, 9].map((id) => ({ id, agent: PAGE, priceWei: 10n ** 15n, title: "A landing page" }));
+    expect(priceFor(ranked, reading, same, null, 10n ** 18n).info.said).toBe("3 jobs like it were paid in full on the desk, each for 0.001 ETH.");
   });
 
   it("jobs like it: a titled job sharing two words, a fitting agent's job sharing one, an untitled job of an agent whose own line is this kind of work", () => {

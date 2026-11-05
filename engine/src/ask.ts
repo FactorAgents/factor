@@ -265,10 +265,11 @@ function titleOf(raw: unknown, fallback = ""): string {
 
 const STOP = new Set(("a an the and or but for of to in on at by with from into about as is are be was were it its this that these those my our your their me we you i "
   + "need want would like please can could get make makes made do does done have has some any one all more most very just also so then than "
-  + "under over below above up within before after around less least max maximum budget price cost costs eth ether usd dollar dollars "
+  + "under over below above up within before after around less least max maximum budget cost costs eth ether usd dollar dollars "
   + "today tomorrow tonight day days hour hours week weeks month months monday tuesday wednesday thursday friday saturday sunday "
   + "job jobs agent agents work task thing something new good quick fast simple small big short long help someone using use via "
   + "every each other them they what which who how when where there here then out off goes going made own done "
+  + "will not would should can could may must get got set give take put "
   // the words every agent here says of itself: where it works, not what it does
   + "robinhood chain onchain factor").split(/\s+/));
 
@@ -425,9 +426,11 @@ export function checkReading(j: Record<string, unknown>, sentence: string, names
     else if ((d.when === "today" && /\b(today|tonight)\b/.test(lower)) || (d.when === "tomorrow" && /\btomorrow\b/.test(lower))) deadline = { when: d.when };
     else if (typeof d.date === "string" && /^20\d\d-\d\d-\d\d$/.test(d.date) && said.includes(Number(d.date.slice(8)))) deadline = { date: d.date };
   }
-  const brief = ownLinksOnly(plain(j.brief, 900), sentence) || p.brief;
+  // a [place] the model left for something the customer did write is no place: its words stand as the customer wrote them
+  const given = (t: string) => t.replace(/\[([^\]\n]{1,80})\]/g, (m, inner: string) => (inner.trim().length > 1 && lower.includes(inner.trim().toLowerCase()) ? inner.trim() : m));
+  const brief = given(ownLinksOnly(plain(j.brief, 900), sentence)) || p.brief;
   const parts = Array.isArray(j.parts)
-    ? j.parts.slice(0, MOST_STAGES).map((x) => { const o = (x ?? {}) as Record<string, unknown>; return { title: titleOf(o.title), brief: ownLinksOnly(plain(o.brief, 600), sentence) }; }).filter((x) => x.title && x.brief)
+    ? j.parts.slice(0, MOST_STAGES).map((x) => { const o = (x ?? {}) as Record<string, unknown>; return { title: titleOf(o.title), brief: given(ownLinksOnly(plain(o.brief, 600), sentence)) }; }).filter((x) => x.title && x.brief)
     : [];
   return {
     title: titleOf(bare(plain(j.title, 200)), p.title),
@@ -439,7 +442,7 @@ export function checkReading(j: Record<string, unknown>, sentence: string, names
     cover: j.cover === true && COVER_WORD.test(sentence) ? true : p.cover,
     picks: Array.isArray(j.agents) ? [...new Set(j.agents.filter((x): x is string => typeof x === "string").map((x) => x.trim().toLowerCase()).filter((x) => names.has(x)))].slice(0, 5) : [],
     words: [...new Set([...(Array.isArray(j.words) ? j.words.filter((x): x is string => typeof x === "string").flatMap((x) => wordsOf(x.slice(0, 40))) : []), ...p.words])].slice(0, 16),
-    missing: Array.isArray(j.missing) ? j.missing.filter((x): x is string => typeof x === "string").map((x) => plain(x, 60).replace(/[\[\]]/g, "")).filter(Boolean).slice(0, 4) : [],
+    missing: Array.isArray(j.missing) ? j.missing.filter((x): x is string => typeof x === "string").map((x) => plain(x, 60).replace(/[\[\]]/g, "")).filter((x) => x && !lower.includes(x.toLowerCase())).slice(0, 4) : [],
   };
 }
 
@@ -507,7 +510,7 @@ export function reasonsOf(r: Ranked, price: bigint, budget: bigint | null): stri
     const lateNote = c.late ? `, ${c.late} delivered late` : c.onTime !== null && c.onTime >= c.settled ? ", every one on time" : "";
     out.push(`${plural(c.settled, "job")} paid in full${c.customers ? ` for ${plural(c.customers, "customer")}` : ""}${lateNote}${c.settledAtHalf ? `; ${c.settledAtHalf} settled at half` : ""}.`);
   } else out.push("No job settled on the desk yet: it has no record to go by.");
-  if (r.alike.length) out.push(`Paid before for work like this: "${r.alike[0]!.title}" (job ${String(r.alike[0]!.id).padStart(4, "0")})${r.alike.length > 1 ? ` and ${plural(r.alike.length - 1, "more")}` : ""}.`);
+  if (r.alike.length) out.push(`Paid before for work like this: "${r.alike[0]!.title}" (job ${String(r.alike[0]!.id).padStart(4, "0")})${r.alike.length > 1 ? ` and ${r.alike.length - 1} more` : ""}.`);
   out.push(`Factor Score ${c.score} of 1000.`);
   if (c.guarantee) out.push(`Backed by its Guarantee: up to ${c.guarantee.upToEth} ETH of cover on one job.`);
   if (c.verified?.length) out.push(`Its owner is verified by ${c.verified.map((s) => SOURCES[s] ?? s).join(" and ")}.`);
@@ -545,7 +548,10 @@ export function priceFor(ranked: Ranked[], reading: Reading, settled: SettledJob
   if (prices.length >= 3) {
     wei = mid!;
     basis = "similar";
-    said = `${plural(prices.length, "job")} like it were paid in full on the desk, from ${ethText(prices.reduce((a, b) => (b < a ? b : a)))} to ${ethText(prices.reduce((a, b) => (b > a ? b : a)))} ETH; the middle of them is ${ethText(mid!)} ETH.`;
+    const low = prices.reduce((a, b) => (b < a ? b : a)), high = prices.reduce((a, b) => (b > a ? b : a));
+    said = low === high
+      ? `${plural(prices.length, "job")} like it were paid in full on the desk, each for ${ethText(low)} ETH.`
+      : `${plural(prices.length, "job")} like it were paid in full on the desk, from ${ethText(low)} to ${ethText(high)} ETH; the middle of them is ${ethText(mid!)} ETH.`;
   } else if (prices.length) {
     wei = best !== null && best > mid! ? best : mid!;
     basis = "few";
