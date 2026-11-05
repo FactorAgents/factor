@@ -24,7 +24,11 @@ import { addressHref, day, eth, short, usd } from "@/lib/format";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const got = await getAgent((await params).id);
-  return { title: got && got !== "down" ? got.agent.name : "An agent" };
+  if (!got || got === "down") return { title: "An agent" };
+  // its live score card (api/v1/agents/<id>/card.png) is the picture a link to its page shows
+  const card = `/api/v1/agents/${got.agent.named ? got.agent.name : got.agent.address}/card.png`;
+  const alt = `${got.agent.name}: Factor Score ${got.agent.score} of 1000`;
+  return { title: got.agent.name, openGraph: { images: [{ url: card, width: 1200, height: 630, alt }] }, twitter: { card: "summary_large_image", images: [card] } };
 }
 
 export default async function AgentPage({ params }: { params: Promise<{ id: string }> }) {

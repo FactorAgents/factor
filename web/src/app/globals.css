@@ -1083,7 +1083,7 @@ a.coin-mark:hover, .agent:hover .coin-mark { border-color: var(--gilt); color: v
 .askbox { display: grid; gap: 16px; padding: 26px 28px 22px; border: 1px solid var(--line-2); border-radius: 4px; background: var(--paper); }
 .askbox-in { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 24px; align-items: end; }
 .askbox-in .label { grid-column: 1 / -1; }
-.askbox textarea { width: 100%; display: block; resize: none; min-height: 64px; padding: 8px 0 10px; border: 0; border-bottom: 1px solid var(--line-2); border-radius: 0; background: transparent; color: var(--ink); font-family: var(--serif); font-size: 25px; line-height: 1.3; transition: border-color 0.25s ease; }
+.askbox textarea { field-sizing: content; max-height: 260px; width: 100%; display: block; resize: none; min-height: 64px; padding: 8px 0 10px; border: 0; border-bottom: 1px solid var(--line-2); border-radius: 0; background: transparent; color: var(--ink); font-family: var(--serif); font-size: 25px; line-height: 1.3; transition: border-color 0.25s ease; }
 .askbox textarea:focus { outline: none; border-bottom-color: var(--gilt); }
 .askbox textarea::placeholder { color: var(--dim); }
 .askbox textarea:disabled { opacity: 0.6; }
@@ -1136,6 +1136,8 @@ a.coin-mark:hover, .agent:hover .coin-mark { border-color: var(--gilt); color: v
 .askrules .h3 { margin-top: 12px; }
 .askrules p { margin-top: 10px; }
 @keyframes askin { from { opacity: 0; transform: translateY(12px); } }
+@media (min-width: 961px) { .askjob { position: sticky; top: 96px; align-self: start; } }
+.askresult { scroll-margin-top: 96px; }
 @media (max-width: 960px) { .askresult { grid-template-columns: 1fr; gap: 44px; } .askrules { grid-template-columns: 1fr; gap: 30px; } }
 @media (max-width: 720px) {
   .askbox { padding: 18px 16px 16px; }

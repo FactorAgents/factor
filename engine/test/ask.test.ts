@@ -286,8 +286,11 @@ describe("Ask on the engine", () => {
     // the model was shown the agents with their own lines, and the sentence as data
     expect(model.calls[0]).toContain("- page-maker: Builds a landing page from a short brief");
     expect(model.calls[0]).toContain(`"""\n${SENTENCE}\n"""`);
-    // the same sentence again: from memory, no second call
-    expect(await post(r, "/v1/ask", { text: SENTENCE, tz: 60 })).toMatchObject({ status: 200, cached: true });
+    // the same sentence again: the reading from memory, no second call, and the record as it is now
+    await paid(r, PAGE, 0.005, "A landing page for a shop");
+    const again = await post(r, "/v1/ask", { text: SENTENCE, tz: 60 });
+    expect(again).toMatchObject({ status: 200, cached: true, job: { title: a.job.title, brief: a.job.brief } });
+    expect(again.agents[0].settled).toBe(4);
     expect(model.calls).toHaveLength(1);
     // what is kept: the length, how it was read, what it cost. Never the sentence, never who asked
     const rows = r.sqlite.prepare("SELECT * FROM ask_log ORDER BY n").all() as Body[];

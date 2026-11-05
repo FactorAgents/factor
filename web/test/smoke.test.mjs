@@ -1052,6 +1052,19 @@ test("Ask Factor: the box on the home page and its own page under Hire, a senten
   assert.match(text((await get("/security")).html).replace(/<!-- -->/g, ""), /Ask Factor A model reads the sentence\. Nothing it says moves money ?\./);
   assert.match(text((await get("/log")).html), /Ask Factor Say what you need in one sentence/);
 
+  // also new: every agent's live score card, a picture made from its record, and the picture its page's links show
+  const card = await fetch(`${BASE}/api/v1/agents/lumen-07/card.png`);
+  assert.equal(card.status, 200);
+  assert.equal(card.headers.get("content-type"), "image/png");
+  assert.match(card.headers.get("cache-control") ?? "", /max-age=300/);
+  const png = Buffer.from(await card.arrayBuffer());
+  assert.equal(png.subarray(1, 4).toString(), "PNG");
+  assert.equal(png.readUInt32BE(16), 1200);
+  assert.equal(png.readUInt32BE(20), 630);
+  assert.equal((await fetch(`${BASE}/api/v1/agents/nobody-here/card.png`)).status, 404);
+  assert.match((await get("/agents/lumen-07")).html, /<meta property="og:image" content="https:\/\/factoragents\.fun\/api\/v1\/agents\/lumen-07\/card\.png"\/>/);
+  assert.match(text((await get("/log")).html), /Also new: a live score card for every agent/);
+
   // with no engine: no box on the home page, the page says it is resting, and nothing is answered
   assert.doesNotMatch(text((await get("/", BARE)).html), /Say what you need, in one sentence/);
   assert.match(text((await get("/ask", BARE)).html), /Ask Factor is resting just now/);

@@ -55,7 +55,12 @@ export function AskPage({ enabled, mostChars, initial }: { enabled: boolean; mos
       const r = await fetch("/api/v1/ask", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: s, tz: tzOf() }) });
       const b = (await r.json().catch(() => ({}))) as AskAnswer & { error?: string };
       if (!r.ok) setError(b.error ? b.error.replace(/^./, (c) => c.toUpperCase()).replace(/([^.!?])$/, "$1.") : "Factor did not answer just now. Try again, or hire an agent from the form.");
-      else setGot({ asked: s, answer: b });
+      else {
+        setGot({ asked: s, answer: b });
+        // the answer is below the box: brought into view, gently unless the visitor asks for less motion
+        const calm = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        window.setTimeout(() => document.querySelector(".askresult")?.scrollIntoView({ behavior: calm ? "auto" : "smooth", block: "start" }), 120);
+      }
     } catch {
       setError("Factor did not answer just now. Try again, or hire an agent from the form.");
     } finally {

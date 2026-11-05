@@ -613,7 +613,8 @@ const dayStart = (ms: number) => Math.floor(ms / 86_400_000) * 86_400_000;
 export interface AskOptions { model: AskModel | null; now?: () => number; log?: (line: string) => void }
 
 export class Ask {
-  private memo = new Map<string, { at: number; answer: AskAnswer }>();
+  // the model's reading of a sentence, kept ten minutes: the answer is built again each time from the desk as it is now
+  private memo = new Map<string, { at: number; reading: Reading; written: "model" | "plain"; notes: string[] }>();
   private visitors = new Map<string, { day: number; n: number; minute: number; m: number }>();
   private all = { minute: 0, n: 0 };
   private readonly now: () => number;
@@ -697,12 +698,15 @@ export class Ask {
     const limit = this.limited(from);
     if (limit) return { ok: false, status: 429, error: limit };
 
-    // the same sentence within ten minutes: the same answer, with no second call
+    // the same sentence within ten minutes: the same reading, with no second call, and the agents, records and prices as
+    // they are now
     const key = `${tz}|${sentence.toLowerCase()}`;
     const hit = this.memo.get(key);
     if (hit && this.now() - hit.at < TEN_MIN) {
-      this.logRow(sentence.length, "cached", null, 0, hit.answer.agents.length);
-      return { ok: true, answer: { ...hit.answer, cached: true } };
+      const again = this.build(sentence, hit.reading, hit.written, tz, data);
+      again.notes.push(...hit.notes);
+      this.logRow(sentence.length, "cached", null, 0, again.agents.length);
+      return { ok: true, answer: { ...again, cached: true } };
     }
 
     const read = await this.modelRead(sentence, data);
@@ -710,8 +714,9 @@ export class Ask {
     const written = read.reading ? "model" : "plain";
     const answer = this.build(sentence, reading, written, tz, data);
     this.logRow(sentence.length, written, read.reading || read.costUsd ? this.o.model!.name : null, read.costUsd, answer.agents.length);
-    if (read.costUsd && !read.reading) answer.notes.push("The model's reading could not be used, so this was read by plain rules: check every field.");
-    this.memo.set(key, { at: this.now(), answer });
+    const notes = read.costUsd && !read.reading ? ["The model's reading could not be used, so this was read by plain rules: check every field."] : [];
+    answer.notes.push(...notes);
+    this.memo.set(key, { at: this.now(), reading, written, notes });
     if (this.memo.size > 2000) this.memo.clear();
     return { ok: true, answer };
   }
