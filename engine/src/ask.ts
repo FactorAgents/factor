@@ -267,7 +267,10 @@ const STOP = new Set(("a an the and or but for of to in on at by with from into 
   + "need want would like please can could get make makes made do does done have has some any one all more most very just also so then than "
   + "under over below above up within before after around less least max maximum budget price cost costs eth ether usd dollar dollars "
   + "today tomorrow tonight day days hour hours week weeks month months monday tuesday wednesday thursday friday saturday sunday "
-  + "job jobs agent agents work task thing something new good quick fast simple small big short long help someone using use via").split(/\s+/));
+  + "job jobs agent agents work task thing something new good quick fast simple small big short long help someone using use via "
+  + "every each other them they what which who how when where there here then out off goes going made own done "
+  // the words every agent here says of itself: where it works, not what it does
+  + "robinhood chain onchain factor").split(/\s+/));
 
 /** The words of a text that say what it is about: lower case, plural and -ing taken off, the little words left out. */
 export function wordsOf(s: string): string[] {
@@ -341,15 +344,8 @@ function deadlineIn(sentence: string): Reading["deadline"] {
 /** The plain reading: what rules can take from a sentence without a model. */
 export function plainRead(sentence: string): Reading {
   const first = sentence.split(/(?<=[.!?])\s+|\n/)[0] ?? sentence;
-  // the title is the sentence without its budget and its deadline
-  const bare = first.replace(/,?\s*\b(?:for\s+)?(?:under|below|up to|max(?:imum)?|at most|around|about|budget(?: of)?|for)?\s*(?:\$\s*\d+(?:[.,]\d+)?|(?:\d+(?:[.,]\d+)?|\.\d+)\s*(?:eth|ether|usd|dollars?|bucks))\b/gi, "")
-    .replace(/,?\s*\b(?:by|before|until|due)\s+(?:the\s+)?(?:end of\s+)?(?:today|tonight|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|wed|thu|fri|sat|sun|20\d\d-\d\d-\d\d)\b/gi, "")
-    .replace(/,?\s*\b(?:in|within)\s+(?:\d+|one|two|three|four|five|six|seven|a|an)\s+(?:hours?|days?|weeks?)\b/gi, "")
-    .replace(/,?\s*\b(?:and\s+)?with\s+(?:a\s+|some\s+)?(?:guarantee|cover|insurance|money[- ]back(?:\s+guarantee)?)\b/gi, "")
-    .replace(/^\s*(?:i\s+(?:need|want|would like)|we\s+need|please|can (?:you|someone)|could (?:you|someone))\s+/i, "")
-    .replace(/[,.;:\s]+$/, "");
   return {
-    title: titleOf(bare, titleOf(first, "A job")),
+    title: titleOf(bare(first), titleOf(first, "A job")),
     brief: plain(sentence, BRIEF_MOST),
     budget: budgetIn(sentence),
     deadline: deadlineIn(sentence),
@@ -359,6 +355,16 @@ export function plainRead(sentence: string): Reading {
     words: wordsOf(sentence),
     missing: [],
   };
+}
+
+/** A title without the budget, the deadline or a wish for cover in it: those have fields of their own. */
+function bare(line: string): string {
+  return line.replace(/,?\s*\b(?:for\s+)?(?:under|below|up to|max(?:imum)?|at most|around|about|budget(?: of)?|for)?\s*(?:\$\s*\d+(?:[.,]\d+)?|(?:\d+(?:[.,]\d+)?|\.\d+)\s*(?:eth|ether|usd|dollars?|bucks))\b/gi, "")
+    .replace(/,?\s*\b(?:by|before|until|due)\s+(?:the\s+)?(?:end of\s+)?(?:today|tonight|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|wed|thu|fri|sat|sun|20\d\d-\d\d-\d\d)\b/gi, "")
+    .replace(/,?\s*\b(?:in|within)\s+(?:\d+|one|two|three|four|five|six|seven|a|an)\s+(?:hours?|days?|weeks?)\b/gi, "")
+    .replace(/,?\s*\b(?:and\s+)?with\s+(?:a\s+|some\s+)?(?:guarantee|cover|insurance|money[- ]back(?:\s+guarantee)?)\b/gi, "")
+    .replace(/^\s*(?:i\s+(?:need|want|would like)|we\s+need|please|can (?:you|someone)|could (?:you|someone))\s+/i, "")
+    .replace(/[,.;:\s]+$/, "");
 }
 
 export const ASK_SYSTEM = `You turn one sentence from a customer into a job for an AI agent on Factor, where AI agents take paid jobs.
@@ -424,7 +430,7 @@ export function checkReading(j: Record<string, unknown>, sentence: string, names
     ? j.parts.slice(0, MOST_STAGES).map((x) => { const o = (x ?? {}) as Record<string, unknown>; return { title: titleOf(o.title), brief: ownLinksOnly(plain(o.brief, 600), sentence) }; }).filter((x) => x.title && x.brief)
     : [];
   return {
-    title: titleOf(j.title, p.title),
+    title: titleOf(bare(plain(j.title, 200)), p.title),
     brief,
     budget,
     deadline,
@@ -465,13 +471,14 @@ interface Ranked { c: AskCandidate; fit: number; rank: number; alike: SettledJob
 /**
  * The agents that fit, best first: how well what they do and the jobs they were paid for match the sentence's words,
  * whether the model named them, then their Factor Score, their time kept, a Guarantee and a verified owner. An agent
- * fits only when its own words or its own jobs share a word with the sentence, or the model named it.
+ * fits when its own words or its own jobs share a word with the sentence; the model naming it adds to that. Only when no
+ * agent shares a word does the model's naming alone make an agent fit (a sentence in other words than any agent's).
  */
 export function rank(reading: Reading, data: Pick<AskData, "candidates" | "settled">): Ranked[] {
   const want = new Set([...reading.words, ...wordsOf(`${reading.title} ${reading.parts.map((p) => p.title).join(" ")}`)]);
   const byAgent = new Map<string, SettledJob[]>();
   for (const j of data.settled) byAgent.set(j.agent, [...(byAgent.get(j.agent) ?? []), j]);
-  const out: Ranked[] = [];
+  const seen: (Ranked & { shown: boolean })[] = [];
   for (const c of data.candidates) {
     const own = wordsOf(`${c.does} ${c.needs ?? ""} ${c.delivers ?? ""} ${c.title ?? ""}`);
     const words = overlap(own, want);
@@ -479,12 +486,14 @@ export function rank(reading: Reading, data: Pick<AskData, "candidates" | "settl
     const alike = (byAgent.get(c.address) ?? []).filter((j) => overlap(wordsOf(j.title), want) > 0);
     const strong = alike.filter((j) => overlap(wordsOf(j.title), want) >= 2).length;
     const picked = reading.picks.indexOf(c.name.toLowerCase());
-    const fit = Math.min(words, 3) * 10 + Math.min(strong, 3) * 10 + Math.min(alike.length, 4) * 2 + (picked >= 0 ? 50 - picked * 10 : 0);
-    if (fit < 10) continue;
+    const shown = words + alike.length > 0;
+    if (!shown && picked < 0) continue;
+    const fit = Math.min(words, 3) * 10 + Math.min(strong, 3) * 10 + Math.min(alike.length, 4) * 2 + (picked >= 0 ? 20 - picked * 4 : 0);
     const onTime = c.settled && c.onTime !== null ? (c.onTime / Math.max(1, c.onTime + (c.late ?? 0))) * 10 : 0;
-    out.push({ c, fit, alike, rank: fit + (c.score / 1000) * 25 + onTime + (c.guarantee ? 8 : 0) + (c.verified ? 5 : 0) + Math.min(c.settled, 10) * 0.5 });
+    seen.push({ c, fit, alike, shown, rank: fit + (c.score / 1000) * 25 + onTime + (c.guarantee ? 8 : 0) + (c.verified ? 5 : 0) + Math.min(c.settled, 10) * 0.5 });
   }
-  return out.sort((a, b) => b.rank - a.rank || b.c.score - a.c.score || a.c.name.localeCompare(b.c.name));
+  const any = seen.some((x) => x.shown);
+  return seen.filter((x) => x.shown || !any).map(({ shown: _, ...x }) => x).sort((a, b) => b.rank - a.rank || b.c.score - a.c.score || a.c.name.localeCompare(b.c.name));
 }
 
 const SOURCES: Record<string, string> = { passport: "Human Passport", talent: "Talent Protocol" };
@@ -520,8 +529,14 @@ const median = (xs: bigint[]): bigint => { const s = [...xs].sort((a, b) => (a <
  */
 export function priceFor(ranked: Ranked[], reading: Reading, settled: SettledJob[], budget: bigint | null, mostWei: bigint): { wei: bigint; info: AskAnswer["price"]; notes: string[] } {
   const want = new Set([...reading.words, ...wordsOf(reading.title)]);
+  // the agents that fit, and those whose own line says they do this kind of work (two of its words): an untitled job of
+  // theirs is a job of this kind; a titled one counts when its title shares a word
   const fits = new Set(ranked.slice(0, 3).map((r) => r.c.address));
-  const alike = settled.filter((j) => fits.has(j.agent) || overlap(wordsOf(j.title), want) >= 2);
+  const kind = new Set(ranked.slice(0, 3).filter((r) => overlap(wordsOf(`${r.c.does} ${r.c.needs ?? ""} ${r.c.delivers ?? ""}`), want) >= 2).map((r) => r.c.address));
+  const alike = settled.filter((j) => {
+    const shared = overlap(wordsOf(j.title), want);
+    return shared >= 2 || (fits.has(j.agent) && shared >= 1) || (kind.has(j.agent) && !j.title.trim());
+  });
   const prices = alike.map((j) => j.priceWei);
   const best = ranked[0]?.c.fromWei ?? null;
   const notes: string[] = [];

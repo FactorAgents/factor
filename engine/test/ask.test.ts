@@ -176,6 +176,22 @@ describe("the price and the agents", () => {
     expect(priceFor(ranked, reading, jobs, null, 3n * 10n ** 15n).wei).toBe(3n * 10n ** 15n);
   });
 
+  it("jobs like it: a titled job sharing two words, a fitting agent's job sharing one, an untitled job of an agent whose own line is this kind of work", () => {
+    const reading = plainRead("A landing page for my coin");
+    const picked = candidate({ name: "picked-only", address: QUIET, does: "Writes short market notes", score: 100 });
+    const untitled = [{ id: 30, agent: PAGE, priceWei: 2n * 10n ** 15n, title: "" }, { id: 31, agent: QUIET, priceWei: 9n * 10n ** 15n, title: "" }, { id: 32, agent: QUIET, priceWei: 9n * 10n ** 15n, title: "A market note" }];
+    const ranked = rank({ ...reading, picks: ["picked-only"] }, { candidates: [candidate(), picked], settled: untitled });
+    // the model named an agent that writes market notes: page-maker fits by its own words, so the model's naming alone is not enough
+    expect(ranked.map((r) => r.c.name)).toEqual(["page-maker"]);
+    // page-maker builds landing pages: its untitled job is one of these; the market notes' agent's jobs are not
+    expect(priceFor(ranked, reading, untitled, null, 10n ** 18n).info).toMatchObject({ basis: "few", similar: 1, medianEth: "0.002" });
+    expect(priceFor(rank(reading, { candidates: [candidate(), { ...picked, does: "Builds a landing page, every figure checked" }], settled: untitled }), reading, untitled, null, 10n ** 18n).info).toMatchObject({ similar: 2 });
+    // a word that says nothing ("every") fits nobody
+    expect(rank(plainRead("Proofread my post and list every change"), { candidates: [candidate({ does: "Writes notes, every figure checked" })], settled: [] })).toEqual([]);
+    // the model's title keeps to what is wanted: the deadline and the budget have fields of their own
+    expect(checkReading({ title: "Landing page for a coin by Friday, under 0.02 ETH" }, SENTENCE, new Set()).title).toBe("Landing page for a coin");
+  });
+
   it("an agent fits by its own words, its own jobs or the model naming it; then by its record", () => {
     const quiet = candidate({ name: "page-new", address: QUIET, score: 0, settled: 0, onTime: 0, customers: 0 });
     const notes = candidate({ name: "note-writer", address: NOTE, does: "Writes short market notes, every figure checked", score: 900 });
@@ -185,7 +201,10 @@ describe("the price and the agents", () => {
     expect(r.map((x) => x.c.name)).toEqual(["page-maker", "note-writer", "page-new"]);
     // nothing in common and not named by the model: not offered at all
     expect(rank(plainRead("Translate my readme into Spanish"), { candidates: [candidate()], settled: [] })).toEqual([]);
-    expect(rank({ ...plainRead("Translate my readme into Spanish"), picks: ["page-maker"] }, { candidates: [candidate()], settled: [] }).map((x) => x.c.name)).toEqual(["page-maker"]);
+    // no agent shares a word: then the model's naming alone is the fit, best first
+    expect(rank({ ...plainRead("Translate my readme into Spanish"), picks: ["note-writer", "page-maker"] }, { candidates: [candidate(), notes], settled: [] }).map((x) => x.c.name)).toEqual(["note-writer", "page-maker"]);
+    // the words every agent here says of itself (where it works) make nobody fit
+    expect(rank(plainRead("Something on Robinhood Chain"), { candidates: [candidate({ does: "Reads anything on Robinhood Chain" })], settled: [] })).toEqual([]);
   });
 
   it("every number in a reason is a field of the agent's record", () => {

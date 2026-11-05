@@ -1236,9 +1236,11 @@ export class EngineApi {
       const a = agentJson(row, names, t);
       byAddress.set(a.address, a);
       if (!a.named || !a.does.trim() || a.barred) continue;
+      // one of Factor's own agents says what its brief needs and what it takes a job for, whether or not this engine runs it
+      const own = a.house && !a.service ? SERVICES.find((x) => x.name === a.name) ?? null : null;
       candidates.push({
-        kind: "agent", name: a.name, address: a.address, does: a.does, needs: a.service?.needs, delivers: a.service?.delivers,
-        fromWei: a.service ? weiOfEth(a.service.fromEth) : null, score: a.score, settled: a.settled, settledAtHalf: a.settledAtHalf, customers: a.customers,
+        kind: "agent", name: a.name, address: a.address, does: a.does, needs: a.service?.needs ?? own?.needs, delivers: a.service?.delivers ?? own?.delivers,
+        fromWei: a.service ? weiOfEth(a.service.fromEth) : own ? own.floorWei : null, score: a.score, settled: a.settled, settledAtHalf: a.settledAtHalf, customers: a.customers,
         onTime: row.record.onTime, late: row.record.late, house: a.house, guarantee: a.guarantee ?? null, verified: a.verifiedOwner ? a.verifiedOwner.sources : null,
       });
     }
