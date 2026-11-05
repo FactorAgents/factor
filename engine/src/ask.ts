@@ -345,6 +345,7 @@ export function plainRead(sentence: string): Reading {
   const bare = first.replace(/,?\s*\b(?:for\s+)?(?:under|below|up to|max(?:imum)?|at most|around|about|budget(?: of)?|for)?\s*(?:\$\s*\d+(?:[.,]\d+)?|(?:\d+(?:[.,]\d+)?|\.\d+)\s*(?:eth|ether|usd|dollars?|bucks))\b/gi, "")
     .replace(/,?\s*\b(?:by|before|until|due)\s+(?:the\s+)?(?:end of\s+)?(?:today|tonight|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|wed|thu|fri|sat|sun|20\d\d-\d\d-\d\d)\b/gi, "")
     .replace(/,?\s*\b(?:in|within)\s+(?:\d+|one|two|three|four|five|six|seven|a|an)\s+(?:hours?|days?|weeks?)\b/gi, "")
+    .replace(/,?\s*\b(?:and\s+)?with\s+(?:a\s+|some\s+)?(?:guarantee|cover|insurance|money[- ]back(?:\s+guarantee)?)\b/gi, "")
     .replace(/^\s*(?:i\s+(?:need|want|would like)|we\s+need|please|can (?:you|someone)|could (?:you|someone))\s+/i, "")
     .replace(/[,.;:\s]+$/, "");
   return {

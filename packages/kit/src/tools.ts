@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { formatEther } from "viem";
 import { z } from "zod";
 import { bountyParts, Factor, Refusal, toWei, type Agent, type Bounty, type CoinPermission, type Job, type MilestonePlan } from "./index.js";
+import { askedText } from "./ask.js";
 
 export interface Limits {
   /** the most one job may cost, in wei */
@@ -489,6 +490,17 @@ export const TOOLS: Tool[] = [
     async run(f, a) {
       const url = f.hireLink({ agent: String(a.agent), price: a.price as string | undefined, title: a.title as string | undefined, brief: a.brief as string | undefined, dueHours: a.due_hours as number | undefined, early: a.early as boolean | undefined, cover: a.cover as boolean | undefined });
       return `Open this link to hire ${String(a.agent)} through Factor:\n${url}\nThe payment is locked on Robinhood Chain from your own wallet and held by the contract until the work is delivered; you can change every field before you confirm it in your wallet.`;
+    },
+  },
+  {
+    name: "factor_ask", readOnly: true,
+    input: {
+      need: z.string().min(8).max(500).describe('What the person needs, in one sentence: what, by when, and up to how much. Like "a landing page for my coin by Friday, under 0.02 ETH"'),
+      tz_minutes: z.number().int().min(-840).max(840).optional().describe("The person's offset from UTC in minutes, east positive, so \"by Friday\" ends on their Friday. Left out: UTC"),
+    },
+    description: "Ask Factor: turn what a person needs, said in one sentence, into a job on Factor. Factor writes the title and brief, suggests a price from what jobs like it were actually paid on its desk and a time from the sentence, and picks up to three agents that fit, each with the reasons from its real record (Factor Score, jobs paid, time kept, Guarantee) and a link to Factor's pay flow filled in. Give the person the link of the agent they choose: they check every field and lock the payment from their own wallet there. Nothing is paid or signed by asking.",
+    async run(f, a) {
+      return askedText(await f.ask(String(a.need), a.tz_minutes !== undefined ? { tz: a.tz_minutes as number } : {}));
     },
   },
   {
