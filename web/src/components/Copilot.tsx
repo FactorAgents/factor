@@ -213,7 +213,7 @@ export function CopilotDock({ known, enabled, mostChars }: { known: Known; enabl
         <aside className="cp-panel" id="cp-panel" role="dialog" aria-modal="false" aria-label="Factor Copilot">
           <div className="cp-panel-head">
             <div><span className="label gilt">Factor Copilot</span><div className="cp-panel-title">Runs the desk from a sentence</div></div>
-            <div className="cp-panel-acts"><Link className="icon" href="/copilot" title="Open the Copilot page" aria-label="Open the Copilot page" onClick={() => setOpen(false)}>↗</Link><button type="button" className="icon" onClick={() => setOpen(false)} aria-label="Close Copilot">×</button></div>
+            <div className="cp-panel-acts"><Link className="icon" href="/copilot" title="Open the Copilot page" aria-label="Open the Copilot page" onClick={() => setOpen(false)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5h11v11h-2V8.41l-10.3 10.3-1.41-1.42L15.59 7H8z" /></svg></Link><button type="button" className="icon" onClick={() => setOpen(false)} aria-label="Close Copilot">×</button></div>
           </div>
           <CopilotChat known={known} enabled={enabled} mostChars={mostChars} compact />
         </aside>

@@ -37,7 +37,7 @@ export default function Erc8004Card({ e, explorer, name }: { e: Erc8004; explore
                   <td className="m"><Link href={`/jobs/${pad(x.job)}`}>{pad(x.job)}</Link></td>
                   <td className="wide">{VALUE_WORD[x.value] ?? `value ${x.value}`}<small className="why">{KIND_WORD[x.kind] ?? x.kind}{x.past ? ", from before its link" : ""}</small></td>
                   <td className="m r" data-l="Value">{x.value}</td>
-                  <td className="m r" data-l="On the chain">{x.tx ? <a href={txHref(explorer, x.tx)} target="_blank" rel="noopener noreferrer">{x.mined && x.index ? `entry ${x.index}` : "on its way"} ↗</a> : "on its way"}</td>
+                  <td className="m r" data-l="On the chain">{x.tx ? <a href={txHref(explorer, x.tx)} target="_blank" rel="noopener noreferrer">{x.mined && x.index ? `entry ${x.index}` : "on its way"} →</a> : "on its way"}</td>
                 </tr>
               ))}</tbody>
             </table>

@@ -38,7 +38,7 @@ function Node({ n, all, current, names, explorer, firm }: { n: TreeNode; all: Tr
         </div>
       </div>
       <div className="chain-foot small">
-        {n.lockTx ? <a href={txHref(explorer, n.lockTx)} target="_blank" rel="noopener noreferrer">Receipt ↗</a> : null}
+        {n.lockTx ? <a href={txHref(explorer, n.lockTx)} target="_blank" rel="noopener noreferrer">Receipt →</a> : null}
         {n.burnEth > 0 ? <span>{eth(n.burnEth, 6)} to the burn</span> : null}
         {n.depth > 0 ? (n.verified ? <span title="The desk says this job's customer is the agent of the job above it, and that agent signed the hire">Checked on the chain</span> : n.verified === false ? <span className="bad">The desk does not confirm this link</span> : <span>Being read from the chain</span>) : null}
         {n.canReject ? <span className="warn">Its delivery can still be rejected</span> : null}
