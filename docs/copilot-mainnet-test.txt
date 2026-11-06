@@ -1,0 +1,80 @@
+Factor Copilot: the small real run on Robinhood Chain mainnet, 6 Nov 2026, 15:24 to 15:28 UTC.
+
+What was done: Factor Copilot has no contract of its own. The run used the LIVE desk 0x487Eb282E9Aa56aE871c15A16C5B061b9d2faA6F with
+the branch engine (watch mode: it reads the chain and sends nothing; its own database, copied from the Ask run's; Copilot on, its
+model raeto/auto:cheap through Raeto with the owner's Raeto key, the model's day held to $0.20 for the run) and the branch site on
+this machine. Two of Factor's own wallets sent transactions: the demo wallet 0x50A9Bf50C3337d5db03efdF89DEB0F5A0B908f17 (the
+customer) and report-lead 0x74325C9644973d9C7A293BDFc970a573A38419e1 (an agent from earlier runs whose key Factor keeps, with a real
+record: 18 jobs paid, a Guarantee bond; its work done by the code of Factor's own price-desk agent, as in the Ask run).
+
+1. ONE chat, from "I need X" to paid, in headless Chrome on the branch site's Copilot page, as a customer has it (drive.mjs). The
+   wallet was an injected one whose every request went to the run's script, which held the key and would send nothing but a lock of
+   at most 0.0011 ETH and an accept, both to the live desk.
+     you:     "I need a price sheet of ETH, NVDA and TSLA from Chainlink's feeds on Robinhood Chain, by tomorrow"
+     copilot: "How much at most, in ETH? The price is held to it, and nothing is locked until you sign."
+     you:     "0.002 ETH at most"
+     copilot: report-lead fits it best by its record (18 jobs paid in full, every one on time, paid before for work like this: job
+              0032 and 2 more, Factor Score 291); 3 jobs like it were paid in full on the desk, each for 0.001 ETH. The card:
+              "Lock 0.001 ETH for report-lead", FactorDesk.lock on the desk, due 2026-11-07 23:24 UTC (by the end of tomorrow in
+              the customer's time, counted in whole hours), early advance off, then the brief signed for free.
+   The customer pressed Connect, then Sign in wallet: the browser checked the card again (the desk's address as the page knows it,
+   lock decoded from its bytes, report-lead, 0.001 ETH, under 0.1 ETH), the wallet sent the lock (job 33) and signed the brief
+   (free). The chat then said, from the desk: "Job 0033. Locked: the payment is held by the desk, and the agent is at work."
+2. report-lead delivered job 33 (flow.ts deliver): a price sheet of ETH, NVDA and TSLA read from Chainlink's feeds on the chain by
+   the code of Factor's own price-desk agent (no model), its fingerprint on the desk and the sheet on the job's page. The chat said
+   by itself: "Job 0033. Delivered: it waits for you to accept. Say "accept it" to release the payment."
+3. In the same chat:
+     you:     "accept it"
+     copilot: "report-lead delivered job 0033 2026-11-06 15:25 UTC. Accepting pays it 0.00098 ETH from what you locked." The card:
+              "Accept job 0033 and pay report-lead", FactorDesk.accept(33), 0.00098 ETH to report-lead and the 2% job fee,
+              0.00002 ETH, to the pool, out of the 0.001 ETH already locked.
+   Signed in the wallet: the desk paid report-lead. The chat said: "Job 0033. Paid: the desk paid the agent. Done." report-lead then
+   sent what came through it back to the demo wallet.
+4. The pictures (docs/shots/copilot/, shoot-copilot.mjs) put the run's own chat back from what its tab kept (no model call), and
+   asked the real model for a fresh hire card on a desktop and on a phone, a bounty card and a card for a job in stages; none of
+   those cards was signed (the wallet in the pictures was a stand-in that signs nothing).
+
+The run was ~/.factor-video/copilot-run (start-engine.sh, start-site.sh, drive.mjs, flow.ts, shoot-copilot.mjs; docs/RELEASE-copilot.md,
+section 1).
+
+Every transaction (UTC, hash, what, from, ETH moved besides gas, gas paid):
+2026-11-06T15:24:48Z  0x575a9586f5d7b7d7b27b068b8b149f264e52959c6ca683ec52c763df25175b62  the customer locks the job on the card Copilot prepared, signed in the browser: report-lead, 0.001 ETH, due by the end of tomorrow  from demo wallet  value 0.001 ETH  gas 0.000002555560728 ETH (123924 gas)
+2026-11-06T15:25:33Z  0xe8d19c971f8f3551b92313ae1cec753738aed99d725ba9df9f1ce09c90b93ce3  report-lead delivers job 33 on the live desk: a price sheet of ETH, NVDA and TSLA read from Chainlink's feeds  from report-lead  value 0 ETH  gas 0.000001250969042 ETH (56723 gas)
+2026-11-06T15:25:55Z  0x8509bb982c516fc4cde7b4853a3a69561c6bda94c58f669dfe1dd6be64d16c7e  the customer accepts job 33 from the chat, on the card Copilot prepared, signed in the browser: the live desk pays report-lead 98% and its pool 2%  from demo wallet  value 0 ETH  gas 0.000001977691056 ETH (94826 gas)
+2026-11-06T15:26:15Z  0xc07b129aa244493d74430dc513b8ed008e3e4be861a709e7caf9fdb870c32f1b  report-lead sends what came through it back to the demo wallet  from report-lead  value 0.000978749030958 ETH  gas 0.000000435876 ETH (21000 gas)
+
+Every call to the model (UTC, the message's length, what it was read as, what it cost at Raeto; from the engine's own rows, which keep
+no message):
+2026-11-06T15:24:43Z  message 1    97 characters  hire                                    $0.001567
+2026-11-06T15:24:45Z  message 2    17 characters  hire, prepared the lock                 $0.001571
+2026-11-06T15:25:53Z  message 3     9 characters  accept, prepared the accept             $0.001182
+  for the pictures, none signed:
+2026-11-06T15:26:44Z  message 4    78 characters  hire (desktop)                          $0.001354
+2026-11-06T15:26:54Z  message 5    17 characters  hire, prepared a lock (desktop)         $0.001572
+2026-11-06T15:27:03Z  message 6    84 characters  bounty                                  $0.001270
+2026-11-06T15:27:12Z  message 7     9 characters  bounty                                  $0.001292
+2026-11-06T15:27:21Z  message 8    23 characters  bounty, prepared a bounty               $0.001336
+2026-11-06T15:27:31Z  message 9   130 characters  milestones, prepared a job in stages    $0.001678
+2026-11-06T15:27:53Z  message 10   78 characters  hire (phone)                            $0.001377
+2026-11-06T15:28:03Z  message 11   17 characters  hire, prepared a lock (phone)           $0.001416
+
+What was checked, on the chain and in the branch engine and site:
+- the model was raeto/auto:cheap through Raeto; Raeto's balance went from $4.916247 to $4.900632: $0.015615, the sum of the engine's
+  own rows to the millionth of a dollar
+- the card's price came from the desk (3 jobs like it paid in full at 0.001 ETH), under the 0.002 ETH said; the agent was the desk's own
+  record of report-lead; no early advance; the due time within what was said
+- job 33 on the live desk: customer the demo wallet, agent report-lead, 0.001 ETH, due 2026-11-07 23:24:38 UTC; locked 15:24:48,
+  delivered 15:25:33, accepted 15:25:55: paid 0.00098 ETH, fee 0.00002 ETH; its brief signed by the customer; the branch engine read
+  every step and the chat said each one once
+- the accept card was made only for the job's customer (the connected wallet), and only once the job was delivered
+- what was not run here: a call through the model maker with ANTHROPIC_API_KEY (the same code with a made-up model is in
+  engine/test/copilot.test.ts), factor_copilot through the hosted MCP endpoint against this engine, a card signed with a passkey account,
+  and the bounty, stages, cover and backing cards signed (their calls are the ones the bounty form, the stage form and the hire form
+  already send, and each is decoded and checked in engine/test/copilot.test.ts)
+
+Totals (ETH from the two wallets; dollars at Raeto):
+- gas, 4 transactions:                    0.000006220096826 (demo wallet 0.000004533251784 in 2, report-lead 0.000001686845042 in 2)
+- the desk's fee on job 33, to its pool:  0.00002
+- in all, gone for good:                  0.000026220096826 (about $0.06 at $2,229.58 an ETH, Chainlink's ETH/USD at 15:14 UTC)
+- the model:                              $0.015615 in 11 calls (the run's 3 $0.00432; the pictures' 8 $0.011295)
+Demo wallet: 0.007877851079237391 before, 0.007852066858411391 after. report-lead: 0.000006225890068 before, 0.000005790014068 after.
