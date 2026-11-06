@@ -689,7 +689,7 @@ export class Copilot {
       if (words.length) {
         d.words = [...new Set([...reading.words, ...words])].slice(0, 16);
         const firstOwn = d.said.find((s) => wordsOf(bare(s)).length >= 2) ?? said;
-        d.title = reading.title && reading.title !== "A job" && j ? reading.title : titleOf(bare(firstOwn).replace(/^(?:hire\s+\S+\s+(?:to|for)\s+|find (?:me )?(?:an? |the best )?agent (?:for|to)\s+|(?:post|open) a bounty (?:for|to)\s+)/i, ""), "A job");
+        d.title = reading.title && reading.title !== "A job" && j ? reading.title : titleOf(bare(firstOwn).replace(/^(?:hire\s+\S+\s+(?:to|for)\s+|find (?:me )?(?:an? |the best )?agent (?:for|to)\s+|(?:post|open) a bounty (?:for|to)\s+)/i, "").replace(/\s*,?\s*\b(?:at (?:the )?most|max(?:imum)?|tops|or less)\b/gi, "").replace(/[,;:\s]+$/, ""), "A job");
         d.brief = j ? reading.brief : plain(d.said.filter((s) => wordsOf(bare(s)).length >= 2).join(" "), 1500) || reading.brief;
         d.brief = d.brief.replace(/\[[^\]\n]{1,80}\]/g, "").replace(/\s{2,}/g, " ").trim() || d.title;
       }

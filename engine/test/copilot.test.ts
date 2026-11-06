@@ -336,6 +336,11 @@ describe("bounties, stages, cover and backing", () => {
     expect(b.reply.text).toMatch(/3 jobs like it were paid in full on the desk, each for 0.001 ETH/);
   });
 
+  it("the job's title is the work alone: the amount, the time and \"at most\" have fields of their own", async () => {
+    const [a] = await say(handCopilot(), handData(), ["I need a market note on ETH from report-lead by tomorrow, 0.002 ETH at most, with a guarantee"]);
+    expect((a.reply.action as Prepared).after!.brief!.title).toBe("A market note on ETH from report-lead");
+  });
+
   it("with cover: the reservation and its 1% fee, then the lock, for the same price and time", async () => {
     const [, b] = await say(handCopilot(), handData(), ["a price sheet of ETH by tomorrow, with a guarantee", "0.002 ETH"]);
     const p = b.reply.action as Prepared;
