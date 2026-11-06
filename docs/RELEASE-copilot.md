@@ -32,9 +32,11 @@ good, about $0.06); the model $0.015615 in 11 calls at Raeto (the run's 3 $0.004
 on the live desk, locked from a Copilot card, delivered, and accepted from the chat. The spends are in
 `~/Skatt-2026/data/utgifter.csv` ("Copilot real run: ...").
 
-To film it: both start scripts work as they are, and the run's own chat is in `chat.json` (what its tab kept). A run of
-`node drive.mjs` locks a new job (one transaction from the demo wallet, to the live desk only, 0.0011 ETH at most), so film
-with the chat put back from `chat.json` (as `shoot-copilot.mjs` does) unless a second real job is wanted.
+The release film (`~/Factor-copilot-4k.mp4`, `~/Factor-copilot-1080p.mp4`, `~/Factor-copilot-720p-chat.mp4`) was made in
+`~/.factor-video/copilot-film` from the run's own chat (`chat.json`, replayed by `preload.js` with a stand-in wallet that
+sends nothing) and a branch engine with no model (`run/start-engine.sh`, plain rules for the three other cards): no
+transaction and no model call. A run of `node drive.mjs` in `copilot-run` locks a new job (one transaction from the demo
+wallet, to the live desk only, 0.0011 ETH at most), so film from `chat.json` unless a second real job is wanted.
 
 ## 2. Tell the engine (Railway, project airy-light, service `engine`)
 

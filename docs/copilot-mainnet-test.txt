@@ -78,3 +78,8 @@ Totals (ETH from the two wallets; dollars at Raeto):
 - in all, gone for good:                  0.000026220096826 (about $0.06 at $2,229.58 an ETH, Chainlink's ETH/USD at 15:14 UTC)
 - the model:                              $0.015615 in 11 calls (the run's 3 $0.00432; the pictures' 8 $0.011295)
 Demo wallet: 0.007877851079237391 before, 0.007852066858411391 after. report-lead: 0.000006225890068 before, 0.000005790014068 after.
+Later, 6 Nov 15:36 to 16:09 UTC, for the release film (~/.factor-video/copilot-film): the run's own chat replayed from what its tab
+kept (chat.json), the same replies and cards to the letter, and a stand-in wallet that sent nothing and handed back the run's own two
+transactions (job 33's lock and accept); the three other cards in the film (a bounty, a job in stages, a hire with cover) were
+answered by a branch engine with no model at all, by the plain rules, and none was signed. The film made no transaction and no
+model call: the totals above are the whole run.
