@@ -11,12 +11,12 @@ import { existsSync, readFileSync } from "node:fs";
 import { createServer } from "node:http";
 
 const PORT = Number(process.env.SMOKE_PORT) || 3611, BASE = `http://127.0.0.1:${PORT}`, BARE = `http://127.0.0.1:${PORT + 1}`;
-const PAGES = ["/bounties", "/bounties/1", "/bounties/2", "/bounties/3", "/bounties/4", "/", "/agents/orbit-ops", "/ledger", "/ledger?show=burned", "/agents", "/agents/lumen-07", "/jobs/0412", "/jobs/0406", "/jobs/0404", "/jobs/0403", "/hire", "/hire?agent=page-smith", "/hire?agent=lumen-07&cover=1", "/work", "/protocol", "/token", "/burn", "/docs", "/log", "/security", "/pay", "/firms/night-desk", "/hire?firm=night-desk", "/plans/0x5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a", "/open-jobs", "/open-jobs/0x0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b", "/coins", "/coins?sort=new", "/coins/page-smith", "/jobs/0416", "/jobs/0408", "/agents/page-smith", "/hire?stages=1", "/everywhere", "/hire?agent=lumen-07&price=0.01&title=Summarise+one+contract&due=48&early=1", "/ask", "/ask?q=A+landing+page+for+my+coin", "/hire?agent=page-smith&price=0.003&title=A+landing+page&due=38&via=ask"];
+const PAGES = ["/bounties", "/bounties/1", "/bounties/2", "/bounties/3", "/bounties/4", "/", "/agents/orbit-ops", "/ledger", "/ledger?show=burned", "/agents", "/agents/lumen-07", "/jobs/0412", "/jobs/0406", "/jobs/0404", "/jobs/0403", "/hire", "/hire?agent=page-smith", "/hire?agent=lumen-07&cover=1", "/work", "/protocol", "/token", "/burn", "/docs", "/log", "/security", "/pay", "/firms/night-desk", "/hire?firm=night-desk", "/plans/0x5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a", "/open-jobs", "/open-jobs/0x0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b", "/coins", "/coins?sort=new", "/coins/page-smith", "/jobs/0416", "/jobs/0408", "/agents/page-smith", "/hire?stages=1", "/everywhere", "/hire?agent=lumen-07&price=0.01&title=Summarise+one+contract&due=48&early=1", "/ask", "/ask?q=A+landing+page+for+my+coin", "/hire?agent=page-smith&price=0.003&title=A+landing+page&due=38&via=ask", "/copilot", "/copilot?q=What+is+lumen-07%27s+score"];
 // The header's five groups and the pages in each, in order. A group of one page is a plain link.
-const GROUPS = { Hire: ["/ask", "/hire", "/open-jobs", "/bounties"], Agents: ["/agents", "/coins", "/work"], Ledger: ["/ledger"], Protocol: ["/protocol", "/docs", "/everywhere", "/roadmap"], Token: ["/token", "/burn"] };
+const GROUPS = { Hire: ["/ask", "/copilot", "/hire", "/open-jobs", "/bounties"], Agents: ["/agents", "/coins", "/work"], Ledger: ["/ledger"], Protocol: ["/protocol", "/docs", "/everywhere", "/roadmap"], Token: ["/token", "/burn"] };
 const NAV = Object.values(GROUPS).flat();
 // the group each page is in, which the header marks as the current one (none for a page of no group)
-const CURRENT = { "/ask": "Hire", "/bounties": "Hire", "/bounties/1": "Hire", "/hire": "Hire", "/open-jobs": "Hire", "/agents": "Agents", "/agents/lumen-07": "Agents", "/jobs/0412": "Agents", "/coins/page-smith": "Agents", "/work": "Agents", "/ledger": "Ledger", "/protocol": "Protocol", "/docs": "Protocol", "/everywhere": "Protocol", "/token": "Token", "/burn": "Token", "/": null, "/log": null, "/security": null, "/pay": null };
+const CURRENT = { "/ask": "Hire", "/copilot": "Hire", "/bounties": "Hire", "/bounties/1": "Hire", "/hire": "Hire", "/open-jobs": "Hire", "/agents": "Agents", "/agents/lumen-07": "Agents", "/jobs/0412": "Agents", "/coins/page-smith": "Agents", "/work": "Agents", "/ledger": "Ledger", "/protocol": "Protocol", "/docs": "Protocol", "/everywhere": "Protocol", "/token": "Token", "/burn": "Token", "/": null, "/log": null, "/security": null, "/pay": null };
 // Words the copy does not use: no long dash, no promise of gain. A list kept beside this file and out of the repo
 // (forbidden.local.json, pairs of pattern and flags) adds to them on the machine it is on.
 const LOCAL = new URL("./forbidden.local.json", import.meta.url);
@@ -559,7 +559,7 @@ test("each page is small enough for a phone, and nothing loads from another site
   for (const path of PAGES) {
     const { html, headers } = await get(path);
     // the docs, with every section on, are the largest page: still a fraction of one picture
-    assert.ok(html.length < 235_000, `${path} is ${html.length} bytes`);
+    assert.ok(html.length < 245_000, `${path} is ${html.length} bytes`);
     assert.doesNotMatch(html, /(src|href)="https?:\/\/(?!ponsfamily\.com|github\.com|x\.com|robinhoodchain\.blockscout\.com\/(tx|address)\/0x)/, `${path} loads from another site`);
     assert.match(headers.get("content-security-policy") ?? "", /default-src 'self'/, `${path} has no content policy`);
   }
@@ -967,7 +967,7 @@ test("Factor everywhere: its page under Protocol with a snippet for each case, t
   const init = await mcp({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "smoke", version: "1" } } });
   assert.equal(init.result.serverInfo.name, "factor");
   const tools = (await mcp({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} })).result.tools;
-  assert.deepEqual(tools.map((x) => x.name).sort(), ["factor_agent", "factor_agents", "factor_ask", "factor_check_agent", "factor_erc8004", "factor_firm_record", "factor_guarantee", "factor_hire_link", "factor_line", "factor_open_jobs", "factor_overview", "factor_record"]);
+  assert.deepEqual(tools.map((x) => x.name).sort(), ["factor_agent", "factor_agents", "factor_ask", "factor_check_agent", "factor_copilot", "factor_erc8004", "factor_firm_record", "factor_guarantee", "factor_hire_link", "factor_line", "factor_open_jobs", "factor_overview", "factor_record"]);
   assert.ok(tools.every((x) => x.annotations.readOnlyHint === true));
   assert.equal((await fetch(`${BASE}/mcp`)).status, 405);
 
@@ -1070,4 +1070,38 @@ test("Ask Factor: the box on the home page and its own page under Hire, a senten
   assert.match(text((await get("/ask", BARE)).html), /Ask Factor is resting just now/);
   assert.equal((await fetch(`${BARE}/api/v1/ask`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "A landing page for my coin" }) })).status, 503);
   assert.doesNotMatch(text((await get("/docs", BARE)).html), /One sentence in, a job out/);
+});
+
+test("Factor Copilot: a button on every page, its own page in the Hire group, the docs, and nothing of it with no engine", async () => {
+  // the button on every page but its own, and the chat on its page
+  for (const path of ["/", "/agents", "/jobs/0412", "/docs"]) assert.match((await get(path)).html, /class="cp-dock"[^>]*>[\s\S]*?Copilot/, path);
+  const { status, html } = await get("/copilot");
+  assert.equal(status, 200);
+  assert.doesNotMatch(html, /class="cp-dock"/);
+  const t = text(html).replace(/<!-- -->/g, "");
+  assert.match(t, /Say it\. Copilot prepares it\. You sign ?\./);
+  for (const rule of ["It prepares, you sign", "Only what you said", "Nothing of it is kept"]) assert.ok(t.includes(rule), rule);
+  for (const call of ["FactorDesk.lock", "FactorGuarantee.reserve", "FactorDesk.accept", "FactorBounty.post", "FactorMilestones.post", "FactorGuarantee.addBond"]) assert.ok(t.includes(call), call);
+  assert.match(t, /One action moves 0\.1 ETH at most/);
+  assert.match(html, /data-pages="Hire"[\s\S]*?href="\/copilot"/);
+  assert.doesNotMatch(t, /\bdemo\b/i);
+  // a message, as the chat sends it: the sample answers from its agents and prepares nothing
+  assert.deepEqual(await (await fetch(`${BASE}/api/v1/copilot`)).json(), { enabled: true, mostChars: 500, mostEth: "0.1", perMinute: 8, perDay: 150, reads: "plain" });
+  const r = await fetch(`${BASE}/api/v1/copilot`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "find an agent for a landing page", tz: 60 }) });
+  assert.equal(r.status, 200);
+  const a = await r.json();
+  assert.equal(a.reply.action, null);
+  assert.equal(a.reply.agents[0].name, "page-smith");
+  assert.equal((await fetch(`${BASE}/api/v1/copilot`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "" }) })).status, 400);
+  assert.equal((await fetch(`${BASE}/api/v1/copilot/c/${"ab".repeat(16)}`)).status, 404);
+  const docs = text((await get("/docs")).html).replace(/<!-- -->/g, "");
+  assert.match(docs, /Factor Copilot (?:Open it → )?Plain words in, a card to sign out ?\./);
+  assert.match(docs, /factor_copilot/);
+  assert.match(text((await get("/security")).html).replace(/<!-- -->/g, ""), /Factor Copilot It prepares\. Your wallet signs ?\./);
+  assert.match(text((await get("/log")).html), /Factor Copilot A chat on every page that runs the desk from plain sentences/);
+  // with no engine: no button, the page says it is resting, and nothing is answered
+  assert.doesNotMatch((await get("/", BARE)).html, /class="cp-dock"/);
+  assert.match(text((await get("/copilot", BARE)).html), /Copilot is resting\. Every form on the site works as always/);
+  assert.equal((await fetch(`${BARE}/api/v1/copilot`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "hello" }) })).status, 503);
+  assert.doesNotMatch(text((await get("/docs", BARE)).html), /Plain words in, a card to sign out/);
 });

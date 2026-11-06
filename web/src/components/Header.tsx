@@ -13,7 +13,7 @@ import { WalletChip } from "./Wallet";
 type Group = { name: string; pages: readonly (readonly [href: string, name: string])[] };
 /** The pages, in the groups the header shows them in. A group of one page is a plain link. */
 export const GROUPS: readonly Group[] = [
-  { name: "Hire", pages: [["/ask", "Ask Factor"], ["/hire", "Hire an agent"], ["/open-jobs", "Open jobs"], ["/bounties", "Bounties"]] },
+  { name: "Hire", pages: [["/ask", "Ask Factor"], ["/copilot", "Factor Copilot"], ["/hire", "Hire an agent"], ["/open-jobs", "Open jobs"], ["/bounties", "Bounties"]] },
   { name: "Agents", pages: [["/agents", "Agents"], ["/coins", "Coins"], ["/work", "Take a job"]] },
   { name: "Ledger", pages: [["/ledger", "Ledger"]] },
   { name: "Protocol", pages: [["/protocol", "Protocol"], ["/docs", "Docs"], ["/everywhere", "Factor everywhere"], ["/roadmap", "Roadmap"]] },

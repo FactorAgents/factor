@@ -1154,3 +1154,89 @@ a.coin-mark:hover, .agent:hover .coin-mark { border-color: var(--gilt); color: v
 /* a one-line field that wraps and grows with its words (a title): it looks like an input, never cuts the words off */
 .field textarea.oneline { field-sizing: content; resize: none; min-height: 42px; padding: 10px 0 9px; line-height: 1.45; overflow: hidden; }
 @media (max-width: 600px) { .askhead { flex-direction: column; align-items: flex-start; gap: 6px; } }
+
+/* ── Factor Copilot (components/Copilot.tsx): a button on every page, the panel it opens, the chat and its cards ── */
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.cp-dock { position: fixed; z-index: 40; right: 24px; bottom: 24px; display: inline-flex; align-items: center; gap: 10px; height: 46px; padding: 0 20px 0 16px; border: 1px solid var(--line-2); border-radius: 23px; background: var(--paper); color: var(--ink); font-family: var(--mono); font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; cursor: pointer; box-shadow: 0 14px 34px rgba(0, 0, 0, 0.38); transition: border-color 0.25s ease, background 0.25s ease; }
+.cp-dock:hover, .cp-dock.on { border-color: var(--gilt); }
+.cp-dock i { width: 8px; height: 8px; border-radius: 50%; background: var(--gilt); box-shadow: 0 0 0 4px var(--gilt-soft); }
+.cp-dock:focus-visible { outline: 1px solid var(--gilt); outline-offset: 3px; }
+.cp-panel { position: fixed; z-index: 45; right: 24px; bottom: 82px; width: min(440px, calc(100vw - 48px)); height: min(680px, calc(100vh - 170px)); display: grid; grid-template-rows: auto minmax(0, 1fr); background: var(--bg); border: 1px solid var(--line-2); border-radius: 4px; box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5); animation: cpin 0.28s var(--ease); }
+.cp-panel-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 16px 18px 14px; border-bottom: 1px solid var(--line); }
+.cp-panel-title { margin-top: 4px; font-family: var(--serif); font-size: 21px; line-height: 1.15; }
+.cp-panel-acts { display: flex; gap: 8px; }
+.cp-panel-acts .icon { font-size: 18px; line-height: 1; }
+@keyframes cpin { from { opacity: 0; transform: translateY(10px); } }
+
+.cp { display: grid; grid-template-rows: minmax(0, 1fr) auto auto; min-height: 0; height: 100%; }
+.cp:not(.compact) { height: min(760px, calc(100vh - 210px)); min-height: 520px; border: 1px solid var(--line-2); border-radius: 4px; background: var(--bg); }
+.cp-list { overflow-y: auto; overscroll-behavior: contain; padding: 20px 18px 8px; display: grid; align-content: start; gap: 14px; scrollbar-width: thin; }
+.cp:not(.compact) .cp-list { padding: 28px 30px 10px; }
+.cp-hello { display: grid; gap: 10px; padding: 6px 0 4px; }
+.cp-hello p { color: var(--mid); font-size: 15px; line-height: 1.55; max-width: 560px; }
+.cp-tries, .cp-choices { display: flex; flex-wrap: wrap; gap: 8px; }
+.cp-tries button, .cp-choices button { border: 1px solid var(--line-2); border-radius: 16px; background: transparent; color: var(--ink); font-family: var(--sans); font-size: 13px; padding: 6px 12px; cursor: pointer; transition: border-color 0.2s ease; text-align: left; }
+.cp-tries button:hover, .cp-choices button:hover { border-color: var(--gilt); }
+.cp-tries button:disabled, .cp-choices button:disabled { opacity: 0.5; cursor: default; }
+.cp-you { justify-self: end; max-width: 86%; padding: 10px 14px; background: var(--paper-2); border-radius: 12px 12px 2px 12px; font-size: 15px; line-height: 1.5; color: var(--ink); overflow-wrap: anywhere; animation: cpturn 0.25s var(--ease); }
+.cp-me { max-width: 100%; display: grid; gap: 10px; font-size: 15px; line-height: 1.55; color: var(--ink); animation: cpturn 0.25s var(--ease); }
+.cp-me > p { max-width: 640px; }
+.cp-me.no > p { color: var(--ink); border-left: 2px solid var(--bad); padding-left: 12px; }
+.cp-desk { display: grid; gap: 4px; padding: 10px 14px; border-left: 2px solid var(--gilt); background: var(--gilt-soft); font-size: 14px; color: var(--ink); animation: cpturn 0.25s var(--ease); }
+.cp-facts { list-style: none; display: grid; gap: 5px; padding: 12px 14px; border: 1px solid var(--line); background: var(--paper); font-size: 13.5px; color: var(--mid); }
+.cp-facts li:first-child { color: var(--ink); }
+.cp-agents { list-style: none; display: grid; gap: 8px; }
+.cp-agents li { border: 1px solid var(--line); background: var(--paper); padding: 10px 14px; }
+.cp-agent-head { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+.cp-agent-head b { font-family: var(--serif); font-weight: 400; font-size: 19px; }
+.cp-agent-head .mono { font-size: 13px; }
+.cp-agent-head .tag { margin-left: auto; }
+.cp-agents p { margin-top: 4px; font-size: 13px; color: var(--mid); line-height: 1.45; }
+.cp-card { border: 1px solid var(--gilt); border-radius: 4px; background: var(--paper); padding: 16px 18px 16px; display: grid; gap: 10px; }
+.cp-card-head { display: flex; justify-content: space-between; gap: 10px; }
+.cp-card .h3 { font-size: 22px; }
+.cp-card dl { display: grid; border-top: 1px solid var(--line); }
+.cp-card dl > div { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.cp-card dt { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--dim); padding-top: 3px; }
+.cp-card dd { font-size: 13.5px; line-height: 1.5; color: var(--ink); overflow-wrap: anywhere; }
+.cp-checked summary { font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--mid); cursor: pointer; }
+.cp-checked ul { margin-top: 8px; padding-left: 16px; display: grid; gap: 4px; font-size: 12.5px; color: var(--mid); line-height: 1.45; }
+.cp-card .cta { margin-top: 2px; }
+.cp-card .status { margin-top: 2px; }
+.cp-wait { margin-top: 0; }
+.cp-in { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: end; padding: 12px 18px 6px; border-top: 1px solid var(--line); }
+.cp:not(.compact) .cp-in { padding: 16px 30px 8px; }
+.cp-in textarea { field-sizing: content; max-height: 140px; min-height: 44px; width: 100%; resize: none; padding: 11px 0 10px; border: 0; border-bottom: 1px solid var(--line-2); border-radius: 0; background: transparent; color: var(--ink); font-family: var(--sans); font-size: 15.5px; line-height: 1.45; }
+.cp-in textarea:focus { outline: none; border-bottom-color: var(--gilt); }
+.cp-in textarea::placeholder { color: var(--dim); }
+.cp-fine { padding: 4px 18px 14px; font-size: 12.5px; color: var(--dim); }
+.cp:not(.compact) .cp-fine { padding: 4px 30px 18px; }
+.cp-fine .linkish { color: var(--mid); }
+@keyframes cpturn { from { opacity: 0; transform: translateY(6px); } }
+.cprules { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 40px; }
+.cprules .h3 { margin-top: 12px; }
+.cprules p { margin-top: 10px; }
+.cpgrid { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 48px; align-items: start; }
+.cpcan { display: grid; gap: 0; border-top: 1px solid var(--line); }
+.cpcan > div { padding: 14px 0; border-bottom: 1px solid var(--line); }
+.cpcan b { display: block; font-weight: 500; font-size: 15px; }
+.cpcan span { display: block; margin-top: 3px; font-size: 13.5px; color: var(--mid); line-height: 1.5; }
+.cpcan .mono { display: inline; font-size: 12px; color: var(--dim); }
+@media (max-width: 960px) { .cpgrid { grid-template-columns: 1fr; gap: 40px; } .cprules { grid-template-columns: 1fr; gap: 30px; } }
+@media (max-width: 720px) {
+  html.cp-lock, html.cp-lock body { overflow: hidden; }
+  .cp-dock { right: 16px; bottom: 16px; height: 44px; }
+  .cp-panel { inset: 0; width: auto; height: auto; border: 0; border-radius: 0; box-shadow: none; z-index: 60; }
+  .cp-panel-head { padding: 14px 16px 12px; }
+  .cp-list { padding: 16px 16px 8px; }
+  .cp-in { padding: 10px 16px 4px; }
+  .cp-fine { padding: 4px 16px calc(12px + env(safe-area-inset-bottom)); }
+  .cp:not(.compact) { height: calc(100svh - 150px); min-height: 460px; }
+  .cp:not(.compact) .cp-list { padding: 18px 16px 8px; }
+  .cp:not(.compact) .cp-in { padding: 12px 16px 6px; }
+  .cp:not(.compact) .cp-fine { padding: 4px 16px 14px; }
+  .cp-card { padding: 14px 14px; }
+  .cp-card dl > div { grid-template-columns: 1fr; gap: 2px; }
+  .cp-you { max-width: 92%; }
+}
+@media (prefers-reduced-motion: reduce) { .cp-panel, .cp-you, .cp-me, .cp-desk { animation: none; } }

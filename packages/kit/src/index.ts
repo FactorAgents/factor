@@ -43,6 +43,7 @@ import { ERC8004_TAG, erc8004LinkMessage, erc8004Registry, IDENTITY_REGISTRY, id
 import { explain, Refusal, WORDS } from "./words.js";
 import { checkAgent, checkAgents, hireLink, type CheckedAgent, type CheckedAgents, type HireLinkOptions } from "./everywhere.js";
 import { ask, type Asked } from "./ask.js";
+import { copilot, copilotText, type Copiloted } from "./copilot.js";
 
 import { encodePayLink, LINK_BRIEF_MOST, readPayLink, tokenOf, verifyRecord, x402PaymentHeader, X402_NETWORK, X402_SCHEME, type AgentRecord, type PayLink, type X402Requirements, payLinkMessage } from "./pay.js";
 
@@ -64,6 +65,8 @@ export type { Terms } from "./milestones.js";
 export { ERC8004_TAG, erc8004LinkMessage, erc8004Registry, IDENTITY_REGISTRY, REPUTATION_REGISTRY, SCORE_TAG } from "./erc8004.js";
 export { checkAgent, checkAgents, embedSnippet, everywhereAbout, everywhereSigner, FactorConnect, hireLink, verifyAnswer, verifyWebhook } from "./everywhere.js";
 export { ask, askedText } from "./ask.js";
+export { copilot, copilotText } from "./copilot.js";
+export type { Copiloted, CopilotAction, CopilotCall, CopilotReply } from "./copilot.js";
 export type { Asked, AskAgent, AskStage } from "./ask.js";
 export type { AgentAnswer, AnswerEnvelope, CheckedAgent, CheckedAgents, ConnectHire, ConnectTicket, EmbedPart, HireLinkOptions, SealedAnswer } from "./everywhere.js";
 export type { PlanText } from "./plans.js";
@@ -706,6 +709,19 @@ export class Factor {
    */
   ask(sentence: string, o: { tz?: number } = {}): Promise<Asked> {
     return ask(sentence, { api: this.api, ...o });
+  }
+
+  /**
+   * Factor Copilot: one message in a chat that runs the desk. It asks for what is missing, answers from the desk, and
+   * prepares an unsigned action when there is one; nothing is signed or paid by it. `conversation`: from the last answer.
+   */
+  copilot(message: string, o: { conversation?: string; address?: string; tz?: number } = {}): Promise<Copiloted> {
+    return copilot(message, { api: this.api, ...o });
+  }
+
+  /** A Copilot answer in words, with the link where the person signs its action: the site this Factor talks to. */
+  copilotText(c: Copiloted): string {
+    return copilotText(c, { api: this.api });
   }
 
   /** The address Factor signs records with, as its site says. An app that checks records should keep its own copy of it. */

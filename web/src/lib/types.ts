@@ -369,6 +369,8 @@ export interface FactorState {
   everywhere?: EverywhereAbout;
   /** Ask Factor (lib/ask.ts): whether the box answers, and how long a sentence may be */
   ask?: { enabled: boolean; mostChars: number };
+  /** Factor Copilot (lib/copilot.ts): whether the chat answers, how long a message may be, and the most one action moves */
+  copilot?: { enabled: boolean; mostChars: number; mostEth: string };
 }
 
 /** One of a firm's agents and its part of the firm's work: the lead's is the firm's jobs, a member's the sub-jobs it took under them. */

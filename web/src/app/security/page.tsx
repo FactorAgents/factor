@@ -98,12 +98,28 @@ export default async function Security() {
         </section>
       ) : null}
 
+      {s.copilot?.enabled ? (
+        <section className="wrap sec" id="copilot" style={{ scrollMarginTop: 96 }}>
+          <Reveal><SecHead n="" kicker="Factor Copilot" title={<>It prepares. <em>Your wallet</em> signs.</>} lead="Copilot holds no key, signs nothing and sends nothing. Each action it prepares is an unsigned transaction that the person's own wallet signs, after this site has checked it again." /></Reveal>
+          <Reveal delay={120}><div className="sec-body cols two">
+            <div className="prose" style={{ paddingTop: 0 }}>
+              <p style={{ marginTop: 0 }}><b>Words that try to steer it.</b> The person&apos;s messages and agents&apos; own lines go to the model as data; a job&apos;s brief and a delivery never go to it at all. An amount, a time, an agent or a job number is taken only when the person wrote it, and an agent only when it is on the desk. Asked to sign or pay by itself, it says it cannot.</p>
+              <p><b>Every card is checked twice.</b> The engine decodes each call again from its own bytes before handing it over: one of Factor&apos;s contracts, a call Copilot may prepare, the agent the desk&apos;s own record of the one named, the amount within what was said and under {s.copilot.mostEth} ETH. The browser does the same with the addresses it knows before the wallet is asked. A card that does not hold is never shown.</p>
+            </div>
+            <div className="prose" style={{ paddingTop: 0 }}>
+              <p style={{ marginTop: 0 }}><b>Spend and flooding.</b> A message is {s.copilot.mostChars} characters at most. Each visitor and everybody together are held to a few messages a minute, the model&apos;s spend has a ceiling a day, and past it messages are read by plain rules.</p>
+              <p><b>What is kept.</b> A chat lives in the engine&apos;s memory for 30 minutes after its last message and is never written down; what is kept of a message is its length, how it was read, what reading it cost and which kind of action it prepared. Copilot can be switched off at once, and every form works as always.</p>
+            </div>
+          </div></Reveal>
+        </section>
+      ) : null}
+
       <section className="wrap sec">
         <Reveal><SecHead n="04" kicker="Plainly" title="What can be stopped, and what cannot." /></Reveal>
         <Reveal delay={120}><div className="sec-body cols two">
           <div className="prose" style={{ paddingTop: 0 }}>
             <p style={{ marginTop: 0 }}><b>The contracts cannot be stopped.</b> They have no owner and no pause. Nobody can freeze a payment, change a fee or move the pool, and that includes us on a bad day. A job that is locked settles or is refunded by the contract&apos;s own clock whatever happens to this site.</p>
-            <p><b>What we run can.</b> The engine that sweeps fees and closes due jobs, the gas we pay for accounts, compute credit, our own agents, agents&apos; coins, credit lines, guarantees, bounties and jobs in stages on this site, the signed answers and Factor Connect for other apps, the scores written to ERC-8004, Ask Factor, and this site&apos;s offer to lock new jobs can each be paused at once. Pausing one never touches money already in a contract or an account.</p>
+            <p><b>What we run can.</b> The engine that sweeps fees and closes due jobs, the gas we pay for accounts, compute credit, our own agents, agents&apos; coins, credit lines, guarantees, bounties and jobs in stages on this site, the signed answers and Factor Connect for other apps, the scores written to ERC-8004, Ask Factor, Factor Copilot, and this site&apos;s offer to lock new jobs can each be paused at once. Pausing one never touches money already in a contract or an account.</p>
           </div>
           <div className="prose" style={{ paddingTop: 0 }}>
             <p style={{ marginTop: 0 }}><b>How it was checked.</b> Every rule on the Protocol page is a test, each of the attacks we could think of is one too, and each test was seen to fail when its rule was broken on purpose. The contracts were run against the real Pons on a copy of the chain.</p>

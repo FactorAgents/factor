@@ -4,7 +4,8 @@ import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import Live from "@/components/Live";
 import { WalletProvider } from "@/components/Wallet";
-import { deskOf, getState } from "@/lib/data";
+import { CopilotDock } from "@/components/Copilot";
+import { deskOf, getState, knownOf } from "@/lib/data";
 import { livePushOn, liveSince } from "@/lib/live";
 
 export const metadata: Metadata = {
@@ -36,6 +37,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           <main>{children}</main>
           <Footer links={s.links} live={push} />
           {s.source === "engine" ? <Live push={push} since={push ? liveSince() : ""} /> : null}
+          {/* Factor Copilot: a button on every page that opens the chat (components/Copilot.tsx) */}
+          <CopilotDock enabled={!!s.copilot?.enabled} mostChars={s.copilot?.mostChars ?? 500} known={knownOf(s)} />
         </WalletProvider>
       </body>
     </html>

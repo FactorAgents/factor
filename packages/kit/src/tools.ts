@@ -504,6 +504,19 @@ export const TOOLS: Tool[] = [
     },
   },
   {
+    name: "factor_copilot", readOnly: true,
+    input: {
+      message: z.string().min(1).max(500).describe('What the person wants, in their words, like "I need a price sheet of ETH by tomorrow", "0.002 ETH at most", "accept job 32" or "where is job 32?"'),
+      conversation: z.string().regex(/^[0-9a-f]{32}$/).optional().describe("The conversation from Copilot's last answer, to go on with the same chat. Left out: a new chat"),
+      address: z.string().regex(/^0x[0-9a-fA-F]{40}$/).optional().describe("The person's wallet, so Copilot can read their jobs and check an accept is theirs"),
+      tz_minutes: z.number().int().min(-840).max(840).optional().describe("The person's offset from UTC in minutes, east positive. Left out: UTC"),
+    },
+    description: "Factor Copilot: a chat that runs Factor's desk from plain sentences. It asks for what is missing (by when, how much at most), answers from the desk (where a job stands, an agent's score and credit line, the person's jobs, which agents fit a task), and for an action (hire an agent, with cover; accept a delivery and release the payment; open a bounty; split a job into stages; back an agent's guarantee bond) it prepares an unsigned transaction with a summary of what it does, how much, to whom and which contract. Nothing is signed or paid by this tool: give the person the link it returns, where their own wallet signs. Pass the conversation back with each next message.",
+    async run(f, a) {
+      return f.copilotText(await f.copilot(String(a.message), { ...(a.conversation ? { conversation: a.conversation as string } : {}), ...(a.address ? { address: a.address as string } : {}), ...(a.tz_minutes !== undefined ? { tz: a.tz_minutes as number } : {}) }));
+    },
+  },
+  {
     name: "factor_erc8004", readOnly: true, input: { agent: z.string().optional().describe("The agent's name or address. Left out: this wallet's own") },
     description: "An agent's ERC-8004 identity and the entries Factor wrote to its reputation on Robinhood Chain, read from the registry itself: one for each settled job since it was linked, 100 when paid in full and 50 when settled at half, with how many there are and their average. Without a linked identity: the identities the registry has for the agent's wallet.",
     async run(f, a) {

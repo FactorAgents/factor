@@ -596,6 +596,29 @@ a.agents[0].hire;      // Factor's pay flow filled in: the person opens it, chan
 - A refusal says why: `bad_ask` (too short or too long), `rate` (one place asks 4 times a minute and 40 a day),
   `ask_off` (resting). The rules in full: `docs/ASK.md`.
 
+## Factor Copilot
+
+A chat that runs Factor's desk from plain sentences. It asks for what is missing, answers from the desk, and for an
+action hands back a prepared, unsigned transaction with a summary in plain words. Nothing is signed or paid by asking,
+and no key is needed: the person signs in their own wallet.
+
+```js
+import { copilot, copilotText } from "factor-kit";
+
+let c = await copilot("I need a price sheet of ETH, NVDA and TSLA by tomorrow", { tz: 60 });
+c.reply.text;          // "How much at most, in ETH? ..."
+c = await copilot("0.002 ETH at most", { conversation: c.conversation });
+c.reply.action;        // { title, lines, calls: [{ to, contract, fn, data, value }], totalWei, agent, expiresAt, checked }
+copilotText(c);        // in words, with the link where the person signs it: <site>/copilot?c=<conversation>
+```
+
+- It prepares only calls of contracts that are live: a hire (`lock`), a hire with cover (`reserve`, then `lock`), an
+  accept, a bounty, a job in stages, and backing an agent's guarantee bond. One card moves 0.1 ETH at most.
+- An amount, a time, an agent or a job number is taken only when the person wrote it. Pass `address` (their wallet) so it
+  can read their jobs and check an accept is theirs.
+- `factor.copilot(message, { conversation })` on a connected `Factor` does the same. A refusal says why: `bad_copilot`,
+  `rate`, `copilot_off`, `no_site`. The rules in full: `docs/COPILOT.md`.
+
 ## Every call
 
 | | |
@@ -619,6 +642,7 @@ a.agents[0].hire;      // Factor's pay flow filled in: the person opens it, chan
 | Jobs in stages | `hireInStages({ agent, title, stages: [{ title, brief, price, days or hours }], early, maxEth })`, `acceptStage(n)`, `rejectStage(n)`, `stepMilestone(n)`, `collectMilestonePayout(address?)`, `sendMilestoneTerms(n, { title, stages })`, `milestones({ show, customer, agent })`, `milestone(n)`, `milestoneOfJob(job)`, `agentMilestones(nameOrAddress?)` |
 | Bounties | `postBounty({ prize, task, deadlineInHours, minScore, maxEth })`, `enterBounty(n, work, { at, maxBondEth })`, `bountyEntries(n)`, `pickWinner(n, agent)`, `deliverBounty(n)`, `closeBounty(n)`, `returnBountyBonds(n)`, `collectBountyPayout(address?)`, `sendBountyTask(n, task)`, `sendBountyWork(n, work)`, `bounties({ show, poster, agent })`, `bounty(n)`, `bountyEntry(n, agent)`, `bountyEntryStatus(n, agent?)`, `agentBounties(nameOrAddress?)`, `bountyPoster(address?)` |
 | Ask Factor | `ask(sentence, { tz })` (also on its own, with `{ api }`), `askedText(answer)` |
+| Factor Copilot | `copilot(message, { conversation, address, tz })` (also on its own, with `{ api }`), `copilotText(answer)` |
 | Anyone | `settle(n)`, `refund(n)`, `waitFor(n, states)` |
 
 ## How it handles money
@@ -715,6 +739,8 @@ The same calls as tools, over the Model Context Protocol. Add this to an assista
   checked) and `factor_hire_link` (the pay flow filled in, for the person to open and sign; needs no key).
 - Ask Factor: `factor_ask` (one sentence made into a job, with the agents that fit it, each with its reasons and the pay
   flow filled in for the person to open and sign; needs no key).
+- Factor Copilot: `factor_copilot` (a chat that runs the desk: it asks what is missing, answers from the desk, and hands
+  back an unsigned card with the link where the person signs it; needs no key).
 - Use a wallet made for this, holding only what you are willing to let an assistant spend.
 - Add `"FACTOR_GASLESS": "1"` and the key needs no ETH for gas: it acts through its Factor account (see "No ETH for
   gas"). The assistant can say what the account holds, and has no tool that takes ETH out of it.

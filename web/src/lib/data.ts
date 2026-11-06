@@ -300,6 +300,14 @@ export async function getJobs(o: { agent?: string; customer?: string }): Promise
  * no desk to send to and every button that would send says so instead.
  */
 export const deskOf = (s: FactorState): string | null => (s.source === "engine" && s.reached ? s.contracts.desk : null);
+/** Factor's contracts as a page knows them, for Copilot's check in the browser (lib/copilot.ts): from the server, never from a reply. */
+export const knownOf = (s: FactorState): { desk: string | null; guarantee: string | null; bounty: string | null; milestones: string | null; mostEth: string } => ({
+  desk: deskOf(s),
+  guarantee: s.guarantees?.enabled ? s.guarantees.contract : null,
+  bounty: s.bounties?.enabled ? s.bounties.contract : null,
+  milestones: s.milestones?.enabled ? s.milestones.contract : null,
+  mostEth: s.copilot?.mostEth ?? "0.1",
+});
 
 /** An agent in the first page's list, by its address. */
 export const agentIn = (s: FactorState, address: string): Agent | undefined => s.agents.find((a) => a.address === address.toLowerCase());

@@ -2,7 +2,8 @@
 // any other client that speaks the Model Context Protocol. It offers factor-kit's own read tools (an agent's score,
 // record, credit line and Guarantee, checked against Factor's signature) and factor_hire_link, which hands back a link
 // to the pay flow that the person opens, locks the payment from their own wallet and signs there, and factor_ask, which
-// turns one sentence into a job with the agents that fit it and a pay link for each (Ask Factor, docs/ASK.md).
+// turns one sentence into a job with the agents that fit it and a pay link for each (Ask Factor, docs/ASK.md), and
+// factor_copilot, a chat that prepares an unsigned action and a link where the person signs it (docs/COPILOT.md).
 //
 // No key of any kind is held here, and none is asked for: nothing on this endpoint can send a transaction or sign
 // anything. The tools are the kit's, run as a kit with no key would run them (npx factor-mcp without FACTOR_PRIVATE_KEY),
@@ -11,7 +12,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { Factor } from "factor-kit";
 import { runTool, TOOLS } from "factor-kit/tools";
-import { askedText, type Asked } from "factor-kit";
+import { askedText, copilotText, type Asked, type Copiloted } from "factor-kit";
 import { engineUrl } from "@/lib/data";
 import type { NextRequest } from "next/server";
 import { callerOf } from "@/lib/caller";
@@ -20,10 +21,12 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /** The kit's tools this endpoint offers: the ones that only read, and the hire link, which a person opens and signs. */
-const HOSTED = ["factor_ask", "factor_check_agent", "factor_hire_link", "factor_record", "factor_agent", "factor_agents", "factor_line", "factor_guarantee", "factor_erc8004", "factor_overview", "factor_open_jobs", "factor_firm_record"] as const;
+const HOSTED = ["factor_ask", "factor_copilot", "factor_check_agent", "factor_hire_link", "factor_record", "factor_agent", "factor_agents", "factor_line", "factor_guarantee", "factor_erc8004", "factor_overview", "factor_open_jobs", "factor_firm_record"] as const;
 const PER_MINUTE = 60;
 // factor_ask has Factor's model read a sentence: one caller asks a few times a minute, under the engine's own limits
 const ASKS_PER_MINUTE = 4;
+// factor_copilot is a chat: a few more messages a minute, under the engine's own limits
+const COPILOT_PER_MINUTE = 8;
 const CORS = { "access-control-allow-origin": "*", "access-control-allow-methods": "GET, POST, DELETE, OPTIONS", "access-control-allow-headers": "content-type, accept, mcp-session-id, mcp-protocol-version, last-event-id", "access-control-expose-headers": "mcp-session-id, mcp-protocol-version" };
 
 // the site this endpoint reads, as the kit reads it: Factor's own, or a copy of it someone runs to try it
@@ -41,7 +44,7 @@ function tooMany(who: string, most = PER_MINUTE): boolean {
 }
 
 function server(caller: string): McpServer {
-  const s = new McpServer({ name: "factor", version: "0.17.0" }, { instructions: "Factor (factoragents.fun) is where AI agents are paid for work on Robinhood Chain. When a person says what they need, factor_ask writes the job and picks the agents that fit, each with a link to hire it. Check an agent's Factor Score, record, credit line and Guarantee before hiring it with factor_check_agent. To hire, give the person a link (from factor_ask or factor_hire_link): they lock the payment from their own wallet and sign there. Nothing here can send or sign anything." });
+  const s = new McpServer({ name: "factor", version: "0.18.0" }, { instructions: "Factor (factoragents.fun) is where AI agents are paid for work on Robinhood Chain. When a person says what they need, factor_ask writes the job and picks the agents that fit, each with a link to hire it. Check an agent's Factor Score, record, credit line and Guarantee before hiring it with factor_check_agent. To hire, give the person a link (from factor_ask or factor_hire_link): they lock the payment from their own wallet and sign there. factor_copilot runs the whole desk as a chat (hire, accept a delivery, a bounty, stages, a job's status) and hands back an unsigned action with the link where the person signs it. Nothing here can send or sign anything." });
   for (const name of HOSTED) {
     const tool = TOOLS.find((t) => t.name === name);
     if (!tool) continue;
@@ -53,6 +56,8 @@ function server(caller: string): McpServer {
       // the engine counts every caller's asks on its own: this endpoint passes each caller on, as the site's own door does,
       // so one busy assistant never uses up another's (the kit's tool would reach the engine as this server)
       if (tool.name === "factor_ask" && engineUrl()) return { content: [{ type: "text" as const, ...(await askFor(caller, args)) }] };
+      if (tool.name === "factor_copilot" && tooMany(`copilot:${caller}`, COPILOT_PER_MINUTE)) return { content: [{ type: "text" as const, text: "Too many messages from here in a minute: try again in a minute." }], isError: true };
+      if (tool.name === "factor_copilot" && engineUrl()) return { content: [{ type: "text" as const, ...(await copilotFor(caller, args)) }] };
       try {
         ({ text, isError } = await runTool(await connect(), tool.name, args ?? {}, null));
       } catch (e) {
@@ -79,6 +84,23 @@ async function askFor(caller: string, args: Record<string, unknown>): Promise<{ 
     const b = (await r.json().catch(() => ({}))) as Asked & { error?: string };
     if (!r.ok) return { text: (b.error ?? `Factor answered ${r.status}`).replace(/^./, (c) => c.toUpperCase()).replace(/([^.!?])$/, "$1."), isError: true };
     return { text: askedText(b) };
+  } catch {
+    return { text: "Factor did not answer just now: try again in a moment.", isError: true };
+  }
+}
+
+/** factor_copilot through the engine, the caller passed on, as factor_ask: the kit's own words for the answer. */
+async function copilotFor(caller: string, args: Record<string, unknown>): Promise<{ text: string; isError?: boolean }> {
+  const text = typeof args.message === "string" ? args.message.replace(/\s+/g, " ").trim() : "";
+  if (!text || text.length > 500) return { text: "Say what the person wants in 1 to 500 characters.", isError: true };
+  const tz = typeof args.tz_minutes === "number" && Number.isInteger(args.tz_minutes) && Math.abs(args.tz_minutes) <= 840 ? args.tz_minutes : undefined;
+  const conversation = typeof args.conversation === "string" && /^[0-9a-f]{32}$/.test(args.conversation) ? args.conversation : undefined;
+  const address = typeof args.address === "string" && /^0x[0-9a-fA-F]{40}$/.test(args.address) ? args.address.toLowerCase() : undefined;
+  try {
+    const r = await fetch(`${engineUrl()}/v1/copilot`, { method: "POST", cache: "no-store", signal: AbortSignal.timeout(45_000), headers: { "content-type": "application/json", ...(caller !== "unknown" ? { "x-forwarded-for": caller } : {}) }, body: JSON.stringify({ text, ...(conversation ? { conversation } : {}), ...(address ? { address } : {}), ...(tz !== undefined ? { tz } : {}) }) });
+    const b = (await r.json().catch(() => ({}))) as Copiloted & { error?: string };
+    if (!r.ok) return { text: (b.error ?? `Factor answered ${r.status}`).replace(/^./, (c) => c.toUpperCase()).replace(/([^.!?])$/, "$1."), isError: true };
+    return { text: copilotText(b, { api: SITE }) };
   } catch {
     return { text: "Factor did not answer just now: try again in a moment.", isError: true };
   }
