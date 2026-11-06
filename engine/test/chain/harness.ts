@@ -41,7 +41,7 @@ export interface Rig {
   turn(): Promise<void>;
 }
 
-export async function rig(mode: EngineMode, o: { chain?: FakeChain; more?: Env; sqlite?: Database.Database; signer?: boolean; houseSigners?: (name: string) => HouseSigner; verifiedProviders?: Provider[]; askModel?: AskModel | null } = {}): Promise<Rig> {
+export async function rig(mode: EngineMode, o: { chain?: FakeChain; more?: Env; sqlite?: Database.Database; signer?: boolean; houseSigners?: (name: string) => HouseSigner; verifiedProviders?: Provider[]; askModel?: AskModel | null; copilotModel?: AskModel | null } = {}): Promise<Rig> {
   const chain = o.chain ?? new FakeChain();
   const wall = { extra: 0 };
   const now = () => chain.time * 1000 + wall.extra;
@@ -58,6 +58,7 @@ export async function rig(mode: EngineMode, o: { chain?: FakeChain; more?: Env; 
     ...(o.houseSigners ? { houseSigners: o.houseSigners } : {}),
     ...(o.verifiedProviders ? { verifiedProviders: o.verifiedProviders } : {}),
     ...(o.askModel !== undefined ? { askModel: o.askModel } : {}),
+    ...(o.copilotModel !== undefined ? { copilotModel: o.copilotModel } : {}),
   });
   engine.start();
   await engine.ready();

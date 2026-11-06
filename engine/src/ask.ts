@@ -104,20 +104,22 @@ const WORST_IN = 4000, WORST_OUT = 900;
  * (DESK_MODEL, else the cheapest) when there is an ANTHROPIC_API_KEY, else raeto/auto:cheap when Raeto is on. None of
  * them: null, and every sentence is read by the plain rules. The keys are read here and handed only to the calls.
  */
-export function askModelOf(env: Env, cfg: AskConfig, raeto: RaetoConfig, log: (line: string) => void = () => undefined): AskModel | null {
+export function askModelOf(env: Env, cfg: Pick<AskConfig, "model">, raeto: RaetoConfig, log: (line: string) => void = () => undefined, o: { tag?: string; name?: string; worstIn?: number; worstOut?: number } = {}): AskModel | null {
   const anthropic = env.ANTHROPIC_API_KEY?.trim() || null;
   const raetoKey = raeto.enabled ? takeRaetoKey(env) : null;
+  // the same plumbing serves Copilot (./copilot.ts): its own tag at Raeto, its own name in the log, its own worst call
+  const tag = o.tag ?? "factor-ask", who = o.name ?? "ask", worstIn = o.worstIn ?? WORST_IN, worstOut = o.worstOut ?? WORST_OUT;
   const viaRaeto = (model: string): AskModel | null => {
-    if (!raetoKey) { log(`[ask] ASK_MODEL is ${model}, and Raeto is not on (RAETO=on with RAETO_API_KEY): sentences are read by the plain rules`); return null; }
+    if (!raetoKey) { log(`[${who}] ${who.toUpperCase()}_MODEL is ${model}, and Raeto is not on (RAETO=on with RAETO_API_KEY): sentences are read by the plain rules`); return null; }
     const r = { url: raeto.url, key: raetoKey, model, timeoutMs: Math.min(raeto.timeoutMs, 45_000) };
-    const worst = ((WORST_IN * raeto.maxInPerM + WORST_OUT * raeto.maxOutPerM) * (10_000 + RAETO_FEE_BPS)) / 10_000 / 1e6 + RAETO_ROUTE_FEE_MICRO / 1e6;
-    return { name: model, via: "raeto", worstUsd: worst, call: async (system, user, maxTokens) => { const a = await askRaeto(r, { system, user, maxTokens }, "factor-ask"); return { text: a.text, costUsd: a.costMicro / 1e6 }; } };
+    const worst = ((worstIn * raeto.maxInPerM + worstOut * raeto.maxOutPerM) * (10_000 + RAETO_FEE_BPS)) / 10_000 / 1e6 + RAETO_ROUTE_FEE_MICRO / 1e6;
+    return { name: model, via: "raeto", worstUsd: worst, call: async (system, user, maxTokens) => { const a = await askRaeto(r, { system, user, maxTokens }, tag); return { text: a.text, costUsd: a.costMicro / 1e6 }; } };
   };
   const viaAnthropic = (model: string): AskModel | null => {
-    if (!anthropic) { log(`[ask] ASK_MODEL is ${model}, and there is no ANTHROPIC_API_KEY: sentences are read by the plain rules`); return null; }
+    if (!anthropic) { log(`[${who}] ${who.toUpperCase()}_MODEL is ${model}, and there is no ANTHROPIC_API_KEY: sentences are read by the plain rules`); return null; }
     const p = DEFAULT_MODELS[model] ?? DEFAULT_MODELS["claude-sonnet-5-5"]!;
     const ask = anthropicAsk(anthropic, model, env.HOUSE_UPSTREAM_URL?.trim() || undefined);
-    return { name: model, via: "anthropic", worstUsd: (WORST_IN * p.in + WORST_OUT * p.out) / 1e6, call: async (system, user, maxTokens) => { const a = await ask(system, user, maxTokens); return { text: a.text, costUsd: (a.input * p.in + a.output * p.out) / 1e6 }; } };
+    return { name: model, via: "anthropic", worstUsd: (worstIn * p.in + worstOut * p.out) / 1e6, call: async (system, user, maxTokens) => { const a = await ask(system, user, maxTokens); return { text: a.text, costUsd: (a.input * p.in + a.output * p.out) / 1e6 }; } };
   };
   if (cfg.model) return isRaetoModel(cfg.model) ? viaRaeto(cfg.model) : viaAnthropic(cfg.model);
   if (anthropic) return viaAnthropic(env.DESK_MODEL?.trim() || "claude-haiku-4-5-20251001");
@@ -216,7 +218,7 @@ export type AskResult = { ok: true; answer: AskAnswer } | { ok: false; status: n
 
 // ---------- the words ----------
 
-const MIN_JOB = 10n ** 15n; // 0.001 ETH, the desk's smallest job and a stage's
+export const MIN_JOB = 10n ** 15n; // 0.001 ETH, the desk's smallest job and a stage's
 const DEFAULT_HOURS = 72;
 const LEAST_HOURS = 2;
 const MOST_HOURS = 720;
@@ -235,28 +237,28 @@ export function ethText(wei: bigint): string {
   return frac ? `${whole}.${frac}` : `${whole}`;
 }
 /** Up to the next ten-thousandth of an ETH: a price a person would write. */
-const roundUp = (wei: bigint): bigint => ((wei + 10n ** 14n - 1n) / 10n ** 14n) * 10n ** 14n;
-const weiOf = (eth: number): bigint => BigInt(Math.round(eth * 1e6)) * 10n ** 12n;
+export const roundUp = (wei: bigint): bigint => ((wei + 10n ** 14n - 1n) / 10n ** 14n) * 10n ** 14n;
+export const weiOf = (eth: number): bigint => BigInt(Math.round(eth * 1e6)) * 10n ** 12n;
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 /** Text a person may read: no control characters, no long dashes, no tags, at most `most` characters. */
-function plain(s: unknown, most: number): string {
+export function plain(s: unknown, most: number): string {
   if (typeof s !== "string") return "";
   return s.normalize("NFKC").replace(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202f\u2060-\u206f\ufeff]/g, " ")
     .replace(/[\u2014\u2013]/g, ",").replace(/[<>]/g, "").replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim().slice(0, most).trim();
 }
 
 /** The links a text holds. */
-const linksOf = (s: string): string[] => s.match(/https?:\/\/[^\s)\]]+|www\.[^\s)\]]+/gi) ?? [];
+export const linksOf = (s: string): string[] => s.match(/https?:\/\/[^\s)\]]+|www\.[^\s)\]]+/gi) ?? [];
 
 /** A text with every link taken out that the customer did not write themselves. */
-function ownLinksOnly(text: string, sentence: string): string {
+export function ownLinksOnly(text: string, sentence: string): string {
   const said = new Set(linksOf(sentence).map((l) => l.toLowerCase()));
   return text.replace(/https?:\/\/[^\s)\]]+|www\.[^\s)\]]+/gi, (l) => (said.has(l.toLowerCase()) ? l : "[the link]"));
 }
 
 /** A title: one plain line without links, 3 to 80 characters, or "" when there is none. */
-function titleOf(raw: unknown, fallback = ""): string {
+export function titleOf(raw: unknown, fallback = ""): string {
   let t = plain(raw, 200).replace(/\s+/g, " ").replace(/https?:\/\/\S+|www\.\S+/gi, "").replace(/\b\S+\.(com|io|xyz|fun|net|org|gg|me|app)\b/gi, "").replace(/[\[\]]/g, "").trim();
   if (t.length > TITLE_MOST) t = `${t.slice(0, TITLE_MOST - 3).replace(/\s+\S*$/, "")}...`;
   t = t.replace(/^[a-z]/, (c) => c.toUpperCase());
@@ -288,7 +290,7 @@ export function wordsOf(s: string): string[] {
 const overlap = (a: string[], b: Set<string>): number => a.filter((w) => b.has(w)).length;
 
 /** The numbers written in a sentence, as numbers. */
-function numbersIn(sentence: string): number[] {
+export function numbersIn(sentence: string): number[] {
   const out = (sentence.match(/\d+(?:[.,]\d+)?|\.\d+/g) ?? []).map((n) => Number(n.replace(",", ".")));
   for (const w of sentence.toLowerCase().split(/[^a-z]+/)) if (w in NUMBER_WORDS && w !== "a" && w !== "an") out.push(NUMBER_WORDS[w]!);
   return out.filter((n) => Number.isFinite(n));
@@ -311,12 +313,12 @@ export interface Reading {
   missing: string[];
 }
 
-const ETH_WORD = /\b(eth|ether|weth)\b|Ξ/i;
-const USD_WORD = /\$|\busd\b|\bdollars?\b|\bbucks\b/i;
-const COVER_WORD = /\b(guarantee[ds]?|guaranty|insur(ance|ed)?|cover(ed)?|protect(ion|ed)?|money[- ]back|refund(ed)?)\b/i;
+export const ETH_WORD = /\b(eth|ether|weth)\b|Ξ/i;
+export const USD_WORD = /\$|\busd\b|\bdollars?\b|\bbucks\b/i;
+export const COVER_WORD = /\b(guarantee[ds]?|guaranty|insur(ance|ed)?|cover(ed)?|protect(ion|ed)?|money[- ]back|refund(ed)?)\b/i;
 
 /** A budget the sentence itself names, with its unit, read by plain rules. */
-function budgetIn(sentence: string): Reading["budget"] {
+export function budgetIn(sentence: string): Reading["budget"] {
   const eth = /(\d+(?:[.,]\d+)?|\.\d+)\s*(?:eth|ether|weth)\b/i.exec(sentence) ?? /Ξ\s*(\d+(?:[.,]\d+)?|\.\d+)/.exec(sentence);
   if (eth) return { amount: Number(eth[1]!.replace(",", ".")), unit: "ETH" };
   const usd = /\$\s*(\d+(?:[.,]\d+)?)/.exec(sentence) ?? /(\d+(?:[.,]\d+)?)\s*(?:usd|dollars?|bucks)\b/i.exec(sentence);
@@ -325,7 +327,7 @@ function budgetIn(sentence: string): Reading["budget"] {
 }
 
 /** A deadline the sentence itself names, read by plain rules. */
-function deadlineIn(sentence: string): Reading["deadline"] {
+export function deadlineIn(sentence: string): Reading["deadline"] {
   const s = sentence.toLowerCase();
   const n = /\b(?:in|within|next)\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten|twelve|a|an)\s+(hours?|hrs?|days?|weeks?)\b/.exec(s) ?? /\b(\d+)\s*(h|hours?|days?|weeks?)\b/.exec(s);
   if (n) {
@@ -359,7 +361,7 @@ export function plainRead(sentence: string): Reading {
 }
 
 /** A title without the budget, the deadline or a wish for cover in it: those have fields of their own. */
-function bare(line: string): string {
+export function bare(line: string): string {
   return line.replace(/,?\s*\b(?:for\s+)?(?:under|below|up to|max(?:imum)?|at most|around|about|budget(?: of)?|for)?\s*(?:\$\s*\d+(?:[.,]\d+)?|(?:\d+(?:[.,]\d+)?|\.\d+)\s*(?:eth|ether|usd|dollars?|bucks))\b/gi, "")
     .replace(/,?\s*\b(?:by|before|until|due)\s+(?:the\s+)?(?:end of\s+)?(?:today|tonight|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|wed|thu|fri|sat|sun|20\d\d-\d\d-\d\d)\b/gi, "")
     .replace(/,?\s*\b(?:in|within)\s+(?:\d+|one|two|three|four|five|six|seven|a|an)\s+(?:hours?|days?|weeks?)\b/gi, "")
@@ -387,7 +389,7 @@ Answer with one JSON object and nothing else:
 - Add nothing the customer did not say: no facts, names, numbers, prices, dates, links or promises of your own. No long dashes. No emojis.`;
 
 /** The first JSON object in a model's answer, or null. */
-function jsonOf(text: string): Record<string, unknown> | null {
+export function jsonOf(text: string): Record<string, unknown> | null {
   const a = text.indexOf("{"), b = text.lastIndexOf("}");
   if (a < 0 || b <= a) return null;
   try {
@@ -469,7 +471,7 @@ export function hoursTo(d: NonNullable<Reading["deadline"]>, nowS: number, tzMin
 
 // ---------- the agents ----------
 
-interface Ranked { c: AskCandidate; fit: number; rank: number; alike: SettledJob[] }
+export interface Ranked { c: AskCandidate; fit: number; rank: number; alike: SettledJob[] }
 
 /**
  * The agents that fit, best first: how well what they do and the jobs they were paid for match the sentence's words,

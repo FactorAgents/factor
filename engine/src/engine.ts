@@ -53,6 +53,7 @@ import { Milestones } from "./milestones.js";
 import { answerSigner, Connect, type AnswerSigner } from "./everywhere.js";
 import { Erc8004Scores } from "./erc8004score.js";
 import { Ask, askModelOf, type AskModel } from "./ask.js";
+import { Copilot, COPILOT_WORST_IN, COPILOT_WORST_OUT } from "./copilot.js";
 import { DeskStore } from "./desk.js";
 import { scoreOf } from "./score.js";
 import { sourceOf } from "./api.js";
@@ -69,6 +70,7 @@ export interface EngineOptions {
   houseSigners?: (name: string) => HouseSigner; // instead of the keys made from the seed (tests)
   verifiedProviders?: Provider[]; // instead of Human Passport and Talent Protocol (tests)
   askModel?: AskModel | null; // instead of the model Ask Factor would ask (tests)
+  copilotModel?: AskModel | null; // instead of the model Copilot would ask (tests)
 }
 
 const ZERO = "0x0000000000000000000000000000000000000000";
@@ -149,6 +151,8 @@ export class Engine {
   readonly answerSigner: AnswerSigner | null;
   /** Ask Factor (./ask.ts): a sentence made into a job with the agents that fit it; null unless ASK=on */
   ask: Ask | null = null;
+  /** Factor Copilot (./copilot.ts): a chat that prepares the desk's calls for the person's wallet; null unless COPILOT=on */
+  copilot: Copilot | null = null;
   /** the splitter's admin, read at the boot check: Factor's own wallet, which sets the rules of Factor's own agents */
   private splitterAdmin: string | null = null;
   /** the key that signs agents' records for other apps (./record.ts), or null */
@@ -213,7 +217,7 @@ export class Engine {
     return {
       config: this.config, state: this.state, problems: this.problems, warnings: this.warnings, lastError: this.lastError, loops, ctx: this.ctx, rpc: this.chain?.health() ?? null, now: this.now,
       links: { pons: link(this.env.FACTOR_PONS_URL), github: link(this.env.FACTOR_GITHUB_URL), x: link(this.env.FACTOR_X_URL) }, dataDirSet: !!this.env.FACTOR_DATA_DIR?.trim(), profiles: this.profiles, gateway: this.gateway, accounts: this.accounts, house: this.house, demo: this.demo, pulse: this.pulse, deskMind: this.deskMind, launchList: this.launchList, activity: this.activity, matcher: this.matcher, pay: this.pay, subjobs: this.subjobs, recordSigner: this.recordSigner, firms: this.firms, plans: this.plans, erc8004: this.erc8004, openjobs: this.openjobs, autoapply: this.autoapply, verified: this.verified, coins: this.coins, lines: this.lines, guarantees: this.guarantees, bounties: this.bounties, milestones: this.milestones,
-      connect: this.connect, erc8004Scores: this.erc8004Scores, answerSigner: this.answerSigner, ask: this.ask,
+      connect: this.connect, erc8004Scores: this.erc8004Scores, answerSigner: this.answerSigner, ask: this.ask, copilot: this.copilot,
     };
   }
 
@@ -244,7 +248,7 @@ export class Engine {
   // checking an order before it is sent, changes nothing.
   post(path: string, body: unknown, from: string, adminKey?: string, connectKey?: string): Promise<Answer | null> {
     return this.api.post(path, body, from, adminKey, connectKey).then((a) => {
-      if (a && a.status >= 200 && a.status < 300 && path !== "/v1/match" && path !== "/v1/ask" && path !== "/v1/accounts/check") this.live?.poke();
+      if (a && a.status >= 200 && a.status < 300 && path !== "/v1/match" && path !== "/v1/ask" && path !== "/v1/copilot" && path !== "/v1/accounts/check") this.live?.poke();
       return a;
     });
   }
@@ -290,6 +294,12 @@ export class Engine {
       const model = this.opts.askModel !== undefined ? this.opts.askModel : askModelOf(this.env, c.ask, c.compute.raeto, this.log);
       this.ask = new Ask(this.sqlite, c.ask, { model, now: this.now, log: this.log });
       this.log(`[ask] on: a sentence is read by ${model ? `${model.name} (${model.via === "raeto" ? "through Raeto" : model.via === "anthropic" ? "the model maker" : model.via})` : "the plain rules alone (no model)"}, up to $${c.ask.dailyUsd} a day on the model; ${c.ask.perMinute} a minute and ${c.ask.perDay} a day for one visitor, ${c.ask.allPerMinute} a minute in all`);
+    }
+    // Factor Copilot: made whether or not the chain is read, so its rows are there; it answers once the engine reads the desk
+    if (!this.copilot && c.copilot.enabled) {
+      const model = this.opts.copilotModel !== undefined ? this.opts.copilotModel : askModelOf(this.env, c.copilot, c.compute.raeto, this.log, { tag: "factor-copilot", name: "copilot", worstIn: COPILOT_WORST_IN, worstOut: COPILOT_WORST_OUT });
+      this.copilot = new Copilot(this.sqlite, c.copilot, { model, now: this.now, log: this.log });
+      this.log(`[copilot] on: a message is read by ${model ? `${model.name} (${model.via === "raeto" ? "through Raeto" : model.via === "anthropic" ? "the model maker" : model.via})` : "the plain rules alone (no model)"}, up to $${c.copilot.dailyUsd} a day on the model; one action moves ${Number(c.copilot.mostWei / 10n ** 12n) / 1e6} ETH at most; ${c.copilot.perMinute} a minute and ${c.copilot.perDay} a day for one visitor, ${c.copilot.allPerMinute} a minute in all. It prepares; it never signs`);
     }
     // Before the launch Factor's own agents do small real jobs every few minutes, for the home page's receipt.
     if (!this.matcher && matchOn(this.env) && this.env.ANTHROPIC_API_KEY?.trim()) {

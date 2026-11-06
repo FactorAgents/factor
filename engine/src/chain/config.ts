@@ -26,6 +26,7 @@ import { readBounties, type BountiesConfig } from "../bounties.js";
 import { readMilestones, type MilestonesConfig } from "../milestones.js";
 import { readEverywhere, type EverywhereConfig } from "../everywhere.js";
 import { readAsk, type AskConfig } from "../ask.js";
+import { readCopilot, type CopilotConfig } from "../copilot.js";
 import { readScores, type ScoresConfig } from "../erc8004score.js";
 
 // the chain the token lives on, written down once
@@ -163,6 +164,8 @@ export interface EngineConfig {
   scores: ScoresConfig;
   // Ask Factor (../ask.ts): a sentence made into a job with the agents that fit it, and the limits on it
   ask: AskConfig;
+  // Factor Copilot (../copilot.ts): a chat that prepares the desk's calls for the person's wallet, and the limits on it
+  copilot: CopilotConfig;
 }
 
 // A factor.env-style file: NAME=value lines. What the environment already says wins.
@@ -347,6 +350,7 @@ export function readConfig(processEnv: Env = process.env): EngineConfig {
   const everywhere = readEverywhere(env, problems);
   const scores = readScores(env, problems);
   const ask = readAsk(env, problems);
+  const copilot = readCopilot(env, problems);
   if (accounts.factory && (accounts.factory === desk || accounts.factory === splitter || accounts.factory === burnPot)) problems.push("FACTOR_ACCOUNTS is the same address as another of the contracts");
   const rawAdmin = env.ENGINE_ADMIN_KEY?.trim() ?? "";
   if (rawAdmin && rawAdmin.length < 24) problems.push("ENGINE_ADMIN_KEY must be at least 24 characters");
@@ -393,6 +397,7 @@ export function readConfig(processEnv: Env = process.env): EngineConfig {
     everywhere,
     scores,
     ask,
+    copilot,
   };
 }
 
