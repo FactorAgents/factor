@@ -178,7 +178,7 @@ function Card({ p, known, done, onSigned }: { p: Prepared; known: Known; done: {
       <dl>{p.lines.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}</dl>
       <details className="cp-checked"><summary>What was checked</summary><ul>{p.checked.map((c, i) => <li key={i}>{c}</li>)}{said ? <li>{said}</li> : null}</ul></details>
       {done ? (
-        <p className="status ok" role="status">{done.note} {done.href ? <a className="more" href={done.href}>Open it →</a> : null} <a className="more quiet" href={`${CHAIN.explorer}/tx/${done.hash}`} target="_blank" rel="noopener noreferrer">The transaction →</a></p>
+        <p className="status ok" role="status">{done.note} {done.href ? <a className="more" href={done.href}>Open it →</a> : null} {done.hash ? <a className="more quiet" href={`${CHAIN.explorer}/tx/${done.hash}`} target="_blank" rel="noopener noreferrer">The transaction →</a> : null}</p>
       ) : bad ? <p className="status bad" role="alert">{bad}</p> : (
         <>
           <div className="cta"><Go label="Sign in wallet" busy={step !== null} onGo={() => void go()} off={!known.desk ? "Nothing is live yet" : null} /></div>

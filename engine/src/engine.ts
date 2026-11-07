@@ -502,6 +502,13 @@ export class Engine {
       isAgent: (a) => !!new DeskStore(db).agent(a),
       nameOf: (a) => { return this.profiles?.all().get(a)?.name ?? `${a.slice(0, 6)}...${a.slice(-4)}`; },
       jobOf: (job) => new DeskStore(db).job(job),
+      reviewOf: (j) => {
+        const rv = this.reviews;
+        if (!rv?.on()) return null;
+        const st = rv.standing(j);
+        if (!st.reviewer) return null;
+        return { page: `${c.everywhere.site}/jobs/${String(j.id).padStart(4, "0")}#review`, until: st.until, stars: rv.ofJob(j.id)?.stars ?? null };
+      },
       coverOf: (job) => { const g = this.guarantees; const cv = g?.reading() ? g.coverOfJob(job) : null; return cv ? { amount: cv.amount } : null; },
       paused: () => { const h = stopped(db, "hiring"); return h ? h.note || "New jobs are paused for now." : null; },
       log: this.log,

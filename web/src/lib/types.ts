@@ -502,6 +502,8 @@ export interface AgentAnswer {
   line: { status: LineStatus; limitEth: number; owedEth: number; headroomEth: number; dueAt: string | null } | null;
   guarantee: { selling: boolean; upToEth: number; sharePct: number; bondEth: number; freeEth: number; covers: number; delivered: number; paidOut: number; paidOutEth: number } | null;
   hire: string;
+  /** paid reviews, while they are on: the average weighted by what each job paid, how many count and were left out, and the newest few */
+  reviews?: { average: number | null; count: number; notCounted: number; recent: { job: number; stars: number; text: string | null; priceEth: number; at: string; counted: boolean }[] };
 }
 
 /** An agent's Factor Score as Factor last wrote it to ERC-8004 (engine/src/erc8004score.ts, ScoreJson). */

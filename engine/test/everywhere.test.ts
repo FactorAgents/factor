@@ -289,6 +289,27 @@ describe("Factor Connect", () => {
     expect(h.got.at(-1)!.headers["x-factor-event"]).toBe("ping");
   });
 
+  it("with paid reviews on, the paid job's webhook says where its customer reviews it and until when", async () => {
+    const r = await desk({ REVIEWS: "on" });
+    const h = await hook();
+    const { key } = await post(r, "/v1/connect/register", { name: "Agent Bazaar", site: "https://bazaar.example", hook: h.url });
+    const t = await post(r, "/v1/connect/hire", { agent: AGENT, priceWei: PRICE.toString(), title: "Summarise one contract", dueHours: 24, ref: "order-79" }, key);
+    const job = r.chain.lock(`0x${"c1".padStart(40, "0")}`, AGENT, PRICE, 86400, false);
+    await r.engine.watchOnce();
+    await post(r, "/v1/connect/claim", { ticket: t.ticket, job });
+    await r.engine.connect!.pass();
+    r.chain.deliver(job);
+    r.chain.accept(job);
+    await r.engine.watchOnce();
+    await r.engine.connect!.pass();
+    await r.engine.connect!.pass();
+    const bodies = h.got.map((g) => JSON.parse(g.body));
+    expect(bodies.find((b) => b.event === "job.locked").review).toBeUndefined();
+    const paid = bodies.find((b) => b.event === "job.paid");
+    expect(paid.review).toMatchObject({ page: `https://factoragents.fun/jobs/${String(job).padStart(4, "0")}#review`, stars: null });
+    expect(Date.parse(paid.review.until)).toBeGreaterThan(r.chain.time * 1000 + 29 * 86_400_000);
+  });
+
   it("a hook that does not take it is sent again later, then given up; a job that went straight to its end is told every step", async () => {
     const r = await desk();
     let answer = 500;

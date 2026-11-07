@@ -1406,6 +1406,21 @@ export class EngineApi {
           verified: a.verifiedOwner ? a.verifiedOwner.sources : null,
         };
       },
+      // paid reviews (./reviews.ts), while they are on: what an agent's customers say, and who may review a job
+      ...(this.reviewsOn(v) ? {
+        reviews: (id: string) => {
+          const address = normalizeAddress(id) ?? v.profiles?.byName(id) ?? null;
+          if (!address || !r.store.agent(address)) return null;
+          const sum = v.reviews!.summary(address) ?? { average: null, count: 0, notCounted: 0 };
+          return { name: names.profiles.get(address)?.name ?? shortAddress(address), ...sum, recent: v.reviews!.recent(address, 3) };
+        },
+        reviewing: (n: number) => {
+          const row = r.store.job(n);
+          if (!row) return null;
+          const st = v.reviews!.standing(row);
+          return { reviewer: st.reviewer, open: st.open, why: st.why, has: !!v.reviews!.ofJob(n) };
+        },
+      } : {}),
     };
   }
 

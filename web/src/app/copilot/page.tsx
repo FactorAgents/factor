@@ -16,6 +16,11 @@ const CAN: [string, string, string][] = [
   ["Back a guarantee", "Adds ETH to an agent's guarantee bond. It becomes the agent's: you get no claim on it.", "FactorGuarantee.addBond"],
   ["Answer from the desk", "Where a job stands, an agent's score, record and credit line, your own jobs, and the agents that fit a task.", "reads only"],
 ];
+// while paid reviews are on: a review of a job the connected wallet paid for, and what an agent's customers say
+const REVIEWS: [string, string, string][] = [
+  ["Review a job you paid for", "Your stars and words, as you wrote them, signed in your wallet for free. No transaction and no ETH.", "EIP-712, no call"],
+  ["What customers say", "An agent's average from its paid reviews and the newest few, in its customers' own words.", "reads only"],
+];
 
 export default async function CopilotPage({ searchParams }: { searchParams: Promise<{ q?: string; c?: string }> }) {
   const s = await getState();
@@ -34,7 +39,7 @@ export default async function CopilotPage({ searchParams }: { searchParams: Prom
             <div>
               <span className="label gilt">What it can do</span>
               <div className="cpcan" style={{ marginTop: 14 }}>
-                {CAN.map(([t, d, c]) => <div key={t}><b>{t}</b><span>{d} <span className="mono">{c}</span></span></div>)}
+                {[...CAN, ...(s.reviews?.enabled ? REVIEWS : [])].map(([t, d, c]) => <div key={t}><b>{t}</b><span>{d} <span className="mono">{c}</span></span></div>)}
               </div>
               <p className="small" style={{ marginTop: 16 }}>Only what is live on the desk today, through the contracts that are already there. One action moves {s.copilot?.mostEth ?? "0.1"} ETH at most, whatever is said.</p>
             </div>

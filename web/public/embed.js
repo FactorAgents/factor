@@ -6,8 +6,8 @@
  *   <script src="https://factoragents.fun/embed.js" async></script>
  *
  * data-factor-agent    the agent's name on Factor, its address, or its ERC-8004 identity as 8004:<number>
- * data-factor-show     any of: score (its live Factor Score), guarantee (what its Guarantee covers), hire (a Hire with
- *                      Factor button). All three when left out
+ * data-factor-show     any of: score (its live Factor Score, and the stars of its paid reviews when it has any),
+ *                      guarantee (what its Guarantee covers), hire (a Hire with Factor button). All three when left out
  * data-factor-theme    light or dark. Left out: the reader's own setting
  * data-factor-ticket   a hire link a marketplace made with Factor Connect: the button opens it instead
  *
@@ -55,6 +55,8 @@
     "a.hire i{width:9px;height:9px;border:2px solid var(--gold);border-radius:50%;box-sizing:border-box}",
     "a.hire:focus-visible,.mark:focus-visible{outline:2px solid var(--gold);outline-offset:2px}",
     ".foot{color:var(--dim);font-size:11px}",
+    ".stars{display:flex;align-items:center;gap:8px;color:var(--dim);font-size:12px}",
+    ".stars span,.stars svg{display:block;flex:none}",
   ].join("");
 
   function el(tag, cls, text) {
@@ -66,6 +68,22 @@
   function eth(n) {
     if (typeof n !== "number" || !isFinite(n)) return "0";
     return n >= 0.01 ? n.toFixed(4).replace(/0+$/, "").replace(/\.$/, "") : String(+n.toPrecision(3));
+  }
+  // five stars drawn as paths, filled to the nearest half: never a character, so they look the same everywhere
+  var STAR = "M12 2.6l2.82 5.92 6.48.78-4.76 4.46 1.22 6.42L12 17.02l-5.76 3.16 1.22-6.42-4.76-4.46 6.48-.78z";
+  var HALF = "M12 2.6L12 17.02l-5.76 3.16 1.22-6.42-4.76-4.46 6.48-.78z";
+  // drawn from these constants and numbers alone (never from an answer's text), so the markup is the script's own
+  function stars(average) {
+    var halves = Math.round(average * 2);
+    var paths = "";
+    for (var i = 0; i < 5; i++) {
+      var at = ' transform="translate(' + i * 28 + ' 0)"';
+      paths += '<path d="' + STAR + '"' + at + ' fill="' + (halves >= 2 * (i + 1) ? "var(--gold)" : "none") + '" stroke="' + (halves > 2 * i ? "var(--gold)" : "var(--dim)") + '" stroke-width="1.4" stroke-linejoin="round"></path>';
+      if (halves === 2 * i + 1) paths += '<path d="' + HALF + '"' + at + ' fill="var(--gold)"></path>';
+    }
+    var span = el("span");
+    span.innerHTML = '<svg width="74" height="13" viewBox="0 0 136 24" aria-hidden="true" focusable="false">' + paths + "</svg>";
+    return span;
   }
   function themeOf(host) {
     var t = host.getAttribute("data-factor-theme");
@@ -113,6 +131,14 @@
       if (a.record.onTime) facts.appendChild(el("span", "", Math.round((100 * a.record.onTime) / Math.max(1, a.record.onTime + a.record.late)) + "% on time"));
       if (a.score.barred) facts.appendChild(el("span", "warn", "barred from the pool"));
       s.appendChild(facts);
+      // its paid reviews, when it has any that count: reviews only the wallet that paid for a job can write
+      var rv = a.reviews;
+      if (rv && typeof rv.average === "number" && rv.count > 0) {
+        var line = el("div", "stars");
+        line.appendChild(stars(rv.average));
+        line.appendChild(el("span", "", rv.average.toFixed(1) + " from " + rv.count + " paid review" + (rv.count === 1 ? "" : "s")));
+        s.appendChild(line);
+      }
       box.appendChild(s);
     }
 

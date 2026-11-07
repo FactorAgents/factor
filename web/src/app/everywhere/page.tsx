@@ -37,6 +37,7 @@ const ANSWER = [
   "  record:    { settled, settledAtHalf, refunded, ... },",
   "  line:      { status, limitEth, *headroomEth* } | null,",
   "  guarantee: { selling, *upToEth*, sharePct, ... } | null,",
+  "  reviews:   { *average*, count, notCounted, recent },",
   "  hire:      \"https://factoragents.fun/hire?agent=...\" }",
 ];
 const VERIFY = [

@@ -385,6 +385,8 @@ export interface ConnectDeps {
   jobOf: (job: number) => JobRow | null;
   /** the cover a job was hired with, while guarantees are read */
   coverOf?: (job: number) => { amount: string } | null;
+  /** where the customer of a paid job leaves its review and until when, while paid reviews are on (./reviews.ts) */
+  reviewOf?: (job: JobRow) => { page: string; until: string | null; stars: number | null } | null;
   /** whether new jobs are paused (the owner's "hiring" switch): a ticket is not made while they are */
   paused?: () => string | null;
   /** sends a webhook; the tests hand in their own */
@@ -571,6 +573,8 @@ export class Connect {
           // paid: by the customer's accept within its 24 hours, or by the desk's settle after them
           ...(job.state === STATE.settled ? { accepted: job.closed_at < job.delivered_at + 86_400 } : {}),
         },
+        // once it is paid: where its customer reviews it, and until when (paid reviews, ./reviews.ts)
+        ...((rv) => (rv ? { review: rv } : {}))(job.state === STATE.settled || job.state === STATE.half ? this.d.reviewOf?.(job) ?? null : null),
       } : {}),
     });
   }

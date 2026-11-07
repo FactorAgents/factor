@@ -18,11 +18,12 @@ import { hireWithCover, sendGuarantee } from "./guarantees";
 import { postedBounty, sendBounty, sendTask } from "./bounties";
 import { postedPlan, sendMilestones, sendTerms } from "./milestones";
 import { signText, type Provider } from "./wallet";
+import { reviewText, reviewTyped, signTyped } from "./reviews";
 
 export interface PreparedCall { to: string; contract: "desk" | "guarantee" | "bounty" | "milestones"; fn: string; data: Hex; value: string; does: string }
 export interface Prepared {
   id: string;
-  kind: "hire" | "hire_cover" | "accept" | "accept_stage" | "bounty" | "milestones" | "back";
+  kind: "hire" | "hire_cover" | "accept" | "accept_stage" | "bounty" | "milestones" | "back" | "review";
   title: string;
   lines: [string, string][];
   calls: PreparedCall[];
@@ -33,6 +34,8 @@ export interface Prepared {
   chainId: number;
   expiresAt: string;
   checked: string[];
+  /** a paid review to sign (kind "review"): no call and no money, an EIP-712 signature made with the time it is signed at */
+  review?: { job: number; agent: string; stars: number; text: string };
 }
 export interface Reply {
   text: string;
@@ -52,7 +55,7 @@ const ABIS: Record<PreparedCall["contract"], Abi> = { desk: factorDeskAbi as Abi
 const ALLOWED: Record<PreparedCall["contract"], string[]> = { desk: ["lock", "accept"], guarantee: ["reserve", "addBond"], bounty: ["post"], milestones: ["post", "accept"] };
 const KIND_CALLS: Record<Prepared["kind"], string[]> = {
   hire: ["desk.lock"], hire_cover: ["guarantee.reserve", "desk.lock"], accept: ["desk.accept"], accept_stage: ["milestones.accept"],
-  bounty: ["bounty.post"], milestones: ["milestones.post"], back: ["guarantee.addBond"],
+  bounty: ["bounty.post"], milestones: ["milestones.post"], back: ["guarantee.addBond"], review: [],
 };
 const weiOf = (eth: string): bigint => { const [w, f = ""] = eth.split("."); return BigInt(w || "0") * 10n ** 18n + BigInt(f.padEnd(18, "0").slice(0, 18)); };
 export const ethFull = (wei: bigint): string => { const w = wei / 10n ** 18n; const f = (wei % 10n ** 18n).toString().padStart(18, "0").slice(0, 8).replace(/0+$/, ""); return f ? `${w}.${f}` : `${w}`; };
@@ -64,6 +67,17 @@ export function check(p: Prepared, known: Known, now = Date.now()): Checked {
   const no = (why: string): never => { throw new Refusal(`Not signed: ${why}. Ask Copilot to prepare it again.`); };
   if (Date.parse(p.expiresAt) < now) no("the card is older than 15 minutes");
   if (p.chainId !== CHAIN.id) no("it is not for Robinhood Chain");
+  // a review moves nothing: no call, no ETH; the job, the agent, the stars and the plain words are all it holds
+  if (p.kind === "review") {
+    const r = p.review;
+    if (!r || p.calls.length || p.totalWei !== "0") no("a review sends no transaction and no ETH");
+    if (!known.desk) no("nothing is live yet");
+    if (!Number.isInteger(r!.job) || r!.job < 1 || r!.job !== p.job) no("its job is not the one on the card");
+    if (!p.agent || r!.agent.toLowerCase() !== p.agent.address.toLowerCase()) no("its agent is not the one on the card");
+    if (!Number.isInteger(r!.stars) || r!.stars < 1 || r!.stars > 5) no("its stars are not 1 to 5");
+    if (reviewText(r!.text) !== r!.text) no("its words are not plain text");
+    return { calls: [], total: 0n, said: `Checked in your browser: a review of job ${String(r!.job).padStart(4, "0")} for ${p.agent!.name}, ${r!.stars} of 5, no transaction and no ETH.` };
+  }
   const shape = p.calls.map((c) => `${c.contract}.${c.fn}`).join(",");
   if (shape !== KIND_CALLS[p.kind]?.join(",")) no("its calls are not the ones this kind of card makes");
   let total = 0n;
@@ -98,6 +112,17 @@ export interface Signed { note: string; hash: string; job: number | null; href?:
 export async function sign(p: Prepared, known: Known, w: { provider: Provider; address: string; passkey: boolean; engineNow: () => Promise<number>; save: (path: "jobs/brief", body: Record<string, unknown>, patient: boolean) => Promise<void> }, on: (s: Step) => void): Promise<Signed> {
   const c = check(p, known);
   const from = w.address;
+  if (p.kind === "review") {
+    const r = p.review!;
+    on("signing");
+    const at = await w.engineNow();
+    const signature = await signTyped(w.provider, from, reviewTyped({ desk: known.desk!, job: r.job, agent: r.agent, reviewer: from, stars: r.stars, text: r.text, at }));
+    on("saving");
+    const res = await fetch("/api/v1/reviews", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ job: r.job, stars: r.stars, text: r.text, at, reviewer: from, signature }) });
+    if (!res.ok) { const said = ((await res.json().catch(() => ({}))) as { error?: string }).error ?? "It could not be saved."; throw new Refusal(said.charAt(0).toUpperCase() + said.slice(1) + (said.endsWith(".") ? "" : ".")); }
+    const id = String(r.job).padStart(4, "0");
+    return { note: `Signed. Your review of job ${id} is on its page and on ${p.agent?.name ?? "the agent"}'s.`, hash: "", job: null, href: `/jobs/${id}#review` };
+  }
   const first = c.calls[0]!;
   const brief = async (job: number): Promise<string> => {
     if (!p.after?.brief) return "";

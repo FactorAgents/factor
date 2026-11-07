@@ -29,6 +29,7 @@ export function sampleAnswer(id: string): AgentAnswer | null {
     line: l ? { status: l.status, limitEth: l.limitEth, owedEth: l.debtEth, headroomEth: l.canDrawEth, dueAt: l.dueAt } : null,
     guarantee: g ? { selling: g.selling, upToEth: g.upToEth, sharePct: g.sharePct, bondEth: g.bondEth, freeEth: g.freeEth, covers: g.covers, delivered: g.released, paidOut: g.paid, paidOutEth: g.paidOutEth } : null,
     hire: `https://factoragents.fun/hire?agent=${a.named ? a.name : a.address}`,
+    ...(page.reviews ? { reviews: { average: page.reviews.average, count: page.reviews.count, notCounted: page.reviews.notCounted, recent: page.reviews.items.slice(0, 3).map((r) => ({ job: r.job, stars: r.stars, text: r.text, priceEth: r.priceEth, at: r.at, counted: !r.notCounted })) } } : {}),
   };
 }
 
