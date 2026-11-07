@@ -9,6 +9,8 @@ import { CoverBlock } from "@/components/Guarantee";
 import { ComputeSpent } from "@/components/ComputeSpent";
 import Chain, { namesFrom } from "@/components/Chain";
 import { Reveal } from "@/components/Motion";
+import { ReviewItem } from "@/components/Reviews";
+import { JobReviewActions } from "@/components/ReviewActions";
 import { ADVANCE_WORD, addressHref, agentHref, dayTime, short, txHref } from "@/lib/format";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> { return { title: `Job ${(await params).id}` }; }
@@ -17,7 +19,9 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   const [s, got] = await Promise.all([getState(), getJob((await params).id)]);
   if (got === "down") return <section className="wrap page-head"><Link className="more quiet back" href="/ledger">← The ledger</Link><h1 className="h1">This job&apos;s page is not arriving right now.</h1><p className="lead">The job is on the chain and is not lost. Try again in a moment.</p></section>;
   if (!got) notFound();
-  const { job: j, agent: a, events, brief, work, note, briefBy, tree, hiring, firmNote, cover, raetoSpend } = got;
+  const { job: j, agent: a, events, brief, work, note, briefBy, tree, hiring, firmNote, cover, raetoSpend, review, reviewing } = got;
+  // its paid review: once it is paid, and only for a job somebody may review (never a demonstration)
+  const reviewable = !!s.reviews?.enabled && !!reviewing?.reviewer && (j.state === "settled" || j.state === "half");
   const names = namesFrom(s.agents);
   const burnPct = s.pay?.enabled ? s.pay.burnBps / 100 : 0;
   const ex = s.contracts.explorer;
@@ -61,6 +65,13 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             {plan && s.milestones ? <StageTracker plan={plan} job={j.n} about={s.milestones} explorer={ex} now={s.asOf} /> : null}
             {raetoSpend ? <ComputeSpent spend={raetoSpend} from="this job's compute credit" /> : null}
             {cover && s.guarantees?.enabled ? <div id="cover" style={{ scrollMarginTop: 96 }}><CoverBlock cover={cover} job={j.n} about={s.guarantees} explorer={ex} now={s.asOf} /></div> : null}
+            {reviewable ? (
+              <div id="review" className="job-review" style={{ scrollMarginTop: 96 }}>
+                <span className="label">The customer&apos;s review</span>
+                {review ? <ReviewItem r={review} explorer={ex} agentName={a?.name ?? short(j.agentId)} onJob /> : <p className="small" style={{ marginTop: 14 }}>{reviewing!.open ? `No review yet. The wallet that paid for this job can leave one until ${dayTime(reviewing!.until!)}: stars and a few words, signed in that wallet.` : "No review was left in the 30 days after it was paid."}</p>}
+                {deskOf(s) ? <div className="acts"><JobReviewActions job={j.n} jobId={j.id} agent={j.agentId} agentName={a?.name ?? short(j.agentId)} desk={deskOf(s)!} explorer={ex} review={review ?? null} standing={reviewing!} /></div> : null}
+              </div>
+            ) : null}
             <JobActions job={j} agentName={a?.name ?? short(j.agentId)} desk={deskOf(s)} explorer={ex} params={s.params} now={s.asOf} compute={s.compute.enabled} hasBrief={!!brief} briefHint={a?.service?.needs ?? ""} hiring={hiring ?? null} agents={s.agents.filter((x) => x.named).map((x) => ({ name: x.name, address: x.address }))} burnPot={s.contracts.burnPot} burnPct={burnPct} />
           </Reveal>
         </div>

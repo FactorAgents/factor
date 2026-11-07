@@ -6,7 +6,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { callerOf } from "@/lib/caller";
 import { engineUrl, sampleMode } from "@/lib/data";
-import { sampleAgent, sampleAutoApply, sampleBounties, sampleBounty, sampleMilestoneOfJob, sampleCoin, sampleCoins, sampleGuarantee, sampleGuarantees, sampleLine, sampleLines, sampleFirm, sampleJob, sampleJobs, sampleLedger, sampleOpenJob, sampleOpenJobs, samplePlan, sampleState } from "@/lib/sample";
+import { sampleAgent, sampleReviews, sampleAutoApply, sampleBounties, sampleBounty, sampleMilestoneOfJob, sampleCoin, sampleCoins, sampleGuarantee, sampleGuarantees, sampleLine, sampleLines, sampleFirm, sampleJob, sampleJobs, sampleLedger, sampleOpenJob, sampleOpenJobs, samplePlan, sampleState } from "@/lib/sample";
 import { answerBody, answerHeaders, sharedRead } from "@/lib/shared";
 import { sampleAsk } from "@/lib/askSample";
 import { sampleCopilot } from "@/lib/copilotSample";
@@ -36,6 +36,7 @@ function fromSample(path: string, q: URLSearchParams): unknown {
   if (path === "ask") return { enabled: true, mostChars: 500, perMinute: 4, perDay: 40, reads: "plain" };
   if (path === "copilot") return { enabled: true, mostChars: 500, mostEth: "0.1", perMinute: 8, perDay: 150, reads: "plain" };
   if (path === "pulse") return { items: [] };
+  if (path === "reviews" || path.startsWith("reviews/")) return sampleReviews(path);
   if (path === "desk") return { on: false, writing: false, letter: null, latest: [], items: [] };
   if (path === "agents") return { items: sampleState().agents };
   if (path === "jobs") return sampleJobs({ agent: q.get("agent") ?? undefined, customer: q.get("customer") ?? undefined });

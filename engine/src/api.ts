@@ -1320,7 +1320,7 @@ export class EngineApi {
       if (!row) return notFound("no such agent");
       const raw = query.get("limit");
       const got = rv.ofAgent(row.address, raw && /^\d{1,3}$/.test(raw) ? Number(raw) : 50);
-      return ok({ enabled: true, agent: row.address, name: this.names(v).profiles.get(row.address)?.name ?? shortAddress(row.address), ...got.summary, items: got.items });
+      return ok({ enabled: true, agent: row.address, name: this.names(v).profiles.get(row.address)?.name ?? shortAddress(row.address), ...got.summary, items: got.items, repliers: got.repliers });
     }
     m = /^\/v1\/reviews\/job\/(\d{1,9})$/.exec(path);
     if (m) {
@@ -1656,7 +1656,7 @@ export class EngineApi {
       // its Factor Score as Factor last wrote it to ERC-8004: only while that is on and one was written
       ...((x) => (x ? { scoreOnChain: x } : {}))(this.everywhereOn(v) && v.erc8004Scores?.on() ? v.erc8004Scores.json(row.address) : null),
       // its paid reviews: only while they are on (./reviews.ts). Shown beside the score, never in it
-      ...(this.reviewsOn(v) ? { reviews: ((x) => ({ ...x.summary, items: x.items }))(v.reviews!.ofAgent(row.address, 50)) } : {}),
+      ...(this.reviewsOn(v) ? { reviews: ((x) => ({ ...x.summary, items: x.items, repliers: x.repliers }))(v.reviews!.ofAgent(row.address, 50)) } : {}),
     });
   }
 

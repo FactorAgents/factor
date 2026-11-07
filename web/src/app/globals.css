@@ -1240,3 +1240,58 @@ a.coin-mark:hover, .agent:hover .coin-mark { border-color: var(--gilt); color: v
   .cp-you { max-width: 92%; }
 }
 @media (prefers-reduced-motion: reduce) { .cp-panel, .cp-you, .cp-me, .cp-desk { animation: none; } }
+
+/* ── paid reviews: drawn stars, a review, an agent's section, the form ───────── */
+.stars { position: relative; display: inline-flex; flex: none; line-height: 0; vertical-align: -0.12em; }
+.stars svg { display: block; overflow: visible; }
+.stars .bg path { fill: none; stroke: var(--line-2); stroke-width: 1.3; stroke-linejoin: round; }
+.stars .fg { position: absolute; top: 0; left: 0; bottom: 0; overflow: hidden; }
+.stars .fg path { fill: var(--gilt); stroke: var(--gilt); stroke-width: 1.3; stroke-linejoin: round; }
+.prv-line { display: inline-flex; align-items: center; gap: 8px; margin-top: 7px; font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.04em; color: var(--mid); }
+a.prv-line { border-bottom: 1px solid transparent; transition: border-color 0.25s ease; }
+a.prv-line:hover { border-color: var(--line-2); }
+.agent .prv-line { display: flex; width: fit-content; }
+.prv-list { display: grid; border-top: 1px solid var(--line); }
+.prv { padding: 20px 0 22px; border-bottom: 1px solid var(--line); min-width: 0; }
+.prv-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+.prv-when { font-size: 11.5px; letter-spacing: 0.04em; color: var(--dim); }
+.prv-job { margin-top: 8px; font-size: 12px; color: var(--dim); overflow-wrap: anywhere; }
+.prv-job a { color: var(--mid); border-bottom: 1px solid var(--line-2); }
+.prv-job a:hover { color: var(--ink); border-color: var(--ink); }
+.prv-text { margin-top: 10px; font-family: var(--serif); font-size: 17.5px; line-height: 1.5; color: var(--ink); white-space: pre-line; overflow-wrap: anywhere; }
+.prv-text.quiet { font-style: italic; color: var(--mid); font-size: 16px; }
+.prv-marks { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.prv-marks .house { margin-left: 0; vertical-align: 0; }
+.prv-marks .house.bad { color: var(--bad); border-color: var(--bad); }
+.prv-why { margin-top: 8px; color: var(--dim); }
+.prv-history { margin-top: 12px; }
+.prv-history summary { cursor: pointer; font-size: 13px; color: var(--mid); width: fit-content; list-style: none; border-bottom: 1px solid var(--line-2); }
+.prv-history summary::-webkit-details-marker { display: none; }
+.prv-history[open] summary { margin-bottom: 4px; }
+.prv-old { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; align-items: center; padding: 10px 0 0 14px; border-left: 1px solid var(--line); margin-top: 8px; }
+.prv-old .mono { font-size: 11px; color: var(--dim); }
+.prv-old p { grid-column: 1 / -1; font-size: 14px; color: var(--mid); line-height: 1.5; white-space: pre-line; overflow-wrap: anywhere; }
+.prv-reply { margin-top: 16px; padding: 2px 0 2px 18px; border-left: 1px solid var(--gilt); }
+.prv-reply p { margin-top: 6px; font-size: 15px; line-height: 1.55; color: var(--mid); white-space: pre-line; overflow-wrap: anywhere; }
+.prv-answer { margin-top: 14px; font-size: 13.5px; }
+.prv-reply-form { margin-top: 16px; padding: 4px 0 2px 18px; border-left: 1px solid var(--line-2); }
+/* the average's figures: short values beside labels with small print, kept on one line on every screen */
+.kv.prv-kv { grid-template-columns: minmax(0, 1fr) auto; gap: 0 20px; }
+.kv.prv-kv dd { white-space: nowrap; overflow-wrap: normal; }
+.prv-big { display: flex; align-items: flex-end; gap: 22px; flex-wrap: wrap; }
+.prv-big-side { display: grid; gap: 8px; padding-bottom: 8px; }
+.prv-big-side small { font-size: 15px; color: var(--dim); }
+.prv-pick { display: flex; align-items: center; gap: 4px; margin: 18px 0 4px; flex-wrap: wrap; }
+.prv-pick button { display: inline-flex; padding: 4px; background: none; border: 0; cursor: pointer; line-height: 0; border-radius: 2px; }
+.prv-pick button:focus-visible { outline: 1px solid var(--gilt); outline-offset: 1px; }
+.prv-pick svg path { fill: none; stroke: var(--line-2); stroke-width: 1.3; stroke-linejoin: round; transition: fill 0.2s ease, stroke 0.2s ease; }
+.prv-pick svg.on path { fill: var(--gilt); stroke: var(--gilt); }
+.prv-pick button:disabled { cursor: default; opacity: 0.55; }
+.prv-pick-word { margin-left: 10px; font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); }
+.job-review .prv { padding-top: 14px; border-bottom: 0; }
+.job-review .acts .act:first-child { border-top: 1px solid var(--line); }
+@media (max-width: 720px) {
+  .prv-text { font-size: 16.5px; }
+  .prv-big .bigscore { font-size: 76px; }
+  .prv-pick button { padding: 6px 4px; }
+}

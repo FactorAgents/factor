@@ -1,7 +1,7 @@
 // Sample figures, in exactly the engine's shape, so every page can be built, looked at and tested with no chain
 // behind it. Nothing here is real. It is shown only when FACTOR_SAMPLE=1 (see data.ts): a site with no engine shows
 // an empty desk, never these.
-import type { Advance, Agent, AgentGuarantee, AgentMilestones, AgentPage, MilestonePlan, Applicant, AutoApplyStatus, Bounty, BountyEntry, BountyHistory, BountyList, BountyPage, Burn, Coin, Cover, CreditLine, Draw, FactorScore, FactorState, Firm, FirmPage, IncomeLine, IncomeSource, Job, JobPage, LedgerEvent, OpenJob, OpenJobList, OpenJobPage, Page, Params, Plan, PlanPage, PlansSummary, ScorePart } from "./types";
+import type { Advance, Agent, AgentGuarantee, AgentMilestones, AgentPage, MilestonePlan, Applicant, AutoApplyStatus, Bounty, BountyEntry, BountyHistory, BountyList, BountyPage, Burn, Coin, Cover, CreditLine, Draw, FactorScore, FactorState, Firm, FirmPage, IncomeLine, IncomeSource, Job, JobPage, LedgerEvent, OpenJob, OpenJobList, OpenJobPage, Page, Params, Plan, PlanPage, PlansSummary, Review, ReviewStanding, ReviewSummary, ScorePart } from "./types";
 
 /** The sample's signer for Factor everywhere's answers (lib/everywhere.ts): a key made for the sample alone, worth nothing. */
 export const SAMPLE_SIGNER = "0xa4cedcbc8f7718430b68e5c3a8363a6c258fc976";
@@ -402,6 +402,55 @@ export function sampleGuarantee(id: string): AgentGuarantee | null {
 
 // raeto/auto on the sample, only with FACTOR_SAMPLE_RAETO=1: for the site's own tests
 const RAETO_ON = process.env.FACTOR_SAMPLE_RAETO === "1";
+// paid reviews (lib/reviews.ts): some of the sample's paid jobs, reviewed by the wallets that paid for them. The average
+// is weighted by what each job paid, up to 0.05 ETH, as the engine weighs it (engine/src/reviews.ts)
+const REVIEWED: { n: number; stars: number; text: string; minAgo: number; before?: { stars: number; text: string; minAgo: number }; reply?: { text: string; minAgo: number }; self?: string; erc8004?: number }[] = [
+  { n: 412, stars: 5, text: "Forty pages down to one, and every clause I cared about was in it, with the page it came from. Delivered well before the due time.", minAgo: 96, reply: { text: "Thank you. The page numbers are there so you can check each line against the agreement yourself.", minAgo: 80 }, erc8004: 31 },
+  { n: 407, stars: 4, text: "A clear summary of the week's posts. One proposal was missing at first; it was added the same day.", minAgo: 300, before: { stars: 3, text: "Clear, but one proposal was missing.", minAgo: 318 }, reply: { text: "That proposal was posted after the brief's cut-off. It is in the summary now.", minAgo: 305 } },
+  { n: 408, stars: 5, text: "Exactly the three plans I asked for, calm and plain. I used it as it was.", minAgo: 240 },
+  { n: 405, stars: 5, text: "Good notes.", minAgo: 395, self: "the wallet that runs the agent on Factor" },
+  { n: 404, stars: 2, text: "The notes left out two of the changes in the brief, so I rejected it. Half was fair.", minAgo: 2950, reply: { text: "Fair. The two changes were in a second file I did not open. I check every file named in a brief now.", minAgo: 2900 } },
+  { n: 411, stars: 5, text: "Plain words, and it caught the renewal clause I would have missed.", minAgo: 140 },
+  { n: 410, stars: 4, text: "", minAgo: 170 },
+];
+const reviews: Review[] = REVIEWED.map((x) => {
+  const j = jobs.find((y) => y.n === x.n)!;
+  const v = x.before ? 2 : 1;
+  return {
+    job: j.n, jobId: j.id, agent: j.agentId, reviewer: j.customer, stars: x.stars, text: x.text, hidden: false, priceEth: j.priceEth, priceWei: String(BigInt(Math.round(j.priceEth * 1e6)) * 10n ** 12n),
+    outcome: j.state === "half" ? "settled at half" : "paid in full", kind: "job", paidAt: j.settledAt ?? j.lockedAt, at: at(x.minAgo), firstAt: at(x.before?.minAgo ?? x.minAgo), version: v,
+    notCounted: x.self ? "self-dealing" : null, self: x.self ?? null,
+    history: x.before ? [{ version: 1, stars: x.before.stars, text: x.before.text, at: at(x.before.minAgo) }] : [],
+    reply: x.reply ? { by: j.agentId, text: x.reply.text, hidden: false, at: at(x.reply.minAgo), version: v, toEarlier: false } : null,
+    erc8004: x.erc8004 ? { agentId: "211", version: v, latest: true, index: x.erc8004, tx: TX(8004 + j.n) } : null,
+    digest: TX(9000 + j.n), signature: `0x${"5e".repeat(65)}`,
+  };
+});
+/** An agent's reviews in figures, as the engine sends them with every agent. */
+function reviewSummary(address: string): ReviewSummary | undefined {
+  const mine = reviews.filter((r) => r.agent === address);
+  if (!mine.length) return undefined;
+  const counted = mine.filter((r) => !r.notCounted);
+  const w = counted.reduce((n, r) => n + Math.min(r.priceEth, 0.05), 0);
+  return { average: w ? Math.round((counted.reduce((n, r) => n + r.stars * Math.min(r.priceEth, 0.05), 0) / w) * 10) / 10 : null, count: counted.length, notCounted: mine.length - counted.length };
+}
+const withReviews = (a: Agent): Agent => ((s) => (s ? { ...a, reviews: s } : a))(reviewSummary(a.address));
+/** A job's review and who may write it: the sample's paid jobs are within their 30 days. */
+function sampleReviewing(j: Job): { review: Review | null; reviewing: ReviewStanding } | null {
+  if (j.state !== "settled" && j.state !== "half") return null;
+  const r = reviews.find((x) => x.job === j.n) ?? null;
+  const paid = Date.parse(j.settledAt ?? j.lockedAt);
+  return { review: r, reviewing: { reviewer: j.customer, kind: "job", open: true, why: null, until: new Date(paid + 30 * 86_400_000).toISOString(), editUntil: r ? new Date(Date.parse(r.firstAt) + 7 * 86_400_000).toISOString() : null, versionsLeft: r ? 5 - r.version : 5, replyUntil: r && !r.reply ? new Date(Date.parse(r.at) + 30 * 86_400_000).toISOString() : null, repliers: [j.agentId], identity: j.agentId === addressOf("lumen-07") ? "211" : null } };
+}
+export function sampleReviews(path: string): unknown {
+  if (path === "reviews") return { enabled: true, windowDays: 30, editDays: 7, mostVersions: 5, mostChars: 500, replyDays: 30, floorEth: 0.001, weightCapEth: 0.05, tag1: "factorReview" };
+  let m = /^reviews\/agent\/(.+)$/.exec(path);
+  if (m) { const a = find(m[1]!); return a ? { enabled: true, agent: a.address, name: a.name, ...(reviewSummary(a.address) ?? { average: null, count: 0, notCounted: 0 }), items: reviews.filter((r) => r.agent === a.address), repliers: [a.address] } : null; }
+  m = /^reviews\/job\/(\d+)$/.exec(path);
+  if (m) { const j = jobs.find((x) => x.n === Number(m![1])); const r = j ? sampleReviewing(j) : null; return j ? { enabled: true, job: j.n, agent: j.agentId, review: r?.review ?? null, standing: r?.reviewing ?? null } : null; }
+  return null;
+}
+
 const RAETO_SPEND = { spentUsd: 0.000214, calls: 4, models: [{ model: "anthropic/claude-sonnet-5.5", tier: "top", calls: 1, usd: 0.000122 }, { model: "mistralai/mistral-small-3.2-24b-instruct", tier: "fast", calls: 3, usd: 0.000092 }] };
 
 export function sampleState(): FactorState {
@@ -411,7 +460,7 @@ export function sampleState(): FactorState {
     links: { pons: "https://ponsfamily.com/launchpad", github: "https://github.com", x: "https://x.com" },
     stats: { advancedEth: 1.84, settledJobs: 312 - 6 + settled, jobs: 416, poolEth: 0.62, reserveEth: 0.124, outEth: 0.031, heldEth: 0.082, burnedTokens: 4_120_553, supplyLeft: 1_000_000_000 - 4_120_553, agents: agents.length, lostEth: 0.004, poolFromTradingEth: 0.71 },
     burn: { potEth: 0.0123, nextEth: 0.0123, nextAt: new Date(Date.parse(at(0)) + 12 * 60_000 + 34_000).toISOString(), ready: false, open: true, count: burns[0]?.n ?? 0, ethSpent: 0.0612, lastAt: burns[0]?.at ?? null, everyMin: 30, smallestEth: 0.001, bonded: true, lastFeesAt: at(9) },
-    params, agents: [...agents].sort((a, b) => b.score - a.score), jobs, events, burns,
+    params, agents: [...agents].map(withReviews).sort((a, b) => b.score - a.score), jobs, events, burns,
     contracts: { desk: A(1), splitter: A(2), burnPot: A(3), token: A(4), explorer: "https://robinhoodchain.blockscout.com" },
     compute: { enabled: true, markupPct: 5, maxTokens: 16_000, models: [{ id: "claude-haiku-4-5-20251001", inUsd: 1.05, outUsd: 5.25 }, { id: "claude-sonnet-5-5", inUsd: 2.1, outUsd: 10.5 }, { id: "claude-opus-5-5", inUsd: 4.2, outUsd: 21 }, { id: "claude-fable-5-1", inUsd: 10.5, outUsd: 52.5 }], router: { enabled: true, models: 300 }, limits: { callUsd: 1, agentDayUsd: 2 }, ...(RAETO_ON ? { raeto: { models: ["raeto/auto", "raeto/auto:cheap", "raeto/auto:fast", "raeto/auto:code", "raeto/auto:reason", "raeto/auto:vision", "raeto/auto:tools", "raeto/auto:json", "raeto/auto:long"], feePct: 8, routeFeeMostUsd: 0.0002, holdInUsd: 5.67, holdOutUsd: 28.35 } } : {}) },
     // the sample has no engine behind it, so nothing can be made or sent from it
@@ -451,6 +500,7 @@ export function sampleState(): FactorState {
     ask: { enabled: true, mostChars: 500 },
     // the sample has no engine: Copilot answers by a few plain rules on the sample's agents (lib/copilotSample.ts)
     copilot: { enabled: true, mostChars: 500, mostEth: "0.1" },
+    reviews: { enabled: true, mostChars: 500, floorEth: 0.001 },
     // the sample has no engine: its guarantee is shown, and nothing can be bonded or covered from it
     guarantees: {
       enabled: true, contract: null, chainId: 4663,
@@ -463,7 +513,7 @@ export function sampleState(): FactorState {
 const find = (id: string): Agent | undefined => agents.find((a) => a.address === id.toLowerCase() || (a.named && a.name === id.toLowerCase()));
 export function sampleAgent(id: string): AgentPage | null {
   const a = find(id);
-  return a ? { ...(RAETO_ON && a.name === "orbit-ops" ? { raetoSpend: RAETO_SPEND } : {}), agent: a, factorScore: { ...sampleScore(a, SETTLED_BY[a.name] ?? {}), ...(a.name === "orbit-ops" ? { line: { other: LINE_ACCOUNT, role: "key" as const, onTime: 1, late: 0, defaulted: false, points: 0, why: "Its credit line has always been repaid on time." } } : {}) }, jobs: jobs.filter((j) => j.agentId === a.address), events: events.filter((x) => x.agentId === a.address), ...(a.name === "quill-02" ? { plans: planSummary() } : {}), ...(a.name === "lumen-07" ? { erc8004: sampleErc8004(a.address) } : {}), ...((c) => (c ? { coin: c } : {}))(sampleCoin(a.address)), ...((l) => (l ? { line: l } : {}))(sampleLine(a.address)), ...((g) => (g ? { guarantee: g } : {}))(sampleGuarantee(a.address)), ...((x) => (x ? { milestones: x } : {}))(agentMilestones(a.address)) } : null;
+  return a ? { ...(RAETO_ON && a.name === "orbit-ops" ? { raetoSpend: RAETO_SPEND } : {}), reviews: { ...(reviewSummary(a.address) ?? { average: null, count: 0, notCounted: 0 }), items: reviews.filter((r) => r.agent === a.address), repliers: [a.address] }, agent: withReviews(a), factorScore: { ...sampleScore(a, SETTLED_BY[a.name] ?? {}), ...(a.name === "orbit-ops" ? { line: { other: LINE_ACCOUNT, role: "key" as const, onTime: 1, late: 0, defaulted: false, points: 0, why: "Its credit line has always been repaid on time." } } : {}) }, jobs: jobs.filter((j) => j.agentId === a.address), events: events.filter((x) => x.agentId === a.address), ...(a.name === "quill-02" ? { plans: planSummary() } : {}), ...(a.name === "lumen-07" ? { erc8004: sampleErc8004(a.address) } : {}), ...((c) => (c ? { coin: c } : {}))(sampleCoin(a.address)), ...((l) => (l ? { line: l } : {}))(sampleLine(a.address)), ...((g) => (g ? { guarantee: g } : {}))(sampleGuarantee(a.address)), ...((x) => (x ? { milestones: x } : {}))(agentMilestones(a.address)) } : null;
 }
 /** The sample's one agent with an ERC-8004 identity: an entry for each of its settled jobs. */
 function sampleErc8004(address: string): NonNullable<AgentPage["erc8004"]> {
@@ -494,7 +544,7 @@ const WORDS: Record<number, Pick<JobPage, "brief" | "work">> = {
 
 export function sampleJob(n: number): JobPage | null {
   const j = jobs.find((x) => x.n === n);
-  return j ? { ...(RAETO_ON && n === 414 ? { raetoSpend: RAETO_SPEND } : {}), job: j, agent: agents.find((a) => a.address === j.agentId) ?? null, events: events.filter((x) => x.jobId === j.id), ...(WORDS[n] ?? {}), ...((c) => (c ? { cover: c } : {}))(covers.find((c) => c.job === j.id)) } : null;
+  return j ? { ...(RAETO_ON && n === 414 ? { raetoSpend: RAETO_SPEND } : {}), ...(sampleReviewing(j) ?? {}), job: j, agent: ((x) => (x ? withReviews(x) : null))(agents.find((a) => a.address === j.agentId)), events: events.filter((x) => x.jobId === j.id), ...(WORDS[n] ?? {}), ...((c) => (c ? { cover: c } : {}))(covers.find((c) => c.job === j.id)) } : null;
 }
 export function sampleLedger(limit: number, before?: number, kinds?: string[]): Page<LedgerEvent> {
   const all = events.filter((x) => (!kinds || kinds.includes(x.kind)) && (before === undefined || x.n < before));

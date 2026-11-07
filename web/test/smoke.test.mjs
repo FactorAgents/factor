@@ -1105,3 +1105,37 @@ test("Factor Copilot: a button on every page, its own page in the Hire group, th
   assert.equal((await fetch(`${BARE}/api/v1/copilot`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "hello" }) })).status, 503);
   assert.doesNotMatch(text((await get("/docs", BARE)).html), /Plain words in, a card to sign out/);
 });
+
+test("paid reviews: the average under each agent in the list, the section on an agent's page, the review on a job's page, the stars drawn and never a character, and nothing of it with no engine", async () => {
+  const list = await get("/agents");
+  assert.match(text(list.html), /4\.6 from 2 paid reviews/);
+  const page = await get("/agents/lumen-07");
+  const t = text(page.html).replace(/<!-- -->/g, "");
+  assert.match(t, /What its customers say ?\./);
+  assert.match(t, /4\.6 from 2 paid reviews/);
+  assert.match(t, /Forty pages down to one/);
+  assert.match(t, /lumen-07 answered/);
+  assert.match(t, /Also on ERC-8004 · entry 31/);
+  assert.match(t, /The most one job weighs/);
+  assert.match(page.html, /href="\/jobs\/0412"/);
+  // a review left out of the average says so, and why
+  const quill = text((await get("/agents/quill-02")).html).replace(/<!-- -->/g, "");
+  assert.match(quill, /Self-dealing · not in the average/);
+  assert.match(quill, /Left out because the wallet that runs the agent on Factor/);
+  // the job's page: the review, its reply, and the version before it
+  const job = text((await get("/jobs/0407")).html).replace(/<!-- -->/g, "");
+  assert.match(job, /The customer's review/);
+  assert.match(job, /changed once/);
+  assert.match(job, /The version before/);
+  // a job not paid has no review block
+  assert.doesNotMatch(text((await get("/jobs/0414")).html), /The customer's review/);
+  // stars are drawn: no star, check or arrow character anywhere in what the pages send
+  for (const html of [list.html, page.html, (await get("/jobs/0412")).html]) assert.doesNotMatch(html, /[\u{2605}\u{2606}\u{2B50}\u{2705}\u{2714}\u{2197}\u{FE0F}]|[\u{1F300}-\u{1FAFF}]/u);
+  // the reads, as the site's door passes them
+  const a = await (await fetch(`${BASE}/api/v1/reviews/agent/lumen-07`)).json();
+  assert.equal(a.average, 4.6);
+  assert.equal(a.items.length, 2);
+  assert.equal((await fetch(`${BASE}/api/v1/reviews`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).status, 503);
+  // with no engine: nothing of reviews anywhere
+  for (const path of ["/agents", "/jobs/0412"]) assert.doesNotMatch(text((await get(path, BARE)).html), /paid review|customer's review/i, path);
+});

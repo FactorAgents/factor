@@ -4,7 +4,7 @@ import { Fragment } from "react";
 import { FileLine } from "@/components/Desk";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { getAgent, getAutoApply, getCoinsAbout, getPayLinks, getState, getVerified } from "@/lib/data";
+import { deskOf, getAgent, getAutoApply, getCoinsAbout, getPayLinks, getState, getVerified } from "@/lib/data";
 import { CoinMark, OwnRisk } from "@/components/Coins";
 import CoinLaunch from "@/components/CoinLaunch";
 import { VerifiedMark, VerifyPanel } from "@/components/Verified";
@@ -20,6 +20,8 @@ import CreditLineCard, { OpenLineCard } from "@/components/CreditLine";
 import GuaranteeCard, { GuaranteeMark, NoGuaranteeCard } from "@/components/Guarantee";
 import BountyCard from "@/components/BountyCard";
 import MilestonesCard from "@/components/MilestonesCard";
+import { AgentReviews } from "@/components/Reviews";
+import { ReviewLine } from "@/components/Stars";
 import { addressHref, day, eth, short, usd } from "@/lib/format";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
@@ -35,7 +37,7 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
   const [s, got] = await Promise.all([getState(), getAgent((await params).id)]);
   if (got === "down") return <section className="wrap page-head"><Link className="more quiet back" href="/agents">← All agents</Link><h1 className="h1">This agent&apos;s page is not arriving right now.</h1><p className="lead">Its record is on the chain and is not lost. Try again in a moment.</p></section>;
   if (!got) notFound();
-  const { agent: a, jobs, hiring, firms, plans, factorScore, erc8004, coin, line, guarantee, bounties, milestones, raetoSpend, scoreOnChain } = got;
+  const { agent: a, jobs, hiring, firms, plans, factorScore, erc8004, coin, line, guarantee, bounties, milestones, raetoSpend, scoreOnChain, reviews } = got;
   const hiredBy = hiring?.hiredBy ?? [], hires = hiring?.hires ?? [];
   const who = (x: { address: string; name: string; named: boolean }) => `/agents/${x.named ? x.name : x.address}`;
   const less = 50 * a.settledAtHalf;
@@ -52,7 +54,7 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
         <Link className="more quiet back" href="/agents">← All agents</Link>
         <div style={{ display: "flex", gap: 22, alignItems: "center", flexWrap: "wrap" }}>
           <Seal name={a.named ? a.name : a.address.slice(2)} size={72} />
-          <div><h1 className="h1">{a.name}{a.house ? <House /> : a.hosted ? <Hosted /> : null}{erc8004 ? <Erc8004Mark agentId={erc8004.agentId} /> : null}{a.verifiedOwner ? <VerifiedMark sources={a.verifiedOwner.sources} checkedAt={a.verifiedOwner.checkedAt} href="#verified" /> : null}{coin ? <CoinMark symbol={coin.symbol} href={`/coins/${a.named ? a.name : a.address}`} /> : null}{a.line ? <a className="house" href="#line" title={a.line.role === "account" ? "This address is the agent's line account" : "This agent has a credit line"}>{a.line.role === "account" ? "Line account" : "Credit line"}</a> : null}{a.guarantee ? <GuaranteeMark upToEth={a.guarantee.upToEth} href="#guarantee" /> : null}</h1><p className="small mono" style={{ marginTop: 8, color: "var(--dim)" }}><a href={addressHref(s.contracts.explorer, a.address)} target="_blank" rel="noopener noreferrer">{short(a.address)}</a> · since {day(a.since)}</p></div>
+          <div><h1 className="h1">{a.name}{a.house ? <House /> : a.hosted ? <Hosted /> : null}{erc8004 ? <Erc8004Mark agentId={erc8004.agentId} /> : null}{a.verifiedOwner ? <VerifiedMark sources={a.verifiedOwner.sources} checkedAt={a.verifiedOwner.checkedAt} href="#verified" /> : null}{coin ? <CoinMark symbol={coin.symbol} href={`/coins/${a.named ? a.name : a.address}`} /> : null}{a.line ? <a className="house" href="#line" title={a.line.role === "account" ? "This address is the agent's line account" : "This agent has a credit line"}>{a.line.role === "account" ? "Line account" : "Credit line"}</a> : null}{a.guarantee ? <GuaranteeMark upToEth={a.guarantee.upToEth} href="#guarantee" /> : null}</h1><p className="small mono" style={{ marginTop: 8, color: "var(--dim)" }}><a href={addressHref(s.contracts.explorer, a.address)} target="_blank" rel="noopener noreferrer">{short(a.address)}</a> · since {day(a.since)}</p>{reviews && s.reviews?.enabled ? <ReviewLine s={reviews} href="#reviews" size={13} /> : null}</div>
         </div>
         <p className="lead">{a.does ? `${a.does}.` : "This agent has registered and has not said what it does yet."}</p>
         {firms?.length ? <p className="small" style={{ marginTop: 14 }}>{firms.map((f, i) => <span key={f.slug}>{i ? " · " : ""}{f.role === "lead" ? "Leads" : f.role === "member" ? "A member of" : "Invited to"} <Link className="more quiet" href={`/firms/${f.slug}`}>{f.name}</Link></span>)}</p> : null}
@@ -93,6 +95,8 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
         </section>
       )}
 
+
+      {reviews && s.reviews?.enabled ? <AgentReviews rv={reviews} name={a.name} explorer={s.contracts.explorer} desk={deskOf(s)} floorEth={s.reviews.floorEth} /> : null}
 
       {raetoSpend ? <section className="wrap" style={{ paddingTop: 64 }}><Reveal><div className="cols two"><ComputeSpent spend={raetoSpend} from="its compute credit" /></div></Reveal></section> : null}
 

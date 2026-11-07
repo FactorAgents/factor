@@ -280,6 +280,8 @@ export interface ReviewStanding {
   replyUntil: string | null;
   /** the wallets that may sign the agent's reply */
   repliers: string[];
+  /** the agent's ERC-8004 identity, when one is linked: the review can be written there too */
+  identity: string | null;
 }
 
 export interface ReviewsDeps {
@@ -370,11 +372,18 @@ export class Reviews {
     return null;
   }
 
+  /** The wallets that may sign an agent's reply: its own, and the one that runs it on Factor. */
+  repliers(agent: string): string[] {
+    return [agent, ...this.d.setters(agent)].filter((x, i, a) => a.indexOf(x) === i);
+  }
+
   /** Who may review a job, until when, and whether a review (or a change of it) can be signed now. */
   standing(job: JobRow): ReviewStanding {
     const who = this.d.reviewerOf(job);
-    const repliers = [job.agent, ...this.d.setters(job.agent)].filter((x, i, a) => a.indexOf(x) === i);
-    const base: ReviewStanding = { reviewer: null, kind: null, open: false, why: null, until: null, editUntil: null, versionsLeft: 0, replyUntil: null, repliers };
+    const repliers = this.repliers(job.agent);
+    const link = this.d.erc8004()?.store.link(job.agent);
+    const identity = link?.agent_id && !link.lost ? link.agent_id : null;
+    const base: ReviewStanding = { reviewer: null, kind: null, open: false, why: null, until: null, editUntil: null, versionsLeft: 0, replyUntil: null, repliers, identity };
     if ("none" in who) return { ...base, why: who.none };
     const out: ReviewStanding = { ...base, reviewer: who.reviewer, kind: who.kind };
     if (!this.on()) return { ...out, why: "paid reviews are switched off for now" };
@@ -511,9 +520,9 @@ export class Reviews {
   }
 
   /** An agent's reviews, newest first, with its summary. */
-  ofAgent(agent: string, limit = 50): { summary: ReviewSummary; items: ReviewJson[] } {
+  ofAgent(agent: string, limit = 50): { summary: ReviewSummary; items: ReviewJson[]; repliers: string[] } {
     const rows = this.d.db.q("SELECT * FROM reviews WHERE agent = ? ORDER BY at DESC, job_id DESC LIMIT ?").all(agent, Math.max(1, Math.min(limit, 200))) as ReviewRow[];
-    return { summary: this.summary(agent) ?? { average: null, count: 0, notCounted: 0 }, items: rows.map((r) => this.json(r)) };
+    return { summary: this.summary(agent) ?? { average: null, count: 0, notCounted: 0 }, items: rows.map((r) => this.json(r)), repliers: this.repliers(agent) };
   }
 
   /** The newest few, for a signed answer and Copilot: stars, words, amount and date only. */

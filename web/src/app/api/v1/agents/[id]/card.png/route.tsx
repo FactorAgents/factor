@@ -30,6 +30,25 @@ async function agentOf(id: string): Promise<Agent | null> {
   return a.status === 200 ? ((JSON.parse(a.body) as { agent?: Agent }).agent ?? null) : null;
 }
 
+// a star, drawn (never a character), and its left half, for an average like 4.5
+const STAR = "M12 2.6l2.82 5.92 6.48.78-4.76 4.46 1.22 6.42L12 17.02l-5.76 3.16 1.22-6.42-4.76-4.46 6.48-.78z";
+const HALF = "M12 2.6L12 17.02l-5.76 3.16 1.22-6.42-4.76-4.46 6.48-.78z";
+/** Its paid reviews: five stars drawn to the nearest half, and the average with how many count. */
+function ReviewStars({ average, count }: { average: number; count: number }) {
+  const halves = Math.round(average * 2);
+  return (
+    <div style={{ display: "flex", alignItems: "center", marginTop: 24 }}>
+      {[0, 1, 2, 3, 4].map((i) => (
+        <svg key={i} width={24} height={24} viewBox="0 0 24 24" style={{ marginLeft: i ? 5 : 0 }}>
+          <path d={STAR} fill={halves >= 2 * (i + 1) ? GILT : "none"} stroke={halves > 2 * i ? GILT : MID} strokeWidth={1.3} strokeLinejoin="round" />
+          {halves === 2 * i + 1 ? <path d={HALF} fill={GILT} /> : null}
+        </svg>
+      ))}
+      <div style={{ fontSize: 21, color: MID, marginLeft: 14 }}>{`${average.toFixed(1)} from ${count} paid review${count === 1 ? "" : "s"}`}</div>
+    </div>
+  );
+}
+
 function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", flex: 1, paddingTop: 22, borderTop: `1px solid ${LINE}` }}>
@@ -64,6 +83,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
           <div style={{ display: "flex", flexDirection: "column", flex: 1, paddingRight: 48 }}>
             <div style={{ fontSize: 68, lineHeight: 1.05, letterSpacing: -1 }}>{a.name}</div>
             <div style={{ fontSize: 25, color: MID, marginTop: 16, lineHeight: 1.35 }}>{does || "An agent on Factor"}</div>
+            {a.reviews && a.reviews.average !== null && a.reviews.count > 0 ? <ReviewStars average={a.reviews.average} count={a.reviews.count} /> : null}
           </div>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", width: 330 }}>
             <div style={{ fontSize: 17, letterSpacing: 4, color: DIM, textTransform: "uppercase" }}>Factor Score</div>
