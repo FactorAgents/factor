@@ -51,6 +51,9 @@
 //   GET  /v1/copilot            whether Factor Copilot is on (copilot.ts), how long a message may be, the most one action moves
 //   POST /v1/copilot { text, conversation?, address?, tz? }   the reply, and a prepared, unsigned action when there is one
 //   GET  /v1/copilot/c/<id>     a conversation's turns and its latest prepared action, to sign it on the site
+//   GET  /v1/reviews            paid reviews (reviews.ts): whether they are on, and the rules in figures
+//   GET  /v1/reviews/agent/<id>, /v1/reviews/job/<n>, /v1/reviews/job/<n>/erc8004, /v1/reviews/file/<n>/<version>
+//   POST /v1/reviews | /v1/reviews/reply | /v1/reviews/erc8004   a customer's signed review, the agent's one reply, an ERC-8004 entry read back
 //
 // Every GET is answered from the database (the last reading of the chain, the ledger, the engine's copy of each
 // job and agent), so a burst of visitors costs the node nothing. Before the contracts are given, and whenever the
@@ -99,6 +102,7 @@ import { envelope, hireUrl, MOST_AT_ONCE, ANSWER_HOLDS_S, parseId, seal, type Ag
 import type { Erc8004Scores } from "./erc8004score.js";
 import type { Ask, AskCandidate, AskData, SettledJob } from "./ask.js";
 import type { Copilot, CopilotAgent, CopilotData, CopilotJob } from "./copilot.js";
+import type { Reviews, ReviewSummary } from "./reviews.js";
 
 export interface Answer {
   status: number;
@@ -169,6 +173,8 @@ export interface EngineView {
   ask?: Ask | null;
   /** Factor Copilot (./copilot.ts) */
   copilot?: Copilot | null;
+  /** paid reviews (./reviews.ts) */
+  reviews?: Reviews | null;
 }
 
 /** Factor everywhere, as the site reads it: web/src/lib/types.ts keeps the same shape by hand. */
@@ -305,6 +311,8 @@ export interface AgentJson {
   line?: { role: "key" | "account"; key: string; account: string; status: LineBadge["status"] };
   /** "Guaranteed up to" (./guarantees.ts): only while guarantees are on and it sells cover: the most cover on one job, and the share of a price its score allows */
   guarantee?: { upToEth: number; sharePct: number };
+  /** paid reviews (./reviews.ts): only while they are on and it has any. The average is weighted by what each job paid */
+  reviews?: ReviewSummary;
 }
 export interface EventJson { n: number; at: string; kind: string; jobId?: string; agentId?: string; text: string; amount: string; tx: string; demo?: boolean; /** the Desk's reason for an advance */ why?: string }
 export interface BurnJson { n: number; at: string; eth: number; tokens: number; tx: string }
@@ -388,6 +396,8 @@ export interface FactorState {
   ask: { enabled: boolean; mostChars: number };
   /** Factor Copilot (./copilot.ts): whether the chat answers, how long a message may be, and the most one action moves */
   copilot: { enabled: boolean; mostChars: number; mostEth: string };
+  /** paid reviews (./reviews.ts): whether they are taken and shown, the longest words, and the smallest job that counts */
+  reviews: { enabled: boolean; mostChars: number; floorEth: number };
 }
 export interface RosterJson { name: string; does: string; needs: string; delivers: string; fromEth: number; asksAModel: boolean; /** the Desk's opening file on it */ file?: { text: string; at: string } }
 // what Factor's own agents are, said the same before the launch and after it
@@ -453,6 +463,8 @@ interface Names {
   line?: (address: string) => LineBadge | null;
   /** whether an agent sells cover, and up to how much (./guarantees.ts) */
   guarantee?: (address: string) => { upToEth: number; sharePct: number } | null;
+  /** an agent's paid reviews in two figures, or nothing (./reviews.ts) */
+  reviews?: Map<string, ReviewSummary>;
 }
 const nameOf = (names: Names, address: string | null): string => (address ? (names.profiles.get(address)?.name ?? shortAddress(address)) : "an agent");
 
@@ -475,6 +487,7 @@ export function agentJson(row: AgentRow, names: Names, nowS: number): AgentJson 
     ...((c) => (c ? { coin: c } : {}))(names.coin?.(row.address) ?? null),
     ...(lb ? { line: { role: lb.role, key: lb.key, account: lb.account, status: lb.status } } : {}),
     ...((gb) => (gb ? { guarantee: gb } : {}))(names.guarantee?.(row.address) ?? null),
+    ...((rv) => (rv ? { reviews: rv } : {}))(names.reviews?.get(row.address) ?? null),
   };
 }
 
@@ -572,6 +585,11 @@ export class EngineApi {
       if (from && this.tooMany(from, "copilot-get", 120)) return { status: 429, body: { error: "too many requests: try again in a minute" } };
       const c = this.copilotOn(v) ? v.copilot!.conversation(cm[1]!) : null;
       return c ? ok(c as unknown as Record<string, unknown>) : notFound("no such conversation: it ended, or it was never here");
+    }
+    // paid reviews (./reviews.ts): the rules, an agent's reviews, a job's review, the file and the call for ERC-8004
+    if (path === "/v1/reviews" || path.startsWith("/v1/reviews/")) {
+      if (from && this.tooMany(from, "reviews-get", 600)) return { status: 429, body: { error: "too many requests: try again in a minute" } };
+      return this.reviewsGet(this.view(), path, query);
     }
     // Factor everywhere: one agent's (or a few agents') score, record, line and Guarantee in an answer Factor signs
     if (path === "/v1/everywhere" || path.startsWith("/v1/everywhere/") || path.startsWith("/v1/connect/ticket/")) return this.everywhereGet(this.view(), path, query, from, connectKey);
@@ -1283,6 +1301,52 @@ export class EngineApi {
     };
   }
 
+  // ---- paid reviews (./reviews.ts) ----
+
+  private reviewsOn(v: EngineView): boolean {
+    return !!v.reviews?.on() && !!v.ctx;
+  }
+
+  private reviewsGet(v: EngineView, path: string, query: URLSearchParams): Answer | null {
+    if (path === "/v1/reviews") return ok(v.reviews ? v.reviews.about() : { enabled: false });
+    if (!this.reviewsOn(v)) return ok({ enabled: false });
+    const r = this.running(v);
+    if (!r) return { status: 503, body: { error: "the engine is not reading the chain yet" } };
+    const rv = v.reviews!;
+    let m = /^\/v1\/reviews\/agent\/([0-9a-zA-Z-]{3,42})$/.exec(path);
+    if (m) {
+      const address = normalizeAddress(m[1]) ?? v.profiles?.byName(m[1]!) ?? null;
+      const row = address ? r.store.agent(address) : null;
+      if (!row) return notFound("no such agent");
+      const raw = query.get("limit");
+      const got = rv.ofAgent(row.address, raw && /^\d{1,3}$/.test(raw) ? Number(raw) : 50);
+      return ok({ enabled: true, agent: row.address, name: this.names(v).profiles.get(row.address)?.name ?? shortAddress(row.address), ...got.summary, items: got.items });
+    }
+    m = /^\/v1\/reviews\/job\/(\d{1,9})$/.exec(path);
+    if (m) {
+      const job = r.store.job(Number(m[1]));
+      if (!job) return notFound("no such job");
+      return ok({ enabled: true, job: job.id, agent: job.agent, review: rv.ofJob(job.id), standing: rv.standing(job) });
+    }
+    m = /^\/v1\/reviews\/job\/(\d{1,9})\/erc8004$/.exec(path);
+    if (m) { const a = rv.erc8004Call(Number(m[1])); return { status: a.status, body: a.body }; }
+    m = /^\/v1\/reviews\/file\/(\d{1,9})\/(\d{1,2})$/.exec(path);
+    if (m) { const body = rv.file(Number(m[1]), Number(m[2])); return body ? ok(JSON.parse(body) as Record<string, unknown>) : notFound("no ERC-8004 file was made for that review"); }
+    return null;
+  }
+
+  private async reviewsPost(path: string, body: unknown, from: string): Promise<Answer | null> {
+    const v = this.view();
+    if (!v.reviews || !this.reviewsOn(v)) return { status: 503, body: { error: "paid reviews are switched off for now" } };
+    if (v.state !== "running") return { status: 503, body: { error: "the engine is not reading the chain yet" } };
+    if (!body || typeof body !== "object" || Array.isArray(body)) return { status: 400, body: { error: "the body is not a JSON object" } };
+    if (this.tooMany(from, "reviews", 6)) return { status: 429, body: { error: "too many requests: try again in a minute" } };
+    const b = body as Record<string, unknown>;
+    const a = path === "/v1/reviews" ? await v.reviews.write(b) : path === "/v1/reviews/reply" ? await v.reviews.reply(b) : await v.reviews.readBack(b);
+    if (a.status === 200) this.cache.clear();
+    return a;
+  }
+
   // ---- Factor Copilot (./copilot.ts) ----
 
   private copilotOn(v: EngineView): boolean {
@@ -1414,6 +1478,7 @@ export class EngineApi {
     if (path === "/v1/match") return this.matchPost(body, from);
     if (path === "/v1/ask") return this.askPost(body, from);
     if (path === "/v1/copilot") return this.copilotPost(body, from);
+    if (path === "/v1/reviews" || path === "/v1/reviews/reply" || path === "/v1/reviews/erc8004") return this.reviewsPost(path, body, from);
     if (path.startsWith("/v1/connect/")) return this.connectPost(path, body, from, connectKey);
     if (path === "/v1/admin/connect") return this.connectAdmin(body, from, adminKey);
     if (path === "/v1/pay/deal" || path === "/v1/pay/links") return this.payPost(path, body, from);
@@ -1456,7 +1521,7 @@ export class EngineApi {
       return ok({ ok: true, stopped: allStopped(v.ctx.db) });
     }
     if (path === "/v1/admin/hide") {
-      const done = b.what === "plan" && typeof b.key === "string" ? !!v.plans?.store.hide(b.key, b.hidden !== false) : b.what === "openjob" && typeof b.key === "string" ? !!v.openjobs?.store.hide(b.key, b.hidden !== false) : b.what === "bounty" && (typeof b.key === "string" || typeof b.key === "number") ? !!v.bounties?.hide(String(b.key), b.hidden !== false) : b.what === "plan-terms" && (typeof b.key === "string" || typeof b.key === "number") ? !!v.milestones?.hide(String(b.key), b.hidden !== false) : b.what === "firm" && typeof b.key === "string" ? !!v.firms?.store.hide(b.key, b.hidden !== false) : (b.what === "agent" || b.what === "job") && (typeof b.key === "string" || typeof b.key === "number") ? v.profiles.hide(b.what, String(b.key), b.hidden !== false) : false;
+      const done = b.what === "plan" && typeof b.key === "string" ? !!v.plans?.store.hide(b.key, b.hidden !== false) : b.what === "openjob" && typeof b.key === "string" ? !!v.openjobs?.store.hide(b.key, b.hidden !== false) : b.what === "bounty" && (typeof b.key === "string" || typeof b.key === "number") ? !!v.bounties?.hide(String(b.key), b.hidden !== false) : b.what === "plan-terms" && (typeof b.key === "string" || typeof b.key === "number") ? !!v.milestones?.hide(String(b.key), b.hidden !== false) : b.what === "firm" && typeof b.key === "string" ? !!v.firms?.store.hide(b.key, b.hidden !== false) : (b.what === "review" || b.what === "review-reply") && (typeof b.key === "string" || typeof b.key === "number") && /^\d{1,9}$/.test(String(b.key)) ? !!v.reviews?.hide(Number(b.key), b.what, b.hidden !== false) : (b.what === "agent" || b.what === "job") && (typeof b.key === "string" || typeof b.key === "number") ? v.profiles.hide(b.what, String(b.key), b.hidden !== false) : false;
       this.cache.clear();
       return done ? ok({ ok: true }) : notFound("nothing by that key");
     }
@@ -1475,7 +1540,7 @@ export class EngineApi {
 
   private names(v: EngineView): Names {
     const d = v.deskMind;
-    return { desk: d ? (kind, subject) => { const n = d.latest(kind, subject); return n ? { text: n.text, at: new Date(n.at).toISOString() } : null; } : undefined, profiles: v.profiles?.all() ?? new Map(), house: new Set([...v.config.houseAgents, ...(v.house?.addresses() ?? [])]), hosted: v.house?.hostedAddresses() ?? new Map(), demoJobs: this.demoJobs(v), service: (a) => v.house?.serviceOf(a) ?? null, verified: v.verified?.on() ? (a) => v.verified!.json(a) : undefined, coin: v.coins?.on() ? (a) => v.coins!.badge(a) : undefined, line: v.lines?.on() ? (a) => v.lines!.badge(a) : undefined, guarantee: v.guarantees?.on() ? (a) => v.guarantees!.badge(a) : undefined };
+    return { desk: d ? (kind, subject) => { const n = d.latest(kind, subject); return n ? { text: n.text, at: new Date(n.at).toISOString() } : null; } : undefined, profiles: v.profiles?.all() ?? new Map(), house: new Set([...v.config.houseAgents, ...(v.house?.addresses() ?? [])]), hosted: v.house?.hostedAddresses() ?? new Map(), demoJobs: this.demoJobs(v), service: (a) => v.house?.serviceOf(a) ?? null, verified: v.verified?.on() ? (a) => v.verified!.json(a) : undefined, coin: v.coins?.on() ? (a) => v.coins!.badge(a) : undefined, line: v.lines?.on() ? (a) => v.lines!.badge(a) : undefined, guarantee: v.guarantees?.on() ? (a) => v.guarantees!.badge(a) : undefined, reviews: v.reviews?.on() ? v.reviews.summaries() : undefined };
   }
 
   /** The jobs whose customer is Factor's own demonstration customer (./house/demo.ts). */
@@ -1590,6 +1655,8 @@ export class EngineApi {
       ...((x) => (x ? { raetoSpend: x } : {}))(v.gateway?.raetoSpendOfAgent(row.address) ?? null),
       // its Factor Score as Factor last wrote it to ERC-8004: only while that is on and one was written
       ...((x) => (x ? { scoreOnChain: x } : {}))(this.everywhereOn(v) && v.erc8004Scores?.on() ? v.erc8004Scores.json(row.address) : null),
+      // its paid reviews: only while they are on (./reviews.ts). Shown beside the score, never in it
+      ...(this.reviewsOn(v) ? { reviews: ((x) => ({ ...x.summary, items: x.items }))(v.reviews!.ofAgent(row.address, 50)) } : {}),
     });
   }
 
@@ -1632,6 +1699,7 @@ export class EngineApi {
       line: line ? { status: line.status, limitEth: line.limitEth, owedEth: line.debtEth, headroomEth: line.canDrawEth, dueAt: line.dueAt } : null,
       guarantee: g ? { selling: g.selling, upToEth: g.upToEth, sharePct: g.sharePct, bondEth: g.bondEth, freeEth: g.freeEth, covers: g.covers, delivered: g.released, paidOut: g.paid, paidOutEth: g.paidOutEth } : null,
       hire: hireUrl(site, { agent: named ? p!.name : row.address }),
+      ...(this.reviewsOn(v) ? { reviews: { ...(v.reviews!.summary(row.address) ?? { average: null, count: 0, notCounted: 0 }), recent: v.reviews!.recent(row.address, 3) } } : {}),
     };
   }
 
@@ -1836,6 +1904,8 @@ export class EngineApi {
       // its cover, when it was hired with one: only while guarantees are on
       ...((c) => (c ? { cover: v.guarantees!.coverJson(c) } : {}))(v.guarantees?.on() ? v.guarantees.coverOfJob(id) : null),
       ...((x) => (x ? { raetoSpend: x } : {}))(v.gateway?.raetoSpendOfJob(id) ?? null),
+      // its paid review, and who may write it until when: only while reviews are on (./reviews.ts)
+      ...(this.reviewsOn(v) ? { review: v.reviews!.ofJob(id), reviewing: v.reviews!.standing(row) } : {}),
     });
   }
 
@@ -1975,7 +2045,8 @@ export class EngineApi {
     const everywhere = this.everywhereAbout(v);
     const ask = { enabled: !!r && this.askOn(v), mostChars: c.ask.mostChars };
     const copilot = { enabled: !!r && this.copilotOn(v), mostChars: c.copilot.mostChars, mostEth: String(Number(c.copilot.mostWei / 10n ** 12n) / 1e6) };
-    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused, roster: this.rosterJson(v), hosted, pulse: pulseJson(v, 8), desk: this.deskJson(v), signups, activity, pay, subjobs, firms, plans, erc8004, openJobs, autoApply, verified, coins, lines, guarantees, bounties, milestones, everywhere, ask, copilot };
+    const reviews = { enabled: !!r && this.reviewsOn(v), mostChars: 500, floorEth: Number(c.reviews.floorWei / 10n ** 12n) / 1e6 };
+    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused, roster: this.rosterJson(v), hosted, pulse: pulseJson(v, 8), desk: this.deskJson(v), signups, activity, pay, subjobs, firms, plans, erc8004, openJobs, autoApply, verified, coins, lines, guarantees, bounties, milestones, everywhere, ask, copilot, reviews };
     if (!r) {
       return { ...base, launched: false, stats: { advancedEth: 0, settledJobs: 0, jobs: 0, poolEth: 0, reserveEth: 0, outEth: 0, heldEth: 0, burnedTokens: 0, supplyLeft: SUPPLY, agents: 0, demoJobs: 0, lostEth: 0, poolFromTradingEth: 0 }, burn: null, agents: [], jobs: [], events: [], burns: [] };
     }
@@ -2079,6 +2150,7 @@ export class EngineApi {
       milestones: v.milestones ? v.milestones.health() : null,
       ask: v.ask ? v.ask.health() : null,
       copilot: v.copilot ? v.copilot.health() : null,
+      reviews: v.reviews ? v.reviews.health() : null,
       erc8004: v.erc8004 ? { ...v.erc8004.about(), spentTodayWei: v.erc8004.spentToday().toString(), gasDayWei: c.erc8004.gasDayWei.toString(), scan: ctx.db.getJson("erc8004:scan") } : null,
       events: ctx.db.count("chain_events"),
       ledger: ctx.db.count("ledger"),

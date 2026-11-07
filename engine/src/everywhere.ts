@@ -177,6 +177,8 @@ export interface AgentAnswer {
   guarantee: { selling: boolean; upToEth: number; sharePct: number; bondEth: number; freeEth: number; covers: number; delivered: number; paidOut: number; paidOutEth: number } | null;
   /** where a customer hires it: the pay flow on factoragents.fun, where the customer locks the payment and signs */
   hire: string;
+  /** paid reviews (./reviews.ts), only while they are on: the average weighted by what each job paid, how many count and how many were left out, and the newest few */
+  reviews?: { average: number | null; count: number; notCounted: number; recent: { job: number; stars: number; text: string | null; priceEth: number; at: string; counted: boolean }[] };
 }
 
 export interface Envelope { v: 1; kind: "factor.agent" | "factor.agents"; chainId: number; desk: string; block: number; issuedAt: number; expiresAt: number }

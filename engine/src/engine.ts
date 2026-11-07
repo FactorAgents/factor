@@ -54,7 +54,9 @@ import { answerSigner, Connect, type AnswerSigner } from "./everywhere.js";
 import { Erc8004Scores } from "./erc8004score.js";
 import { Ask, askModelOf, type AskModel } from "./ask.js";
 import { Copilot, COPILOT_WORST_IN, COPILOT_WORST_OUT } from "./copilot.js";
-import { DeskStore } from "./desk.js";
+import { Reviews } from "./reviews.js";
+import { TAG2 } from "./erc8004.js";
+import { DeskStore, STATE } from "./desk.js";
 import { scoreOf } from "./score.js";
 import { sourceOf } from "./api.js";
 import { snapshotOf } from "./chain/context.js";
@@ -153,6 +155,8 @@ export class Engine {
   ask: Ask | null = null;
   /** Factor Copilot (./copilot.ts): a chat that prepares the desk's calls for the person's wallet; null unless COPILOT=on */
   copilot: Copilot | null = null;
+  /** Paid reviews (./reviews.ts): made once the database is open, whether or not REVIEWS=on, so what was stored is kept */
+  reviews: Reviews | null = null;
   /** the splitter's admin, read at the boot check: Factor's own wallet, which sets the rules of Factor's own agents */
   private splitterAdmin: string | null = null;
   /** the key that signs agents' records for other apps (./record.ts), or null */
@@ -217,7 +221,7 @@ export class Engine {
     return {
       config: this.config, state: this.state, problems: this.problems, warnings: this.warnings, lastError: this.lastError, loops, ctx: this.ctx, rpc: this.chain?.health() ?? null, now: this.now,
       links: { pons: link(this.env.FACTOR_PONS_URL), github: link(this.env.FACTOR_GITHUB_URL), x: link(this.env.FACTOR_X_URL) }, dataDirSet: !!this.env.FACTOR_DATA_DIR?.trim(), profiles: this.profiles, gateway: this.gateway, accounts: this.accounts, house: this.house, demo: this.demo, pulse: this.pulse, deskMind: this.deskMind, launchList: this.launchList, activity: this.activity, matcher: this.matcher, pay: this.pay, subjobs: this.subjobs, recordSigner: this.recordSigner, firms: this.firms, plans: this.plans, erc8004: this.erc8004, openjobs: this.openjobs, autoapply: this.autoapply, verified: this.verified, coins: this.coins, lines: this.lines, guarantees: this.guarantees, bounties: this.bounties, milestones: this.milestones,
-      connect: this.connect, erc8004Scores: this.erc8004Scores, answerSigner: this.answerSigner, ask: this.ask, copilot: this.copilot,
+      connect: this.connect, erc8004Scores: this.erc8004Scores, answerSigner: this.answerSigner, ask: this.ask, copilot: this.copilot, reviews: this.reviews,
     };
   }
 
@@ -248,7 +252,7 @@ export class Engine {
   // checking an order before it is sent, changes nothing.
   post(path: string, body: unknown, from: string, adminKey?: string, connectKey?: string): Promise<Answer | null> {
     return this.api.post(path, body, from, adminKey, connectKey).then((a) => {
-      if (a && a.status >= 200 && a.status < 300 && path !== "/v1/match" && path !== "/v1/ask" && path !== "/v1/copilot" && path !== "/v1/accounts/check") this.live?.poke();
+      if (a && a.status >= 200 && a.status < 300 && path !== "/v1/match" && path !== "/v1/ask" && path !== "/v1/copilot" && path !== "/v1/accounts/check" && path !== "/v1/reviews/erc8004") this.live?.poke();
       return a;
     });
   }
@@ -606,6 +610,37 @@ export class Engine {
     this.accounts.milestones = () => (this.milestones?.reading() ? c.milestones.milestones : null);
     if (c.milestones.enabled && c.milestones.note) this.log(`[milestones] NOT ON: ${c.milestones.note}`);
     else if (c.milestones.enabled) this.log(`[milestones] on: plans in stages are read from ${c.milestones.milestones}; the keeper steps a plan once the stage on the desk has come to its time`);
+    // paid reviews: made whether or not they are on, so what was stored still shows once they are turned back on
+    this.reviews = new Reviews(c.reviews, {
+      db, chain: this.chain, chainId: c.chainId, desk: c.desk, now: this.now, nowS, log: this.log, setters,
+      erc8004: () => this.erc8004,
+      // who reviews a job: its customer as the desk has it, a bounty's poster, or a plan's customer for a stage of one
+      reviewerOf: (j) => {
+        if (db.q("SELECT 1 FROM demo_jobs WHERE job_id = ?").get(j.id)) return { none: "a demonstration job: Factor's own customer hired Factor's own agent to show the desk at work, so nobody reviews it" };
+        const kind = TAG2[sourceOf(this.view(), j.agent, j.id)] ?? TAG2.jobs;
+        const b = this.bounties?.reading() ? this.bounties.ofJob(j.id) : null;
+        if (b) return { reviewer: b.poster, kind };
+        const m = this.milestones?.reading() ? this.milestones.ofJob(j.id) : null;
+        if (m) return { reviewer: m.plan.customer, kind };
+        return { reviewer: j.customer, kind };
+      },
+      // the agent's own hand, as far as Factor can see it (docs/REVIEWS.md, section 3)
+      selfDealing: async (agent, reviewer) => {
+        if (agent === reviewer) return "the agent's own wallet";
+        if (setters(agent).includes(reviewer)) return "the wallet that runs the agent on Factor";
+        if (this.subjobs!.sameHand(agent, reviewer)) return "run by the same hand as the agent, as Factor's own records show";
+        if (factorOwn(agent) && factorOwn(reviewer)) return "both are Factor's own";
+        if (this.verified?.json(agent)?.owner === reviewer) return "the wallet that verified the agent's owner";
+        if (db.q("SELECT 1 FROM desk_jobs WHERE customer = ? AND agent = ? AND state IN (?, ?) LIMIT 1").get(agent, reviewer, STATE.settled, STATE.half)) return "a ring: the agent has itself paid this customer for a job on the desk";
+        const link = this.erc8004?.store.link(agent);
+        if (link?.agent_id && !link.lost) {
+          const [who] = await this.erc8004!.identities([Number(link.agent_id)]).catch(() => [null]);
+          if (who && (who.owner === reviewer || who.wallet === reviewer)) return `it owns, or is the agentWallet of, the agent's ERC-8004 identity #${link.agent_id}`;
+        }
+        return null;
+      },
+    });
+    if (c.reviews.enabled) this.log(`[reviews] on: a job's customer reviews it once it is paid, within ${c.reviews.windowDays} days; changes for ${c.reviews.editDays} days; jobs from ${Number(c.reviews.floorWei / 10n ** 12n) / 1e6} ETH count toward the average. Factor pays no gas for reviews`);
     if (c.coins.enabled && c.coins.note) this.log(`[coins] NOT ON: ${c.coins.note}`);
     else if (c.coins.enabled) this.log(`[coins] on: agents' coins are read from the launcher ${c.coins.launcher}, and a coin's fees are swept once they are worth ${c.coins.gasMultiple} times the gas`);
     const checks = this.verified.sources();
