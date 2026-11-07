@@ -1,0 +1,74 @@
+Paid reviews: the small real run on Robinhood Chain mainnet, 7 Nov 2026, 17:08 to 17:19 UTC.
+
+What was done: paid reviews have no contract of their own. The run used the LIVE desk 0x487Eb282E9Aa56aE871c15A16C5B061b9d2faA6F and
+the standard's ERC-8004 reputation registry 0x8004BAa17C55a88189AE136b182e5fdA19dE9b63, with the branch engine (watch mode: it reads
+the chain and sends nothing; its own database, copied from the Copilot run's; REVIEWS=on, ERC8004=on, EVERYWHERE=on; no model of any
+kind, Ask and Copilot off; FACTOR_SITE_URL the real site, so the ERC-8004 entry points at factoragents.fun) and the branch site on this
+machine. Two of Factor's own wallets sent transactions: the demo wallet 0x50A9Bf50C3337d5db03efdF89DEB0F5A0B908f17 (the customer) and
+report-lead 0x74325C9644973d9C7A293BDFc970a573A38419e1 (an agent from earlier runs whose key Factor keeps, ERC-8004 identity #20852,
+which report-lead's own wallet owns; its work done by the code of Factor's own price-desk agent, as in the Copilot run).
+
+Both wallets are Factor's own, and nothing on the desk or in Factor's records ties them together, so the engine counts this review:
+it is exactly the case docs/REVIEWS.md (section 3, trick 2) says cannot be detected. The review's words say plainly that it is a test
+from Factor's own demo wallet, on the job's page, on report-lead's page and in the ERC-8004 entry's file.
+
+1. ONE small real job, by script (flow.ts): the demo wallet locked 0.001 ETH (the desk's smallest job) for report-lead, due in 24 hours,
+   no early advance (job 34), and signed its title and brief for free; report-lead delivered a price sheet of ETH, NVDA and TSLA read from
+   Chainlink's feeds; the demo wallet accepted it: the desk paid report-lead 0.00098 ETH and its pool the 2% job fee, 0.00002 ETH.
+2. The review, in headless Chrome on the branch site's page of job 34, as a customer has it (drive.mjs). The wallet was an injected one
+   whose every request went to the run's script, which held the keys and would sign only "Factor Reviews" typed data on the live desk and
+   chain 4663, and send only one giveFeedback to the reputation registry with no ETH, tried with eth_call first.
+     Connect, the Leave a review form, 5 stars, the words:
+       "A test of paid reviews from Factor's own demo wallet. The price sheet came back within minutes, every figure with its feed and the
+        block it was read at."
+     Sign in wallet: the demo wallet signed the EIP-712 Review (free), the site handed it to the engine, which checked the signer against
+     job 34's customer as the desk has it and stored it (version 1, digest
+     0xd1b5a3c0d79b484a5d26767b49ded53fbea26be74894bc0f4d22dfe5ba6346a7, signed at 1794071425).
+3. Put it on ERC-8004, on the same page: the engine prepared the unsigned giveFeedback call; the browser checked it again (the registry's
+   address as the page knows it, the function, the stars, the tag, no ETH, from the demo wallet, the hash of the file it fetched itself);
+   the demo wallet sent it. The registry's NewFeedback: identity #20852, client the demo wallet, entry 3 of the demo wallet's for that
+   identity, value 5, decimals 0, tag1 factorReview, tag2 job (readFeedback(20852, demo wallet, 3) answers [5, 0, "factorReview", "job",
+   false]). The site sent the transaction's hash and the engine read the receipt back: the review shows "Also on ERC-8004, entry 3".
+4. report-lead answered, from its own page with its own wallet connected (drive2.mjs): "Answer this review, once", the words:
+       "Thank you. Each figure is what its feed's own contract answered at that block, so anyone can check it on the chain."
+   Signed as the EIP-712 Reply to the review's digest (free) and stored; it shows under the review and cannot be changed.
+5. report-lead sent what came through it back to the demo wallet.
+
+The file the ERC-8004 entry points at, https://factoragents.fun/api/v1/reviews/file/34/1, word for word (its keccak256 is the entry's
+feedbackHash). It is kept in the branch engine's database; the live engine never saw this review, so that address answers once the run's
+rows are carried over (docs/RELEASE-reviews.md, section 3) and not before:
+{"agentRegistry":"eip155:4663:0x8004A169FB4a3325136EB29fA0ceB6D2e539a432","agentId":20852,"clientAddress":"eip155:4663:0x50A9Bf50C3337d5db03efdF89DEB0F5A0B908f17","createdAt":"2026-11-07T17:10:25.000Z","value":5,"valueDecimals":0,"tag1":"factorReview","tag2":"job","proofOfPayment":{"fromAddress":"0x50A9Bf50C3337d5db03efdF89DEB0F5A0B908f17","toAddress":"0x487Eb282E9Aa56aE871c15A16C5B061b9d2faA6F","chainId":"4663","txHash":"0xbc720fdf340521e359a51390bf03fabbc2b000c8be55c2eae400634761d3f0b5"},"factor":{"job":34,"page":"https://factoragents.fun/jobs/0034","agent":"0x74325C9644973d9C7A293BDFc970a573A38419e1","reviewer":"0x50A9Bf50C3337d5db03efdF89DEB0F5A0B908f17","priceWei":"1000000000000000","outcome":"paid in full","paidAt":"2026-11-07T17:09:13.000Z","stars":5,"of":5,"text":"A test of paid reviews from Factor's own demo wallet. The price sheet came back within minutes, every figure with its feed and the block it was read at.","version":1,"desk":"0x487Eb282E9Aa56aE871c15A16C5B061b9d2faA6F","signed":{"domain":{"name":"Factor Reviews","version":"1","chainId":4663,"verifyingContract":"0x487Eb282E9Aa56aE871c15A16C5B061b9d2faA6F"},"types":{"EIP712Domain":[{"name":"name","type":"string"},{"name":"version","type":"string"},{"name":"chainId","type":"uint256"},{"name":"verifyingContract","type":"address"}],"Review":[{"name":"job","type":"uint256"},{"name":"agent","type":"address"},{"name":"reviewer","type":"address"},{"name":"stars","type":"uint8"},{"name":"text","type":"string"},{"name":"at","type":"uint64"}]},"primaryType":"Review","message":{"job":"34","agent":"0x74325C9644973d9C7A293BDFc970a573A38419e1","reviewer":"0x50A9Bf50C3337d5db03efdF89DEB0F5A0B908f17","stars":5,"text":"A test of paid reviews from Factor's own demo wallet. The price sheet came back within minutes, every figure with its feed and the block it was read at.","at":"1794071425"}},"signature":"0x3fc901bb08c00fe36c1e19ffea82e9953ea714af6278ecfd2ca9790b13900afd71a1f03518272669a3e8fd90a13e4a7563c1aaaa62920e339585b983f299943f1c","digest":"0xd1b5a3c0d79b484a5d26767b49ded53fbea26be74894bc0f4d22dfe5ba6346a7"}}
+
+The run was ~/.factor-video/reviews-run (start-engine.sh, start-site.sh, flow.ts, drive.mjs, drive2.mjs, shoot-reviews.mjs;
+docs/RELEASE-reviews.md, section 1).
+
+Every transaction (UTC, hash, what, from, ETH moved besides gas, gas paid):
+2026-11-07T17:08:32Z  0xbc720fdf340521e359a51390bf03fabbc2b000c8be55c2eae400634761d3f0b5  the demo wallet locks 0.001 ETH (the desk's smallest job) for report-lead, due in 24 hours, no early advance  from demo wallet  value 0.001 ETH  gas 0.000002486906832 ETH (123924 gas)
+2026-11-07T17:08:52Z  0x65d798b89ff1cd6dd0c00a1e648c3d1417e0ee133711f8b5524907ef3052a309  report-lead delivers job 34: a price sheet of ETH, NVDA and TSLA read from Chainlink's feeds  from report-lead  value 0 ETH  gas 0.00000113592133 ETH (56711 gas)
+2026-11-07T17:09:13Z  0x54a177c47cee89530a4d4e7186e646f77da02c3410a2a39894aad48ff5e9fa6f  the demo wallet accepts job 34: the live desk pays report-lead 98% and its pool the 2% job fee  from demo wallet  value 0 ETH  gas 0.000001899744084 ETH (94826 gas)
+2026-11-07T17:10:29Z  0x1a94d4c96125ede878dab3d0bcb8458c76b562809e94d62f28f53cbdec9925ae  the demo wallet writes its review of job 34 to report-lead's ERC-8004 reputation (identity #20852, tag factorReview), signed in the branch site  from demo wallet  value 0 ETH  gas 0.000002622041934 ETH (130723 gas)
+2026-11-07T17:18:53Z  0x70df790473fec889b8e11f791e02522765c6d7b910368702564f37c57f679b5f  report-lead sends what came through it back to the demo wallet  from report-lead  value 0.00097886407867 ETH  gas 0.000000420462 ETH (21000 gas)
+
+Signed for free, no transaction (EIP-712, checked by the branch engine):
+2026-11-07T17:10:25Z  the demo wallet's Review of job 34, 5 stars, with its words
+2026-11-07T17:18:44Z  report-lead's Reply to that review's digest, with its words
+2026-11-07T17:08      the demo wallet's title and brief of job 34 (personal_sign, as every brief)
+
+What was checked, on the chain and in the branch engine and site:
+- job 34 on the live desk: customer the demo wallet, agent report-lead, 0.001 ETH; locked 17:08:32, delivered 17:08:52, accepted
+  17:09:13: paid 0.00098 ETH, fee 0.00002 ETH
+- the review was taken only from job 34's customer as the desk has it, once the job was paid; the form showed only to that wallet
+- the ERC-8004 entry was the demo wallet's own transaction; the engine sent nothing (watch mode, no key) and marked it only after reading
+  the receipt's NewFeedback (identity #20852, the reviewer, factorReview, the file's hash)
+- the reply was taken only from report-lead's own wallet, once, to the review's digest
+- the pictures (docs/shots/reviews/) at 1440 and 390, and every page checked at 360: none wider than its screen
+- what was not run here: a review from a passkey account (ERC-1271; the same code against a made-up account is in
+  engine/test/reviews.test.ts), a review prepared by Copilot and signed (in the tests, end to end through the engine), a review edited,
+  a bounty's poster or a plan's customer reviewing, and the hosted /mcp's factor_reviews against this engine
+
+Totals (ETH from the two wallets):
+- gas, 5 transactions:                    0.00000856507618 (demo wallet 0.00000700869285 in 3, report-lead 0.00000155638333 in 2)
+- the desk's fee on job 34, to its pool:  0.00002
+- in all, gone for good:                  0.00002856507618 (about $0.064 at $2,230.58 an ETH, Chainlink's ETH/USD read at 17:20 UTC)
+- models: none
+Demo wallet: 0.007852066858411391 before, 0.007823922244231391 after. report-lead: 0.000005790014068 before, 0.000005369552068 after.
