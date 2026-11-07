@@ -247,6 +247,14 @@ export function passkeyProvider(session: Session): Provider {
           // the text is signed as a wallet signs it (EIP-191), so whoever checks it reads the same text
           return sign(session, hashMessage({ raw: params[0] as Hex }));
         }
+        // typed data (a paid review, lib/reviews.ts): the digest the account checks with ERC-1271, signed by the passkey
+        case "eth_signTypedData_v4": {
+          if (String(params[0]).toLowerCase() !== me) throw new Refusal("That is not this account.");
+          const t = JSON.parse(String(params[1])) as { domain: Record<string, unknown>; types: Record<string, { name: string; type: string }[]>; primaryType: string; message: Record<string, unknown> };
+          const { EIP712Domain: _domain, ...types } = t.types;
+          void _domain;
+          return sign(session, hashTypedData({ domain: t.domain, types, primaryType: t.primaryType, message: t.message } as Parameters<typeof hashTypedData>[0]));
+        }
         default: throw new Refusal(`An account without a wallet does not do ${method}.`);
       }
     },

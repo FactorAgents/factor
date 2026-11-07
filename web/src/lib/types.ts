@@ -141,7 +141,42 @@ export interface Agent {
   line?: { role: "key" | "account"; key: string; account: string; status: LineStatus };
   /** "Guaranteed up to": while guarantees are on and it sells cover, the most cover on one job and the share of a price its score allows */
   guarantee?: { upToEth: number; sharePct: number };
+  /** paid reviews: while they are on and it has any, the average weighted by what each job paid, and the counts */
+  reviews?: ReviewSummary;
 }
+
+/** An agent's paid reviews in figures (engine/src/reviews.ts): the average of those that count, how many count, how many were left out. */
+export interface ReviewSummary { average: number | null; count: number; notCounted: number }
+
+/** One paid review, as the engine keeps it: its latest version, the earlier ones, the agent's reply and the ERC-8004 entry. */
+export interface Review {
+  job: number;
+  jobId: string;
+  agent: string;
+  reviewer: string;
+  stars: number;
+  /** null while Factor has hidden the words */
+  text: string | null;
+  hidden: boolean;
+  priceEth: number;
+  priceWei: string;
+  outcome: "paid in full" | "settled at half";
+  kind: string;
+  paidAt: string;
+  at: string;
+  firstAt: string;
+  version: number;
+  notCounted: "self-dealing" | "under the floor" | null;
+  self: string | null;
+  history: { version: number; stars: number; text: string | null; at: string }[];
+  reply: { by: string; text: string | null; hidden: boolean; at: string; version: number; toEarlier: boolean } | null;
+  erc8004: { agentId: string; version: number; latest: boolean; index: number | null; tx: string } | null;
+  digest: string;
+  signature: string;
+}
+
+/** Who may review a job, until when, and whether a review can be signed now. */
+export interface ReviewStanding { reviewer: string | null; kind: string | null; open: boolean; why: string | null; until: string | null; editUntil: string | null; versionsLeft: number; replyUntil: string | null; repliers: string[] }
 
 /** How a credit line stands: nothing owed, owed before its due time, owed past it, or barred for good. */
 export type LineStatus = "open" | "owing" | "late" | "defaulted";
@@ -371,6 +406,8 @@ export interface FactorState {
   ask?: { enabled: boolean; mostChars: number };
   /** Factor Copilot (lib/copilot.ts): whether the chat answers, how long a message may be, and the most one action moves */
   copilot?: { enabled: boolean; mostChars: number; mostEth: string };
+  /** paid reviews (lib/reviews.ts): whether they are taken and shown, the longest words, and the smallest job that counts */
+  reviews?: { enabled: boolean; mostChars: number; floorEth: number };
 }
 
 /** One of a firm's agents and its part of the firm's work: the lead's is the firm's jobs, a member's the sub-jobs it took under them. */
@@ -470,7 +507,7 @@ export interface AgentAnswer {
 /** An agent's Factor Score as Factor last wrote it to ERC-8004 (engine/src/erc8004score.ts, ScoreJson). */
 export interface ScoreOnChain { score: number; value: string; tag1: string; agentId: string; reviewer: string; tx: string; index: number | null; at: string; written: number }
 
-export interface AgentPage { /** its Factor Score on ERC-8004, while that is on and one was written */ scoreOnChain?: ScoreOnChain; raetoSpend?: RaetoSpend; /** bounties entered and won */ bounties?: AgentBounties; /** its jobs in stages */ milestones?: AgentMilestones; agent: Agent; /** its Factor Score: the desk's number, the parts, the income behind it, what it can draw */ factorScore?: FactorScore; jobs: Job[]; events: LedgerEvent[]; hiring?: Hiring; /** the firms it leads, belongs to or is invited to */ firms?: { slug: string; name: string; house: boolean; role: "lead" | "member" | "invited" }[]; /** its monthly clients, when it has any plan */ plans?: PlansSummary; /** its ERC-8004 identity and the entries written to it, when one is linked */ erc8004?: Erc8004; /** its own coin, when it has one listed */ coin?: Coin; /** its credit line, from either side, while lines are on */ line?: CreditLine; /** its guarantee bond, offer and covers, while guarantees are on and it has had one */ guarantee?: AgentGuarantee }
+export interface AgentPage { /** its paid reviews, while they are on */ reviews?: ReviewSummary & { items: Review[] }; /** its Factor Score on ERC-8004, while that is on and one was written */ scoreOnChain?: ScoreOnChain; raetoSpend?: RaetoSpend; /** bounties entered and won */ bounties?: AgentBounties; /** its jobs in stages */ milestones?: AgentMilestones; agent: Agent; /** its Factor Score: the desk's number, the parts, the income behind it, what it can draw */ factorScore?: FactorScore; jobs: Job[]; events: LedgerEvent[]; hiring?: Hiring; /** the firms it leads, belongs to or is invited to */ firms?: { slug: string; name: string; house: boolean; role: "lead" | "member" | "invited" }[]; /** its monthly clients, when it has any plan */ plans?: PlansSummary; /** its ERC-8004 identity and the entries written to it, when one is linked */ erc8004?: Erc8004; /** its own coin, when it has one listed */ coin?: Coin; /** its credit line, from either side, while lines are on */ line?: CreditLine; /** its guarantee bond, offer and covers, while guarantees are on and it has had one */ guarantee?: AgentGuarantee }
 
 /** One job in a chain of work: the customer's job at depth 0, the jobs its agent hired for at 1, and so on. */
 export interface TreeNode {
@@ -503,7 +540,7 @@ export interface HireRoom { open: boolean; why?: string; freeEth: number; freeWe
  * `brief`: what the customer asked for at length. `work`: what was delivered, when its agent showed it (its
  * fingerprint is the proof on the chain). `note`: why one of Factor's own agents declined.
  */
-export interface JobPage { raetoSpend?: RaetoSpend; job: Job; agent: Agent | null; events: LedgerEvent[]; brief?: string | null; /** "agent": the brief came with the agent's Pay with Factor link, signed by the agent */ briefBy?: "agent"; work?: { kind: "text" | "html"; text: string; at: string } | null; note?: string; /** the chain of work it is part of */ tree?: JobTree; /** what its agent can still hire for it */ hiring?: HireRoom; /** how Factor's own firm went about it */ firmNote?: string; /** its cover, when it was hired with one */ cover?: Cover }
+export interface JobPage { /** its paid review, and who may write it until when, while reviews are on */ review?: Review | null; reviewing?: ReviewStanding; raetoSpend?: RaetoSpend; job: Job; agent: Agent | null; events: LedgerEvent[]; brief?: string | null; /** "agent": the brief came with the agent's Pay with Factor link, signed by the agent */ briefBy?: "agent"; work?: { kind: "text" | "html"; text: string; at: string } | null; note?: string; /** the chain of work it is part of */ tree?: JobTree; /** what its agent can still hire for it */ hiring?: HireRoom; /** how Factor's own firm went about it */ firmNote?: string; /** its cover, when it was hired with one */ cover?: Cover }
 export interface Page<T> { total: number; more: boolean; items: T[] }
 
 // ---------- monthly clients (engine/src/plans.ts) ----------
