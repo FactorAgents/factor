@@ -36,7 +36,12 @@ export function JobReviewActions({ job, jobId, agent, agentName, desk, explorer,
       {isReviewer && !standing.open && standing.why && review ? <p className="small rest">{standing.why.charAt(0).toUpperCase() + standing.why.slice(1)}.</p> : null}
       {isReviewer && review && standing.identity && (!review.erc8004 || !review.erc8004.latest) ? (kind === "wallet" ? <Erc8004Button job={job} stars={review.stars} explorer={explorer} version={review.version} /> : <p className="small rest">Your review is signed and kept here. Putting it on ERC-8004 is a transaction of your own, which a passkey account does not send: connect a wallet to do it.</p>) : null}
       {canReply ? <ReplyForm job={job} jobId={jobId} agent={agent} digest={review!.digest} desk={desk} repliers={standing.repliers} explorer={explorer} /> : null}
-      {!address && standing.open && !review ? <p className="small rest">Paid for this job? Connect the wallet that paid for it to leave a review.</p> : null}
+      {!address && standing.open ? (
+        <div className="act">
+          <p className="small">{review ? "The wallet that paid for this job can change its review for a few days, and the agent can answer it once." : "Paid for this job? Connect the wallet that paid for it to leave a review."}</p>
+          <div className="cta"><Go label="" busy={false} onGo={() => undefined} /></div>
+        </div>
+      ) : null}
     </>
   );
 }
@@ -66,7 +71,7 @@ function ReviewForm({ job, agent, agentName, desk, explorer, review, standing }:
   return (
     <div className="act prv-form">
       <div className="h3">{review ? "Change your review" : "Leave a review"}</div>
-      <p className="small">{review ? `You can change it until ${dayTime(standing.editUntil!)}, ${standing.versionsLeft} more time${standing.versionsLeft === 1 ? "" : "s"}. Every version stays on the page.` : `You paid for this job, so you can review it, until ${dayTime(standing.until!)}. You sign it in your wallet: it costs nothing and moves no money.`}</p>
+      <p className="small">{review ? `You can change it until ${dayTime(standing.editUntil!)}, ${standing.versionsLeft} more time${standing.versionsLeft === 1 ? "" : "s"}. Every version stays on the page.` : "You paid for this job, so you can review it: stars, and a few words if you like. You sign it in your wallet; it costs nothing and moves no money."}</p>
       <div className="prv-pick" role="radiogroup" aria-label="Stars" onMouseLeave={() => setHover(0)}>
         {[1, 2, 3, 4, 5].map((n) => (
           <button key={n} type="button" role="radio" aria-checked={stars === n} aria-label={`${n} star${n === 1 ? "" : "s"}`} disabled={busy} onMouseEnter={() => setHover(n)} onFocus={() => setHover(n)} onBlur={() => setHover(0)} onClick={() => setStars(n)}><StarMark on={n <= shown} /></button>

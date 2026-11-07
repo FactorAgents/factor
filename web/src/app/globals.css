@@ -1250,7 +1250,8 @@ a.coin-mark:hover, .agent:hover .coin-mark { border-color: var(--gilt); color: v
 .prv-line { display: inline-flex; align-items: center; gap: 8px; margin-top: 7px; font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.04em; color: var(--mid); }
 a.prv-line { border-bottom: 1px solid transparent; transition: border-color 0.25s ease; }
 a.prv-line:hover { border-color: var(--line-2); }
-.agent .prv-line { display: flex; width: fit-content; }
+.agent .prv-line { display: flex; width: fit-content; max-width: 100%; flex-wrap: wrap; row-gap: 4px; }
+.prv-line .prv-short { display: none; }
 .prv-list { display: grid; border-top: 1px solid var(--line); }
 .prv { padding: 20px 0 22px; border-bottom: 1px solid var(--line); min-width: 0; }
 .prv-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
@@ -1289,8 +1290,13 @@ a.prv-line:hover { border-color: var(--line-2); }
 .prv-pick button:disabled { cursor: default; opacity: 0.55; }
 .prv-pick-word { margin-left: 10px; font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); }
 .job-review .prv { padding-top: 14px; border-bottom: 0; }
-.job-review .acts .act:first-child { border-top: 1px solid var(--line); }
+.job-review .acts > .act:first-child, .job-review .acts > .rest:first-child { border-top: 0; padding-top: 0; }
 @media (max-width: 720px) {
+  /* an agent's row on the narrowest phones: its name column gives way, so the row is never wider than the screen */
+  .agent > div { min-width: 0; }
+  .agent .name { overflow-wrap: anywhere; }
+  .agent .prv-line .prv-long { display: none; }
+  .agent .prv-line .prv-short { display: inline; white-space: nowrap; }
   .prv-text { font-size: 16.5px; }
   .prv-big .bigscore { font-size: 76px; }
   .prv-pick button { padding: 6px 4px; }

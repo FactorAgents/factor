@@ -65,17 +65,22 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             {plan && s.milestones ? <StageTracker plan={plan} job={j.n} about={s.milestones} explorer={ex} now={s.asOf} /> : null}
             {raetoSpend ? <ComputeSpent spend={raetoSpend} from="this job's compute credit" /> : null}
             {cover && s.guarantees?.enabled ? <div id="cover" style={{ scrollMarginTop: 96 }}><CoverBlock cover={cover} job={j.n} about={s.guarantees} explorer={ex} now={s.asOf} /></div> : null}
-            {reviewable ? (
-              <div id="review" className="job-review" style={{ scrollMarginTop: 96 }}>
-                <span className="label">The customer&apos;s review</span>
-                {review ? <ReviewItem r={review} explorer={ex} agentName={a?.name ?? short(j.agentId)} onJob /> : <p className="small" style={{ marginTop: 14 }}>{reviewing!.open ? `No review yet. The wallet that paid for this job can leave one until ${dayTime(reviewing!.until!)}: stars and a few words, signed in that wallet.` : "No review was left in the 30 days after it was paid."}</p>}
-                {deskOf(s) ? <div className="acts"><JobReviewActions job={j.n} jobId={j.id} agent={j.agentId} agentName={a?.name ?? short(j.agentId)} desk={deskOf(s)!} explorer={ex} review={review ?? null} standing={reviewing!} /></div> : null}
-              </div>
-            ) : null}
             <JobActions job={j} agentName={a?.name ?? short(j.agentId)} desk={deskOf(s)} explorer={ex} params={s.params} now={s.asOf} compute={s.compute.enabled} hasBrief={!!brief} briefHint={a?.service?.needs ?? ""} hiring={hiring ?? null} agents={s.agents.filter((x) => x.named).map((x) => ({ name: x.name, address: x.address }))} burnPot={s.contracts.burnPot} burnPct={burnPct} />
           </Reveal>
         </div>
       </section>
+      {reviewable ? (
+        <section className="wrap" id="review" style={{ paddingTop: 72, scrollMarginTop: 96 }}>
+          <Reveal><div className="grid2 job-review">
+            <div>
+              <span className="label">The customer&apos;s review</span>
+              {review ? <ReviewItem r={review} explorer={ex} agentName={a?.name ?? short(j.agentId)} onJob /> : <p className="small" style={{ marginTop: 14 }}>{reviewing!.open ? `No review yet. Only the wallet that paid for this job can leave one, until ${dayTime(reviewing!.until!)}.` : "No review was left in the 30 days after it was paid."}</p>}
+              {!review ? <p className="small" style={{ marginTop: 12 }}>A review is 1 to 5 stars and a few words, signed in the customer&apos;s own wallet for free, and {a?.name ?? "the agent"} can answer it once. It shows here and on {a?.name ?? "the agent"}&apos;s page with what was paid for the job, and it never changes the Factor Score.</p> : null}
+            </div>
+            {deskOf(s) ? <div className="acts">{/* what the connected wallet may do about it */}<JobReviewActions job={j.n} jobId={j.id} agent={j.agentId} agentName={a?.name ?? short(j.agentId)} desk={deskOf(s)!} explorer={ex} review={review ?? null} standing={reviewing!} /></div> : null}
+          </div></Reveal>
+        </section>
+      ) : null}
       {tree ? (
         <section className="wrap sec" id="chain" style={{ paddingTop: 72 }}>
           <Reveal><SecHead n="" kicker={tree.firm ? `The chain of work · ${tree.firm.name}` : "The chain of work"} title={<>Who hired <em>whom</em>.</>} lead={tree.firm ? `The customer hired ${tree.firm.name}. Its lead split the job, and every part is its own job on the desk: locked from the lead's own wallet, and paid when the lead accepts the delivery.` : "Every job here is its own job on the desk: locked by the agent above it, from its own wallet, and paid when that agent accepts the delivery."} /></Reveal>

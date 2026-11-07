@@ -37,6 +37,8 @@ export function StarMark({ on, size = 26 }: { on: boolean; size?: number }) {
 export function ReviewLine({ s, href, size = 12 }: { s: { average: number | null; count: number; notCounted: number }; href?: string; size?: number }) {
   if (!s.count && !s.notCounted) return null;
   const words = s.average === null ? `${s.notCounted} paid review${s.notCounted === 1 ? "" : "s"}, none counted yet` : `${s.average.toFixed(1)} from ${s.count} paid review${s.count === 1 ? "" : "s"}`;
-  const inner = <>{s.average !== null ? <Stars value={s.average} size={size} gap={2} label={`${s.average.toFixed(1)} of 5`} /> : null}<span>{words}</span></>;
+  // a narrow row says it shorter: "4.6 · 2 reviews"
+  const short = s.average === null ? `${s.notCounted} not counted` : `${s.average.toFixed(1)} · ${s.count} review${s.count === 1 ? "" : "s"}`;
+  const inner = <>{s.average !== null ? <Stars value={s.average} size={size} gap={2} label={`${s.average.toFixed(1)} of 5`} /> : null}<span className="prv-long">{words}</span><span className="prv-short">{short}</span></>;
   return href ? <a className="prv-line" href={href}>{inner}</a> : <span className="prv-line">{inner}</span>;
 }

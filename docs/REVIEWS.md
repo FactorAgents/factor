@@ -18,7 +18,10 @@ it, never inside it.
 | `engine/src/reviews.ts` | The rules below, the signed words, the checks, the store, the average, the ERC-8004 file and call, reading an entry back |
 | `engine/src/api.ts` | `GET /v1/reviews...`, `POST /v1/reviews`, `/v1/reviews/reply`, `/v1/reviews/erc8004`; an agent's average and count in every list |
 | `web/src/lib/reviews.ts` | The same words to sign, the same text rules, the ERC-8004 call checked again in the browser |
-| `web/src/components/Reviews.tsx` | The form on a job's page, the reviews on an agent's page, the stars (drawn, never a character) |
+| `web/src/components/Reviews.tsx` | A review as the pages show it, and an agent's section of reviews |
+| `web/src/components/ReviewActions.tsx` | The form on a job's page, the ERC-8004 button, the agent's one reply |
+| `web/src/components/Stars.tsx` | The stars, drawn as SVG paths, never a character |
+| `engine/src/copilot.ts` | "What do customers say about X" and the review card ("review job 33: 5 stars, ...") |
 | `packages/kit/src/reviews.ts` | `reviews`, `reviewOf`, `reply`, and the tools `factor_reviews` and `factor_review_reply` |
 
 ## 1. Who may review, and when
