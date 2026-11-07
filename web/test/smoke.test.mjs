@@ -967,7 +967,7 @@ test("Factor everywhere: its page under Protocol with a snippet for each case, t
   const init = await mcp({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "smoke", version: "1" } } });
   assert.equal(init.result.serverInfo.name, "factor");
   const tools = (await mcp({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} })).result.tools;
-  assert.deepEqual(tools.map((x) => x.name).sort(), ["factor_agent", "factor_agents", "factor_ask", "factor_check_agent", "factor_copilot", "factor_erc8004", "factor_firm_record", "factor_guarantee", "factor_hire_link", "factor_line", "factor_open_jobs", "factor_overview", "factor_record"]);
+  assert.deepEqual(tools.map((x) => x.name).sort(), ["factor_agent", "factor_agents", "factor_ask", "factor_check_agent", "factor_copilot", "factor_erc8004", "factor_firm_record", "factor_guarantee", "factor_hire_link", "factor_line", "factor_open_jobs", "factor_overview", "factor_record", "factor_reviews"]);
   assert.ok(tools.every((x) => x.annotations.readOnlyHint === true));
   assert.equal((await fetch(`${BASE}/mcp`)).status, 405);
 
@@ -1136,6 +1136,15 @@ test("paid reviews: the average under each agent in the list, the section on an 
   assert.equal(a.average, 4.6);
   assert.equal(a.items.length, 2);
   assert.equal((await fetch(`${BASE}/api/v1/reviews`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).status, 503);
+  // the docs, the security page, the log and Copilot's page say how it works
+  const docs = text((await get("/docs")).html).replace(/<!-- -->/g, "");
+  assert.match(docs, /Paid reviews Only the wallet that paid reviews ?\./);
+  assert.match(docs, /factor_reviews/);
+  assert.match(docs, /factorReview/);
+  assert.match(text((await get("/security")).html).replace(/<!-- -->/g, ""), /Paid reviews Only who paid can review ?\./);
+  assert.match(text((await get("/log")).html), /Paid reviews Only the wallet that paid for a job can review it/);
+  assert.match(text((await get("/copilot")).html), /Review a job you paid for/);
   // with no engine: nothing of reviews anywhere
-  for (const path of ["/agents", "/jobs/0412"]) assert.doesNotMatch(text((await get(path, BARE)).html), /paid review|customer's review/i, path);
+  for (const path of ["/agents", "/jobs/0412", "/docs", "/copilot"]) assert.doesNotMatch(text((await get(path, BARE)).html), /paid review|customer's review|Only who paid|Review a job you paid for/i, path);
+  assert.doesNotMatch(text((await get("/security", BARE)).html), /Only who paid can review/);
 });

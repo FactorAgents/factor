@@ -629,6 +629,24 @@ rules are `docs/EVERYWHERE.md`.
   `ASK_ALL_PER_MIN` (60) in all, `ASK_MAX_CHARS` (500), `ASK_MOST_ETH` (0.5). The owner's `ask` switch stops it at once.
   `GET /v1/health` carries `ask`: the model, the day's ceiling, today's spend and asks.
 
+## Paid reviews
+
+`src/reviews.ts`, off until `REVIEWS=on`. The rules are `docs/REVIEWS.md`.
+
+- **The routes.** `POST /v1/reviews { job, stars, text, at, reviewer, signature }`: a customer's review, EIP-712 typed
+  data (domain "Factor Reviews", the chain, the desk) checked against the job's customer as the desk has it (a bounty's
+  poster, a plan's customer for a stage). `POST /v1/reviews/reply`: the agent's one reply. `POST /v1/reviews/erc8004
+  { job, tx }`: the customer's own ERC-8004 entry, read back from the transaction's receipt. `GET /v1/reviews`,
+  `/agent/<id>`, `/job/<n>`, `/job/<n>/erc8004` (the unsigned giveFeedback call) and `/file/<n>/<version>`. Every agent in
+  the lists carries `reviews: { average, count, notCounted }`; an agent's page and a job's page carry the reviews.
+- **What is kept.** `reviews` (the latest version per job, with why it is self-dealing, if it is), `review_versions` (every
+  version as signed, and the ERC-8004 file once one was made), `review_replies` and `review_erc8004`. Never taken back by a
+  reindex. The engine sends nothing for reviews and pays no gas.
+- **Limits and switches.** `REVIEWS_WINDOW_DAYS` (30), `REVIEWS_EDIT_DAYS` (7), `REVIEWS_FLOOR_ETH` (0.001); 6 writes a
+  minute from one address and 20 a day from one wallet. The owner's `reviews` switch stops it at once; `POST
+  /v1/admin/hide {"what": "review" | "review-reply", "key": <job>}` hides words, and the stars still count. `GET
+  /v1/health` carries `reviews`: how many, how many self-dealing, replies, entries on ERC-8004.
+
 ## Settings
 
 `engine/.env.example` lists every one. The three secrets, `BOT_PRIVATE_KEY`, `ENGINE_ADMIN_KEY` and

@@ -44,6 +44,7 @@ import { explain, Refusal, WORDS } from "./words.js";
 import { checkAgent, checkAgents, hireLink, type CheckedAgent, type CheckedAgents, type HireLinkOptions } from "./everywhere.js";
 import { ask, type Asked } from "./ask.js";
 import { copilot, copilotText, type Copiloted } from "./copilot.js";
+import { reviewOf, reviews, reviewsText, reviewText, reviewTyped, replyTyped, sendReview, type AgentReviews, type JobReview, type Review } from "./reviews.js";
 
 import { encodePayLink, LINK_BRIEF_MOST, readPayLink, tokenOf, verifyRecord, x402PaymentHeader, X402_NETWORK, X402_SCHEME, type AgentRecord, type PayLink, type X402Requirements, payLinkMessage } from "./pay.js";
 
@@ -67,6 +68,8 @@ export { checkAgent, checkAgents, embedSnippet, everywhereAbout, everywhereSigne
 export { ask, askedText } from "./ask.js";
 export { copilot, copilotText } from "./copilot.js";
 export type { Copiloted, CopilotAction, CopilotCall, CopilotReply } from "./copilot.js";
+export { REVIEW_MOST_CHARS, REVIEW_TAG, REVIEW_TYPES, replyTyped, reviewOf, reviews, reviewsText, reviewText, reviewTyped } from "./reviews.js";
+export type { AgentReviews, JobReview, Review, ReviewStanding } from "./reviews.js";
 export type { Asked, AskAgent, AskStage } from "./ask.js";
 export type { AgentAnswer, AnswerEnvelope, CheckedAgent, CheckedAgents, ConnectHire, ConnectTicket, EmbedPart, HireLinkOptions, SealedAnswer } from "./everywhere.js";
 export type { PlanText } from "./plans.js";
@@ -722,6 +725,66 @@ export class Factor {
   /** A Copilot answer in words, with the link where the person signs its action: the site this Factor talks to. */
   copilotText(c: Copiloted): string {
     return copilotText(c, { api: this.api });
+  }
+
+  /** An agent's paid reviews (docs/REVIEWS.md): the average weighted by what each job paid, the count, every review. Reads only. */
+  reviews(agent: string, o: { limit?: number } = {}): Promise<AgentReviews> {
+    return reviews(agent, { api: this.api, ...o });
+  }
+
+  /** A job's review, its history and the agent's reply, and who may review it until when. Reads only. */
+  reviewOf(job: number): Promise<JobReview> {
+    return reviewOf(job, { api: this.api });
+  }
+
+  /** An agent's reviews in words, the customers' words quoted as theirs. */
+  reviewsText(r: AgentReviews): string {
+    return reviewsText(r, { api: this.api });
+  }
+
+  /** The key that signs a review or a reply: the wallet's own. Through a Factor account, the site's job page signs instead. */
+  private typedSigner(): NonNullable<Account["signTypedData"]> {
+    if (!this.account?.signTypedData) throw new Refusal("This Factor was connected without a key: it cannot sign.", "read_only");
+    if (this.via) throw new Refusal("A review is signed by the wallet itself; this Factor acts through a Factor account. Sign it on the job's page instead.", "gasless");
+    return this.account.signTypedData.bind(this.account) as NonNullable<Account["signTypedData"]>;
+  }
+
+  /**
+   * Review a job this wallet paid for, once it is paid: 1 to 5 stars and up to 500 characters of words (none is fine).
+   * Signed as EIP-712 typed data with this key; nothing is sent to the chain and no ETH moves. Signing again within
+   * seven days changes it, and the version before stays under it.
+   */
+  async review(job: number, stars: number, words = ""): Promise<Review> {
+    const sign = this.typedSigner();
+    if (!Number.isInteger(stars) || stars < 1 || stars > 5) throw new Refusal("Stars are a whole number from 1 to 5.", "bad_stars");
+    const text = reviewText(words);
+    if (text === null) throw new Refusal("A review's words are 500 characters at most.", "bad_text");
+    const j = await reviewOf(job, { api: this.api });
+    const me = this.address!;
+    if (!j.standing.reviewer) throw new Refusal(`Job ${job} has no review: ${j.standing.why ?? "nobody reviews it"}.`, "no_review");
+    if (j.standing.reviewer !== me) throw new Refusal(`Only the wallet that paid for job ${job} can review it, and this one is ${me}.`, "not_yours");
+    if (!j.standing.open) throw new Refusal(`Job ${job} cannot be reviewed now: ${j.standing.why}.`, "closed");
+    const at = await this.clock();
+    const signature = await sign(reviewTyped({ chainId: this.chainId, desk: this.desk, job, agent: j.agent, reviewer: me, stars, text, at }) as never);
+    return (await sendReview("/reviews", { job, stars, text, at, reviewer: me, signature }, { api: this.api }))!;
+  }
+
+  /**
+   * The agent's one public answer to a review of its job, signed by this key: the agent's own wallet, or the wallet that
+   * runs it on Factor. It answers the review's latest version and can never be changed.
+   */
+  async reply(job: number, words: string): Promise<Review> {
+    const sign = this.typedSigner();
+    const text = reviewText(words);
+    if (!text) throw new Refusal("A reply is 1 to 500 characters of plain words.", "bad_text");
+    const j = await reviewOf(job, { api: this.api });
+    const me = this.address!;
+    if (!j.review) throw new Refusal(`Job ${job} has no review to answer.`, "no_review");
+    if (j.review.reply) throw new Refusal("This review has its answer already: a reply is never changed.", "replied");
+    if (!j.standing.repliers.includes(me)) throw new Refusal(`Only the agent's own wallet, or the wallet that runs it on Factor, can answer; this one is ${me}.`, "not_yours");
+    const at = await this.clock();
+    const signature = await sign(replyTyped({ chainId: this.chainId, desk: this.desk, job, agent: j.agent, by: me, review: j.review.digest as Hex, text, at }) as never);
+    return (await sendReview("/reviews/reply", { job, text, at, by: me, review: j.review.digest, signature }, { api: this.api }))!;
   }
 
   /** The address Factor signs records with, as its site says. An app that checks records should keep its own copy of it. */

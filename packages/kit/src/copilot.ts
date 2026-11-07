@@ -14,7 +14,7 @@ import { Refusal } from "./words.js";
 export interface CopilotCall { to: string; contract: "desk" | "guarantee" | "bounty" | "milestones"; fn: string; data: string; value: string; does: string }
 export interface CopilotAction {
   id: string;
-  kind: "hire" | "hire_cover" | "accept" | "accept_stage" | "bounty" | "milestones" | "back";
+  kind: "hire" | "hire_cover" | "accept" | "accept_stage" | "bounty" | "milestones" | "back" | "review";
   /** what signing it does, in a line */
   title: string;
   /** what it does, how much, to whom, which contract */
@@ -28,6 +28,8 @@ export interface CopilotAction {
   chainId: number;
   expiresAt: string;
   checked: string[];
+  /** a paid review to sign (kind "review"): no call and no ETH, an EIP-712 signature the person makes on the site */
+  review?: { job: number; agent: string; stars: number; text: string };
 }
 export interface CopilotReply {
   text: string;
@@ -79,7 +81,7 @@ export function copilotText(c: Copiloted, o: { api?: string } = {}): string {
   if (r.agents.length) lines.push("", ...r.agents.map((a, i) => `${i + 1}. ${a.name}, Factor Score ${a.score}, ${a.priceEth} ETH. ${a.reasons.join(" ")}`));
   if (r.action) {
     const a = r.action;
-    lines.push("", `Prepared, not signed: ${a.title}`, ...a.lines.map(([k, v]) => `${k}: ${v}`), `In all: ${ETH(a.totalWei)} ETH, in ${a.calls.length === 1 ? "one transaction" : `${a.calls.length} transactions`} on Robinhood Chain (chain ${a.chainId}).`);
+    lines.push("", `Prepared, not signed: ${a.title}`, ...a.lines.map(([k, v]) => `${k}: ${v}`), a.calls.length ? `In all: ${ETH(a.totalWei)} ETH, in ${a.calls.length === 1 ? "one transaction" : `${a.calls.length} transactions`} on Robinhood Chain (chain ${a.chainId}).` : "No transaction and no ETH: a signature the person's wallet makes for free.");
     lines.push(...a.calls.map((x, i) => `Call ${i + 1}: ${x.fn} on ${x.to} (${x.contract}), value ${ETH(x.value)} ETH. ${x.does}`));
     lines.push(`Good until ${a.expiresAt}. To sign it, open ${siteOf(o.api)}/copilot?c=${c.conversation} and press Sign in wallet; the person's own wallet confirms it there. Nothing is paid until they do.`);
   }

@@ -12,7 +12,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-black.svg" alt="license: MIT"></a>
   <img src="https://img.shields.io/badge/solidity-0.8.28-black.svg" alt="solidity 0.8.28">
   <img src="https://img.shields.io/badge/chain-Robinhood%20Chain-black.svg" alt="chain: Robinhood Chain">
-  <img src="https://img.shields.io/badge/tests-1300%2B-black.svg" alt="tests: 1300+">
+  <img src="https://img.shields.io/badge/tests-1400%2B-black.svg" alt="tests: 1400+">
 </p>
 
 <p align="center">
@@ -28,6 +28,7 @@
   <a href="docs/MILESTONES.md">Milestones</a> ·
   <a href="docs/EVERYWHERE.md">Factor everywhere</a> ·
   <a href="docs/ASK.md">Ask Factor</a> ·
+  <a href="docs/REVIEWS.md">Paid reviews</a> ·
   <a href="packages/kit">SDK and MCP</a> ·
   <a href="#roadmap">Roadmap</a>
 </p>
@@ -200,9 +201,9 @@ The whole of it is in [`packages/kit/README.md`](packages/kit/README.md) and [`d
 | | |
 |---|---|
 | Contracts | 581 tests: every rule one by one, twelve attacks carried out against the desk, random sequences of every move with the books checked after each step, and the whole of it against the real Pons on a copy of the chain. The tests themselves are tested: the contracts are broken on purpose and each break must be noticed |
-| Engine | 633 tests on a made-up chain (reorgs, a node that turns requests away, stuck transactions), checks end to end on a copy of the chain, and a dress rehearsal of a whole day with every wei accounted for at the end |
-| Site | 44 checks of every page, and more driven through a real browser with a wallet, a passkey and a phone |
-| SDK and MCP | 112 tests, and checks end to end on a copy of the chain |
+| Engine | 678 tests on a made-up chain (reorgs, a node that turns requests away, stuck transactions), checks end to end on a copy of the chain, and a dress rehearsal of a whole day with every wei accounted for at the end |
+| Site | 46 checks of every page, and more driven through a real browser with a wallet, a passkey and a phone |
+| SDK and MCP | 121 tests, and checks end to end on a copy of the chain |
 
     cd contracts && forge test
     cd engine && npm ci && npm test
@@ -230,6 +231,7 @@ the top says how the last run went.
 - [`docs/OPEN-JOBS.md`](docs/OPEN-JOBS.md): a customer posts a job, agents apply and are ranked by Factor Score, and the one picked is hired by locking the price.
 - [`docs/EVERYWHERE.md`](docs/EVERYWHERE.md): an agent's score, record, line and Guarantee for any app, marketplace and assistant, signed by Factor.
 - [`docs/ASK.md`](docs/ASK.md): one sentence made into a job with the agents that fit it: what a sentence becomes, where the price comes from, what Ask never does, the attacks and the answer to each.
+- [`docs/REVIEWS.md`](docs/REVIEWS.md): reviews only the wallet that paid for a job can write: who may review and when, what is signed, how the average is weighted, the tricks and the answer to each.
 
 ## Roadmap
 

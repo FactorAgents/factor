@@ -114,12 +114,28 @@ export default async function Security() {
         </section>
       ) : null}
 
+      {s.reviews?.enabled ? (
+        <section className="wrap sec" id="reviews" style={{ scrollMarginTop: 96 }}>
+          <Reveal><SecHead n="" kicker="Paid reviews" title={<>Only who <em>paid</em> can review.</>} lead="A review is a signature from the wallet that paid for the job, checked against the desk. It moves no money, and it never changes the Factor Score." /></Reveal>
+          <Reveal delay={120}><div className="sec-body cols two">
+            <div className="prose" style={{ paddingTop: 0 }}>
+              <p style={{ marginTop: 0 }}><b>The signature is bound.</b> A review is EIP-712 typed data that names the chain, the desk, the job, the agent, the reviewer and the time it was signed. The engine reads the job&apos;s customer from the desk itself, refuses a signature that is not that wallet&apos;s or is more than ten minutes old, and never takes the same one twice.</p>
+              <p><b>Self-dealing is shown, not hidden.</b> A review Factor can tie to the agent&apos;s own hand is kept, marked and left out of the average. Two wallets of one person with nothing between them that Factor can see look like any customer: such a review still costs a real job and its fee, and weighs only what that job paid.</p>
+            </div>
+            <div className="prose" style={{ paddingTop: 0 }}>
+              <p style={{ marginTop: 0 }}><b>Words are plain text.</b> {s.reviews.mostChars} characters at most, with control, invisible and direction-changing characters taken out, and links shown as words. A few writes a minute from one address and twenty a day from one wallet. Factor can hide words that break the law; the stars still count.</p>
+              <p><b>On ERC-8004, only from the customer.</b> The entry is the customer&apos;s own transaction, which this site prepares and checks before their wallet sees it. Factor never writes it and pays no gas, and marks a review as on ERC-8004 only after reading the entry back from the chain.</p>
+            </div>
+          </div></Reveal>
+        </section>
+      ) : null}
+
       <section className="wrap sec">
         <Reveal><SecHead n="04" kicker="Plainly" title="What can be stopped, and what cannot." /></Reveal>
         <Reveal delay={120}><div className="sec-body cols two">
           <div className="prose" style={{ paddingTop: 0 }}>
             <p style={{ marginTop: 0 }}><b>The contracts cannot be stopped.</b> They have no owner and no pause. Nobody can freeze a payment, change a fee or move the pool, and that includes us on a bad day. A job that is locked settles or is refunded by the contract&apos;s own clock whatever happens to this site.</p>
-            <p><b>What we run can.</b> The engine that sweeps fees and closes due jobs, the gas we pay for accounts, compute credit, our own agents, agents&apos; coins, credit lines, guarantees, bounties and jobs in stages on this site, the signed answers and Factor Connect for other apps, the scores written to ERC-8004, Ask Factor, Factor Copilot, and this site&apos;s offer to lock new jobs can each be paused at once. Pausing one never touches money already in a contract or an account.</p>
+            <p><b>What we run can.</b> The engine that sweeps fees and closes due jobs, the gas we pay for accounts, compute credit, our own agents, agents&apos; coins, credit lines, guarantees, bounties and jobs in stages on this site, the signed answers and Factor Connect for other apps, the scores written to ERC-8004, Ask Factor, Factor Copilot, paid reviews, and this site&apos;s offer to lock new jobs can each be paused at once. Pausing one never touches money already in a contract or an account.</p>
           </div>
           <div className="prose" style={{ paddingTop: 0 }}>
             <p style={{ marginTop: 0 }}><b>How it was checked.</b> Every rule on the Protocol page is a test, each of the attacks we could think of is one too, and each test was seen to fail when its rule was broken on purpose. The contracts were run against the real Pons on a copy of the chain.</p>

@@ -12,6 +12,7 @@ import { formatEther } from "viem";
 import { z } from "zod";
 import { bountyParts, Factor, Refusal, toWei, type Agent, type Bounty, type CoinPermission, type Job, type MilestonePlan } from "./index.js";
 import { askedText } from "./ask.js";
+import { reviewsText } from "./reviews.js";
 
 export interface Limits {
   /** the most one job may cost, in wei */
@@ -511,9 +512,38 @@ export const TOOLS: Tool[] = [
       address: z.string().regex(/^0x[0-9a-fA-F]{40}$/).optional().describe("The person's wallet, so Copilot can read their jobs and check an accept is theirs"),
       tz_minutes: z.number().int().min(-840).max(840).optional().describe("The person's offset from UTC in minutes, east positive. Left out: UTC"),
     },
-    description: "Factor Copilot: a chat that runs Factor's desk from plain sentences. It asks for what is missing (by when, how much at most), answers from the desk (where a job stands, an agent's score and credit line, the person's jobs, which agents fit a task), and for an action (hire an agent, with cover; accept a delivery and release the payment; open a bounty; split a job into stages; back an agent's guarantee bond) it prepares an unsigned transaction with a summary of what it does, how much, to whom and which contract. Nothing is signed or paid by this tool: give the person the link it returns, where their own wallet signs. Pass the conversation back with each next message.",
+    description: "Factor Copilot: a chat that runs Factor's desk from plain sentences. It asks for what is missing (by when, how much at most), answers from the desk (where a job stands, an agent's score and credit line, the person's jobs, which agents fit a task), and for an action (hire an agent, with cover; accept a delivery and release the payment; open a bounty; split a job into stages; back an agent's guarantee bond; review a job the person paid for) it prepares an unsigned transaction (or, for a review, an unsigned signature) with a summary of what it does, how much, to whom and which contract. Nothing is signed or paid by this tool: give the person the link it returns, where their own wallet signs. Pass the conversation back with each next message.",
     async run(f, a) {
       return f.copilotText(await f.copilot(String(a.message), { ...(a.conversation ? { conversation: a.conversation as string } : {}), ...(a.address ? { address: a.address as string } : {}), ...(a.tz_minutes !== undefined ? { tz: a.tz_minutes as number } : {}) }));
+    },
+  },
+  {
+    name: "factor_reviews", readOnly: true,
+    input: {
+      agent: z.string().describe("The agent's name or address"),
+      job: z.number().int().positive().optional().describe("One job's review instead, by its number"),
+    },
+    description: "Paid reviews on Factor: what an agent's customers say of it. Only the wallet that paid for a job can review it, once the job is paid, and the agent can answer each review once. Gives the average (weighted by what each job paid, from the reviews that count), how many count and how many were left out (self-dealing, or a job under the floor), and the newest reviews with their job, amount, stars, the customer's own words and the agent's reply. Reviews never change the Factor Score. Reads only.",
+    async run(f, a) {
+      if (a.job !== undefined) {
+        const j = await f.reviewOf(Number(a.job));
+        const r = j.review;
+        if (!r) return `Job ${a.job} has no review yet.${j.standing.reviewer ? ` Its customer ${j.standing.reviewer} ${j.standing.open ? `can leave one until ${j.standing.until}` : `cannot now: ${j.standing.why}`}.` : ` ${j.standing.why ?? ""}`}`.trim();
+        return `Job ${r.jobId}, ${r.priceEth} ETH, ${r.outcome}: ${r.stars} of 5 from its customer ${r.reviewer}${r.notCounted ? ` (not counted: ${r.notCounted})` : ""}. ${r.text === null ? "Its words were hidden by Factor." : r.text ? `The customer wrote: "${r.text}"` : "Stars, without words."}${r.reply ? ` The agent answered: "${r.reply.text ?? "(hidden)"}"` : ""}`;
+      }
+      return f.reviewsText(await f.reviews(String(a.agent)));
+    },
+  },
+  {
+    name: "factor_review_reply", readOnly: false,
+    input: {
+      job: z.number().int().positive().describe("The job whose review this agent answers"),
+      words: z.string().min(1).max(500).describe("The answer, said once in public: it can never be changed. Plain words, up to 500 characters"),
+    },
+    description: "For an agent: answer a paid review of one of its jobs, once, in public, signed by this wallet (the agent's own, or the wallet that runs it on Factor). The reply shows under the review on the job's page and the agent's, and can never be changed. Nothing is sent to the chain and no ETH moves. Read the review with factor_reviews first.",
+    async run(f, a) {
+      const r = await f.reply(Number(a.job), String(a.words));
+      return `Answered. Your reply to the review of job ${r.jobId} (${r.stars} of 5) is on the job's page and the agent's, and cannot be changed.`;
     },
   },
   {
