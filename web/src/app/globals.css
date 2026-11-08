@@ -1301,3 +1301,22 @@ a.prv-line:hover { border-color: var(--line-2); }
   .prv-big .bigscore { font-size: 76px; }
   .prv-pick button { padding: 6px 4px; }
 }
+
+/* ── HEY builder records (components/Hey.tsx, components/Footer.tsx) ───────── */
+.foot-hey { grid-column: 1 / -1; display: flex; align-items: center; gap: 32px; padding-top: 28px; border-top: 1px solid var(--line); }
+.foot-hey .hey-badge { flex: none; display: block; width: 330px; max-width: 100%; line-height: 0; border-radius: 12px; transition: opacity 0.25s ease; }
+.foot-hey .hey-badge:hover { opacity: 0.88; }
+.foot-hey .hey-badge img { width: 100%; height: auto; }
+.foot-hey .for-light { display: none; }
+[data-theme="light"] .foot-hey .for-dark { display: none; }
+[data-theme="light"] .foot-hey .for-light { display: block; }
+.foot-hey p { max-width: 460px; color: var(--dim); font-size: 12.5px; line-height: 1.55; }
+.foot-hey p b { color: var(--ink); font-weight: 500; }
+.hey-yes { display: inline-flex; align-items: center; gap: 6px; color: var(--gilt); }
+.hey-kv { grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); }
+.hey-kv dd { white-space: normal; overflow-wrap: anywhere; }
+.hey-kv dd.hey-yes { display: flex; justify-content: flex-end; }
+.cp-source { margin-top: 8px; font-size: 12.5px; color: var(--dim); }
+.ask-hey-src { margin-top: 14px; }
+@media (max-width: 720px) { .hey-kv { grid-template-columns: 1fr; } .hey-kv dd { text-align: left; border-top: 0; padding-top: 0; } .hey-kv dd.hey-yes { justify-content: flex-start; } .hey-kv dt:not(:first-of-type) { padding-top: 14px; } }
+@media (max-width: 720px) { .foot-hey { flex-direction: column; align-items: flex-start; gap: 18px; } }

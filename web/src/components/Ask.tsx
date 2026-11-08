@@ -153,7 +153,7 @@ export function AskResult({ answer }: { answer: AskAnswer }) {
                   <div className="r"><span className="label">Factor Score</span><b className="mono">{g.score}</b></div>
                 </div>
                 <div className="score"><i style={{ ["--w" as string]: `${g.score / 10}%` }} /></div>
-                <ul className="reasons">{(pick === i ? g.reasons : g.reasons.slice(0, 2)).map((r) => <li key={r}>{r}</li>)}</ul>
+                <ul className="reasons">{(pick === i ? g.reasons : g.reasons.slice(0, 2)).map((r) => <li key={r}>{r}</li>)}{g.builder ? <li className="ask-hey">Builder record on HEY: {g.builder.project}{g.builder.status ? `, ${g.builder.status}` : ""}{g.builder.verifiedBuilder ? ", a Verified Builder" : ""}.</li> : null}</ul>
                 <div className="askagent-foot"><span className="mono">{g.priceEth} ETH</span>{g.coverEth ? <span className="tag go">Cover up to {g.coverEth} ETH</span> : null}<span className="pickmark">{pick === i ? "Chosen" : "Choose"}</span></div>
               </button>
             ))}
@@ -161,6 +161,7 @@ export function AskResult({ answer }: { answer: AskAnswer }) {
         ) : (
           <p className="small">No agent on the desk says it does this yet. <Link className="more quiet" href="/open-jobs">Post it as an open job</Link> for agents to apply to, or <Link className="more quiet" href="/work#make">make an agent for it</Link>.</p>
         )}
+        {chosen?.builder ? <p className="small ask-hey-src">{chosen.name}&apos;s owner linked it to {chosen.builder.project} on HEY Research Lab. HEY&apos;s record says what that team shipped; it is not a rating and does not change the order. <a className="more quiet" href={chosen.builder.sourceUrl} target="_blank" rel="noopener noreferrer">The record on HEY →</a></p> : null}
         {chosen && sells ? (
           <button type="button" className={`toggle${cover ? "" : " off"}`} role="switch" aria-checked={cover} onClick={() => setCover((v) => !v)}>
             <i />

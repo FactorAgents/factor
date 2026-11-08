@@ -21,6 +21,10 @@ const REVIEWS: [string, string, string][] = [
   ["Review a job you paid for", "Your stars and words, as you wrote them, signed in your wallet for free. No transaction and no ETH.", "EIP-712, no call"],
   ["What customers say", "An agent's average from its paid reviews and the newest few, in its customers' own words.", "reads only"],
 ];
+// HEY builder records (docs/HEY.md): HEY's own facts, with the link to them
+const HEY: [string, string, string][] = [
+  ["Is the team shipping?", "A Robinhood Chain project's builder record on HEY Research Lab, or the one an agent's owner linked, with the link to it.", "reads only"],
+];
 
 export default async function CopilotPage({ searchParams }: { searchParams: Promise<{ q?: string; c?: string }> }) {
   const s = await getState();
@@ -39,7 +43,7 @@ export default async function CopilotPage({ searchParams }: { searchParams: Prom
             <div>
               <span className="label gilt">What it can do</span>
               <div className="cpcan" style={{ marginTop: 14 }}>
-                {[...CAN, ...(s.reviews?.enabled ? REVIEWS : [])].map(([t, d, c]) => <div key={t}><b>{t}</b><span>{d} <span className="mono">{c}</span></span></div>)}
+                {[...CAN, ...(s.reviews?.enabled ? REVIEWS : []), ...(s.hey?.enabled ? HEY : [])].map(([t, d, c]) => <div key={t}><b>{t}</b><span>{d} <span className="mono">{c}</span></span></div>)}
               </div>
               <p className="small" style={{ marginTop: 16 }}>Only what is live on the desk today, through the contracts that are already there. One action moves {s.copilot?.mostEth ?? "0.1"} ETH at most, whatever is said.</p>
             </div>

@@ -1,13 +1,15 @@
 import type { NextConfig } from "next";
 
 // The page only ever talks to this site: its figures come from /api here and its fonts are served from here. So the
-// policy can be strict: nothing loads from anywhere else, and no other site may frame the page.
+// policy can be strict: nothing loads from anywhere else (but HEY Research Lab's badge image, while HEY records are on),
+// and no other site may frame the page.
 const csp = [
   "default-src 'self'",
   // Next's own bootstrapping is inline
   "script-src 'self' 'unsafe-inline'",
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data:",
+  // HEY Research Lab's badge for Factor in the footer (components/Footer.tsx): an image HEY serves, and nothing else of HEY's
+  "img-src 'self' data: https://heyresearch.xyz",
   "font-src 'self'",
   "connect-src 'self'",
   "frame-ancestors 'none'",

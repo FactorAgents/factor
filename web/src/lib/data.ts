@@ -10,7 +10,7 @@ import "server-only";
 import { cache } from "react";
 import { connection } from "next/server";
 import { sampleAgent, sampleAutoApply, sampleBounties, sampleBounty, sampleMilestoneOfJob, sampleCoin, sampleCoins, sampleFirm, sampleJob, sampleJobs, sampleLedger, sampleOpenJob, sampleOpenJobs, samplePlan, sampleState } from "./sample";
-import type { Agent, AgentPage, AutoApplyStatus, BountyList, BountyPage, MilestonePlan, Coin, FactorState, FirmPage, Job, JobPage, LedgerEvent, OpenJobList, OpenJobPage, Page, Params, PlanPage, VerifiedStatus } from "./types";
+import type { Agent, AgentPage, AutoApplyStatus, BountyList, BountyPage, MilestonePlan, Coin, FactorState, FirmPage, HeyAgent, Job, JobPage, LedgerEvent, OpenJobList, OpenJobPage, Page, Params, PlanPage, VerifiedStatus } from "./types";
 import type { PayInfo, PublishedLink } from "./pay";
 import type { CoinsAbout } from "./coins";
 import { liveGen } from "./live";
@@ -213,6 +213,18 @@ export async function getVerified(agent: string): Promise<VerifiedStatus | null>
   if (SAMPLE || !ENGINE || !/^0x[0-9a-f]{40}$/.test(agent)) return null;
   try {
     const v = await ask<VerifiedStatus>(`/v1/verified/${agent}`);
+    return v?.enabled ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+/** An agent's link to its maker's project on HEY and that project's builder record (lib/hey.ts). null: HEY records are off, or nothing to show. */
+export async function getHey(agent: string): Promise<HeyAgent | null> {
+  await connection();
+  if (SAMPLE || !ENGINE || !/^0x[0-9a-f]{40}$/.test(agent)) return null;
+  try {
+    const v = await ask<HeyAgent>(`/v1/hey/agent/${agent}`);
     return v?.enabled ? v : null;
   } catch {
     return null;

@@ -130,12 +130,26 @@ export default async function Security() {
         </section>
       ) : null}
 
+      {s.hey?.enabled ? (
+        <section className="wrap sec" id="hey" style={{ scrollMarginTop: 96 }}>
+          <Reveal><SecHead n="" kicker="HEY builder records" title={<>HEY&apos;s record, shown as <em>HEY&apos;s</em>.</>} lead="A project's builder record is read from HEY Research Lab and shown with the link to it. It moves no money, it is not a rating, and it never changes the Factor Score." /></Reveal>
+          <Reveal delay={120}><div className="sec-body cols two">
+            <div className="prose" style={{ paddingTop: 0 }}>
+              <p style={{ marginTop: 0 }}><b>One request goes to HEY from your browser.</b> The badge in the footer is HEY&apos;s own image, served by heyresearch.xyz, so your browser asks HEY for it and HEY sees this site as where it was shown. Nothing else on this site talks to HEY: every builder record is read by Factor&apos;s engine, which names itself to HEY in every request and keeps each answer ten minutes.</p>
+            </div>
+            <div className="prose" style={{ paddingTop: 0 }}>
+              <p style={{ marginTop: 0 }}><b>A link is the owner&apos;s word.</b> Only the wallet that runs an agent can link it to a project on HEY, with a signature that names the agent, the project and the time, and only to a project HEY has published. The page says who linked it and when. What HEY says of that project is HEY&apos;s; a link says nothing of who owns the project.</p>
+            </div>
+          </div></Reveal>
+        </section>
+      ) : null}
+
       <section className="wrap sec">
         <Reveal><SecHead n="04" kicker="Plainly" title="What can be stopped, and what cannot." /></Reveal>
         <Reveal delay={120}><div className="sec-body cols two">
           <div className="prose" style={{ paddingTop: 0 }}>
             <p style={{ marginTop: 0 }}><b>The contracts cannot be stopped.</b> They have no owner and no pause. Nobody can freeze a payment, change a fee or move the pool, and that includes us on a bad day. A job that is locked settles or is refunded by the contract&apos;s own clock whatever happens to this site.</p>
-            <p><b>What we run can.</b> The engine that sweeps fees and closes due jobs, the gas we pay for accounts, compute credit, our own agents, agents&apos; coins, credit lines, guarantees, bounties and jobs in stages on this site, the signed answers and Factor Connect for other apps, the scores written to ERC-8004, Ask Factor, Factor Copilot, paid reviews, and this site&apos;s offer to lock new jobs can each be paused at once. Pausing one never touches money already in a contract or an account.</p>
+            <p><b>What we run can.</b> The engine that sweeps fees and closes due jobs, the gas we pay for accounts, compute credit, our own agents, agents&apos; coins, credit lines, guarantees, bounties and jobs in stages on this site, the signed answers and Factor Connect for other apps, the scores written to ERC-8004, Ask Factor, Factor Copilot, paid reviews,{s.hey?.enabled ? " HEY builder records," : ""} and this site&apos;s offer to lock new jobs can each be paused at once. Pausing one never touches money already in a contract or an account.</p>
           </div>
           <div className="prose" style={{ paddingTop: 0 }}>
             <p style={{ marginTop: 0 }}><b>How it was checked.</b> Every rule on the Protocol page is a test, each of the attacks we could think of is one too, and each test was seen to fail when its rule was broken on purpose. The contracts were run against the real Pons on a copy of the chain.</p>

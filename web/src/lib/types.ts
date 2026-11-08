@@ -320,7 +320,7 @@ export interface LedgerEvent {
 export interface Burn { n: number; at: string; eth: number; tokens: number; tx: string }
 /** The burn pot, read from the chain: what it holds, when the next burn may go and what it would spend. */
 export interface BurnPot { potEth: number; nextEth: number; nextAt: string | null; ready: boolean; open: boolean; count: number; ethSpent: number; lastAt: string | null; everyMin: number; smallestEth: number; bonded?: boolean; lastFeesAt?: string | null }
-export interface LogEntry { date: string; area: string; title: string; text: string; /** shown only while this is switched on */ only?: "raeto" }
+export interface LogEntry { date: string; area: string; title: string; text: string; /** shown only while this is switched on */ only?: "raeto" | "hey" }
 
 export interface Params {
   advanceMaxPct: number;     // of the locked payment
@@ -408,6 +408,8 @@ export interface FactorState {
   copilot?: { enabled: boolean; mostChars: number; mostEth: string };
   /** paid reviews (lib/reviews.ts): whether they are taken and shown, the longest words, and the smallest job that counts */
   reviews?: { enabled: boolean; mostChars: number; floorEth: number };
+  /** HEY builder records (lib/hey.ts): whether they show, and Factor's own page and badge on HEY Research Lab */
+  hey?: { enabled: boolean; project: string; badge: string };
 }
 
 /** One of a firm's agents and its part of the firm's work: the lead's is the firm's jobs, a member's the sub-jobs it took under them. */
@@ -627,6 +629,27 @@ export interface OpenJobPage { enabled: boolean; open: OpenJob; job?: Job }
 export interface OpenJobList { enabled: boolean; maxApplicants?: number; verifiedOnly?: boolean; items: OpenJob[] }
 /** An agent's verified owner, and the wallets that may verify it (GET /api/v1/verified/<agent>). */
 export interface VerifiedStatus { enabled: boolean; agent: string; owners: string[]; verifiedOwner: VerifiedOwner | null }
+
+/** HEY's facts in a builder record, under HEY's own names and as HEY gives them (engine/src/hey.ts). */
+export interface HeyFacts {
+  verified_builder: boolean | null;
+  research_level: string | null;
+  hey_status: string | null;
+  hey_status_label: string | null;
+  hey_status_help: string | null;
+  last_activity_at: string | null;
+  meaningful_ships_30d: number | null;
+  latest_meaningful_ship: { title: string | null; url: string | null; timestamp: string | null; kind: string | null; evidence_id: string | null; evidence_link: string | null } | null;
+  latest_change: { summary: string | null; occurred_at: string | null; precision: string | null; evidence_id: string | null; url: string | null } | null;
+  repo_url: string | null;
+  token_verification: string | null;
+  as_of: string | null;
+}
+export type HeyRecord =
+  | { found: true; source: "HEY Research Lab"; sourceUrl: string; badgeUrl: string; project: { slug: string; name: string; symbol: string | null; contract: string | null }; facts: HeyFacts; disclaimer: string | null; readAt: string; stale: boolean; from: "builder card" | "snapshot" }
+  | { found: false; why: string; away?: boolean; source: "HEY Research Lab"; sourceUrl: string };
+/** An agent's link to its maker's project on HEY, as its owner signed it, and that project's record; the wallets that may change it. */
+export interface HeyAgent { enabled: boolean; agent: string; link: { slug: string; name: string | null; contract: string | null; sourceUrl: string; by: string; at: string } | null; record: HeyRecord | null; owners: string[] }
 
 // ---------- auto-apply (engine/src/autoapply.ts) ----------
 

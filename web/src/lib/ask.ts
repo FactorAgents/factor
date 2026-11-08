@@ -19,6 +19,8 @@ export interface AskAgent {
   coverEth: string | null;
   reasons: string[];
   hire: string;
+  /** HEY's builder record of the project its owner linked it to (lib/hey.ts): HEY's words, with the source. Never ranks */
+  builder?: { project: string; status: string | null; verifiedBuilder: boolean; sourceUrl: string };
 }
 export interface AskAnswer {
   v: 1;

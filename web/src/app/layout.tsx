@@ -35,7 +35,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           {!s.reached ? <div className="banner" role="status">The figures are not arriving right now. Nothing is lost: the contracts hold everything, and this page fills in again by itself.</div> : null}
           {s.paused ? <div className="banner" role="status">{s.paused}</div> : null}
           <main>{children}</main>
-          <Footer links={s.links} live={push} />
+          <Footer links={s.links} live={push} hey={!!s.hey?.enabled} />
           {s.source === "engine" ? <Live push={push} since={push ? liveSince() : ""} /> : null}
           {/* Factor Copilot: a button on every page that opens the chat (components/Copilot.tsx) */}
           <CopilotDock enabled={!!s.copilot?.enabled} mostChars={s.copilot?.mostChars ?? 500} known={knownOf(s)} />

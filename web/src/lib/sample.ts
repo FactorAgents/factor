@@ -501,6 +501,8 @@ export function sampleState(): FactorState {
     // the sample has no engine: Copilot answers by a few plain rules on the sample's agents (lib/copilotSample.ts)
     copilot: { enabled: true, mostChars: 500, mostEth: "0.1" },
     reviews: { enabled: true, mostChars: 500, floorEth: 0.001 },
+    // HEY builder records: the footer shows HEY's real badge for Factor; the sample's made-up agents have no record on HEY
+    hey: { enabled: true, project: "https://heyresearch.xyz/project/factor", badge: "https://heyresearch.xyz/api/badge/factor" },
     // the sample has no engine: its guarantee is shown, and nothing can be bonded or covered from it
     guarantees: {
       enabled: true, contract: null, chainId: 4663,

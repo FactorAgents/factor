@@ -45,6 +45,8 @@ export interface Reply {
   action: Prepared | null;
   follow: number | null;
   choices: string[];
+  /** where the facts come from when they are another's: HEY's page of a project, for a builder record (lib/hey.ts) */
+  source?: { name: string; url: string; readAt: string };
 }
 export interface Answer { v: 1; conversation: string; written: "model" | "plain"; model: string | null; intent: string | null; reply: Reply }
 

@@ -138,6 +138,7 @@ function TurnView({ t, last, known, done, onSigned, onChoose, busy }: { t: Turn;
     <div className={`cp-me${r?.kind === "refusal" ? " no" : ""}`}>
       <p>{t.text}</p>
       {r?.facts.length ? <ul className="cp-facts">{r.facts.map((f, i) => <li key={i}>{f}</li>)}</ul> : null}
+      {r?.source && /^https:\/\/heyresearch\.xyz\//.test(r.source.url) ? <p className="cp-source">From {r.source.name}: <a className="more quiet" href={r.source.url} target="_blank" rel="noopener noreferrer">the record on HEY →</a></p> : null}
       {r?.agents.length ? (
         <ol className="cp-agents">
           {r.agents.map((a) => <li key={a.name}><div className="cp-agent-head"><b>{a.name}</b><span className="mono">{a.priceEth} ETH</span><span className="tag">Score {a.score}</span></div><p>{a.reasons.slice(1, 4).join(" ")}</p></li>)}

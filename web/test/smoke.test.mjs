@@ -555,12 +555,13 @@ test("agent firms: listed with the agents, a firm's page with its members and ea
   assert.match(d, /factor_hire_firm/);
 });
 
-test("each page is small enough for a phone, and nothing loads from another site", async () => {
+test("each page is small enough for a phone, and nothing loads from another site but HEY's badge for Factor", async () => {
   for (const path of PAGES) {
     const { html, headers } = await get(path);
     // the docs, with every section on, are the largest page: still a fraction of one picture
-    assert.ok(html.length < 245_000, `${path} is ${html.length} bytes`);
-    assert.doesNotMatch(html, /(src|href)="https?:\/\/(?!ponsfamily\.com|github\.com|x\.com|robinhoodchain\.blockscout\.com\/(tx|address)\/0x)/, `${path} loads from another site`);
+    assert.ok(html.length < 260_000, `${path} is ${html.length} bytes`);
+    // HEY Research Lab's own badge for Factor in the footer, and the links to Factor's page on HEY, are the one exception
+    assert.doesNotMatch(html, /(src|href)="https?:\/\/(?!ponsfamily\.com|github\.com|x\.com|robinhoodchain\.blockscout\.com\/(tx|address)\/0x|heyresearch\.xyz\/(api\/badge\/factor(\?theme=dark)?"|project\/factor(\?utm_source=badge&amp;utm_medium=html)?"))/, `${path} loads from another site`);
     assert.match(headers.get("content-security-policy") ?? "", /default-src 'self'/, `${path} has no content policy`);
   }
 });
@@ -967,7 +968,7 @@ test("Factor everywhere: its page under Protocol with a snippet for each case, t
   const init = await mcp({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "smoke", version: "1" } } });
   assert.equal(init.result.serverInfo.name, "factor");
   const tools = (await mcp({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} })).result.tools;
-  assert.deepEqual(tools.map((x) => x.name).sort(), ["factor_agent", "factor_agents", "factor_ask", "factor_check_agent", "factor_copilot", "factor_erc8004", "factor_firm_record", "factor_guarantee", "factor_hire_link", "factor_line", "factor_open_jobs", "factor_overview", "factor_record", "factor_reviews"]);
+  assert.deepEqual(tools.map((x) => x.name).sort(), ["factor_agent", "factor_agents", "factor_ask", "factor_builder_record", "factor_check_agent", "factor_copilot", "factor_erc8004", "factor_firm_record", "factor_guarantee", "factor_hire_link", "factor_line", "factor_open_jobs", "factor_overview", "factor_record", "factor_reviews"]);
   assert.ok(tools.every((x) => x.annotations.readOnlyHint === true));
   assert.equal((await fetch(`${BASE}/mcp`)).status, 405);
 
@@ -1104,6 +1105,33 @@ test("Factor Copilot: a button on every page, its own page in the Hire group, th
   assert.match(text((await get("/copilot", BARE)).html), /Copilot is resting\. Every form on the site works as always/);
   assert.equal((await fetch(`${BARE}/api/v1/copilot`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "hello" }) })).status, 503);
   assert.doesNotMatch(text((await get("/docs", BARE)).html), /Plain words in, a card to sign out/);
+});
+
+test("HEY builder records: HEY's own badge for Factor in the footer with this team ships, the docs, the security page and the log, the door's reads and the link, and nothing of it with no engine", async () => {
+  const home = await get("/");
+  // HEY's own badge, as its badge page gives it, linked to Factor's page on HEY; the dark one and the light one
+  assert.match(home.html, /<a class="hey-badge" href="https:\/\/heyresearch\.xyz\/project\/factor\?utm_source=badge&amp;utm_medium=html"/);
+  assert.match(home.html, /src="https:\/\/heyresearch\.xyz\/api\/badge\/factor\?theme=dark"/);
+  assert.match(home.html, /src="https:\/\/heyresearch\.xyz\/api\/badge\/factor"/);
+  assert.match(text(home.html), /This team ships\. HEY Research Lab, the public record of building on Robinhood Chain, keeps Factor's builder record/);
+  // HEY's badge is the one thing of another site's a page loads: the policy allows that and nothing more
+  const csp = (await fetch(`${BASE}/`)).headers.get("content-security-policy");
+  if (csp) { assert.match(csp, /img-src 'self' data: https:\/\/heyresearch\.xyz;/); assert.match(csp, /connect-src 'self';/); }
+  // never as a rating of an agent
+  for (const path of ["/", "/docs", "/security", "/log"]) assert.doesNotMatch(text((await get(path)).html), /HEY (rates|rating of|score of)|rated by HEY|HEY score/i, path);
+  const docs = text((await get("/docs")).html).replace(/<!-- -->/g, "");
+  assert.match(docs, /HEY builder records Whether the team behind it ships ?\./);
+  assert.match(docs, /factor_builder_record/);
+  assert.match(docs, /It is not a rating, and it never changes the Factor Score/);
+  assert.match(text((await get("/security")).html).replace(/<!-- -->/g, ""), /One request goes to HEY from your browser/);
+  assert.match(text((await get("/log")).html), /HEY builder records HEY Research Lab, the public record of building on Robinhood Chain, now shows on Factor/);
+  // the door passes the reads and the owner's link, and the sample has no engine to answer them
+  assert.deepEqual(await (await fetch(`${BASE}/api/v1/hey/record?q=factor`)).json(), { enabled: false });
+  assert.deepEqual(await (await fetch(`${BASE}/api/v1/hey/agent/lumen-07`)).json(), { enabled: false });
+  assert.equal((await fetch(`${BASE}/api/v1/hey/somewhere`)).status, 404);
+  assert.notEqual((await fetch(`${BASE}/api/v1/hey/link`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).status, 404);
+  // with no engine: no badge, no section, no entry
+  for (const path of ["/", "/docs", "/security", "/log"]) assert.doesNotMatch((await get(path, BARE)).html, /heyresearch\.xyz|HEY builder records/, path);
 });
 
 test("paid reviews: the average under each agent in the list, the section on an agent's page, the review on a job's page, the stars drawn and never a character, and nothing of it with no engine", async () => {
