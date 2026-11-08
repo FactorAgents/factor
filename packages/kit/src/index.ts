@@ -45,6 +45,7 @@ import { checkAgent, checkAgents, hireLink, type CheckedAgent, type CheckedAgent
 import { ask, type Asked } from "./ask.js";
 import { copilot, copilotText, type Copiloted } from "./copilot.js";
 import { reviewOf, reviews, reviewsText, reviewText, reviewTyped, replyTyped, sendReview, type AgentReviews, type JobReview, type Review } from "./reviews.js";
+import { agentBuilder, builderRecord, builderRecordText, heyLinkMessage, sendHeyLink, type AgentBuilder, type HeyLookup } from "./hey.js";
 
 import { encodePayLink, LINK_BRIEF_MOST, readPayLink, tokenOf, verifyRecord, x402PaymentHeader, X402_NETWORK, X402_SCHEME, type AgentRecord, type PayLink, type X402Requirements, payLinkMessage } from "./pay.js";
 
@@ -70,6 +71,8 @@ export { copilot, copilotText } from "./copilot.js";
 export type { Copiloted, CopilotAction, CopilotCall, CopilotReply } from "./copilot.js";
 export { REVIEW_MOST_CHARS, REVIEW_TAG, REVIEW_TYPES, replyTyped, reviewOf, reviews, reviewsText, reviewText, reviewTyped } from "./reviews.js";
 export type { AgentReviews, JobReview, Review, ReviewStanding } from "./reviews.js";
+export { agentBuilder, builderRecord, builderRecordText, heyLinkMessage } from "./hey.js";
+export type { AgentBuilder, BuilderRecord, HeyFacts, HeyLookup, NotOnHey } from "./hey.js";
 export type { Asked, AskAgent, AskStage } from "./ask.js";
 export type { AgentAnswer, AnswerEnvelope, CheckedAgent, CheckedAgents, ConnectHire, ConnectTicket, EmbedPart, HireLinkOptions, SealedAnswer } from "./everywhere.js";
 export type { PlanText } from "./plans.js";
@@ -740,6 +743,43 @@ export class Factor {
   /** An agent's reviews in words, the customers' words quoted as theirs. */
   reviewsText(r: AgentReviews): string {
     return reviewsText(r, { api: this.api });
+  }
+
+  /**
+   * A project's builder record on HEY Research Lab, the public record of building on Robinhood Chain (docs/HEY.md): by its
+   * name, its $TICKER, its HEY page or a 0x contract. HEY's facts as HEY gives them, with the page they are from. Not a
+   * rating, and never in the Factor Score. Reads only.
+   */
+  builderRecord(project: string): Promise<HeyLookup> {
+    return builderRecord(project, { api: this.api });
+  }
+
+  /** The project on HEY an agent's owner linked it to, and that project's builder record. Reads only. */
+  agentBuilder(agent: string): Promise<AgentBuilder> {
+    return agentBuilder(agent, { api: this.api });
+  }
+
+  /** A builder record in words, with the source. */
+  builderRecordText(r: HeyLookup, o: { agent?: string } = {}): string {
+    return builderRecordText(r, o);
+  }
+
+  /**
+   * Link an agent to its maker's project on HEY, as its owner: one signature, no gas. `project` is the project's slug on
+   * HEY (like "factor") or a 0x contract HEY ties to it; "none" unlinks. This wallet must be the one that runs the agent on
+   * Factor (the agent's own, or the wallet that made it on the site). The project must be one HEY has published.
+   */
+  async linkHey(project: string, o: { agent?: string } = {}): Promise<AgentBuilder["link"]> {
+    const by = this.mine();
+    const raw = o.agent ?? by;
+    const agent = /^0x[0-9a-fA-F]{40}$/.test(raw) ? raw.toLowerCase() : (await this.agent(raw))?.agent.address ?? null;
+    if (!agent) throw new Refusal(`There is no agent ${raw} on Factor.`, "no_agent");
+    const p = String(project ?? "").trim();
+    const given = /^0x[0-9a-fA-F]{40}$/.test(p) ? p.toLowerCase() : p;
+    if (given !== "none" && !/^0x[0-9a-f]{40}$/.test(given) && !/^[a-z0-9](?:[a-z0-9-]{0,98}[a-z0-9])?$/.test(given)) throw new Refusal('Name the project by its slug on HEY (like "factor"), a 0x contract, or "none" to unlink.', "bad_project");
+    const at = await this.clock();
+    const signature = await this.sign(heyLinkMessage({ agent, project: given, at }));
+    return sendHeyLink({ agent, by, project: given, at, signature }, { api: this.api });
   }
 
   /** The key that signs a review or a reply: the wallet's own. Through a Factor account, the site's job page signs instead. */

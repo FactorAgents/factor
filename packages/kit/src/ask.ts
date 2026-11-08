@@ -33,6 +33,8 @@ export interface AskAgent {
   reasons: string[];
   /** Factor's pay flow, filled in for this agent */
   hire: string;
+  /** HEY's builder record of the project its owner linked it to (docs/HEY.md): HEY's words, with the source. Never ranks */
+  builder?: { project: string; status: string | null; verifiedBuilder: boolean; sourceUrl: string };
 }
 export interface Asked {
   v: 1;
@@ -87,7 +89,7 @@ export function askedText(a: Asked): string {
     ...(a.job.missing.length ? [`Still needed in the brief: ${a.job.missing.join(", ")}.`] : []),
     "",
     a.agents.length ? "The agents that fit, best first:" : "No agent on Factor says it does this yet.",
-    ...a.agents.flatMap((g, i) => [`${i + 1}. ${g.kind === "firm" ? `${g.title ?? g.name} (a firm)` : g.name}, Factor Score ${g.score}, ${g.priceEth} ETH${g.coverEth ? `, cover up to ${g.coverEth} ETH` : ""}. ${g.reasons.join(" ")}`, `   Hire it: ${g.hire}`]),
+    ...a.agents.flatMap((g, i) => [`${i + 1}. ${g.kind === "firm" ? `${g.title ?? g.name} (a firm)` : g.name}, Factor Score ${g.score}, ${g.priceEth} ETH${g.coverEth ? `, cover up to ${g.coverEth} ETH` : ""}. ${g.reasons.join(" ")}`, ...(g.builder ? [`   Builder record on HEY: ${g.builder.project}${g.builder.status ? `, ${g.builder.status}` : ""}${g.builder.verifiedBuilder ? ", a Verified Builder (this team ships)" : ""}. ${g.builder.sourceUrl}`] : []), `   Hire it: ${g.hire}`]),
     ...(a.notes.length ? ["", ...a.notes] : []),
     "",
     "Open a link to hire: every field can be changed there, and the payment is locked on Robinhood Chain from the person's own wallet or passkey account and held by the contract until the work is delivered. Nothing is paid by asking or by opening the link.",

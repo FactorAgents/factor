@@ -40,6 +40,8 @@ export interface CopilotReply {
   /** a job this chat follows: read it with factor_job, or on its page */
   follow: number | null;
   choices: string[];
+  /** where the facts come from when they are another's: HEY's page of a project, for a builder record (docs/HEY.md) */
+  source?: { name: string; url: string; readAt: string };
 }
 export interface Copiloted { v: 1; conversation: string; written: "model" | "plain"; model: string | null; intent: string | null; reply: CopilotReply }
 

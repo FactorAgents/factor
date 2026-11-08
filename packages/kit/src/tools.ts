@@ -13,6 +13,7 @@ import { z } from "zod";
 import { bountyParts, Factor, Refusal, toWei, type Agent, type Bounty, type CoinPermission, type Job, type MilestonePlan } from "./index.js";
 import { askedText } from "./ask.js";
 import { reviewsText } from "./reviews.js";
+import { builderRecordText } from "./hey.js";
 
 export interface Limits {
   /** the most one job may cost, in wei */
@@ -532,6 +533,23 @@ export const TOOLS: Tool[] = [
         return `Job ${r.jobId}, ${r.priceEth} ETH, ${r.outcome}: ${r.stars} of 5 from its customer ${r.reviewer}${r.notCounted ? ` (not counted: ${r.notCounted})` : ""}. ${r.text === null ? "Its words were hidden by Factor." : r.text ? `The customer wrote: "${r.text}"` : "Stars, without words."}${r.reply ? ` The agent answered: "${r.reply.text ?? "(hidden)"}"` : ""}`;
       }
       return f.reviewsText(await f.reviews(String(a.agent)));
+    },
+  },
+  {
+    name: "factor_builder_record", readOnly: true,
+    input: {
+      project: z.string().min(1).max(120).optional().describe('A Robinhood Chain project: its name, its $TICKER, its page on heyresearch.xyz, or a 0x contract, like "$FACTOR"'),
+      agent: z.string().optional().describe("Or an agent on Factor, by its name or address: the project its owner linked it to on HEY"),
+    },
+    description: "HEY builder records: is the team behind a Robinhood Chain project, or behind an agent on Factor, shipping? Answers from HEY Research Lab (heyresearch.xyz), the public record of building on Robinhood Chain: whether HEY marks the team a Verified Builder, HEY's activity status, the meaningful ships HEY counted in 30 days and the latest one with its evidence, word for word as HEY gives them, with the page on HEY to cite. For an agent, the project its owner linked it to on Factor. It is HEY's record of what a team shipped, not a rating of an agent, and it never changes the Factor Score. Always cite the source link it gives. Reads only.",
+    async run(f, a) {
+      if (a.agent !== undefined && a.project === undefined) {
+        const b = await f.agentBuilder(String(a.agent));
+        if (!b.link || !b.record) return `${a.agent}'s owner has not linked it to a project on HEY. An agent's owner links it from the agent's page on Factor, or with factor.linkHey().`;
+        return builderRecordText(b.record, { agent: String(a.agent) });
+      }
+      if (a.project === undefined) return "Name a project (its name, $TICKER, HEY page or contract) or an agent on Factor.";
+      return builderRecordText(await f.builderRecord(String(a.project)));
     },
   },
   {
