@@ -29,6 +29,7 @@
   <a href="docs/EVERYWHERE.md">Factor everywhere</a> ·
   <a href="docs/ASK.md">Ask Factor</a> ·
   <a href="docs/REVIEWS.md">Paid reviews</a> ·
+  <a href="docs/HEY.md">HEY builder records</a> ·
   <a href="packages/kit">SDK and MCP</a> ·
   <a href="#roadmap">Roadmap</a>
 </p>
@@ -201,9 +202,9 @@ The whole of it is in [`packages/kit/README.md`](packages/kit/README.md) and [`d
 | | |
 |---|---|
 | Contracts | 581 tests: every rule one by one, twelve attacks carried out against the desk, random sequences of every move with the books checked after each step, and the whole of it against the real Pons on a copy of the chain. The tests themselves are tested: the contracts are broken on purpose and each break must be noticed |
-| Engine | 678 tests on a made-up chain (reorgs, a node that turns requests away, stuck transactions), checks end to end on a copy of the chain, and a dress rehearsal of a whole day with every wei accounted for at the end |
-| Site | 46 checks of every page, and more driven through a real browser with a wallet, a passkey and a phone |
-| SDK and MCP | 121 tests, and checks end to end on a copy of the chain |
+| Engine | 704 tests on a made-up chain (reorgs, a node that turns requests away, stuck transactions), checks end to end on a copy of the chain, and a dress rehearsal of a whole day with every wei accounted for at the end |
+| Site | 47 checks of every page, and more driven through a real browser with a wallet, a passkey and a phone |
+| SDK and MCP | 126 tests, and checks end to end on a copy of the chain |
 
     cd contracts && forge test
     cd engine && npm ci && npm test
@@ -232,6 +233,7 @@ the top says how the last run went.
 - [`docs/EVERYWHERE.md`](docs/EVERYWHERE.md): an agent's score, record, line and Guarantee for any app, marketplace and assistant, signed by Factor.
 - [`docs/ASK.md`](docs/ASK.md): one sentence made into a job with the agents that fit it: what a sentence becomes, where the price comes from, what Ask never does, the attacks and the answer to each.
 - [`docs/REVIEWS.md`](docs/REVIEWS.md): reviews only the wallet that paid for a job can write: who may review and when, what is signed, how the average is weighted, the tricks and the answer to each.
+- [`docs/HEY.md`](docs/HEY.md): HEY Research Lab's builder record of a project, shown as HEY's with the link to it: what is read from HEY and how politely, an agent's link to its maker's project, what HEY agreed and how the code holds to it, and what HEY's API could not give.
 
 ## Roadmap
 

@@ -647,6 +647,24 @@ rules are `docs/EVERYWHERE.md`.
   /v1/admin/hide {"what": "review" | "review-reply", "key": <job>}` hides words, and the stars still count. `GET
   /v1/health` carries `reviews`: how many, how many self-dealing, replies, entries on ERC-8004.
 
+## HEY builder records
+
+`src/hey.ts`, off until `HEY=on`. The rules are `docs/HEY.md`.
+
+- **The routes.** `GET /v1/hey`, `GET /v1/hey/record?q=` (a project's builder record on HEY Research Lab, by name, $TICKER,
+  HEY page or 0x contract), `GET /v1/hey/agent/<id>` (the project an agent's owner linked, and its record), `POST
+  /v1/hey/link { agent, by, project, at, signature }` (the owner's link, signed like the other owner actions). `/v1/state`
+  carries `hey: { enabled, project, badge }`. Copilot's `builder` intent and Ask's `builder` line read the same records.
+- **Asking HEY.** One client (`HeyClient`) makes every call, each with `x-hey-integration: factor/<the engine's version>`
+  and, when `HEY_API_KEY` is set, HEY's free key as a bearer token. Answers kept `HEY_CACHE_S` (600 s), the same request
+  shared, `HEY_PER_MIN` (60) calls a minute at most, a 429 waited out, `HEY_TIMEOUT_S` (8 s) a call; while HEY is away the
+  last answer (under a day old) is given, marked stale.
+- **What is kept.** `hey_links`: the agent, the project's slug and name, the contract it was named by, who signed, the
+  signature and when. HEY's answers are kept in the process only. Nothing reaches the Factor Score or a limit.
+- **Switches.** The owner's `hey` switch stops every call and hides everything at once. `GET /v1/health` carries `hey`:
+  calls, answers kept, stale and failed, the last error, the links, and whether a key is set (never the key).
+  `npm run hey-live` checks the client against HEY's real API, read-only.
+
 ## Settings
 
 `engine/.env.example` lists every one. The three secrets, `BOT_PRIVATE_KEY`, `ENGINE_ADMIN_KEY` and
