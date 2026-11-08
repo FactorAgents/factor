@@ -28,6 +28,7 @@ import { readEverywhere, type EverywhereConfig } from "../everywhere.js";
 import { readAsk, type AskConfig } from "../ask.js";
 import { readCopilot, type CopilotConfig } from "../copilot.js";
 import { readReviews, type ReviewsConfig } from "../reviews.js";
+import { readHey, type HeyConfig } from "../hey.js";
 import { readScores, type ScoresConfig } from "../erc8004score.js";
 
 // the chain the token lives on, written down once
@@ -169,6 +170,8 @@ export interface EngineConfig {
   copilot: CopilotConfig;
   // Paid reviews (../reviews.ts): reviews only the wallet that paid for a job can write, and the rules in figures
   reviews: ReviewsConfig;
+  // HEY builder records (../hey.ts): a project's builder record read from HEY Research Lab, shown as HEY's, never in a score
+  hey: HeyConfig;
 }
 
 // A factor.env-style file: NAME=value lines. What the environment already says wins.
@@ -355,6 +358,7 @@ export function readConfig(processEnv: Env = process.env): EngineConfig {
   const ask = readAsk(env, problems);
   const copilot = readCopilot(env, problems);
   const reviews = readReviews(env, problems);
+  const hey = readHey(env, problems);
   if (accounts.factory && (accounts.factory === desk || accounts.factory === splitter || accounts.factory === burnPot)) problems.push("FACTOR_ACCOUNTS is the same address as another of the contracts");
   const rawAdmin = env.ENGINE_ADMIN_KEY?.trim() ?? "";
   if (rawAdmin && rawAdmin.length < 24) problems.push("ENGINE_ADMIN_KEY must be at least 24 characters");
@@ -403,6 +407,7 @@ export function readConfig(processEnv: Env = process.env): EngineConfig {
     ask,
     copilot,
     reviews,
+    hey,
   };
 }
 

@@ -200,6 +200,9 @@ export interface AskAgent {
   reasons: string[];
   /** the pay flow on Factor's site, filled in: the customer opens it, changes what they like, and signs there */
   hire: string;
+  /** HEY's builder record of the project its owner linked it to (./hey.ts): HEY's words, with the source. Added after the
+   * picks are made, so it never ranks anything */
+  builder?: { project: string; status: string | null; verifiedBuilder: boolean; sourceUrl: string };
 }
 export interface AskAnswer {
   v: 1;

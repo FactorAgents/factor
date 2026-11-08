@@ -11,7 +11,8 @@
     "test": "vitest run",
     "e2e": "tsx scripts/e2e.ts",
     "bounties-e2e": "tsx scripts/bounties-e2e.ts",
-    "rehearsal": "tsx scripts/rehearsal.ts"
+    "rehearsal": "tsx scripts/rehearsal.ts",
+    "hey-live": "tsx scripts/hey-live.ts"
   },
   "engines": {
     "node": ">=22"

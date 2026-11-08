@@ -17,7 +17,9 @@
 //   review a paid job        no call: an EIP-712 review (./reviews.ts) the customer signs for free, then hands to Factor
 //   and it reads: a job and where it stands, an agent's score, record, line and Guarantee, the person's own jobs, the
 //   agents that fit a task (Ask Factor's ranking, ./ask.ts), and what an agent's paying customers say of it (paid
-//   reviews, written by code from the stored reviews and marked as the customers' own words; no model reads them)
+//   reviews, written by code from the stored reviews and marked as the customers' own words; no model reads them), and
+//   whether the team behind a Robinhood Chain project, or behind an agent, is shipping: its builder record on HEY Research
+//   Lab (./hey.ts), HEY's own facts with the link to the source, written by code; never a score, and never in one
 //
 // The model only reads what the person wrote. Every address, price, cap, time and agent comes from the engine's own data
 // and the person's own words, never from the model's text: an amount is taken only when its number is in what the person
@@ -45,6 +47,7 @@ import {
 } from "./ask.js";
 import { termsText } from "./milestones.js";
 import { reviewText } from "./reviews.js";
+import type { HeyLookup } from "./hey.js";
 
 type Env = Record<string, string | undefined>;
 
@@ -161,13 +164,16 @@ export interface CopilotData extends AskData {
   reviews?: (nameOrAddress: string) => { name: string; average: number | null; count: number; notCounted: number; recent: { job: number; stars: number; text: string | null; priceEth: number; at: string; counted: boolean }[] } | null;
   /** who may review a job and whether it is open now, while reviews are on */
   reviewing?: (job: number) => { reviewer: string | null; open: boolean; why: string | null; has: boolean } | null;
+  /** HEY builder records, while they are on (./hey.ts): a project's, by name, $TICKER or contract, or the project an
+   * agent's owner linked it to, by the agent's name or address (`agent` is then set) */
+  builder?: (query: string) => Promise<HeyLookup & { agent?: string }>;
 }
 
 // ---------- the answer ----------
 
-export type Intent = "hire" | "job" | "accept" | "bounty" | "milestones" | "back" | "score" | "line" | "find" | "mine" | "help" | "cancel" | "signfor" | "reviews" | "review";
-const INTENTS: Intent[] = ["hire", "job", "accept", "bounty", "milestones", "back", "score", "line", "find", "mine", "help", "cancel", "signfor", "reviews", "review"];
-type Slot = "task" | "budget" | "deadline" | "job" | "agent" | "parts" | "amount" | "stars";
+export type Intent = "hire" | "job" | "accept" | "bounty" | "milestones" | "back" | "score" | "line" | "find" | "mine" | "help" | "cancel" | "signfor" | "reviews" | "review" | "builder";
+const INTENTS: Intent[] = ["hire", "job", "accept", "bounty", "milestones", "back", "score", "line", "find", "mine", "help", "cancel", "signfor", "reviews", "review", "builder"];
+type Slot = "task" | "budget" | "deadline" | "job" | "agent" | "parts" | "amount" | "stars" | "project";
 
 /** One call of a prepared action: unsigned. The site decodes it again before the wallet sees it. */
 export interface PreparedCall { to: string; contract: "desk" | "guarantee" | "bounty" | "milestones"; fn: string; data: Hex; value: string; does: string }
@@ -208,6 +214,8 @@ export interface CopilotReply {
   follow: number | null;
   /** short replies the person can press */
   choices: string[];
+  /** where the facts come from, when they are another's: HEY's page of the project (./hey.ts) */
+  source?: { name: string; url: string; readAt: string };
 }
 
 export interface CopilotAnswer {
@@ -297,6 +305,8 @@ const HELP = /^\s*(help|hi|hello|hey|what can you do|how does this work)\b/i;
 // a review of a paid job: "review job 33: 5 stars, fast", "rate it 4/5"; and what customers say of an agent
 const REVIEW = /\b(review|rate)\s+(?:job\s*#?\s*\d+|it|this job|that job|my job)\b|\bleave (?:a )?review\b|^\s*[1-5]\s*(?:stars?|\/\s*5|out of (?:5|five))\b/i;
 const REVIEWS = /\bwhat (?:do|did|are|have) (?:its |the |their |his |her )?(?:customers?|clients?|buyers?|people|users)\b[^.?!]{0,30}\b(?:say|said|saying|think)\b|\breviews?\b|\bhow (?:is|are) .{1,40} rated\b|\bstars?\b/i;
+// whether the team behind a project, or an agent, is shipping: its builder record on HEY (./hey.ts)
+const BUILDER = /\b(?:team|builders?|devs?|developers?|people|makers?|founders?)\s+(?:behind|of|that (?:built|builds|made))\b|\b(?:is|are)\b[^.?!]{1,60}\b(?:still\s+)?(?:shipping|being built|being developed|still building)\b|\bbuilder(?:'s)? record\b|\bverified builder\b|\bheyresearch\b|\b(?:on|from|according to) hey\b|\bhey(?: research)?(?: lab)? (?:record|page|says)\b|\bwhat (?:does|did) hey (?:say|have|record)\b|\bwho (?:builds|is building|built|made|makes)\b|\bis anyone building\b/i;
 const STARS = /\b([1-5])\s*(?:stars?|\/\s*5|out of (?:5|five))\b|\b(one|two|three|four|five)\s+stars?\b/i;
 const STAR_WORD: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5 };
 
@@ -334,11 +344,39 @@ function agentIn(text: string, names: string[]): string | null {
   return best;
 }
 
+const NOT_A_NAME = new Set(["the", "a", "an", "this", "that", "it", "its", "team", "project", "agent", "token", "coin", "builders", "builder", "devs", "people", "still", "really", "actually", "hey", "record", "they", "them", "these", "those", "who", "what"]);
+/**
+ * The project a builder question is about, from the person's own words: a 0x contract, an agent on the desk, a $TICKER,
+ * or the name after "behind", "of", "is ... shipping" or "who builds". Null when no name can be read.
+ */
+export function projectIn(text: string, names: string[]): string | null {
+  const addr = /\b0x[0-9a-fA-F]{40}\b/.exec(text);
+  if (addr) return addr[0].toLowerCase();
+  const agent = agentIn(text, names);
+  if (agent) return agent;
+  const tick = /(?:^|\s)\$([A-Za-z][A-Za-z0-9]{1,14})\b/.exec(text);
+  if (tick) return `$${tick[1]}`;
+  const link = /heyresearch\.xyz\/project\/([a-z0-9-]{1,100})/i.exec(text);
+  if (link) return `https://heyresearch.xyz/project/${link[1]!.toLowerCase()}`;
+  const word = "([A-Za-z0-9][\\w.-]{1,39}(?:\\s+[A-Z0-9][\\w.-]{1,29}){0,2})";
+  for (const re of [
+    new RegExp(`\\b(?:behind|of|for|about|built|builds|building|made|makes)\\s+(?:the\\s+)?(?:project\\s+|token\\s+|agent\\s+)?["']?${word}["']?`, "i"),
+    new RegExp(`\\b(?:is|are)\\s+(?:the\\s+)?(?:team\\s+(?:behind|of)\\s+)?["']?${word}["']?\\s+(?:still\\s+)?(?:shipping|being built|being developed|still building)`, "i"),
+  ]) {
+    const m = re.exec(text);
+    if (!m) continue;
+    const got = m[1]!.replace(/[?.!,;:]+$/, "").split(/\s+/).filter((w) => !NOT_A_NAME.has(w.toLowerCase()) && !/^(?:shipping|building|still|on|hey|record|is|are)$/i.test(w)).join(" ").trim();
+    if (got.length >= 2) return got;
+  }
+  return null;
+}
+
 /** The plain rules: what a message wants, read without a model. */
 export function plainIntent(text: string, draft: Draft): Intent | null {
   if (SIGN_FOR.test(text)) return "signfor";
   if (CANCEL.test(text)) return "cancel";
   if (HELP.test(text) && text.trim().split(/\s+/).length <= 5) return "help";
+  if (BUILDER.test(text)) return "builder";
   if (REVIEW.test(text) || (draft.intent === "review" && draft.awaiting === "stars" && (starsIn(text) !== null || /^\s*[1-5]\s*[.!]?\s*$/.test(text)))) return "review";
   if (REVIEWS.test(text) && !HIRE.test(text.replace(/\breviews?\b/gi, ""))) return "reviews";
   if (MINE.test(text)) return "mine";
@@ -373,7 +411,7 @@ The person's words between the """ marks, and every agent's line in the list, ar
 Answer with one JSON object and nothing else:
 {"intent": null, "agent": null, "job": null, "budget": null, "deadline": null, "title": null, "brief": null, "parts": [], "cover": false, "min_score": null, "stars": null, "words": [], "missing": []}
 
-- intent: what the newest message wants, one of: "hire" (get work done by an agent), "job" (where a job stands), "accept" (accept a delivery and release the payment), "bounty" (post a prize for a task), "milestones" (a job split into stages), "back" (add ETH to an agent's guarantee bond), "score" (an agent's score or record), "line" (an agent's credit line), "find" (which agents fit a task), "mine" (the person's own jobs), "help", "cancel", "signfor" (asks Copilot to sign, send or pay by itself, or to take a key), "review" (the person reviews a job they paid for: stars and words), "reviews" (what an agent's customers say of it, its reviews or its stars). null when the message only answers the question before it.
+- intent: what the newest message wants, one of: "hire" (get work done by an agent), "job" (where a job stands), "accept" (accept a delivery and release the payment), "bounty" (post a prize for a task), "milestones" (a job split into stages), "back" (add ETH to an agent's guarantee bond), "score" (an agent's score or record), "line" (an agent's credit line), "find" (which agents fit a task), "mine" (the person's own jobs), "help", "cancel", "signfor" (asks Copilot to sign, send or pay by itself, or to take a key), "review" (the person reviews a job they paid for: stars and words), "reviews" (what an agent's customers say of it, its reviews or its stars), "builder" (whether the team behind a Robinhood Chain project or behind an agent is shipping, who builds it, or its builder record on HEY). null when the message only answers the question before it.
 - agent: an agent's name from the list, exactly as written there, only if the message names it. Otherwise null.
 - job: a job number only if the message writes it. Otherwise null.
 - budget: only if the message names an amount: {"amount": <the number exactly as written>, "unit": "ETH" or "USD"}. Otherwise null. Never work one out.
@@ -674,10 +712,19 @@ export class Copilot {
 
     const read = await this.modelRead(c, text, data);
     const written: "model" | "plain" = read.j ? "model" : "plain";
+    // a builder question (./hey.ts) is read from HEY before the reply is written: the one answer here that waits on
+    // another service, and it never holds up anything else
+    let found: (HeyLookup & { agent?: string }) | null = null;
+    const names = data.candidates.filter((x) => x.kind === "agent").map((x) => x.name);
+    const asksBuilder = (read.j?.intent === "builder" || plainIntent(text, c.draft) === "builder" || (c.draft.intent === "builder" && c.draft.awaiting === "project")) && !SIGN_FOR.test(text);
+    if (asksBuilder && data.builder) {
+      const subject = projectIn(text, names) ?? (c.draft.awaiting === "project" && text.length <= 120 ? text.replace(/[?.!]+$/, "").trim() : null) ?? (/\b(it|its|this agent|that agent|the agent)\b/i.test(text) ? c.lastAgent : null);
+      if (subject) found = await data.builder(subject).catch(() => ({ found: false as const, why: "HEY could not be reached", away: true, source: "HEY Research Lab" as const, sourceUrl: "https://heyresearch.xyz" }));
+    }
     let reply: CopilotReply;
     let intent: Intent | null = null;
     try {
-      ({ reply, intent } = this.turn(c, text, read.j, data));
+      ({ reply, intent } = this.turn(c, text, read.j, data, found));
     } catch (e) {
       // a prepared action that did not hold is never handed back
       this.o.log?.(`[copilot] stopped: ${e instanceof Error ? e.message : String(e)}`);
@@ -690,7 +737,7 @@ export class Copilot {
   }
 
   /** The reply to one message, from the checked reading of it and the engine's data. */
-  turn(c: Conv, text: string, j: Record<string, unknown> | null, data: CopilotData): { reply: CopilotReply; intent: Intent | null } {
+  turn(c: Conv, text: string, j: Record<string, unknown> | null, data: CopilotData, found: (HeyLookup & { agent?: string }) | null = null): { reply: CopilotReply; intent: Intent | null } {
     const names = data.candidates.filter((x) => x.kind === "agent").map((x) => x.name);
     let d = c.draft;
     // what the message wants: the model's word when it is one of Copilot's, else the plain rules
@@ -721,6 +768,7 @@ export class Copilot {
       : run === "find" ? this.find(c, d, data, said)
       : run === "reviews" ? this.reviewsReply(c, d, data)
       : run === "review" ? this.reviewCard(c, d, data)
+      : run === "builder" ? this.builderReply(c, d, data, found)
       : this.mine(c, data);
     return { intent: run, reply };
   }
@@ -1073,6 +1121,31 @@ export class Copilot {
       ...r.recent.map((x) => `Job ${pad(x.job)}, ${x.priceEth} ETH, ${x.stars} of 5${x.counted ? "" : " (not counted)"}: ${x.text === null ? "its words were hidden by Factor" : x.text ? `"${x.text}"` : "stars, without words"}`),
     ];
     return say("answer", `What ${r.name}'s paying customers say, in their own words. Only the wallet that paid for a job can review it, and reviews never change the Factor Score.`, { facts, choices: [`Hire ${r.name}`] });
+  }
+
+  /** Whether a team ships: HEY's builder record of the project, HEY's own facts with the link to the source, by code. */
+  private builderReply(c: Conv, d: Draft, data: CopilotData, r: (HeyLookup & { agent?: string }) | null): CopilotReply {
+    if (!data.builder) return say("refusal", "Builder records from HEY are not open just now.");
+    if (!r) return ask(d, "project", "Which project, or which agent? Name it, its $TICKER, or its contract on Robinhood Chain.");
+    d.awaiting = null;
+    d.done = true;
+    if (r.agent) c.lastAgent = r.agent;
+    if (!r.found) {
+      const lead = r.agent && !r.away ? `${r.why}. An agent's owner can link it to its maker's project on HEY from the agent's page.` : `${r.why.charAt(0).toUpperCase()}${r.why.slice(1)}.`;
+      return say("answer", lead, { facts: (r.candidates ?? []).map((x) => `${x.name}${x.symbol ? ` ($${x.symbol})` : ""}${x.status ? `: ${x.status}` : ""}. ${x.sourceUrl}`), choices: (r.candidates ?? []).slice(0, 3).map((x) => `Is ${x.name} shipping?`) });
+    }
+    const f = r.facts;
+    const facts = [
+      ...(f.verified_builder ? ["Verified Builder on HEY: this team ships."] : []),
+      ...(f.hey_status_label || f.hey_status ? [`HEY's status: ${f.hey_status_label ?? f.hey_status}${f.hey_status_help ? `. ${f.hey_status_help}` : "."}`] : []),
+      ...(f.meaningful_ships_30d !== null ? [`Meaningful ships HEY counted in 30 days: ${f.meaningful_ships_30d}.`] : []),
+      ...(f.latest_meaningful_ship?.title ? [`Latest ship HEY recorded: ${f.latest_meaningful_ship.title}${f.latest_meaningful_ship.timestamp ? `, ${f.latest_meaningful_ship.timestamp.slice(0, 10)}` : ""}.`] : []),
+      `Source: ${r.sourceUrl}`,
+    ];
+    const who = r.agent ? `${r.agent} is linked by its owner to ${r.project.name} on HEY. ` : "";
+    return say("answer", `${who}${r.project.name}'s builder record on HEY Research Lab, the public record of building on Robinhood Chain, in HEY's own words${r.stale ? " (an earlier reading: HEY could not be reached just now)" : ""}. It says what the team shipped; it is not a rating, and it never changes the Factor Score.`, {
+      facts, source: { name: "HEY Research Lab", url: r.sourceUrl, readAt: r.readAt }, choices: r.agent ? [`Hire ${r.agent}`, `What is ${r.agent}'s score?`] : [],
+    });
   }
 
   /** A review of a job the connected wallet paid for: a card to sign for free, with the stars and words the person wrote. */

@@ -55,6 +55,7 @@ import { Erc8004Scores } from "./erc8004score.js";
 import { Ask, askModelOf, type AskModel } from "./ask.js";
 import { Copilot, COPILOT_WORST_IN, COPILOT_WORST_OUT } from "./copilot.js";
 import { Reviews } from "./reviews.js";
+import { Hey, type HeyFetch } from "./hey.js";
 import { TAG2 } from "./erc8004.js";
 import { DeskStore, STATE } from "./desk.js";
 import { scoreOf } from "./score.js";
@@ -73,6 +74,7 @@ export interface EngineOptions {
   verifiedProviders?: Provider[]; // instead of Human Passport and Talent Protocol (tests)
   askModel?: AskModel | null; // instead of the model Ask Factor would ask (tests)
   copilotModel?: AskModel | null; // instead of the model Copilot would ask (tests)
+  heyFetch?: HeyFetch; // instead of HEY Research Lab's API (tests)
 }
 
 const ZERO = "0x0000000000000000000000000000000000000000";
@@ -157,6 +159,8 @@ export class Engine {
   copilot: Copilot | null = null;
   /** Paid reviews (./reviews.ts): made once the database is open, whether or not REVIEWS=on, so what was stored is kept */
   reviews: Reviews | null = null;
+  /** HEY builder records (./hey.ts): made once the database is open, whether or not HEY=on, so the agents' links are kept */
+  hey: Hey | null = null;
   /** the splitter's admin, read at the boot check: Factor's own wallet, which sets the rules of Factor's own agents */
   private splitterAdmin: string | null = null;
   /** the key that signs agents' records for other apps (./record.ts), or null */
@@ -221,7 +225,7 @@ export class Engine {
     return {
       config: this.config, state: this.state, problems: this.problems, warnings: this.warnings, lastError: this.lastError, loops, ctx: this.ctx, rpc: this.chain?.health() ?? null, now: this.now,
       links: { pons: link(this.env.FACTOR_PONS_URL), github: link(this.env.FACTOR_GITHUB_URL), x: link(this.env.FACTOR_X_URL) }, dataDirSet: !!this.env.FACTOR_DATA_DIR?.trim(), profiles: this.profiles, gateway: this.gateway, accounts: this.accounts, house: this.house, demo: this.demo, pulse: this.pulse, deskMind: this.deskMind, launchList: this.launchList, activity: this.activity, matcher: this.matcher, pay: this.pay, subjobs: this.subjobs, recordSigner: this.recordSigner, firms: this.firms, plans: this.plans, erc8004: this.erc8004, openjobs: this.openjobs, autoapply: this.autoapply, verified: this.verified, coins: this.coins, lines: this.lines, guarantees: this.guarantees, bounties: this.bounties, milestones: this.milestones,
-      connect: this.connect, erc8004Scores: this.erc8004Scores, answerSigner: this.answerSigner, ask: this.ask, copilot: this.copilot, reviews: this.reviews,
+      connect: this.connect, erc8004Scores: this.erc8004Scores, answerSigner: this.answerSigner, ask: this.ask, copilot: this.copilot, reviews: this.reviews, hey: this.hey,
     };
   }
 
@@ -647,6 +651,13 @@ export class Engine {
         return null;
       },
     });
+    // HEY builder records: made whether or not they are on, so an agent's link is kept; HEY is asked nothing while off
+    this.hey = new Hey({
+      cfg: c.hey, db, now: this.now, log: this.log, setters,
+      signed: async (address, message, signature) => this.profiles!.signed(address, message, signature),
+      key: () => this.env.HEY_API_KEY, ...(this.opts.heyFetch ? { fetch: this.opts.heyFetch } : {}),
+    });
+    if (c.hey.enabled) this.log(`[hey] on: builder records are read from ${c.hey.base} with x-hey-integration: ${c.hey.integration}, kept ${Math.round(c.hey.freshMs / 1000)} s, ${c.hey.perMinute} calls a minute at most${this.env.HEY_API_KEY?.trim() ? ", with Factor's free key" : ""}; shown as HEY's, never in the Factor Score`);
     if (c.reviews.enabled) this.log(`[reviews] on: a job's customer reviews it once it is paid, within ${c.reviews.windowDays} days; changes for ${c.reviews.editDays} days; jobs from ${Number(c.reviews.floorWei / 10n ** 12n) / 1e6} ETH count toward the average. Factor pays no gas for reviews`);
     if (c.coins.enabled && c.coins.note) this.log(`[coins] NOT ON: ${c.coins.note}`);
     else if (c.coins.enabled) this.log(`[coins] on: agents' coins are read from the launcher ${c.coins.launcher}, and a coin's fees are swept once they are worth ${c.coins.gasMultiple} times the gas`);

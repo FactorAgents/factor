@@ -8,6 +8,7 @@ import { Engine } from "../../src/engine.js";
 import type { HouseSigner } from "../../src/house/house.js";
 import type { Provider } from "../../src/verified.js";
 import type { AskModel } from "../../src/ask.js";
+import type { HeyFetch } from "../../src/hey.js";
 import { A, FakeChain } from "./fake.js";
 
 // anvil's first built-in test key: public, printed by anvil itself, worth nothing anywhere. Live mode will not
@@ -41,7 +42,7 @@ export interface Rig {
   turn(): Promise<void>;
 }
 
-export async function rig(mode: EngineMode, o: { chain?: FakeChain; more?: Env; sqlite?: Database.Database; signer?: boolean; houseSigners?: (name: string) => HouseSigner; verifiedProviders?: Provider[]; askModel?: AskModel | null; copilotModel?: AskModel | null } = {}): Promise<Rig> {
+export async function rig(mode: EngineMode, o: { chain?: FakeChain; more?: Env; sqlite?: Database.Database; signer?: boolean; houseSigners?: (name: string) => HouseSigner; verifiedProviders?: Provider[]; askModel?: AskModel | null; copilotModel?: AskModel | null; heyFetch?: HeyFetch } = {}): Promise<Rig> {
   const chain = o.chain ?? new FakeChain();
   const wall = { extra: 0 };
   const now = () => chain.time * 1000 + wall.extra;
@@ -59,6 +60,7 @@ export async function rig(mode: EngineMode, o: { chain?: FakeChain; more?: Env; 
     ...(o.verifiedProviders ? { verifiedProviders: o.verifiedProviders } : {}),
     ...(o.askModel !== undefined ? { askModel: o.askModel } : {}),
     ...(o.copilotModel !== undefined ? { copilotModel: o.copilotModel } : {}),
+    ...(o.heyFetch ? { heyFetch: o.heyFetch } : {}),
   });
   engine.start();
   await engine.ready();

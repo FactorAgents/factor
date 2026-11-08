@@ -54,6 +54,10 @@
 //   GET  /v1/reviews            paid reviews (reviews.ts): whether they are on, and the rules in figures
 //   GET  /v1/reviews/agent/<id>, /v1/reviews/job/<n>, /v1/reviews/job/<n>/erc8004, /v1/reviews/file/<n>/<version>
 //   POST /v1/reviews | /v1/reviews/reply | /v1/reviews/erc8004   a customer's signed review, the agent's one reply, an ERC-8004 entry read back
+//   GET  /v1/hey                HEY builder records (hey.ts): whether they are on, where they are read, and the words with them
+//   GET  /v1/hey/record?q=      a project's builder record on HEY Research Lab, by name, $TICKER, HEY page or 0x contract
+//   GET  /v1/hey/agent/<id>     the HEY project an agent's owner linked it to, and that project's builder record
+//   POST /v1/hey/link           an agent's owner links it to its maker's project on HEY, or unlinks it
 //
 // Every GET is answered from the database (the last reading of the chain, the ledger, the engine's copy of each
 // job and agent), so a burst of visitors costs the node nothing. Before the contracts are given, and whenever the
@@ -103,6 +107,7 @@ import type { Erc8004Scores } from "./erc8004score.js";
 import type { Ask, AskCandidate, AskData, SettledJob } from "./ask.js";
 import type { Copilot, CopilotAgent, CopilotData, CopilotJob } from "./copilot.js";
 import type { Reviews, ReviewSummary } from "./reviews.js";
+import type { Hey, HeyLookup } from "./hey.js";
 
 export interface Answer {
   status: number;
@@ -175,6 +180,8 @@ export interface EngineView {
   copilot?: Copilot | null;
   /** paid reviews (./reviews.ts) */
   reviews?: Reviews | null;
+  /** HEY builder records (./hey.ts) */
+  hey?: Hey | null;
 }
 
 /** Factor everywhere, as the site reads it: web/src/lib/types.ts keeps the same shape by hand. */
@@ -590,6 +597,12 @@ export class EngineApi {
     if (path === "/v1/reviews" || path.startsWith("/v1/reviews/")) {
       if (from && this.tooMany(from, "reviews-get", 600)) return { status: 429, body: { error: "too many requests: try again in a minute" } };
       return this.reviewsGet(this.view(), path, query);
+    }
+    // HEY builder records (./hey.ts): what HEY Research Lab recorded of a project's builders, as HEY's, read through
+    // the engine's own client (kept, shared and limited there), so these are never kept here as well
+    if (path === "/v1/hey" || path.startsWith("/v1/hey/")) {
+      if (from && this.tooMany(from, "hey-get", 600)) return { status: 429, body: { error: "too many requests: try again in a minute" } };
+      return this.heyGet(this.view(), path, query);
     }
     // Factor everywhere: one agent's (or a few agents') score, record, line and Guarantee in an answer Factor signs
     if (path === "/v1/everywhere" || path.startsWith("/v1/everywhere/") || path.startsWith("/v1/connect/ticket/")) return this.everywhereGet(this.view(), path, query, from, connectKey);
@@ -1255,6 +1268,15 @@ export class EngineApi {
     const r = await v.ask!.ask(body, from || "unknown", data);
     if (!r.ok) return { status: r.status, body: { error: r.error } };
     const paused = stopped(v.ctx!.db, "hiring");
+    // HEY builder records (./hey.ts): an agent whose owner linked it to its maker's project on HEY carries HEY's own
+    // word on that project beside its reasons, with the source. It is added after the picks: it never ranks anything
+    if (this.heyOn(v)) {
+      await Promise.all(r.answer.agents.map(async (a) => {
+        if (a.kind !== "agent") return;
+        const b = await this.agentBuilder(v, a.address);
+        if (b?.record.found) a.builder = { project: b.record.project.name, status: b.record.facts.hey_status_label ?? b.record.facts.hey_status, verifiedBuilder: b.record.facts.verified_builder === true, sourceUrl: b.record.sourceUrl };
+      }));
+    }
     return ok({ ...r.answer, ...(paused ? { notes: [...r.answer.notes, `New jobs are paused for now${paused.note ? `: ${paused.note}` : "."}`] } : {}) } as unknown as Record<string, unknown>);
   }
 
@@ -1347,6 +1369,52 @@ export class EngineApi {
     return a;
   }
 
+  // ---- HEY builder records (./hey.ts) ----
+
+  private heyOn(v: EngineView): boolean {
+    return !!v.hey?.on() && !!v.ctx;
+  }
+
+  private async heyGet(v: EngineView, path: string, query: URLSearchParams): Promise<Answer | null> {
+    if (path === "/v1/hey") return ok(v.hey && this.heyOn(v) ? v.hey.about() : { enabled: false });
+    if (!this.heyOn(v)) return ok({ enabled: false });
+    const hey = v.hey!;
+    if (path === "/v1/hey/record") {
+      const q = (query.get("q") ?? "").slice(0, 120);
+      if (!q.trim()) return { status: 400, body: { error: "say which project: ?q= its name, its $TICKER, its HEY page or a 0x contract" } };
+      return ok({ enabled: true, ...(await hey.lookup(q)) } as Record<string, unknown>);
+    }
+    const m = /^\/v1\/hey\/agent\/([0-9a-zA-Z-]{3,42})$/.exec(path);
+    if (m) {
+      const r = this.running(v);
+      const address = normalizeAddress(m[1]) ?? v.profiles?.byName(m[1]!) ?? null;
+      if (!r || !address || !r.store.agent(address)) return notFound("no such agent");
+      return ok(await hey.agentJson(address));
+    }
+    return null;
+  }
+
+  private async heyPost(body: unknown, from: string): Promise<Answer> {
+    const v = this.view();
+    if (!v.hey || !this.heyOn(v)) return { status: 503, body: { error: "HEY builder records are switched off on Factor for now" } };
+    if (v.state !== "running") return { status: 503, body: { error: "the engine is not reading the chain yet" } };
+    if (!body || typeof body !== "object" || Array.isArray(body)) return { status: 400, body: { error: "the body is not a JSON object" } };
+    if (this.tooMany(from, "hey-link", 6)) return { status: 429, body: { error: "too many requests: try again in a minute" } };
+    const a = await v.hey.setLink(body as Record<string, unknown>);
+    if (a.status === 200) this.cache.clear();
+    return a;
+  }
+
+  /** The builder record of an agent's maker's project on HEY, by the agent's name or address: null when it has no link. */
+  private async agentBuilder(v: EngineView, id: string): Promise<{ agent: string; name: string; record: HeyLookup } | null> {
+    if (!this.heyOn(v)) return null;
+    const address = normalizeAddress(id) ?? v.profiles?.byName(id) ?? null;
+    const link = address ? v.hey!.link(address) : null;
+    if (!address || !link?.slug) return null;
+    const record = await v.hey!.records.record(link.slug).catch(() => ({ found: false as const, why: "HEY could not be reached", away: true, source: "HEY Research Lab" as const, sourceUrl: `https://heyresearch.xyz/project/${link.slug}` }));
+    return { agent: address, name: v.profiles?.all().get(address)?.name ?? shortAddress(address), record };
+  }
+
   // ---- Factor Copilot (./copilot.ts) ----
 
   private copilotOn(v: EngineView): boolean {
@@ -1406,6 +1474,16 @@ export class EngineApi {
           verified: a.verifiedOwner ? a.verifiedOwner.sources : null,
         };
       },
+      // HEY builder records (./hey.ts), while they are on: a project's, or the project an agent's owner linked it to
+      ...(this.heyOn(v) ? {
+        builder: async (q: string) => {
+          const agent = await this.agentBuilder(v, q);
+          if (agent) return { ...agent.record, agent: agent.name } as HeyLookup & { agent?: string };
+          const address = normalizeAddress(q) ?? v.profiles?.byName(q) ?? null;
+          if (address && r.store.agent(address)) return { found: false as const, why: `${names.profiles.get(address)?.name ?? shortAddress(address)}'s owner has not linked it to a project on HEY`, source: "HEY Research Lab" as const, sourceUrl: "https://heyresearch.xyz", agent: names.profiles.get(address)?.name ?? shortAddress(address) };
+          return v.hey!.lookup(q);
+        },
+      } : {}),
       // paid reviews (./reviews.ts), while they are on: what an agent's customers say, and who may review a job
       ...(this.reviewsOn(v) ? {
         reviews: (id: string) => {
@@ -1494,6 +1572,7 @@ export class EngineApi {
     if (path === "/v1/ask") return this.askPost(body, from);
     if (path === "/v1/copilot") return this.copilotPost(body, from);
     if (path === "/v1/reviews" || path === "/v1/reviews/reply" || path === "/v1/reviews/erc8004") return this.reviewsPost(path, body, from);
+    if (path === "/v1/hey/link") return this.heyPost(body, from);
     if (path.startsWith("/v1/connect/")) return this.connectPost(path, body, from, connectKey);
     if (path === "/v1/admin/connect") return this.connectAdmin(body, from, adminKey);
     if (path === "/v1/pay/deal" || path === "/v1/pay/links") return this.payPost(path, body, from);
@@ -2061,7 +2140,9 @@ export class EngineApi {
     const ask = { enabled: !!r && this.askOn(v), mostChars: c.ask.mostChars };
     const copilot = { enabled: !!r && this.copilotOn(v), mostChars: c.copilot.mostChars, mostEth: String(Number(c.copilot.mostWei / 10n ** 12n) / 1e6) };
     const reviews = { enabled: !!r && this.reviewsOn(v), mostChars: 500, floorEth: Number(c.reviews.floorWei / 10n ** 12n) / 1e6 };
-    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused, roster: this.rosterJson(v), hosted, pulse: pulseJson(v, 8), desk: this.deskJson(v), signups, activity, pay, subjobs, firms, plans, erc8004, openJobs, autoApply, verified, coins, lines, guarantees, bounties, milestones, everywhere, ask, copilot, reviews };
+    // HEY builder records (./hey.ts): whether they show, and Factor's own page and badge on HEY for the footer
+    const hey = { enabled: this.heyOn(v), project: "https://heyresearch.xyz/project/factor", badge: "https://heyresearch.xyz/api/badge/factor" };
+    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused, roster: this.rosterJson(v), hosted, pulse: pulseJson(v, 8), desk: this.deskJson(v), signups, activity, pay, subjobs, firms, plans, erc8004, openJobs, autoApply, verified, coins, lines, guarantees, bounties, milestones, everywhere, ask, copilot, reviews, hey };
     if (!r) {
       return { ...base, launched: false, stats: { advancedEth: 0, settledJobs: 0, jobs: 0, poolEth: 0, reserveEth: 0, outEth: 0, heldEth: 0, burnedTokens: 0, supplyLeft: SUPPLY, agents: 0, demoJobs: 0, lostEth: 0, poolFromTradingEth: 0 }, burn: null, agents: [], jobs: [], events: [], burns: [] };
     }
@@ -2166,6 +2247,7 @@ export class EngineApi {
       ask: v.ask ? v.ask.health() : null,
       copilot: v.copilot ? v.copilot.health() : null,
       reviews: v.reviews ? v.reviews.health() : null,
+      hey: v.hey ? v.hey.health() : null,
       erc8004: v.erc8004 ? { ...v.erc8004.about(), spentTodayWei: v.erc8004.spentToday().toString(), gasDayWei: c.erc8004.gasDayWei.toString(), scan: ctx.db.getJson("erc8004:scan") } : null,
       events: ctx.db.count("chain_events"),
       ledger: ctx.db.count("ledger"),
