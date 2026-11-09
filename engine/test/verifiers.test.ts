@@ -9,13 +9,15 @@
 // the day's cap. No test calls a model or touches a real chain.
 
 import { decodeFunctionData, encodeAbiParameters, encodeEventTopics, keccak256, type Abi, type Hex } from "viem";
-import { afterEach, describe, expect, it } from "vitest";
-import { factorVerifiersAbi } from "../src/abi/index.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { erc8004ValidationAbi, factorVerifiersAbi } from "../src/abi/index.js";
+import { VALIDATION_REGISTRY } from "../src/erc8004.js";
+import { caseFileText, hashOf, modelOfMaker, readOpenRouterRecord, readReceipt, receiptBlock, receiptHolds, type ProviderRecord } from "../src/verifierproof.js";
 import type { CallSpec, Chain } from "../src/chain/chain.js";
 import { EngineDb, open } from "../src/chain/db.js";
 import { turn } from "../src/switches.js";
 import { arithmetic, prices, readAnswer, reasonText, runTests, sections, something, verdictOf } from "../src/verifiercheck.js";
-import { MAKERS, VERIFIER_RULES, Verifiers, encodeCommit, hashText, houseVerifierSigner, parseTerms, readVerifiers, reasonOk, termsText, type Asker, type CaseRow, type Terms, type VerifiersConfig } from "../src/verifiers.js";
+import { MAKERS, VERIFIER_RULES, VERIFY_TAG, Verifiers, encodeCommit, hashText, houseVerifierSigner, parseTerms, readVerifiers, reasonOk, routerAsker, routerLookup, termsText, type Asker, type CaseRow, type Lookup, type Terms, type VerifiersConfig } from "../src/verifiers.js";
 import { ETH, FakeChain, S } from "./chain/fake.js";
 import { rig, type Rig } from "./chain/harness.js";
 
@@ -45,7 +47,17 @@ class Model {
 
   by(id: number): ModelCase { return this.cases.find((x) => x.id === id)!; }
 
+  // the ERC-8004 validation registry, as much of it as the engine reads: a request's status, and an agent's summary
+  validations = new Map<string, { validator: string; agentId: bigint; response: number; responseHash: string; tag: string; lastUpdate: bigint }>();
+  summary: [bigint, number] = [0n, 0];
+
   answer(call: CallSpec): unknown {
+    if (call.to.toLowerCase() === VALIDATION_REGISTRY) {
+      if (call.functionName === "getSummary") return this.summary;
+      const v = this.validations.get(String(call.args![0]).toLowerCase());
+      if (!v) throw new Error("unknown");
+      return [v.validator, v.agentId, v.response, v.responseHash, v.tag, v.lastUpdate];
+    }
     if (call.to.toLowerCase() !== V) return undefined;
     const fn = call.functionName, a = call.args ?? [];
     if (fn === "getCase") { const x = this.cases.find((y) => y.id === Number(a[0])); return x ? { state: x.state, terms: x.terms } : { state: 0, terms: `0x${"0".repeat(64)}` }; }
@@ -427,12 +439,12 @@ describe("a case, read from the chain", () => {
 
 interface Sent { from: string; fn: string; args: unknown[]; value: bigint }
 
-function house(o: { factorOwn?: (a: string) => boolean; ask?: Asker; daily?: number; balance?: bigint; ties?: string | null } = {}) {
+function house(o: { factorOwn?: (a: string) => boolean; ask?: Asker; daily?: number; balance?: bigint; ties?: string | null; lookup?: Lookup; models?: Record<number, string>; erc8004?: boolean; gasDayWei?: bigint } = {}) {
   const db = new EngineDb(open(":memory:"));
   let t = 1_800_000_000;
   const sent: Sent[] = [];
   const seed = keccak256("0xfeed") as Hex;
-  const cfg: VerifiersConfig = { ...readVerifiers({ ...ON, VERIFIERS_HOUSE: "on" }), house: { enabled: true, models: { 1: "stand-in/claude", 2: "stand-in/gemini", 3: "stand-in/gpt" }, dailyMicro: o.daily ?? 2_000_000 } };
+  const cfg: VerifiersConfig = { ...readVerifiers({ ...ON, VERIFIERS_HOUSE: "on" }), house: { enabled: true, models: o.models ?? { 1: "stand-in/claude", 2: "stand-in/gemini", 3: "stand-in/gpt" }, dailyMicro: o.daily ?? 2_000_000 }, erc8004: { enabled: !!o.erc8004, gasDayWei: o.gasDayWei ?? 5n * 10n ** 14n } };
   const accountsMade = new Set<string>();
   const accounts = {
     addressOfKey: async (k: { a: string }) => `0x${k.a.slice(-40)}`.toLowerCase(),
@@ -448,6 +460,7 @@ function house(o: { factorOwn?: (a: string) => boolean; ask?: Asker; daily?: num
   };
   const chain = {
     balance: async () => o.balance ?? 0n,
+    fees: async () => ({ maxFeePerGas: 10n ** 9n, maxPriorityFeePerGas: 0n }),
     read: async () => { throw new Error("not modelled"); },
   } as unknown as Chain;
   const asked: string[] = [];
@@ -457,8 +470,10 @@ function house(o: { factorOwn?: (a: string) => boolean; ask?: Asker; daily?: num
     cfg, db, chain, chainId: 4663, nowS: () => t, now: () => t * 1000, log: () => {},
     names: () => new Map(), ties: async () => o.ties ?? null, factorOwn: o.factorOwn ?? (() => false),
     brief: () => {}, work: (job) => (work.has(job) ? { kind: "text", body: work.get(job)!, at: 0 } : null),
-    house: { seed, accounts: () => accounts as never, live: () => true, ask, priceOf: async () => null },
+    house: { seed, accounts: () => accounts as never, live: () => true, ask, lookup: o.lookup ?? null, priceOf: async () => null },
+    site: "https://factoragents.fun", desk: "0x487eb282e9aa56ae871c15a16c5b061b9d2faa6f", agentIdOf: () => "777",
   });
+  vs.lookupPauseMs = 0;
   const addCase = (id: number, state: string, o2: { job?: number; delivered?: number; checker?: string; agent?: string } = {}) => {
     const job = o2.job ?? 100 + id;
     db.q("INSERT INTO desk_jobs (id, locked_block, customer, agent, price, due_at, locked_at, state, allow_early, delivered_at) VALUES (?, 1, ?, ?, ?, ?, ?, ?, 0, ?)").run(job, V, o2.agent ?? AGENT, PRICE.toString(), t + 86_400, t - 100, o2.delivered ? S.delivered : S.locked, o2.delivered ?? 0);
@@ -478,7 +493,8 @@ function house(o: { factorOwn?: (a: string) => boolean; ask?: Asker; daily?: num
 }
 
 function decodeCall(data: Hex): { functionName: string; args: unknown[] } {
-  const d = decodeFunctionData({ abi: factorVerifiersAbi as Abi, data });
+  const abi = data.startsWith("0x3d659a96") || data.startsWith("0xaaf400c4") ? (erc8004ValidationAbi as Abi) : (factorVerifiersAbi as Abi);
+  const d = decodeFunctionData({ abi, data });
   return { functionName: d.functionName, args: [...(d.args ?? [])] };
 }
 
@@ -575,3 +591,221 @@ describe("Factor's own verifiers", () => {
 });
 
 void (null as unknown as CaseRow);
+
+// ---------- model receipts ----------
+
+const RECORD = { data: { id: "gen-123", model: "anthropic/claude-haiku-4.5", provider_name: "Anthropic", tokens_prompt: 900, tokens_completion: 120, created_at: "2026-11-09T12:00:00Z", total_cost: 0.0004 } };
+
+describe("model receipts", () => {
+  it("the block is written and read back exactly, and only a whole one is read", () => {
+    const lines = { provider: "openrouter", generation: "gen-123", model: "anthropic/claude-haiku-4.5", requestHash: hashOf("req"), outputHash: hashOf("out"), reportedModel: "anthropic/claude-haiku-4.5", providerName: "Anthropic", tokensIn: 900, tokensOut: 120, created: "2026-11-09T12:00:00Z" };
+    const text = `Verdict: accept\nReasons:\nfine.\n${receiptBlock(lines)}`;
+    expect(readReceipt(text)).toEqual(lines);
+    expect(readReceipt("Verdict: accept\nReceipt:\n- provider: openrouter")).toBeNull();
+    expect(readReceipt(null)).toBeNull();
+  });
+
+  it("a model is held to the declared maker by OpenRouter's prefix, and OpenRouter's record is read", () => {
+    expect(modelOfMaker("anthropic/claude-haiku-4.5", 1)).toBe(true);
+    expect(modelOfMaker("openai/gpt-5-mini", 1)).toBe(false);
+    expect(modelOfMaker("deepseek/deepseek-chat-v3.1", 7)).toBe(true);
+    expect(modelOfMaker(null, 1)).toBe(false);
+    expect(readOpenRouterRecord(RECORD)).toEqual({ model: "anthropic/claude-haiku-4.5", providerName: "Anthropic", tokensIn: 900, tokensOut: 120, created: "2026-11-09T12:00:00Z" });
+    expect(readOpenRouterRecord({ error: "nope" })).toBeNull();
+  });
+
+  it("asks through OpenRouter with the exact body the receipt hashes, and reads the call's record with the key", async () => {
+    const seen: { url: string; body?: string; auth?: string }[] = [];
+    vi.stubGlobal("fetch", async (url: string, init?: { body?: string; headers?: Record<string, string> }) => {
+      seen.push({ url, body: init?.body, auth: init?.headers?.authorization });
+      if (url.endsWith("/chat/completions")) return new Response(JSON.stringify({ id: "gen-123", choices: [{ message: { content: '{"accept": true, "reasons": "ok"}' } }], usage: { prompt_tokens: 900, completion_tokens: 120, cost: 0.0004 } }), { status: 200 });
+      if (url.includes("/generation?id=gen-123")) return new Response(JSON.stringify(RECORD), { status: 200 });
+      return new Response("{}", { status: 404 });
+    });
+    try {
+      const a = await routerAsker("k", "https://router.test/api/v1")("anthropic/claude-haiku-4.5", "sys", "user");
+      expect(a.receipt).toEqual({ provider: "openrouter", generationId: "gen-123", requestBody: seen[0]!.body });
+      expect(a.costMicro).toBe(400);
+      expect(await routerLookup("k", "https://router.test/api/v1")("openrouter", "gen-123")).toMatchObject({ model: "anthropic/claude-haiku-4.5", tokensIn: 900 });
+      expect(seen[1]!.auth).toBe("Bearer k");
+      expect(await routerLookup("k", "https://router.test/api/v1")("openrouter", "gen-404")).toBeNull();
+      expect(await routerLookup("k", "https://router.test/api/v1")("another", "gen-123")).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("a receipt holds only with the reasons on the chain, the published texts, the provider's record and the declared maker", () => {
+    const lines = { provider: "openrouter", generation: "gen-123", model: "anthropic/claude-haiku-4.5", requestHash: hashOf("req"), outputHash: hashOf("out") };
+    const reasons = `Verdict: accept\n${receiptBlock(lines)}`;
+    const record: ProviderRecord = { model: "anthropic/claude-haiku-4.5", providerName: "Anthropic", tokensIn: 1, tokensOut: 1, created: null };
+    const base = { lines, record, request: "req", output: "out", maker: 1, reasons, reasonHashOnChain: hashOf(reasons) };
+    expect(receiptHolds(base)).toEqual({ ok: true, why: null });
+    expect(receiptHolds({ ...base, reasonHashOnChain: hashOf("other") }).why).toMatch(/not the ones whose hash is on the chain/);
+    expect(receiptHolds({ ...base, request: "req!" }).why).toMatch(/published request/);
+    expect(receiptHolds({ ...base, output: "out!" }).why).toMatch(/published answer/);
+    expect(receiptHolds({ ...base, record: null }).why).toMatch(/has not been read/);
+    expect(receiptHolds({ ...base, maker: 2 }).why).toMatch(/not a model of the declared maker/);
+  });
+
+  it("Factor's own check ends its reasons with the receipt, keeps the call, and its verdict is marked checked", async () => {
+    let n = 0;
+    const lookup: Lookup = async () => (++n < 2 ? null : readOpenRouterRecord(RECORD)); // not there at first: read again
+    const ask: Asker = async (model, system, user) => ({ text: '{"accept": true, "reasons": "All four headings are there."}', costMicro: 400, receipt: { provider: "openrouter", generationId: "gen-123", requestBody: JSON.stringify({ model, system, user }) } });
+    const h = house({ ask, lookup, models: { 1: "anthropic/claude-haiku-4.5" } });
+    h.joinAll();
+    h.addCase(1, "working", { delivered: h.clock.get() - 60 });
+    await h.vs.housePass();
+    const check = h.sent.find((x) => x.fn === "check")!;
+    const kept = h.db.q("SELECT * FROM verifier_house WHERE case_id = 1").get() as { reason: string; verifier: string };
+    expect(kept.reason).toMatch(/\nReceipt:\n- provider: openrouter\n- generation: gen-123\n- model: anthropic\/claude-haiku-4.5\n- request-hash: 0x[0-9a-f]{64}\n- output-hash: 0x[0-9a-f]{64}\n- reported-model: anthropic\/claude-haiku-4.5\n- provider-name: Anthropic\n- tokens: 900 in, 120 out\n- created: 2026-11-09T12:00:00Z$/);
+    expect(check.args[2]).toBe(hashText(kept.reason));
+    // the chain has the verdict and its hash; the engine has the reasons from its own verifier
+    h.db.q("UPDATE verifier_cases SET state = 'checked', checker = ?, first_accept = 1, reason_hash = ? WHERE id = 1").run(kept.verifier, hashText(kept.reason));
+    h.db.q("INSERT INTO verifier_reasons (case_id, verifier, body, at) VALUES (1, ?, ?, 0)").run(kept.verifier, kept.reason);
+    const m = h.vs.modelJson(1, kept.verifier, 1, hashText(kept.reason));
+    expect(m).toMatchObject({ mark: "checked", makerName: "Anthropic", receipt: { by: "factor", generationId: "gen-123", modelReported: "anthropic/claude-haiku-4.5", tokensIn: 900, matches: true, url: `https://factoragents.fun/api/v1/verifiers/receipt/1/${kept.verifier}` } });
+    const page = h.vs.receiptPage(1, kept.verifier)!;
+    expect(hashOf(page.request!)).toBe(m.receipt!.requestHash);
+    expect(hashOf(page.output!)).toBe(m.receipt!.outputHash);
+    // the reasons on the chain are not the ones kept: declared
+    expect(h.vs.modelJson(1, kept.verifier, 1, hashText("something else")).mark).toBe("declared");
+  });
+
+  it("a record that names another maker's model, or none, leaves the verdict declared, and an unread record is read again later", async () => {
+    const ask: Asker = async () => ({ text: '{"accept": true, "reasons": "fine"}', costMicro: 1, receipt: { provider: "openrouter", generationId: "gen-9", requestBody: "{}" } });
+    let answer: ProviderRecord | null = null;
+    const h = house({ ask, lookup: async () => answer, models: { 1: "anthropic/claude-haiku-4.5" } });
+    h.joinAll();
+    h.addCase(1, "working", { delivered: h.clock.get() - 60 });
+    await h.vs.housePass();
+    const kept = h.db.q("SELECT * FROM verifier_house WHERE case_id = 1").get() as { reason: string; verifier: string };
+    expect(kept.reason).not.toMatch(/reported-model/);
+    h.db.q("INSERT INTO verifier_reasons (case_id, verifier, body, at) VALUES (1, ?, ?, 0)").run(kept.verifier, kept.reason);
+    expect(h.vs.modelJson(1, kept.verifier, 1, hashText(kept.reason)).receipt!.why).toMatch(/has not been read/);
+    answer = { model: "openai/gpt-5-mini", providerName: "OpenAI", tokensIn: 1, tokensOut: 1, created: null };
+    expect(await h.vs.readReceipts()).toBe(1);
+    const m = h.vs.modelJson(1, kept.verifier, 1, hashText(kept.reason));
+    expect(m.mark).toBe("declared");
+    expect(m.receipt!.why).toMatch(/names openai\/gpt-5-mini, not a model of the declared maker/);
+  });
+
+  it("an outside verifier's receipt is shown as given, not checked: its model stays declared", () => {
+    const h = house();
+    h.addCase(1, "checked", { checker: V1 });
+    const reasons = `Verdict: reject\nReasons:\nThe rent is missing.\n${receiptBlock({ provider: "openrouter", generation: "gen-outside", model: "google/gemini-2.5-flash", requestHash: hashOf("a"), outputHash: hashOf("b") })}`;
+    h.db.q("INSERT INTO verifier_reasons (case_id, verifier, body, at) VALUES (1, ?, ?, 0)").run(V1, reasons);
+    const m = h.vs.modelJson(1, V1, 2, hashText(reasons));
+    expect(m).toMatchObject({ mark: "declared", receipt: { by: "verifier", generationId: "gen-outside", checkedAt: null, matches: null } });
+    expect(m.receipt!.why).toMatch(/only be read with the key that made it/);
+    expect(h.vs.modelJson(1, V1, 2, hashText("other reasons")).receipt).toBeNull();
+  });
+});
+
+// ---------- verdicts on the ERC-8004 validation registry ----------
+
+describe("verdicts on the ERC-8004 validation registry", () => {
+  it("off unless VERIFIERS_8004=on", async () => {
+    expect(readVerifiers(ON).erc8004.enabled).toBe(false);
+    expect(readVerifiers({ ...ON, VERIFIERS_8004: "on" }).erc8004).toEqual({ enabled: true, gasDayWei: 5n * 10n ** 14n });
+    const problems: string[] = [];
+    readVerifiers({ ...ON, VERIFIERS_8004_GAS_DAY_WEI: "lots" }, problems);
+    expect(problems).toHaveLength(1);
+    const { r, chain, model } = await world();
+    model.join(V1, 1);
+    model.hire(TERMS);
+    chain.deliver(model.by(1).job);
+    model.check(1, V1, true, WHY);
+    await r.engine.watchOnce();
+    expect((await get(r, "/v1/verifiers/case/1")).case.erc8004).toMatchObject({ state: "off", registry: VALIDATION_REGISTRY, tag: VERIFY_TAG });
+  });
+
+  it("a verdict of an agent with an identity gets a case file, a request for its owner, then the validator's answer, read back from the registry", async () => {
+    const { r, chain, model } = await world({ more: { VERIFIERS_8004: "on", FACTOR_SITE_URL: "https://factoragents.fun" } });
+    r.db.q("INSERT INTO erc8004_links (agent, agent_id, how, via, linked_at, checked_at) VALUES (?, '777', 'found', 'wallet', 1, 1)").run(AGENT);
+    model.join(V1, 1);
+    model.hire(TERMS);
+    chain.deliver(model.by(1).job);
+    model.check(1, V1, true, WHY);
+    await r.engine.watchOnce();
+    expect((await get(r, "/v1/verifiers/case/1")).case.erc8004).toMatchObject({ state: "no-verdict" });
+    chain.mine(1, 2 * H);
+    await r.turn();
+    chain.mine(3);
+    await r.engine.watchOnce();
+    const vs = r.engine.verifiers!;
+    await vs.proofPass();
+    let e = (await get(r, "/v1/verifiers/erc8004/1")).erc8004;
+    expect(e).toMatchObject({ state: "prepared", agentId: "777", validator: V1, response: 100, responseCall: null, file: "https://factoragents.fun/api/v1/verifiers/file/1" });
+    const file = await get(r, "/v1/verifiers/file/1");
+    const { status: _s, ...body } = file;
+    const text = JSON.stringify(body);
+    expect(hashOf(text)).toBe(e.fileHash);
+    expect(body).toMatchObject({ kind: "factor.verify", case: 1, agentId: "777", verdict: "accept", response: 100, decidedBy: "first-check", validator: V1, firstCheck: { verifier: V1, accept: true } });
+    const req = decodeFunctionData({ abi: erc8004ValidationAbi as Abi, data: e.requestCall.data });
+    expect(req.functionName).toBe("validationRequest");
+    expect(req.args).toEqual([expect.stringMatching(new RegExp(V1.slice(2), "i")), 777n, e.file, e.fileHash]);
+    // the agent's owner asks; the registry names V1
+    model.validations.set(e.fileHash, { validator: V1, agentId: 777n, response: 0, responseHash: `0x${"0".repeat(64)}`, tag: "", lastUpdate: BigInt(chain.time) });
+    r.wall.extra += 200_000;
+    await vs.proofPass();
+    e = (await get(r, "/v1/verifiers/erc8004/1")).erc8004;
+    expect(e).toMatchObject({ state: "requested", requestCall: null });
+    const resp = decodeFunctionData({ abi: erc8004ValidationAbi as Abi, data: e.responseCall.data });
+    expect(resp.args).toEqual([e.fileHash, 100, e.file, e.fileHash, "factorVerify"]);
+    // the validator answers
+    model.validations.set(e.fileHash, { validator: V1, agentId: 777n, response: 100, responseHash: e.fileHash, tag: "factorVerify", lastUpdate: BigInt(chain.time) });
+    model.summary = [1n, 100];
+    r.wall.extra += 200_000;
+    await vs.proofPass();
+    e = (await get(r, "/v1/verifiers/case/1")).case.erc8004;
+    expect(e).toMatchObject({ state: "answered", response: 100, responseCall: null });
+    expect(await vs.onErc8004("777")).toEqual({ count: 1, avgResponse: 100, registry: VALIDATION_REGISTRY, tag: "factorVerify" });
+    expect((await get(r, "/v1/agents/report-lead")).verified.onErc8004).toEqual({ count: 1, avgResponse: 100, registry: VALIDATION_REGISTRY, tag: "factorVerify" });
+  });
+
+  it("a request that names another validator is not answered by Factor's verifiers, and a case nobody decided has no file", async () => {
+    const { r, chain, model } = await world({ more: { VERIFIERS_8004: "on", FACTOR_SITE_URL: "https://factoragents.fun" } });
+    r.db.q("INSERT INTO erc8004_links (agent, agent_id, how, via, linked_at, checked_at) VALUES (?, '777', 'found', 'wallet', 1, 1)").run(AGENT);
+    model.join(V1, 1);
+    model.hire(TERMS);
+    chain.deliver(model.by(1).job);
+    model.check(1, V1, true, WHY);
+    chain.mine(1, 2 * H);
+    await r.engine.watchOnce();
+    await r.turn();
+    chain.mine(3);
+    await r.engine.watchOnce();
+    const vs = r.engine.verifiers!;
+    await vs.proofPass();
+    const hash = (await get(r, "/v1/verifiers/erc8004/1")).erc8004.fileHash;
+    model.validations.set(hash, { validator: AGENT, agentId: 777n, response: 0, responseHash: `0x${"0".repeat(64)}`, tag: "", lastUpdate: 1n });
+    r.wall.extra += 200_000;
+    await vs.proofPass();
+    const e = (await get(r, "/v1/verifiers/erc8004/1")).erc8004;
+    expect(e.responseCall).toBeNull();
+    expect(e.why).toMatch(/names 0x0+a6e71, not the verifier whose verdict was carried out/);
+    expect((await get(r, "/v1/verifiers/file/2")).status).toBe(404);
+  });
+
+  it("Factor's own verifier answers a request that names it, under the day's gas cap", async () => {
+    const h = house({ erc8004: true, gasDayWei: 300_000n * 10n ** 9n });
+    h.joinAll();
+    const me = h.vs.house[0]!.address!;
+    const row = (id: number) => h.db.q("INSERT INTO verifier_8004 (case_id, agent_id, validator, response, file, file_hash, state, named, at) VALUES (?, '777', ?, 0, '{}', ?, 'requested', ?, 0)").run(id, me, hashOf(`file ${id}`), me);
+    row(1);
+    row(2);
+    await h.vs.housePass();
+    const answers = h.sent.filter((x) => x.fn === "validationResponse");
+    expect(answers).toHaveLength(1); // the second would pass the day's gas
+    expect(answers[0]!.args).toEqual([hashOf("file 1"), 0, "https://factoragents.fun/api/v1/verifiers/file/1", hashOf("file 1"), "factorVerify"]);
+    expect(answers[0]!.from).toBe(me);
+  });
+
+  it("the case file is the same text every time, and survives the API's own writing out", () => {
+    const f = { kind: "factor.verify" as const, version: 1 as const, chainId: 4663, verifiers: V, desk: "0xd", case: 1, job: 2, agent: AGENT, agentId: "777", customer: CUSTOMER, priceWei: "1", termsHash: "0x1", proof: null, verdict: "accept" as const, response: 100 as const, decidedBy: "panel" as const, validator: V1, firstCheck: { verifier: V2, accept: false, reasonHash: "0x2" }, panel: [{ verifier: V1, maker: 1, vote: "accept" as const, reasonHash: "0x3" }], votes: { accept: 1, reject: 0 }, ended: { state: "accepted", how: "panel", at: 5, tx: "0x4" }, page: "https://factoragents.fun/jobs/2" };
+    const text = caseFileText(f);
+    expect(caseFileText({ ...f })).toBe(text);
+    expect(JSON.stringify(JSON.parse(text))).toBe(text);
+  });
+});

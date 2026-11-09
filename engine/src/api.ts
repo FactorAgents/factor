@@ -102,7 +102,8 @@ import type { LineBadge, Lines, LinesAbout } from "./lines.js";
 import type { CoverJson, Guarantees, GuaranteesAbout } from "./guarantees.js";
 import type { AgentBountiesJson, Bounties, BountiesAbout } from "./bounties.js";
 import type { MilestoneJobLink, Milestones, MilestonesAbout } from "./milestones.js";
-import { MAKERS, VERIFIER_RULES, type Verifiers, type VerifiersAbout } from "./verifiers.js";
+import { MAKERS, VERIFIER_RULES, VERIFY_TAG, type Verifiers, type VerifiersAbout } from "./verifiers.js";
+import { VALIDATION_REGISTRY } from "./erc8004.js";
 import { envelope, hireUrl, MOST_AT_ONCE, ANSWER_HOLDS_S, parseId, seal, type AgentAnswer, type AnswerSigner, type Connect } from "./everywhere.js";
 import type { Erc8004Scores } from "./erc8004score.js";
 import type { Ask, AskCandidate, AskData, SettledJob } from "./ask.js";
@@ -1079,7 +1080,7 @@ export class EngineApi {
   private async verifiersGet(v: EngineView, path: string, query: URLSearchParams): Promise<Answer | null> {
     const vs = v.verifiers;
     const on = !!vs?.on();
-    const about = (): VerifiersAbout => (vs ? vs.about() : { enabled: false, contract: null, chainId: v.config.chainId, rules: { minFeeEth: VERIFIER_RULES.minFeeEth, minBondEth: VERIFIER_RULES.minBondEth, stakePct: VERIFIER_RULES.stakePct, minStakeEth: VERIFIER_RULES.minStakeEth, wrongLossPct: VERIFIER_RULES.wrongLossPct, disputePct: VERIFIER_RULES.disputePct, minDisputeEth: VERIFIER_RULES.minDisputeEth, panel: VERIFIER_RULES.panel, checkH: VERIFIER_RULES.checkH, disputeH: VERIFIER_RULES.disputeH, seatH: VERIFIER_RULES.seatH, revealH: VERIFIER_RULES.revealH, reviewH: VERIFIER_RULES.reviewH, reasonChars: VERIFIER_RULES.reasonChars, titleChars: VERIFIER_RULES.titleChars, briefChars: VERIFIER_RULES.briefChars }, makers: MAKERS, totals: null, house: [] });
+    const about = (): VerifiersAbout => (vs ? vs.about() : { enabled: false, contract: null, chainId: v.config.chainId, rules: { minFeeEth: VERIFIER_RULES.minFeeEth, minBondEth: VERIFIER_RULES.minBondEth, stakePct: VERIFIER_RULES.stakePct, minStakeEth: VERIFIER_RULES.minStakeEth, wrongLossPct: VERIFIER_RULES.wrongLossPct, disputePct: VERIFIER_RULES.disputePct, minDisputeEth: VERIFIER_RULES.minDisputeEth, panel: VERIFIER_RULES.panel, checkH: VERIFIER_RULES.checkH, disputeH: VERIFIER_RULES.disputeH, seatH: VERIFIER_RULES.seatH, revealH: VERIFIER_RULES.revealH, reviewH: VERIFIER_RULES.reviewH, reasonChars: VERIFIER_RULES.reasonChars, titleChars: VERIFIER_RULES.titleChars, briefChars: VERIFIER_RULES.briefChars }, makers: MAKERS, totals: null, house: [], erc8004: { enabled: false, registry: VALIDATION_REGISTRY, tag: VERIFY_TAG } });
     if (path === "/v1/verifiers/about") return ok({ ...about() });
     const maker = Number(query.get("maker") ?? "");
     if (path === "/v1/verifiers") return ok({ ...about(), items: on ? vs!.verifierList(Number.isInteger(maker) && maker >= 1 && maker <= 255 ? maker : undefined) : [] });
@@ -1102,6 +1103,22 @@ export class EngineApi {
     }
     m = /^\/v1\/verifiers\/(0x[0-9a-fA-F]{40})$/.exec(path);
     if (m) return ok({ ...(await vs!.verifierPage(normalizeAddress(m[1])!)) });
+    m = /^\/v1\/verifiers\/receipt\/(\d{1,9})\/(0x[0-9a-fA-F]{40})$/.exec(path);
+    if (m) {
+      const r = vs!.receiptPage(Number(m[1]), normalizeAddress(m[2])!);
+      return r ? ok({ ...r }) : notFound("no such verdict");
+    }
+    m = /^\/v1\/verifiers\/erc8004\/(\d{1,9})$/.exec(path);
+    if (m) {
+      const row = vs!.row(Number(m[1]));
+      return row ? ok({ erc8004: vs!.json8004(row) }) : notFound("no such case");
+    }
+    m = /^\/v1\/verifiers\/file\/(\d{1,9})$/.exec(path);
+    if (m) {
+      const text = vs!.file(Number(m[1]));
+      // the case file, word for word: it is compact JSON, so writing it out again gives the very text whose hash is on the chain
+      return text ? ok(JSON.parse(text) as Record<string, unknown>) : notFound("this case has no case file: it was not decided by a verifier, its agent has no ERC-8004 identity, or verdicts are not written to ERC-8004 here");
+    }
     return null;
   }
 
@@ -1853,6 +1870,7 @@ export class EngineApi {
       guarantee: g ? { selling: g.selling, upToEth: g.upToEth, sharePct: g.sharePct, bondEth: g.bondEth, freeEth: g.freeEth, covers: g.covers, delivered: g.released, paidOut: g.paid, paidOutEth: g.paidOutEth } : null,
       hire: hireUrl(site, { agent: named ? p!.name : row.address }),
       ...(this.reviewsOn(v) ? { reviews: { ...(v.reviews!.summary(row.address) ?? { average: null, count: 0, notCounted: 0 }), recent: v.reviews!.recent(row.address, 3) } } : {}),
+      ...(await (async (x) => (x ? { verified: { jobs: x.jobs, accepted: x.accepted, rejected: x.rejected, disputed: x.disputed, onErc8004: await v.verifiers!.onErc8004(link?.agent_id && !link.lost ? link.agent_id : null) } } : {}))(v.verifiers?.on() ? v.verifiers.agentJson(row.address) : null)),
     };
   }
 

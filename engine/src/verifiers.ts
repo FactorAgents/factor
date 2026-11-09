@@ -23,16 +23,30 @@
 //   GET  /v1/verifiers/cases                       cases (show=check|seats|reveal|open|all, verifier=)
 //   GET  /v1/verifiers/case/<n>                    one case, whole (verifier=)
 //   GET  /v1/verifiers/job/<n>                     the case of a desk job
+//   GET  /v1/verifiers/receipt/<n>/<address>       a verdict's model receipt: the request and answer as sent and read
+//   GET  /v1/verifiers/erc8004/<n>                 where the verdict stands on the ERC-8004 validation registry
+//   GET  /v1/verifiers/file/<n>                    the case file a verdict on ERC-8004 points to, exactly as hashed
 //   POST /v1/verifiers/terms   { id, terms }       a job's words; must hash to what the case holds
 //   POST /v1/verifiers/reason  { id, verifier, reason }  a verifier's reasons; must hash to its verdict on the chain
 //
+// Two things back a verdict beyond the verdict itself (./verifierproof.ts):
+//
+//   receipts  each check of Factor's own verifiers ends its reasons with a receipt of the model call: OpenRouter's id of
+//             it, the model asked, and the hashes of the exact request and answer, with what OpenRouter's record of the
+//             call said when Factor looked it up with the key that made it. The reasons' hash is on the chain with the
+//             verdict. A verdict whose receipt holds is marked "checked"; every other is "declared"
+//   ERC-8004  a settled case decided by a verifier gets a case file; the agent identity's owner may ask for it on the
+//             validation registry (the registry takes a request only from the owner or an operator), and the verifier
+//             whose verdict was carried out answers it, 100 for accept and 0 for reject, tag factorVerify. Factor's own
+//             verifiers answer by themselves, under VERIFIERS_8004_GAS_DAY_WEI; the registry is read back every few minutes
+//
 // Switches: VERIFIERS=on (off unless it is said), with FACTOR_VERIFIERS and FACTOR_VERIFIERS_BLOCK; VERIFIERS_HOUSE=on
-// for Factor's own verifiers; and the owner's "verifiers" switch (./switches.ts), which hides every case and stops the
+// for Factor's own verifiers; VERIFIERS_8004=on for verdicts on the validation registry; and the owner's "verifiers" switch (./switches.ts), which hides every case and stops the
 // keeper and Factor's own verifiers at once. Nothing anybody does on the chain depends on any of them.
 
 import { concat, encodeFunctionData, formatEther, keccak256, toHex, type Abi, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { factorVerifiersAbi } from "./abi/index.js";
+import { erc8004ValidationAbi, factorVerifiersAbi } from "./abi/index.js";
 import { KIND, type Accounts, type Call, type Key } from "./accounts.js";
 import { normalizeAddress, shortAddress } from "./chain/address.js";
 import { readLogs, type CallSpec, type Chain, type ChainLog, type Head } from "./chain/chain.js";
@@ -44,6 +58,8 @@ import { FEEDS, FEED_ABI } from "./house/feeds.js";
 import { briefText, oneLine } from "./profiles.js";
 import { stopped } from "./switches.js";
 import { checkPrompt, readAnswer, reasonText, runTests, verdictOf, type PriceOf } from "./verifiercheck.js";
+import { VALIDATION_REGISTRY } from "./erc8004.js";
+import { caseFileText, hashOf, readOpenRouterRecord, readReceipt, receiptBlock, receiptHolds, type CaseFile, type ProviderRecord, type ReceiptLines } from "./verifierproof.js";
 
 type Env = Record<string, string | undefined>;
 
@@ -71,6 +87,8 @@ export interface VerifiersConfig {
   perPass: number;
   /** Factor's own verifiers: VERIFIERS_HOUSE=on, their models, and what they may spend on models in a day (VERIFIERS_DAILY_USD) */
   house: { enabled: boolean; models: Record<number, string>; dailyMicro: number };
+  /** verdicts on the ERC-8004 validation registry: VERIFIERS_8004=on, and the most Factor's own verifiers' answers there may cost in a day */
+  erc8004: { enabled: boolean; gasDayWei: bigint };
   note: string | null;
 }
 
@@ -111,9 +129,22 @@ export function readVerifiers(env: Env, problems: string[] = []): VerifiersConfi
   return {
     enabled: on, contract, fromBlock, perPass: int("VERIFIERS_PER_PASS", 5, 1, 100),
     house: { enabled: on && (env.VERIFIERS_HOUSE ?? "").trim().toLowerCase() === "on", models, dailyMicro: int("VERIFIERS_DAILY_USD", 2, 1, 1000) * 1_000_000 },
+    erc8004: { enabled: on && (env.VERIFIERS_8004 ?? "").trim().toLowerCase() === "on", gasDayWei: gasDay(env, problems) },
     note,
   };
 }
+
+/** VERIFIERS_8004_GAS_DAY_WEI: what Factor's own verifiers' answers on the validation registry may cost in a day (0.0005 ETH). */
+function gasDay(env: Env, problems: string[]): bigint {
+  const raw = env.VERIFIERS_8004_GAS_DAY_WEI?.trim();
+  if (!raw) return 5n * 10n ** 14n;
+  if (/^\d{1,22}$/.test(raw)) return BigInt(raw);
+  problems.push(`VERIFIERS_8004_GAS_DAY_WEI must be wei, a whole number: it is "${raw}"`);
+  return 5n * 10n ** 14n;
+}
+
+/** The tag of every verdict Factor's verifiers write on the validation registry. */
+export const VERIFY_TAG = "factorVerify";
 
 /** The rules, as the contract has them (FactorVerifiers' constants): what the site says. */
 export const VERIFIER_RULES = {
@@ -204,27 +235,83 @@ CREATE TABLE IF NOT EXISTS verifier_spend (
   day TEXT PRIMARY KEY,
   micro INTEGER NOT NULL
 );
+-- A model receipt of one of Factor's own verifiers: the call as sent and read, and the provider's record of it.
+CREATE TABLE IF NOT EXISTS verifier_receipts (
+  case_id INTEGER NOT NULL,
+  verifier TEXT NOT NULL,
+  maker INTEGER NOT NULL,
+  provider TEXT NOT NULL,
+  generation_id TEXT NOT NULL,
+  model_asked TEXT NOT NULL,
+  request_body TEXT NOT NULL,
+  output TEXT NOT NULL,
+  request_hash TEXT NOT NULL,
+  output_hash TEXT NOT NULL,
+  record TEXT,                       -- JSON: what the provider's record said, or NULL until it is read
+  record_at INTEGER,
+  tries INTEGER NOT NULL DEFAULT 0,
+  at INTEGER NOT NULL,
+  PRIMARY KEY (case_id, verifier)
+);
+-- A verdict on the ERC-8004 validation registry: its case file, frozen once the case ended, and where it stands there.
+CREATE TABLE IF NOT EXISTS verifier_8004 (
+  case_id INTEGER PRIMARY KEY,
+  agent_id TEXT NOT NULL,
+  validator TEXT NOT NULL,
+  response INTEGER NOT NULL,
+  file TEXT NOT NULL,
+  file_hash TEXT NOT NULL,
+  state TEXT NOT NULL DEFAULT 'prepared',  -- prepared | requested | answered | elsewhere
+  named TEXT,                        -- the validator the request on the registry names
+  answered_with INTEGER,
+  requested_at INTEGER,
+  answered_at INTEGER,
+  read_at INTEGER NOT NULL DEFAULT 0,
+  relay TEXT,
+  at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS verifier_8004_gas (
+  day TEXT PRIMARY KEY,
+  wei TEXT NOT NULL
+);
 `;
 
-/** Asks one model and says what it cost: text, and millionths of a dollar. */
-export type Asker = (model: string, system: string, user: string) => Promise<{ text: string; costMicro: number }>;
+/** The provider's own evidence of a call: its id of it, and the exact request body sent. */
+export interface CallReceipt { provider: string; generationId: string; requestBody: string }
+/** Asks one model and says what it cost: text, and millionths of a dollar; with a receipt when the provider gives an id. */
+export type Asker = (model: string, system: string, user: string) => Promise<{ text: string; costMicro: number; receipt?: CallReceipt }>;
+/** Reads the provider's record of a call by its id, with the key that made it; null when there is none (yet). */
+export type Lookup = (provider: string, generationId: string) => Promise<ProviderRecord | null>;
+
+/** OpenRouter's record of a call: GET /generation?id=..., which only the key that made the call can read. */
+export function routerLookup(key: string, url = "https://openrouter.ai/api/v1"): Lookup {
+  return async (provider, id) => {
+    if (provider !== "openrouter" || !/^[A-Za-z0-9_-]{4,120}$/.test(id)) return null;
+    const res = await fetch(`${url.replace(/\/+$/, "")}/generation?id=${encodeURIComponent(id)}`, { headers: { authorization: `Bearer ${key}` }, redirect: "error", signal: AbortSignal.timeout(20_000) });
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`the router's record answered ${res.status}`);
+    return readOpenRouterRecord(await res.json());
+  };
+}
 
 /** A model asked through OpenRouter's chat completions. What it cost is OpenRouter's own figure when it gives one, and a high estimate otherwise. */
 export function routerAsker(key: string, url = "https://openrouter.ai/api/v1"): Asker {
   return async (model, system, user) => {
+    // the exact body sent is what the receipt's request hash is of
+    const requestBody = JSON.stringify({ model, max_tokens: 700, temperature: 0, messages: [{ role: "system", content: system }, { role: "user", content: user }], usage: { include: true } });
     const res = await fetch(`${url.replace(/\/+$/, "")}/chat/completions`, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${key}`, "x-title": "Factor verifiers" },
-      body: JSON.stringify({ model, max_tokens: 700, temperature: 0, messages: [{ role: "system", content: system }, { role: "user", content: user }], usage: { include: true } }),
+      body: requestBody,
       redirect: "error",
       signal: AbortSignal.timeout(120_000),
     });
     if (!res.ok) throw new Error(`the model's router answered ${res.status}`);
-    const body = (await res.json()) as { choices?: { message?: { content?: string } }[]; usage?: { prompt_tokens?: number; completion_tokens?: number; cost?: number } };
+    const body = (await res.json()) as { id?: string; choices?: { message?: { content?: string } }[]; usage?: { prompt_tokens?: number; completion_tokens?: number; cost?: number } };
     const text = body.choices?.[0]?.message?.content ?? "";
     const u = body.usage ?? {};
     const cost = typeof u.cost === "number" && u.cost >= 0 ? u.cost : ((u.prompt_tokens ?? 8000) * 3 + (u.completion_tokens ?? 700) * 15) / 1e6;
-    return { text, costMicro: Math.ceil(cost * 1e6) };
+    return { text, costMicro: Math.ceil(cost * 1e6), ...(typeof body.id === "string" && body.id ? { receipt: { provider: "openrouter", generationId: body.id, requestBody } } : {}) };
   };
 }
 
@@ -247,8 +334,13 @@ export interface VerifiersDeps {
   brief: (job: number, by: string, title: string, brief: string) => void;
   /** the delivered work of a desk job, when it was published */
   work: (job: number) => { kind: string; body: string; at: number } | null;
-  /** Factor's own verifiers: their key's seed, the accounts they act through, whether the engine sends, and the model */
-  house?: { seed: Hex | null; accounts: () => Accounts | null; live: () => boolean; ask: Asker | null; priceOf?: PriceOf; signers?: (maker: number) => HouseVerifierSigner };
+  /** Factor's own verifiers: their key's seed, the accounts they act through, whether the engine sends, the model, and the provider's records */
+  house?: { seed: Hex | null; accounts: () => Accounts | null; live: () => boolean; ask: Asker | null; lookup?: Lookup | null; priceOf?: PriceOf; signers?: (maker: number) => HouseVerifierSigner };
+  /** where the site answers, for the case files' links (FACTOR_SITE_URL), and the desk */
+  site?: string;
+  desk?: string;
+  /** the agent's ERC-8004 identity, as Factor has linked it (./erc8004.ts), or null */
+  agentIdOf?: (agent: string) => string | null;
 }
 
 export interface HouseVerifierSigner { address: string; signTypedData: (typed: never) => Promise<Hex>; salt: (caseId: number) => Hex }
@@ -668,7 +760,19 @@ export class Verifiers {
       freeEth: ethNum(w(rec?.free)), freeWei: w(rec?.free), lockedEth: ethNum(w(rec?.locked)), lockedWei: w(rec?.locked), open: rec?.open ?? 0,
       checks: rec?.checks ?? 0, panels: rec?.panels ?? 0, right: rec?.right ?? 0, wrong: rec?.wrong ?? 0, hidden: rec?.hidden ?? 0, struck: rec?.struck ?? 0,
       earnedEth: ethNum(w(rec?.earned)), lostEth: ethNum(w(rec?.lost)), rightPct: calls ? Math.round(((rec?.right ?? 0) / calls) * 100) : null,
+      receipts: this.receiptCounts(address),
     };
+  }
+
+  /** How many of a verifier's verdicts carry a receipt that holds, and how many only declare their model. */
+  private receiptCounts(address: string): { checked: number; declared: number } {
+    const verdicts = [
+      ...(this.d.db.q("SELECT id, reason_hash FROM verifier_cases WHERE checker = ?").all(address) as { id: number; reason_hash: string | null }[]).map((x) => ({ id: x.id, hash: x.reason_hash })),
+      ...(this.d.db.q("SELECT case_id AS id, reason_hash FROM verifier_seats WHERE verifier = ? AND vote IS NOT NULL").all(address) as { id: number; reason_hash: string | null }[]).map((x) => ({ id: x.id, hash: x.reason_hash })),
+    ];
+    const maker = this.verifierRow(address)?.maker ?? 0;
+    const checked = verdicts.filter((v) => this.modelJson(v.id, address, maker, v.hash).mark === "checked").length;
+    return { checked, declared: verdicts.length - checked };
   }
 
   /** Every verifier, oldest standing first (no standing last). */
@@ -692,6 +796,7 @@ export class Verifiers {
         bondedEth: ethNum((BigInt(t.bonds) + BigInt(t.staked)).toString()), feesPaidEth: ethNum(t.feesPaid), slashedEth: ethNum(t.slashed),
       } : null,
       house: on ? this.house.map((h) => ({ address: h.address, maker: h.maker, makerName: makerName(h.maker), model: h.model, joined: !!(h.address && this.verifierRow(h.address)) })) : [],
+      erc8004: { enabled: on && this.d.cfg.erc8004.enabled, registry: VALIDATION_REGISTRY, tag: VERIFY_TAG },
     };
   }
 
@@ -707,6 +812,7 @@ export class Verifiers {
     const seats = await Promise.all(this.seated(c.id).map(async (s) => ({
       seat: s.seat, verifier: this.short(s.verifier), maker: s.maker, makerName: makerName(s.maker), since: s.since ? iso(s.since) : null, satAt: iso(s.sat_at),
       vote: s.vote as "accept" | "reject" | null, reasonHash: s.reason_hash, reason: s.vote ? this.reason(c.id, s.verifier) : null, ties: await this.tiesOf(c, s.verifier),
+      model: this.modelJson(c.id, s.verifier, s.maker, s.vote ? s.reason_hash : null),
     })));
     const money = this.d.db.q("SELECT verifier, kind, amount FROM verifier_money WHERE case_id = ? ORDER BY log_index").all(c.id) as { verifier: string; kind: string; amount: string }[];
     const out: CaseJson = {
@@ -718,7 +824,7 @@ export class Verifiers {
       state: c.state, how: c.how, hiredAt: iso(c.at), tx: c.tx_hash,
       ...(job?.delivered_at ? { deliveredAt: iso(job.delivered_at) } : {}),
       ...(dl ? { deadlines: { checkBy: iso(dl.checkBy), disputeBy: dl.disputeBy ? iso(dl.disputeBy) : null, seatBy: iso(dl.seatBy), revealBy: iso(dl.revealBy), reviewBy: iso(dl.reviewBy) } } : {}),
-      ...(c.checker ? { first: { verifier: this.short(c.checker), accept: c.first_accept === 1, at: iso(c.checked_at ?? 0), reasonHash: c.reason_hash ?? "", reason: this.reason(c.id, c.checker), tx: c.check_tx ?? "", ties: await this.tiesOf(c, c.checker) } } : {}),
+      ...(c.checker ? { first: { verifier: this.short(c.checker), accept: c.first_accept === 1, at: iso(c.checked_at ?? 0), reasonHash: c.reason_hash ?? "", reason: this.reason(c.id, c.checker), tx: c.check_tx ?? "", ties: await this.tiesOf(c, c.checker), model: this.modelJson(c.id, c.checker, this.short(c.checker).maker, c.reason_hash) } } : {}),
       ...(c.disputer ? { dispute: { by: c.disputer === c.customer ? "customer" as const : "agent" as const, address: c.disputer, at: iso(c.disputed_at ?? 0), bondEth: ethNum(c.dispute_bond), tx: c.dispute_tx ?? "" } } : {}),
       seats,
       struck: (this.d.db.q("SELECT verifier, gone_by, gone_at FROM verifier_seats WHERE case_id = ? AND gone = 'struck'").all(c.id) as { verifier: string; gone_by: string; gone_at: number }[]).map((s) => ({ verifier: s.verifier, name: this.short(s.verifier).name, by: s.gone_by === c.customer ? "customer" as const : "agent" as const, at: iso(s.gone_at) })),
@@ -727,6 +833,7 @@ export class Verifiers {
       ...(money.some((m) => m.kind === "slashed") ? { slashed: sumBy(money.filter((m) => m.kind === "slashed")) } : {}),
       ...(c.ended_at ? { ended: { state: c.state, how: c.how, at: iso(c.ended_at), tx: c.ended_tx ?? "", toCustomerEth: ethNum(c.to_customer ?? "0"), ...(this.bondBack(c) ? { disputeBondBackEth: ethNum(c.dispute_bond), disputeBondBackTo: c.disputer === c.customer ? "customer" as const : "agent" as const } : {}) } } : {}),
       next: nx.next === "work" ? null : nx.next, nextAt: nx.at ? iso(nx.at) : null,
+      erc8004: this.json8004(c),
     };
     if (forWho) out.forYou = await this.forYou(c, job, forWho, t);
     return out;
@@ -776,6 +883,214 @@ export class Verifiers {
     return since < newest.since ? { can: true } : no_("the panel is full of older standings");
   }
 
+  // ---------- model receipts ----------
+
+  private receiptRow(caseId: number, verifier: string): ReceiptRow | null {
+    return (this.d.db.q("SELECT * FROM verifier_receipts WHERE case_id = ? AND verifier = ?").get(caseId, verifier) as ReceiptRow | undefined) ?? null;
+  }
+
+  /**
+   * Which model gave a verdict, as far as anyone can tell: "checked" when it is one of Factor's own verifiers whose receipt
+   * holds (./verifierproof.ts, receiptHolds); "declared" for every other, an outside verifier's receipt shown as given.
+   */
+  modelJson(caseId: number, verifier: string, maker: number, reasonHash: string | null): ModelJson {
+    const reasons = this.reason(caseId, verifier);
+    const base = { maker, makerName: makerName(maker) };
+    const own = this.receiptRow(caseId, verifier);
+    if (own) {
+      const record = own.record ? (JSON.parse(own.record) as ProviderRecord) : null;
+      const lines: ReceiptLines = { provider: own.provider, generation: own.generation_id, model: own.model_asked, requestHash: own.request_hash as Hex, outputHash: own.output_hash as Hex };
+      const holds = receiptHolds({ lines, record, request: own.request_body, output: own.output, maker, reasons, reasonHashOnChain: reasonHash });
+      return {
+        ...base, mark: holds.ok ? "checked" : "declared",
+        receipt: {
+          by: "factor", provider: own.provider, generationId: own.generation_id, modelAsked: own.model_asked, modelReported: record?.model ?? null, providerName: record?.providerName ?? null,
+          tokensIn: record?.tokensIn ?? null, tokensOut: record?.tokensOut ?? null, createdAt: record?.created ?? null, requestHash: own.request_hash, outputHash: own.output_hash,
+          checkedAt: own.record_at ? new Date(own.record_at).toISOString() : null, matches: holds.ok, why: holds.why, url: this.siteUrl(`/api/v1/verifiers/receipt/${caseId}/${verifier}`),
+        },
+      };
+    }
+    const given = reasonHash && reasons && hashOf(reasons) === reasonHash.toLowerCase() ? readReceipt(reasons) : null;
+    return {
+      ...base, mark: "declared",
+      receipt: given ? {
+        by: "verifier", provider: given.provider, generationId: given.generation, modelAsked: given.model, modelReported: given.reportedModel ?? null, providerName: given.providerName ?? null,
+        tokensIn: given.tokensIn ?? null, tokensOut: given.tokensOut ?? null, createdAt: given.created ?? null, requestHash: given.requestHash, outputHash: given.outputHash,
+        checkedAt: null, matches: null, why: "given by the verifier and not checked: a provider's record of a call can only be read with the key that made it", url: null,
+      } : null,
+    };
+  }
+
+  /** One receipt whole: the request and the answer as sent and read, and the provider's record, for anyone to hash again. */
+  receiptPage(caseId: number, verifier: string): { receipt: ModelJson["receipt"]; mark: ModelJson["mark"]; request: string | null; output: string | null; providerRecord: ProviderRecord | null } | null {
+    const c = this.row(caseId);
+    if (!c) return null;
+    const seat = this.seats(caseId).find((s) => s.verifier === verifier);
+    if (c.checker !== verifier && !seat) return null;
+    const m = this.modelJson(caseId, verifier, c.checker === verifier ? this.short(verifier).maker : seat!.maker, c.checker === verifier ? c.reason_hash : seat!.vote ? seat!.reason_hash : null);
+    const own = this.receiptRow(caseId, verifier);
+    return { receipt: m.receipt, mark: m.mark, request: own?.request_body ?? null, output: own?.output ?? null, providerRecord: own?.record ? (JSON.parse(own.record) as ProviderRecord) : null };
+  }
+
+  /** Receipts of Factor's own whose provider record was not there yet are read again, a few times, a few at a time. */
+  async readReceipts(): Promise<number> {
+    const lookup = this.d.house?.lookup;
+    if (!lookup) return 0;
+    const rows = this.d.db.q("SELECT * FROM verifier_receipts WHERE record IS NULL AND tries < 5 ORDER BY at LIMIT 5").all() as ReceiptRow[];
+    let n = 0;
+    for (const r of rows) {
+      const record = await lookup(r.provider, r.generation_id).catch(() => null);
+      this.d.db.q("UPDATE verifier_receipts SET record = ?, record_at = ?, tries = tries + 1 WHERE case_id = ? AND verifier = ?").run(record ? JSON.stringify(record) : null, record ? this.d.now() : null, r.case_id, r.verifier);
+      if (record) n++;
+    }
+    return n;
+  }
+
+  // ---------- verdicts on the ERC-8004 validation registry ----------
+
+  private siteUrl(path: string): string | null {
+    return this.d.site ? `${this.d.site.replace(/\/+$/, "")}${path}` : null;
+  }
+
+  private row8004(caseId: number): Row8004 | null {
+    return (this.d.db.q("SELECT * FROM verifier_8004 WHERE case_id = ?").get(caseId) as Row8004 | undefined) ?? null;
+  }
+
+  /** The verifier whose verdict was carried out: the first verifier when it stood, else the first panelist of the majority. */
+  validatorOf(c: CaseRow): string | null {
+    if (!c.verdict || !c.checker) return null;
+    const accept = c.verdict === "accept";
+    if (c.decided_how === "first-check" || (c.first_accept === 1) === accept) return c.checker;
+    return this.seated(c.id).find((s) => s.vote === c.verdict)?.verifier ?? null;
+  }
+
+  /** A settled case decided by a verifier, with an agent that has an ERC-8004 identity: its case file, frozen, and its row. */
+  prepare8004(): number {
+    if (!this.d.cfg.erc8004.enabled || !this.on() || !this.d.agentIdOf) return 0;
+    const rows = this.d.db.q("SELECT * FROM verifier_cases WHERE state IN ('accepted', 'rejected') AND verdict IS NOT NULL AND decided_how IN ('first-check', 'panel') AND id NOT IN (SELECT case_id FROM verifier_8004) ORDER BY id LIMIT 20").all() as CaseRow[];
+    let n = 0;
+    for (const c of rows) {
+      const agentId = this.d.agentIdOf(c.agent);
+      const validator = this.validatorOf(c);
+      const page = this.siteUrl(`/jobs/${c.job}`);
+      if (!agentId || !validator || !page) continue;
+      const file = caseFileText(this.caseFile(c, agentId, validator, page));
+      this.d.db.q("INSERT OR IGNORE INTO verifier_8004 (case_id, agent_id, validator, response, file, file_hash, at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(c.id, agentId, validator, c.verdict === "accept" ? 100 : 0, file, hashOf(file), this.d.now());
+      n++;
+    }
+    return n;
+  }
+
+  private caseFile(c: CaseRow, agentId: string, validator: string, page: string): CaseFile {
+    const proof = (this.d.db.q("SELECT proof FROM desk_jobs WHERE id = ?").get(c.job) as { proof: string } | undefined)?.proof || null;
+    return {
+      kind: "factor.verify", version: 1, chainId: this.d.chainId, verifiers: this.d.cfg.contract!, desk: (this.d.desk ?? "").toLowerCase(), case: c.id, job: c.job,
+      agent: c.agent, agentId, customer: c.customer, priceWei: c.price, termsHash: c.terms_hash, proof,
+      verdict: c.verdict as "accept" | "reject", response: c.verdict === "accept" ? 100 : 0, decidedBy: c.decided_how as "first-check" | "panel", validator,
+      firstCheck: c.checker ? { verifier: c.checker, accept: c.first_accept === 1, reasonHash: c.reason_hash ?? "" } : null,
+      panel: this.seated(c.id).map((s) => ({ verifier: s.verifier, maker: s.maker, vote: s.vote as "accept" | "reject" | null, reasonHash: s.reason_hash })),
+      votes: { accept: c.votes_accept, reject: c.votes_reject },
+      ended: { state: c.state, how: c.how, at: c.ended_at ?? 0, tx: c.ended_tx ?? "" },
+      page,
+    };
+  }
+
+  /** The case file, exactly as hashed, or null. */
+  file(caseId: number): string | null {
+    return this.row8004(caseId)?.file ?? null;
+  }
+
+  /** Where each prepared verdict stands on the registry, read back from it every few minutes. */
+  async read8004(): Promise<number> {
+    if (!this.d.cfg.erc8004.enabled || !this.on()) return 0;
+    const now = this.d.now();
+    const rows = this.d.db.q("SELECT * FROM verifier_8004 WHERE state IN ('prepared', 'requested') AND read_at < ? ORDER BY read_at LIMIT 20").all(now - 180_000) as Row8004[];
+    let moved = 0;
+    for (const r of rows) {
+      let st: readonly [string, bigint, number, string, string, bigint] | null = null;
+      try {
+        st = await this.d.chain.read<readonly [string, bigint, number, string, string, bigint]>({ to: VALIDATION_REGISTRY, abi: erc8004ValidationAbi as Abi, functionName: "getValidationStatus", args: [r.file_hash] });
+      } catch {
+        st = null; // "unknown": nobody has asked for it yet
+      }
+      let state = r.state, named = r.named, answered = r.answered_with, answeredAt = r.answered_at, requestedAt = r.requested_at;
+      if (st) {
+        named = (normalizeAddress(st[0]) ?? "").toLowerCase();
+        const tag = String(st[4] ?? "");
+        const responded = tag !== "" || !/^0x0+$/.test(String(st[3]));
+        if (named !== r.validator || String(st[1]) !== r.agent_id) state = "elsewhere";
+        else if (responded) { state = "answered"; answered = Number(st[2]); answeredAt = Number(st[5]) || Math.floor(now / 1000); }
+        else state = "requested";
+        if (!requestedAt) requestedAt = Math.floor(now / 1000);
+      }
+      if (state !== r.state) moved++;
+      this.d.db.q("UPDATE verifier_8004 SET state = ?, named = ?, answered_with = ?, answered_at = ?, requested_at = ?, read_at = ? WHERE case_id = ?").run(state, named, answered, answeredAt, requestedAt, now, r.case_id);
+    }
+    return moved;
+  }
+
+  /** What a gas price makes of one answer on the registry, counted against the day's cap before it is sent. */
+  private gasToday(): bigint {
+    return BigInt((this.d.db.q("SELECT wei FROM verifier_8004_gas WHERE day = ?").get(this.today()) as { wei: string } | undefined)?.wei ?? "0");
+  }
+
+  private spendGas(wei: bigint): void {
+    this.d.db.q("INSERT INTO verifier_8004_gas (day, wei) VALUES (?, ?) ON CONFLICT(day) DO UPDATE SET wei = CAST(CAST(wei AS INTEGER) + CAST(excluded.wei AS INTEGER) AS TEXT)").run(this.today(), wei.toString());
+  }
+
+  /** The calls for the registry: the request, for the identity's owner to send, and the answer, for the validator. */
+  private calls8004(r: Row8004): { request: { to: string; data: Hex }; response: { to: string; data: Hex } } {
+    const url = this.siteUrl(`/api/v1/verifiers/file/${r.case_id}`)!;
+    return {
+      request: { to: VALIDATION_REGISTRY, data: encodeFunctionData({ abi: erc8004ValidationAbi as Abi, functionName: "validationRequest", args: [r.validator, BigInt(r.agent_id), url, r.file_hash] } as never) },
+      response: { to: VALIDATION_REGISTRY, data: encodeFunctionData({ abi: erc8004ValidationAbi as Abi, functionName: "validationResponse", args: [r.file_hash, r.response, url, r.file_hash, VERIFY_TAG] } as never) },
+    };
+  }
+
+  /** Where a case's verdict stands on ERC-8004, as the site and the kit read it. */
+  json8004(c: CaseRow): Erc8004Json {
+    const base = { registry: VALIDATION_REGISTRY, tag: VERIFY_TAG };
+    const off = (state: Erc8004Json["state"], why: string): Erc8004Json => ({ ...base, agentId: this.d.agentIdOf?.(c.agent) ?? null, state, validator: null, response: null, file: null, fileHash: null, requestCall: null, responseCall: null, requestedAt: null, answeredAt: null, why });
+    if (!this.d.cfg.erc8004.enabled) return off("off", "verdicts are not written to ERC-8004 here");
+    const r = this.row8004(c.id);
+    if (!r) {
+      if (!ENDED.includes(c.state) || c.state === "returned") return off("no-verdict", "the case has not ended with a verdict yet");
+      if (!c.verdict || !["first-check", "panel"].includes(c.decided_how ?? "")) return off("no-verdict", "no verifier decided this case, so there is no verdict to write");
+      if (!this.d.agentIdOf?.(c.agent)) return off("no-identity", "the agent has no ERC-8004 identity linked on Factor");
+      return off("no-verdict", "its case file is being made");
+    }
+    const calls = this.calls8004(r);
+    return {
+      ...base, agentId: r.agent_id, state: r.state === "elsewhere" ? "requested" : (r.state as Erc8004Json["state"]), validator: r.validator, response: r.response as 0 | 100,
+      file: this.siteUrl(`/api/v1/verifiers/file/${r.case_id}`), fileHash: r.file_hash,
+      requestCall: r.state === "prepared" ? calls.request : null, responseCall: r.state === "requested" ? calls.response : null,
+      requestedAt: r.requested_at ? iso(r.requested_at) : null, answeredAt: r.answered_at ? iso(r.answered_at) : null,
+      ...(r.state === "elsewhere" ? { why: `the request on the registry names ${r.named}, not the verifier whose verdict was carried out, so Factor's verifiers do not answer it` } : r.state === "prepared" ? { why: "the agent identity's owner (or an operator it approved) asks for it: the registry takes a request from nobody else" } : {}),
+    };
+  }
+
+  /** An agent's verified jobs on the validation registry, as the registry itself counts them under factorVerify. Kept ten minutes. */
+  private summaries = new Map<string, { at: number; v: { count: number; avgResponse: number } | null }>();
+  async onErc8004(agentId: string | null): Promise<{ count: number; avgResponse: number; registry: string; tag: string } | null> {
+    if (!agentId || !this.d.cfg.erc8004.enabled) return null;
+    const had = this.summaries.get(agentId);
+    let v = had && this.d.now() - had.at < 600_000 ? had.v : undefined;
+    if (v === undefined) {
+      const x = await this.d.chain.read<readonly [bigint, number]>({ to: VALIDATION_REGISTRY, abi: erc8004ValidationAbi as Abi, functionName: "getSummary", args: [BigInt(agentId), [], VERIFY_TAG] }).catch(() => null);
+      v = x ? { count: Number(x[0]), avgResponse: Number(x[1]) } : null;
+      this.summaries.set(agentId, { at: this.d.now(), v });
+    }
+    return v ? { ...v, registry: VALIDATION_REGISTRY, tag: VERIFY_TAG } : null;
+  }
+
+  /** Receipts read again, verdicts prepared and read back from the registry: a few each pass. */
+  async proofPass(): Promise<void> {
+    if (!this.on()) return;
+    await this.readReceipts();
+    this.prepare8004();
+    await this.read8004();
+  }
+
   async json(id: number, forWho?: string | null): Promise<CaseJson | null> {
     const c = this.row(id);
     return c ? this.caseJson(c, forWho) : null;
@@ -802,6 +1117,14 @@ export class Verifiers {
     return { verifier: this.verifierJson(address), cases };
   }
 
+  /** The registry's count for an agent as last read, and a fresh read started when it is old: for answers that cannot wait. */
+  onErc8004Now(agentId: string | null): { count: number; avgResponse: number; registry: string; tag: string } | null {
+    if (!agentId || !this.d.cfg.erc8004.enabled) return null;
+    const had = this.summaries.get(agentId);
+    if (!had || this.d.now() - had.at >= 600_000) void this.onErc8004(agentId).catch(() => null);
+    return had?.v ? { ...had.v, registry: VALIDATION_REGISTRY, tag: VERIFY_TAG } : null;
+  }
+
   /** How an agent's jobs with a verifier went, or null when it had none. */
   agentJson(address: string): AgentVerifiedJson | null {
     if (!this.on()) return null;
@@ -813,6 +1136,7 @@ export class Verifiers {
       disputed: q("SELECT COUNT(*) AS n FROM verifier_cases WHERE agent = ? AND disputer IS NOT NULL"),
       disputesWon: q("SELECT COUNT(*) AS n FROM verifier_cases WHERE agent = ? AND disputer = agent AND verdict = 'accept' AND decided_how = 'panel'"),
       disputesLost: q("SELECT COUNT(*) AS n FROM verifier_cases WHERE agent = ? AND disputer = agent AND verdict = 'reject' AND decided_how = 'panel'"),
+      onErc8004: this.onErc8004Now(this.d.agentIdOf?.(address) ?? null),
     };
   }
 
@@ -823,6 +1147,8 @@ export class Verifiers {
       reading: this.reading(), on: this.on(), contract: this.d.cfg.contract, working: count("working"), checked: count("checked"), disputed: count("disputed"), customer: count("customer"),
       totals: this.totals(), note: this.d.cfg.note,
       house: { enabled: this.d.cfg.house.enabled, spentTodayUsd: this.spentToday() / 1e6, capUsd: this.d.cfg.house.dailyMicro / 1e6, verifiers: this.house.map((h) => ({ maker: makerName(h.maker), model: h.model, address: h.address, ready: h.ready })) },
+      receipts: { kept: (this.d.db.q("SELECT COUNT(*) AS n FROM verifier_receipts").get() as { n: number }).n, unread: (this.d.db.q("SELECT COUNT(*) AS n FROM verifier_receipts WHERE record IS NULL").get() as { n: number }).n },
+      erc8004: { enabled: this.d.cfg.erc8004.enabled, byState: this.d.db.q("SELECT state, COUNT(*) AS n FROM verifier_8004 GROUP BY state").all(), gasTodayWei: this.gasToday().toString(), gasDayWei: this.d.cfg.erc8004.gasDayWei.toString() },
     };
   }
 
@@ -891,7 +1217,7 @@ export class Verifiers {
   }
 
   /** A check by one of Factor's own: the tests the work allows, then its own model. Null when it cannot be made now. */
-  private async houseCheck(h: HouseVerifier, c: CaseRow): Promise<{ accept: boolean; reason: string; costMicro: number } | null> {
+  private async houseCheck(h: HouseVerifier, c: CaseRow): Promise<{ accept: boolean; reason: string; costMicro: number; receipt?: { lines: ReceiptLines; requestBody: string; output: string; record: ProviderRecord | null } } | null> {
     const ask = this.d.house?.ask;
     const words = this.terms(c.id);
     const work = this.d.work(c.job);
@@ -904,7 +1230,28 @@ export class Verifiers {
     this.spend(answer.costMicro);
     const read = readAnswer(answer.text) ?? { accept: false, reasons: "The model gave no verdict that could be read, so the work is not accepted on its word." };
     const accept = verdictOf(tests, read);
-    return { accept, reason: reasonText(accept, tests, read.reasons, `${makerName(h.maker)}, ${h.model}`), costMicro: answer.costMicro };
+    if (!answer.receipt) return { accept, reason: reasonText(accept, tests, read.reasons, `${makerName(h.maker)}, ${h.model}`), costMicro: answer.costMicro };
+    // the provider's record of the call, read with the key that made it: it can take a moment to be there
+    let record: ProviderRecord | null = null;
+    for (let i = 0; i < 3 && !record && this.d.house?.lookup; i++) {
+      if (i) await new Promise((ok) => setTimeout(ok, this.lookupPauseMs));
+      record = await this.d.house.lookup(answer.receipt.provider, answer.receipt.generationId).catch(() => null);
+    }
+    const lines: ReceiptLines = {
+      provider: answer.receipt.provider, generation: answer.receipt.generationId, model: h.model, requestHash: hashOf(answer.receipt.requestBody), outputHash: hashOf(answer.text),
+      ...(record ? { reportedModel: record.model, providerName: record.providerName, tokensIn: record.tokensIn, tokensOut: record.tokensOut, created: record.created } : {}),
+    };
+    return { accept, reason: reasonText(accept, tests, read.reasons, `${makerName(h.maker)}, ${h.model}`, receiptBlock(lines)), costMicro: answer.costMicro, receipt: { lines, requestBody: answer.receipt.requestBody, output: answer.text, record } };
+  }
+
+  /** How long to wait between two reads of a provider's record (the tests set 0). */
+  lookupPauseMs = 1500;
+
+  /** A receipt of Factor's own, kept with the call as sent and read. */
+  private keepReceipt(caseId: number, h: HouseVerifier, r: { lines: ReceiptLines; requestBody: string; output: string; record: ProviderRecord | null }): void {
+    this.d.db.q("INSERT INTO verifier_receipts (case_id, verifier, maker, provider, generation_id, model_asked, request_body, output, request_hash, output_hash, record, record_at, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(case_id, verifier) DO NOTHING").run(
+      caseId, h.address, h.maker, r.lines.provider, r.lines.generation, h.model, r.requestBody, r.output, r.lines.requestHash, r.lines.outputHash, r.record ? JSON.stringify(r.record) : null, r.record ? this.d.now() : null, this.d.now(),
+    );
   }
 
   /** Whether one of Factor's own may take this case at all: never where Factor is a side, or where its records tie it to one. */
@@ -928,6 +1275,24 @@ export class Verifiers {
       const accounts = this.d.house!.accounts()!;
       const order = (h: HouseVerifier, calls: Call[]) => accounts.orderAs(h.address!, calls, (typed) => h.signer.signTypedData(typed as never));
       let asked = false;
+      // verdicts asked for on the registry, whose validator is one of Factor's own: answered, under the day's gas cap
+      if (this.d.cfg.erc8004.enabled) {
+        const mine = new Map(ready.map((h) => [h.address!, h]));
+        const waiting = this.d.db.q("SELECT * FROM verifier_8004 WHERE state = 'requested' AND relay IS NULL ORDER BY case_id LIMIT 3").all() as Row8004[];
+        for (const r of waiting) {
+          const h = mine.get(r.validator);
+          if (!h || r.named !== r.validator) continue;
+          const cost = 250_000n * (await this.d.chain.fees().then((f) => f.maxFeePerGas).catch(() => 10n ** 9n));
+          if (this.gasToday() + cost > this.d.cfg.erc8004.gasDayWei) { this.d.log(`[verifiers] case ${r.case_id}: its answer on ERC-8004 waits for tomorrow's gas`); break; }
+          const call = this.calls8004(r).response;
+          const relay = await order(h, [{ to: call.to, value: 0n, data: call.data }]).catch((e) => { this.d.log(`[verifiers] case ${r.case_id}: the answer on ERC-8004 was refused (${reasonOf(e)})`); return null; });
+          if (relay) {
+            this.spendGas(cost);
+            this.d.db.q("UPDATE verifier_8004 SET relay = ?, read_at = 0 WHERE case_id = ?").run(relay, r.case_id);
+            this.d.log(`[verifiers] case ${r.case_id}: Factor's ${makerName(h.maker)} verifier answers ${r.response} on ERC-8004`);
+          }
+        }
+      }
       const live = this.d.db.q("SELECT * FROM verifier_cases WHERE state IN ('working', 'disputed') ORDER BY id").all() as CaseRow[];
       for (const c of live) {
         const job = this.deskJob(c.job);
@@ -955,6 +1320,7 @@ export class Verifiers {
           if (!done) continue;
           asked = true;
           this.saveHouse(c.id, h.address!, "check", { accept: done.accept ? 1 : 0, reason: done.reason, cost_micro: done.costMicro });
+          if (done.receipt) this.keepReceipt(c.id, h, done.receipt);
           const relay = await order(h, [this.call("check", [BigInt(c.id), done.accept, hashText(done.reason)])]).catch((e) => { this.d.log(`[verifiers] case ${c.id}: the check was refused (${reasonOf(e)})`); return null; });
           this.saveHouse(c.id, h.address!, "check", relay ? { state: "sending", relay } : { state: "gave_up" });
           if (relay) this.d.log(`[verifiers] case ${c.id}: Factor's ${makerName(h.maker)} verifier checked it: ${done.accept ? "accept" : "reject"}`);
@@ -972,6 +1338,7 @@ export class Verifiers {
             const salt = h.signer.salt(c.id);
             const commit = keccak256(encodeCommit(c.id, h.address!, done.accept, hashText(done.reason), salt));
             this.saveHouse(c.id, h.address!, "seat", { accept: done.accept ? 1 : 0, reason: done.reason, salt, cost_micro: done.costMicro });
+            if (done.receipt) this.keepReceipt(c.id, h, done.receipt);
             const relay = await order(h, [this.call("sit", [BigInt(c.id), commit])]).catch((e) => { this.d.log(`[verifiers] case ${c.id}: the seat was refused (${reasonOf(e)})`); return null; });
             this.saveHouse(c.id, h.address!, "seat", relay ? { state: "sealed", relay } : { state: "gave_up" });
             if (relay) this.d.log(`[verifiers] case ${c.id}: Factor's ${makerName(h.maker)} verifier took a seat, its verdict sealed`);
@@ -1023,10 +1390,25 @@ export function chainPriceOf(chain: Chain): PriceOf {
 // ---- the site's shape: web/src/lib/types.ts keeps the same by hand ----
 
 export interface VerifierShort { address: string; name: string | null; maker: number; makerName: string; house: boolean }
+interface ReceiptRow { case_id: number; verifier: string; maker: number; provider: string; generation_id: string; model_asked: string; request_body: string; output: string; request_hash: string; output_hash: string; record: string | null; record_at: number | null; tries: number; at: number }
+interface Row8004 { case_id: number; agent_id: string; validator: string; response: number; file: string; file_hash: string; state: string; named: string | null; answered_with: number | null; requested_at: number | null; answered_at: number | null; read_at: number; relay: string | null; at: number }
+/** Which model gave a verdict: "checked" only when Factor's own receipt holds (./verifierproof.ts); every other verdict is "declared". */
+export interface ModelJson {
+  mark: "checked" | "declared"; maker: number; makerName: string;
+  receipt: null | { by: "factor" | "verifier"; provider: string; generationId: string; modelAsked: string | null; modelReported: string | null; providerName: string | null; tokensIn: number | null; tokensOut: number | null; createdAt: string | null; requestHash: string; outputHash: string; checkedAt: string | null; matches: boolean | null; why: string | null; url: string | null };
+}
+/** Where a case's verdict stands on the ERC-8004 validation registry. */
+export interface Erc8004Json {
+  registry: string; tag: string; agentId: string | null; state: "off" | "no-identity" | "no-verdict" | "prepared" | "requested" | "answered";
+  validator: string | null; response: 0 | 100 | null; file: string | null; fileHash: string | null;
+  requestCall: { to: string; data: Hex } | null; responseCall: { to: string; data: Hex } | null; requestedAt: string | null; answeredAt: string | null; why?: string;
+}
 export interface VerifierJson extends VerifierShort {
   standing: boolean; since: string | null; joinedAt: string;
   freeEth: number; freeWei: string; lockedEth: number; lockedWei: string; open: number;
   checks: number; panels: number; right: number; wrong: number; hidden: number; struck: number; earnedEth: number; lostEth: number; rightPct: number | null;
+  /** its verdicts whose receipt Factor checked, and those that only declare their model */
+  receipts: { checked: number; declared: number };
 }
 export interface VerifiersAbout {
   enabled: boolean; contract: string | null; chainId: number;
@@ -1034,6 +1416,7 @@ export interface VerifiersAbout {
   makers: { id: number; name: string; models: string }[];
   totals: { cases: number; open: number; disputed: number; panels: number; verifiers: number; bondedEth: number; feesPaidEth: number; slashedEth: number } | null;
   house: { address: string | null; maker: number; makerName: string; model: string; joined: boolean }[];
+  erc8004: { enabled: boolean; registry: string; tag: string };
 }
 export interface CaseJson {
   id: number; job: { n: number; id: string; state: string }; customer: string; agent: { address: string; name: string };
@@ -1042,9 +1425,9 @@ export interface CaseJson {
   state: CaseState; how: How | null; hiredAt: string; tx: string;
   deliveredAt?: string;
   deadlines?: { checkBy: string; disputeBy: string | null; seatBy: string; revealBy: string; reviewBy: string };
-  first?: { verifier: VerifierShort; accept: boolean; at: string; reasonHash: string; reason: string | null; tx: string; ties: string[] };
+  first?: { verifier: VerifierShort; accept: boolean; at: string; reasonHash: string; reason: string | null; tx: string; ties: string[]; model: ModelJson };
   dispute?: { by: "customer" | "agent"; address: string; at: string; bondEth: number; tx: string };
-  seats: { seat: number; verifier: VerifierShort; maker: number; makerName: string; since: string | null; satAt: string; vote: "accept" | "reject" | null; reasonHash: string | null; reason: string | null; ties: string[] }[];
+  seats: { seat: number; verifier: VerifierShort; maker: number; makerName: string; since: string | null; satAt: string; vote: "accept" | "reject" | null; reasonHash: string | null; reason: string | null; ties: string[]; model: ModelJson }[];
   struck: { verifier: string; name: string | null; by: "customer" | "agent"; at: string }[];
   decided?: { how: How; verdict: "accept" | "reject" | null; votesAccept: number; votesReject: number; at: string };
   paid?: { verifier: string; eth: number; wei: string }[]; slashed?: { verifier: string; eth: number; wei: string }[];
@@ -1052,8 +1435,9 @@ export interface CaseJson {
   ended?: { state: CaseState; how: How | null; at: string; tx: string; toCustomerEth: number; disputeBondBackEth?: number; disputeBondBackTo?: "customer" | "agent" };
   next: "check" | "dispute" | "seats" | "reveals" | "step" | "customer" | null; nextAt: string | null;
   forYou?: { can: boolean; why?: string };
+  erc8004: Erc8004Json;
 }
-export interface AgentVerifiedJson { jobs: number; accepted: number; rejected: number; disputed: number; disputesWon: number; disputesLost: number }
+export interface AgentVerifiedJson { jobs: number; accepted: number; rejected: number; disputed: number; disputesWon: number; disputesLost: number; onErc8004?: { count: number; avgResponse: number; registry: string; tag: string } | null }
 
 const iso = (s: number): string => new Date(s * 1000).toISOString();
 const ethNum = (wei: string): number => Number(formatEther(BigInt(wei)));

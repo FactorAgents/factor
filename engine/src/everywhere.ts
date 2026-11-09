@@ -179,6 +179,8 @@ export interface AgentAnswer {
   hire: string;
   /** paid reviews (./reviews.ts), only while they are on: the average weighted by what each job paid, how many count and how many were left out, and the newest few */
   reviews?: { average: number | null; count: number; notCounted: number; recent: { job: number; stars: number; text: string | null; priceEth: number; at: string; counted: boolean }[] };
+  /** its jobs hired with a verifier (./verifiers.ts), only while verifiers are on: how they went, and how many the ERC-8004 validation registry counts under factorVerify with their average response */
+  verified?: { jobs: number; accepted: number; rejected: number; disputed: number; onErc8004: { count: number; avgResponse: number; registry: string; tag: string } | null };
 }
 
 export interface Envelope { v: 1; kind: "factor.agent" | "factor.agents"; chainId: number; desk: string; block: number; issuedAt: number; expiresAt: number }

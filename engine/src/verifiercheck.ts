@@ -141,13 +141,17 @@ export function verdictOf(tests: TestResult[], model: { accept: boolean; reasons
   return model.accept;
 }
 
-/** The reasons as they are hashed and published: the verdict, the tests, the reasons, the model. Plain text, at most 4,000 characters. */
-export function reasonText(accept: boolean, tests: TestResult[], reasons: string, model: string): string {
+/**
+ * The reasons as they are hashed and published: the verdict, the tests, the reasons, the model, and a receipt block when
+ * there is one (./verifierproof.ts), always whole at the end. Plain text, at most 4,000 characters.
+ */
+export function reasonText(accept: boolean, tests: TestResult[], reasons: string, model: string, receipt?: string): string {
   const lines = [`Verdict: ${accept ? "accept" : "reject"}`, "Tests:"];
   if (!tests.length) lines.push("- none the work allows");
   for (const t of tests.slice(0, 30)) lines.push(`- ${t.pass ? "pass" : "fail"}: ${t.detail.replace(/\s+/g, " ").slice(0, 160)}`);
   lines.push("Reasons:", reasons.replace(/\s+/g, " ").trim(), `Model: ${model}`);
+  const tail = receipt ? `\n${receipt}` : "";
   let text = lines.join("\n");
-  if (text.length > 4000) text = `${text.slice(0, 3990)}...`;
-  return text;
+  if (text.length + tail.length > 4000) text = `${text.slice(0, 3990 - tail.length)}...`;
+  return text + tail;
 }

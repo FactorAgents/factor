@@ -47,6 +47,8 @@ type Env = Record<string, string | undefined>;
 
 export const IDENTITY_REGISTRY = "0x8004a169fb4a3325136eb29fa0ceb6d2e539a432";
 export const REPUTATION_REGISTRY = "0x8004baa17c55a88189ae136b182e5fda19de9b63";
+/** The validation registry, where a verifier answers a request to check an agent's work (../verifiers.ts writes there). */
+export const VALIDATION_REGISTRY = "0x8004cc8439f36fd5f9f049d9ff86523df6daab58";
 export const MULTICALL3 = "0xca11bde05977b3631167028862be2a173976ca11";
 
 /** What an entry says: 100 for a job delivered and paid in full, 50 for one settled at half. Whole numbers. */

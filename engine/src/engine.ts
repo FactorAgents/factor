@@ -50,7 +50,7 @@ import { Lines } from "./lines.js";
 import { Guarantees } from "./guarantees.js";
 import { Bounties } from "./bounties.js";
 import { Milestones } from "./milestones.js";
-import { Verifiers, chainPriceOf, routerAsker } from "./verifiers.js";
+import { Verifiers, chainPriceOf, routerAsker, routerLookup } from "./verifiers.js";
 import { answerSigner, Connect, type AnswerSigner } from "./everywhere.js";
 import { Erc8004Scores } from "./erc8004score.js";
 import { Ask, askModelOf, type AskModel } from "./ask.js";
@@ -672,12 +672,17 @@ export class Engine {
         accounts: () => (c.accounts.enabled ? this.accounts : null),
         live: () => this.ctx?.mode === "live" && !!this.ctx.signer && this.state === "running",
         ask: this.env.OPENROUTER_API_KEY?.trim() ? routerAsker(this.env.OPENROUTER_API_KEY.trim(), this.env.COMPUTE_ROUTER_URL?.trim() || undefined) : null,
+        lookup: this.env.OPENROUTER_API_KEY?.trim() ? routerLookup(this.env.OPENROUTER_API_KEY.trim(), this.env.COMPUTE_ROUTER_URL?.trim() || undefined) : null,
         priceOf: chainPriceOf(this.chain),
       },
+      site: c.pay.site,
+      desk: c.desk,
+      agentIdOf: (agent) => { const l = this.erc8004?.store.link(agent); return l?.agent_id && !l.lost ? l.agent_id : null; },
     });
     this.ctx.verifiers = this.verifiers;
     if (c.verifiers.enabled && c.verifiers.note) this.log(`[verifiers] NOT ON: ${c.verifiers.note}`);
     else if (c.verifiers.enabled) this.log(`[verifiers] on: verified jobs are read from ${c.verifiers.contract}; the keeper steps a case once its time has come${c.verifiers.house.enabled ? `, and Factor's own verifiers check on ${Object.values(c.verifiers.house.models).join(", ")}, up to $${c.verifiers.house.dailyMicro / 1e6} a day on models${this.env.OPENROUTER_API_KEY?.trim() ? "" : " (NOT checking: no OPENROUTER_API_KEY)"}` : ""}`);
+    if (c.verifiers.enabled && !c.verifiers.note && c.verifiers.erc8004.enabled) this.log(`[verifiers] verdicts go to the ERC-8004 validation registry: a case file for each verdict of an agent with an identity; Factor's own verifiers answer, up to ${Number(c.verifiers.erc8004.gasDayWei) / 1e18} ETH of gas a day`);
     // HEY builder records: made whether or not they are on, so an agent's link is kept; HEY is asked nothing while off
     this.hey = new Hey({
       cfg: c.hey, db, now: this.now, log: this.log, setters,
@@ -902,6 +907,8 @@ export class Engine {
       if ((await this.verifiers.watch(this.ctx, pass.head)).length && this.api) this.api.forget();
       await this.verifiers.refresh();
       void this.verifiers.housePass().catch((e: unknown) => this.log(`[verifiers] Factor's own verifiers: the pass failed: ${e instanceof Error ? e.message : String(e)}`));
+      // receipts read again at the provider, verdicts prepared for ERC-8004 and read back from its registry: never waited on
+      void this.verifiers.proofPass().then(() => this.api?.forget()).catch((e: unknown) => this.log(`[verifiers] receipts and ERC-8004: the pass failed: ${e instanceof Error ? e.message : String(e)}`));
     }
     // an open job whose rule is the best Factor Score is picked as soon as its moment has come (./openjobs.ts)
     try { this.openjobs?.pickDue(); } catch (e) { this.log(`[openjobs] picking failed: ${e instanceof Error ? e.message : String(e)}`); }
