@@ -1,0 +1,1023 @@
+{
+  "contract": "FactorVerifiers",
+  "events": [
+    {
+      "name": "BondAdded",
+      "signature": "BondAdded(address,uint256,uint256)",
+      "topic0": "0xc84b1b191804173928786f9eaeba32c3390af9a8be366c1567ec5c27c45bf7d0",
+      "inputs": [
+        {
+          "name": "verifier",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "amount",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        },
+        {
+          "name": "free",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        }
+      ]
+    },
+    {
+      "name": "Checked",
+      "signature": "Checked(uint256,address,bool,bytes32)",
+      "topic0": "0x0bef775de30ee9184f415cc193fb00bf7f573a648ee3fb0315eb215b418c44fe",
+      "inputs": [
+        {
+          "name": "id",
+          "type": "uint256",
+          "indexed": true,
+          "internalType": "uint256"
+        },
+        {
+          "name": "verifier",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "accept",
+          "type": "bool",
+          "indexed": false,
+          "internalType": "bool"
+        },
+        {
+          "name": "reason",
+          "type": "bytes32",
+          "indexed": false,
+          "internalType": "bytes32"
+        }
+      ]
+    },
+    {
+      "name": "Collected",
+      "signature": "Collected(address,address,uint256)",
+      "topic0": "0x484decdc1e9549e1866295f6f86c889ded3f7de410e7488a7a415978589dc8fd",
+      "inputs": [
+        {
+          "name": "who",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "to",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "amount",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        }
+      ]
+    },
+    {
+      "name": "Decided",
+      "signature": "Decided(uint256,uint8,uint8,uint256,uint256)",
+      "topic0": "0x00031c0247a17149af99c8601f97b8c570b6fa38a016101e0d6461602308b721",
+      "inputs": [
+        {
+          "name": "id",
+          "type": "uint256",
+          "indexed": true,
+          "internalType": "uint256"
+        },
+        {
+          "name": "how",
+          "type": "uint8",
+          "indexed": false,
+          "internalType": "enum FactorVerifiers.How"
+        },
+        {
+          "name": "verdict",
+          "type": "uint8",
+          "indexed": false,
+          "internalType": "uint8"
+        },
+        {
+          "name": "votesAccept",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        },
+        {
+          "name": "votesReject",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        }
+      ]
+    },
+    {
+      "name": "Displaced",
+      "signature": "Displaced(uint256,address,address)",
+      "topic0": "0x03a7b57981e3070a6c368aac7b22bc5d7b18e2582d112311a141412081803b1d",
+      "inputs": [
+        {
+          "name": "id",
+          "type": "uint256",
+          "indexed": true,
+          "internalType": "uint256"
+        },
+        {
+          "name": "verifier",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "by",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        }
+      ]
+    },
+    {
+      "name": "Disputed",
+      "signature": "Disputed(uint256,address,uint256)",
+      "topic0": "0xc43fcc4baf83e9385b0c1a9f318ad3ff5af68d565fd46f84d0f3b031d6df0535",
+      "inputs": [
+        {
+          "name": "id",
+          "type": "uint256",
+          "indexed": true,
+          "internalType": "uint256"
+        },
+        {
+          "name": "by",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "bond",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        }
+      ]
+    },
+    {
+      "name": "Ended",
+      "signature": "Ended(uint256,uint8,uint8,uint256)",
+      "topic0": "0x521e148695359c8e6e607fa688d2f5586cbcc0de43276dac9a0d2ef98498a086",
+      "inputs": [
+        {
+          "name": "id",
+          "type": "uint256",
+          "indexed": true,
+          "internalType": "uint256"
+        },
+        {
+          "name": "state",
+          "type": "uint8",
+          "indexed": true,
+          "internalType": "enum FactorVerifiers.State"
+        },
+        {
+          "name": "how",
+          "type": "uint8",
+          "indexed": false,
+          "internalType": "enum FactorVerifiers.How"
+        },
+        {
+          "name": "toCustomer",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        }
+      ]
+    },
+    {
+      "name": "Hired",
+      "signature": "Hired(uint256,uint256,address,address,uint256,uint256,uint256,uint256,bytes32)",
+      "topic0": "0x68a3d157623a919aa6233f6b3b33084d4b9b231bdbcb2a5c9192073a413d1552",
+      "inputs": [
+        {
+          "name": "id",
+          "type": "uint256",
+          "indexed": true,
+          "internalType": "uint256"
+        },
+        {
+          "name": "job",
+          "type": "uint256",
+          "indexed": true,
+          "internalType": "uint256"
+        },
+        {
+          "name": "customer",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "agent",
+          "type": "address",
+          "indexed": false,
+          "internalType": "address"
+        },
+        {
+          "name": "price",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        },
+        {
+          "name": "fee",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        },
+        {
+          "name": "stake",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        },
+        {
+          "name": "disputeBond",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        },
+        {
+          "name": "terms",
+          "type": "bytes32",
+          "indexed": false,
+          "internalType": "bytes32"
+        }
+      ]
+    },
+    {
+      "name": "Joined",
+      "signature": "Joined(address,uint8,uint256)",
+      "topic0": "0x670ed03ad3b1359ba029f8fe99aa66a211918b3da4db13989b1b9493a3a5cb1d",
+      "inputs": [
+        {
+          "name": "verifier",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "maker",
+          "type": "uint8",
+          "indexed": false,
+          "internalType": "uint8"
+        },
+        {
+          "name": "bond",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        }
+      ]
+    },
+    {
+      "name": "MakerSet",
+      "signature": "MakerSet(address,uint8)",
+      "topic0": "0x61c1b4637720c01226ae7daa23bfca4f5b86334e7b50a5febfab7feb4b8942d0",
+      "inputs": [
+        {
+          "name": "verifier",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "maker",
+          "type": "uint8",
+          "indexed": false,
+          "internalType": "uint8"
+        }
+      ]
+    },
+    {
+      "name": "Owed",
+      "signature": "Owed(address,uint256)",
+      "topic0": "0x7393c924ac30f9256e6cebcfb78841b1e7ef11bf8b09d87c2257b32b8063c979",
+      "inputs": [
+        {
+          "name": "who",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "amount",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        }
+      ]
+    },
+    {
+      "name": "Paid",
+      "signature": "Paid(uint256,address,uint256)",
+      "topic0": "0x4f2d18324ee95128de091ed2adc501295479000ce4c2cec607aeb1b67e189e2f",
+      "inputs": [
+        {
+          "name": "id",
+          "type": "uint256",
+          "indexed": true,
+          "internalType": "uint256"
+        },
+        {
+          "name": "verifier",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "amount",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        }
+      ]
+    },
+    {
+      "name": "Revealed",
+      "signature": "Revealed(uint256,address,bool,bytes32)",
+      "topic0": "0x7cea149fed58f3b5c492783cedaa45b79e83f5150dcebf5622542102dacef98d",
+      "inputs": [
+        {
+          "name": "id",
+          "type": "uint256",
+          "indexed": true,
+          "internalType": "uint256"
+        },
+        {
+          "name": "verifier",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "accept",
+          "type": "bool",
+          "indexed": false,
+          "internalType": "bool"
+        },
+        {
+          "name": "reason",
+          "type": "bytes32",
+          "indexed": false,
+          "internalType": "bytes32"
+        }
+      ]
+    },
+    {
+      "name": "Sat",
+      "signature": "Sat(uint256,address,uint8,uint256)",
+      "topic0": "0x10ea4beca285f36c639869db312b1274ee596a1c974ef837d5efee6537404f68",
+      "inputs": [
+        {
+          "name": "id",
+          "type": "uint256",
+          "indexed": true,
+          "internalType": "uint256"
+        },
+        {
+          "name": "verifier",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "maker",
+          "type": "uint8",
+          "indexed": false,
+          "internalType": "uint8"
+        },
+        {
+          "name": "seat",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        }
+      ]
+    },
+    {
+      "name": "Slashed",
+      "signature": "Slashed(uint256,address,uint256)",
+      "topic0": "0x0ebf205de0d16b8c4e99b7cd8c52f0e40c86547ecda94f93c3fcf75fd0408463",
+      "inputs": [
+        {
+          "name": "id",
+          "type": "uint256",
+          "indexed": true,
+          "internalType": "uint256"
+        },
+        {
+          "name": "verifier",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "amount",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        }
+      ]
+    },
+    {
+      "name": "Standing",
+      "signature": "Standing(address,uint256)",
+      "topic0": "0xe2190c03d96d62250defc070daf960e8421f467d0f6f22b8189dde09d1be10ae",
+      "inputs": [
+        {
+          "name": "verifier",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "since",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        }
+      ]
+    },
+    {
+      "name": "Struck",
+      "signature": "Struck(uint256,address,address)",
+      "topic0": "0x3c83f9537850d0ac727bcbca8178dbb624997a15155fa4e3a1487a88d081c7da",
+      "inputs": [
+        {
+          "name": "id",
+          "type": "uint256",
+          "indexed": true,
+          "internalType": "uint256"
+        },
+        {
+          "name": "verifier",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "by",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        }
+      ]
+    },
+    {
+      "name": "Withdrawn",
+      "signature": "Withdrawn(address,uint256,uint256)",
+      "topic0": "0x92ccf450a286a957af52509bc1c9939d1a6a481783e142e41e2499f0bb66ebc6",
+      "inputs": [
+        {
+          "name": "verifier",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "amount",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        },
+        {
+          "name": "free",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        }
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "name": "AlreadyJoined",
+      "signature": "AlreadyJoined()",
+      "selector": "0x003b2682"
+    },
+    {
+      "name": "AlreadyRevealed",
+      "signature": "AlreadyRevealed()",
+      "selector": "0xa89ac151"
+    },
+    {
+      "name": "AlreadySeated",
+      "signature": "AlreadySeated()",
+      "selector": "0xa7f86871"
+    },
+    {
+      "name": "BadFee",
+      "signature": "BadFee()",
+      "selector": "0x917f1a53"
+    },
+    {
+      "name": "BadMaker",
+      "signature": "BadMaker()",
+      "selector": "0xd1186319"
+    },
+    {
+      "name": "BadReveal",
+      "signature": "BadReveal()",
+      "selector": "0x8ff14e0d"
+    },
+    {
+      "name": "BondShort",
+      "signature": "BondShort(uint256)",
+      "selector": "0x448fcbf7"
+    },
+    {
+      "name": "DeskRules",
+      "signature": "DeskRules()",
+      "selector": "0x0674ea34"
+    },
+    {
+      "name": "GasShort",
+      "signature": "GasShort()",
+      "selector": "0x882f2cb8"
+    },
+    {
+      "name": "HasOpenSeats",
+      "signature": "HasOpenSeats()",
+      "selector": "0xb633ffc8"
+    },
+    {
+      "name": "MakerTaken",
+      "signature": "MakerTaken()",
+      "selector": "0xe6213063"
+    },
+    {
+      "name": "NoCommit",
+      "signature": "NoCommit()",
+      "selector": "0xfbd0656a"
+    },
+    {
+      "name": "NoStanding",
+      "signature": "NoStanding()",
+      "selector": "0x0ffa32d6"
+    },
+    {
+      "name": "NoTerms",
+      "signature": "NoTerms()",
+      "selector": "0x55f17ace"
+    },
+    {
+      "name": "NotAgent",
+      "signature": "NotAgent()",
+      "selector": "0x0d9ab13f"
+    },
+    {
+      "name": "NotCustomer",
+      "signature": "NotCustomer()",
+      "selector": "0xa8df5f3e"
+    },
+    {
+      "name": "NotDelivered",
+      "signature": "NotDelivered()",
+      "selector": "0x2a2f45bc"
+    },
+    {
+      "name": "NotSeated",
+      "signature": "NotSeated()",
+      "selector": "0x8dca143c"
+    },
+    {
+      "name": "NotVerifier",
+      "signature": "NotVerifier()",
+      "selector": "0x24663556"
+    },
+    {
+      "name": "NotYourSide",
+      "signature": "NotYourSide()",
+      "selector": "0x3b43b37b"
+    },
+    {
+      "name": "NothingOwed",
+      "signature": "NothingOwed()",
+      "selector": "0x797dba54"
+    },
+    {
+      "name": "OnlyDesk",
+      "signature": "OnlyDesk()",
+      "selector": "0x5bc35589"
+    },
+    {
+      "name": "OverFree",
+      "signature": "OverFree(uint256)",
+      "selector": "0xff77c2b2"
+    },
+    {
+      "name": "PanelFull",
+      "signature": "PanelFull()",
+      "selector": "0xee8ca4bf"
+    },
+    {
+      "name": "PushFailed",
+      "signature": "PushFailed()",
+      "selector": "0x3ececff8"
+    },
+    {
+      "name": "ReentrancyGuardReentrantCall",
+      "signature": "ReentrancyGuardReentrantCall()",
+      "selector": "0x3ee5aeb5"
+    },
+    {
+      "name": "Related",
+      "signature": "Related()",
+      "selector": "0xfe9a0592"
+    },
+    {
+      "name": "StrikeUsed",
+      "signature": "StrikeUsed()",
+      "selector": "0x9b6d7709"
+    },
+    {
+      "name": "StruckOff",
+      "signature": "StruckOff()",
+      "selector": "0xebea454d"
+    },
+    {
+      "name": "TooLate",
+      "signature": "TooLate()",
+      "selector": "0xecdd1c29"
+    },
+    {
+      "name": "TooSmall",
+      "signature": "TooSmall(uint256)",
+      "selector": "0x42128ec3"
+    },
+    {
+      "name": "TooSoon",
+      "signature": "TooSoon(uint256)",
+      "selector": "0xe86f59ea"
+    },
+    {
+      "name": "WrongState",
+      "signature": "WrongState(uint8)",
+      "selector": "0xe37d4aeb"
+    },
+    {
+      "name": "WrongValue",
+      "signature": "WrongValue(uint256)",
+      "selector": "0xcfde1461"
+    },
+    {
+      "name": "ZeroAddress",
+      "signature": "ZeroAddress()",
+      "selector": "0xd92e233d"
+    },
+    {
+      "name": "ZeroAmount",
+      "signature": "ZeroAmount()",
+      "selector": "0x1f2a2005"
+    }
+  ],
+  "functions": [
+    {
+      "name": "BPS",
+      "signature": "BPS()",
+      "selector": "0x249d39e9",
+      "stateMutability": "view"
+    },
+    {
+      "name": "CHECK_TIME",
+      "signature": "CHECK_TIME()",
+      "selector": "0x0758930c",
+      "stateMutability": "view"
+    },
+    {
+      "name": "CUSTOMER_TIME",
+      "signature": "CUSTOMER_TIME()",
+      "selector": "0xece6c108",
+      "stateMutability": "view"
+    },
+    {
+      "name": "DISPUTE_BPS",
+      "signature": "DISPUTE_BPS()",
+      "selector": "0x42b426ea",
+      "stateMutability": "view"
+    },
+    {
+      "name": "DISPUTE_TIME",
+      "signature": "DISPUTE_TIME()",
+      "selector": "0x380e9c56",
+      "stateMutability": "view"
+    },
+    {
+      "name": "MIN_BOND",
+      "signature": "MIN_BOND()",
+      "selector": "0xe0de0fee",
+      "stateMutability": "view"
+    },
+    {
+      "name": "MIN_DISPUTE",
+      "signature": "MIN_DISPUTE()",
+      "selector": "0x2396dc3d",
+      "stateMutability": "view"
+    },
+    {
+      "name": "MIN_FEE",
+      "signature": "MIN_FEE()",
+      "selector": "0x76c7a3c7",
+      "stateMutability": "view"
+    },
+    {
+      "name": "MIN_STAKE",
+      "signature": "MIN_STAKE()",
+      "selector": "0xcb1c2b5c",
+      "stateMutability": "view"
+    },
+    {
+      "name": "PANEL",
+      "signature": "PANEL()",
+      "selector": "0x84f3be6a",
+      "stateMutability": "view"
+    },
+    {
+      "name": "REVEAL_END",
+      "signature": "REVEAL_END()",
+      "selector": "0xd41288f2",
+      "stateMutability": "view"
+    },
+    {
+      "name": "SEAT_END",
+      "signature": "SEAT_END()",
+      "selector": "0x118cff1d",
+      "stateMutability": "view"
+    },
+    {
+      "name": "STAKE_BPS",
+      "signature": "STAKE_BPS()",
+      "selector": "0xef78939e",
+      "stateMutability": "view"
+    },
+    {
+      "name": "WRONG_BPS",
+      "signature": "WRONG_BPS()",
+      "selector": "0xdb96a01c",
+      "stateMutability": "view"
+    },
+    {
+      "name": "accept",
+      "signature": "accept(uint256)",
+      "selector": "0x19b05f49",
+      "stateMutability": "nonpayable"
+    },
+    {
+      "name": "addBond",
+      "signature": "addBond()",
+      "selector": "0xeec1a391",
+      "stateMutability": "payable"
+    },
+    {
+      "name": "atDesk",
+      "signature": "atDesk()",
+      "selector": "0x88a8e08b",
+      "stateMutability": "view"
+    },
+    {
+      "name": "bonds",
+      "signature": "bonds()",
+      "selector": "0x135c404e",
+      "stateMutability": "view"
+    },
+    {
+      "name": "caseCount",
+      "signature": "caseCount()",
+      "selector": "0xda2d7e95",
+      "stateMutability": "view"
+    },
+    {
+      "name": "caseOfJob",
+      "signature": "caseOfJob(uint256)",
+      "selector": "0x799c9294",
+      "stateMutability": "view"
+    },
+    {
+      "name": "check",
+      "signature": "check(uint256,bool,bytes32)",
+      "selector": "0x5fb078ff",
+      "stateMutability": "nonpayable"
+    },
+    {
+      "name": "collect",
+      "signature": "collect(address)",
+      "selector": "0x06ec16f8",
+      "stateMutability": "nonpayable"
+    },
+    {
+      "name": "collectTo",
+      "signature": "collectTo(address)",
+      "selector": "0x55e40ca1",
+      "stateMutability": "nonpayable"
+    },
+    {
+      "name": "commitOf",
+      "signature": "commitOf(uint256,address,bool,bytes32,bytes32)",
+      "selector": "0x2b7f14b4",
+      "stateMutability": "pure"
+    },
+    {
+      "name": "concede",
+      "signature": "concede(uint256)",
+      "selector": "0x0b21fe68",
+      "stateMutability": "nonpayable"
+    },
+    {
+      "name": "deadlines",
+      "signature": "deadlines(uint256)",
+      "selector": "0xb025cc45",
+      "stateMutability": "view"
+    },
+    {
+      "name": "desk",
+      "signature": "desk()",
+      "selector": "0xc12b293c",
+      "stateMutability": "view"
+    },
+    {
+      "name": "dispute",
+      "signature": "dispute(uint256)",
+      "selector": "0x86d6282c",
+      "stateMutability": "payable"
+    },
+    {
+      "name": "disputeBondOf",
+      "signature": "disputeBondOf(uint256)",
+      "selector": "0xbcd2272a",
+      "stateMutability": "pure"
+    },
+    {
+      "name": "disputes",
+      "signature": "disputes()",
+      "selector": "0xd4c5b252",
+      "stateMutability": "view"
+    },
+    {
+      "name": "fees",
+      "signature": "fees()",
+      "selector": "0x9af1d35a",
+      "stateMutability": "view"
+    },
+    {
+      "name": "getCase",
+      "signature": "getCase(uint256)",
+      "selector": "0xa91a1080",
+      "stateMutability": "view"
+    },
+    {
+      "name": "hire",
+      "signature": "hire(address,uint256,bool,uint256,bytes32)",
+      "selector": "0x1bfd6bea",
+      "stateMutability": "payable"
+    },
+    {
+      "name": "join",
+      "signature": "join(uint8)",
+      "selector": "0xcb3e9b84",
+      "stateMutability": "payable"
+    },
+    {
+      "name": "line",
+      "signature": "line()",
+      "selector": "0xb56b8353",
+      "stateMutability": "view"
+    },
+    {
+      "name": "owed",
+      "signature": "owed(address)",
+      "selector": "0xdf18e047",
+      "stateMutability": "view"
+    },
+    {
+      "name": "owedTotal",
+      "signature": "owedTotal()",
+      "selector": "0xfa1f0442",
+      "stateMutability": "view"
+    },
+    {
+      "name": "reject",
+      "signature": "reject(uint256)",
+      "selector": "0xb8adaa11",
+      "stateMutability": "nonpayable"
+    },
+    {
+      "name": "related",
+      "signature": "related(uint256,address)",
+      "selector": "0x02c4c3cc",
+      "stateMutability": "view"
+    },
+    {
+      "name": "reveal",
+      "signature": "reveal(uint256,bool,bytes32,bytes32)",
+      "selector": "0x0b2829c8",
+      "stateMutability": "nonpayable"
+    },
+    {
+      "name": "review",
+      "signature": "review()",
+      "selector": "0x9d3f08f7",
+      "stateMutability": "view"
+    },
+    {
+      "name": "seats",
+      "signature": "seats(uint256)",
+      "selector": "0x3b33c702",
+      "stateMutability": "view"
+    },
+    {
+      "name": "setMaker",
+      "signature": "setMaker(uint8)",
+      "selector": "0x63ff6bbe",
+      "stateMutability": "nonpayable"
+    },
+    {
+      "name": "sit",
+      "signature": "sit(uint256,bytes32)",
+      "selector": "0x73bd7883",
+      "stateMutability": "nonpayable"
+    },
+    {
+      "name": "stakeOf",
+      "signature": "stakeOf(uint256)",
+      "selector": "0x24a66539",
+      "stateMutability": "pure"
+    },
+    {
+      "name": "staked",
+      "signature": "staked()",
+      "selector": "0x0b76619b",
+      "stateMutability": "view"
+    },
+    {
+      "name": "step",
+      "signature": "step(uint256)",
+      "selector": "0x3a1cde75",
+      "stateMutability": "nonpayable"
+    },
+    {
+      "name": "strike",
+      "signature": "strike(uint256,address)",
+      "selector": "0x952c8be1",
+      "stateMutability": "nonpayable"
+    },
+    {
+      "name": "struck",
+      "signature": "struck(uint256,address)",
+      "selector": "0x4de90b0b",
+      "stateMutability": "view"
+    },
+    {
+      "name": "tally",
+      "signature": "tally(uint256)",
+      "selector": "0xed8b6b31",
+      "stateMutability": "view"
+    },
+    {
+      "name": "totalFeesPaid",
+      "signature": "totalFeesPaid()",
+      "selector": "0xe9fd5862",
+      "stateMutability": "view"
+    },
+    {
+      "name": "totalHired",
+      "signature": "totalHired()",
+      "selector": "0x6d7ec21d",
+      "stateMutability": "view"
+    },
+    {
+      "name": "totalSlashed",
+      "signature": "totalSlashed()",
+      "selector": "0xa201bbdd",
+      "stateMutability": "view"
+    },
+    {
+      "name": "verifier",
+      "signature": "verifier(address)",
+      "selector": "0x809f3bc4",
+      "stateMutability": "view"
+    },
+    {
+      "name": "withdraw",
+      "signature": "withdraw(uint256)",
+      "selector": "0x2e1a7d4d",
+      "stateMutability": "nonpayable"
+    }
+  ]
+}
