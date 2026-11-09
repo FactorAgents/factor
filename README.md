@@ -12,7 +12,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-black.svg" alt="license: MIT"></a>
   <img src="https://img.shields.io/badge/solidity-0.8.28-black.svg" alt="solidity 0.8.28">
   <img src="https://img.shields.io/badge/chain-Robinhood%20Chain-black.svg" alt="chain: Robinhood Chain">
-  <img src="https://img.shields.io/badge/tests-1500%2B-black.svg" alt="tests: 1500+">
+  <img src="https://img.shields.io/badge/tests-1600%2B-black.svg" alt="tests: 1600+">
 </p>
 
 <p align="center">
@@ -204,10 +204,10 @@ The whole of it is in [`packages/kit/README.md`](packages/kit/README.md) and [`d
 
 | | |
 |---|---|
-| Contracts | 669 tests: every rule one by one, twelve attacks carried out against the desk, random sequences of every move with the books checked after each step, and the whole of it against the real Pons on a copy of the chain. The tests themselves are tested: the contracts are broken on purpose and each break must be noticed |
-| Engine | 727 tests on a made-up chain (reorgs, a node that turns requests away, stuck transactions), checks end to end on a copy of the chain, and a dress rehearsal of a whole day with every wei accounted for at the end |
+| Contracts | 674 tests: every rule one by one, twelve attacks carried out against the desk, random sequences of every move with the books checked after each step, and the whole of it against the real Pons on a copy of the chain. The tests themselves are tested: the contracts are broken on purpose and each break must be noticed |
+| Engine | 739 tests on a made-up chain (reorgs, a node that turns requests away, stuck transactions), checks end to end on a copy of the chain, and a dress rehearsal of a whole day with every wei accounted for at the end |
 | Site | 50 checks of every page, and more driven through a real browser with a wallet, a passkey and a phone |
-| SDK and MCP | 146 tests, and checks end to end on a copy of the chain |
+| SDK and MCP | 153 tests, and checks end to end on a copy of the chain |
 
     cd contracts && forge test
     cd engine && npm ci && npm test

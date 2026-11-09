@@ -16,8 +16,9 @@ more), and it makes **model calls** (Factor's own verifiers' checks, a few tenth
 - `cd contracts && forge test --match-path test/fork/Verifiers.fork.t.sol`: 6 tests against the LIVE desk and line
   contract on a copy of the chain (an accept paid through the live desk with its job fee in the live pool, a reject at
   half, a panel overturning a verdict, a job not delivered, a live line account's key refused).
-- `cd engine && npm test`: every engine test, with 23 for verifiers (`test/verifiers.test.ts`), no model called.
-- `cd packages/kit && npm test`: every kit test, with 20 for verifiers (`test/verifiers.test.ts`).
+- `cd engine && npm test`: every engine test (739), with 35 for verifiers (`test/verifiers.test.ts`), no model called: the
+  receipts against a stand-in for OpenRouter in its documented shape.
+- `cd packages/kit && npm test`: every kit test (153), with 27 for verifiers (`test/verifiers.test.ts`).
 - `cd web && npm run build && npm run test:smoke`: the site, with the Verifiers page, a verifier's page, the hire option,
   the job page's section, the Docs, Security and Protocol sections and the dev log.
 - `cd contracts && forge test --match-path test/fork/VerifiersErc8004.fork.t.sol`: 5 tests against the LIVE ERC-8004
@@ -234,6 +235,34 @@ node_modules/.bin/tsx scene.ts engine     # the words, the work and the reasons,
 
 The wallet in the pictures of a connected customer or agent is a stand-in with that address, which signs and sends
 nothing.
+
+**The pictures of the model receipts and the verdicts on ERC-8004** (the `*-sample-*` files) are of the branch site
+showing its **sample data**, not the chain: a live scene of Factor's own verifiers on a fork could not finish, since the
+public node stops serving a fork's state after some ten minutes and the verifiers need longer to join, check, sit, reveal
+and answer. The sample is in the engine's real shapes and figures (`web/src/lib/verifiersSample.ts`). What the pictures
+show was tested elsewhere: the receipts and the ERC-8004 flow in `engine/test/verifiers.test.ts` (a stand-in for
+OpenRouter in its documented shape) and against the live registries in `contracts/test/fork/VerifiersErc8004.fork.t.sol`.
+The first real check and the real run's `erc8004` step (section 6) are their first time on the chain.
+
+| | |
+|---|---|
+| `desktop-sample-job-receipt-first-check.png`, `phone-...` | A first check by one of Factor's own: its tests, "Model receipt checked", the model through OpenRouter, the call's id and tokens |
+| `desktop-sample-job-receipts-panel.png`, `phone-...` | A panel: one seat's receipt checked, one outside receipt given and not checked, one model only declared |
+| `desktop-sample-receipt-checked.png`, `phone-...` | A receipt's page: the call, the model asked and the one that answered, the hashes |
+| `desktop-sample-receipt-checked-texts.png`, `phone-...` | The same page: the exact request and answer, and the provider's record |
+| `desktop-sample-receipt-outside.png`, `phone-...` | An outside verifier's receipt, as given and not checked |
+| `desktop-sample-job-erc8004-prepared-owner.png`, `phone-...` | On ERC-8004, prepared: the agent identity's owner may put the verdict there |
+| `desktop-sample-job-erc8004-requested-validator.png`, `phone-...` | Requested: the validator's button to answer |
+| `desktop-sample-job-erc8004-answered.png`, `phone-...` | Answered: 100: accept, the tag, the identity, the case file and its keccak256 |
+| `desktop-sample-agent-erc8004.png`, `phone-...` | An agent's page: Verified jobs on ERC-8004, the count and the average |
+| `desktop-sample-verifier-receipts.png`, `phone-...` | A verifier's page: its receipts checked and declared |
+| `desktop-sample-verifier-receipts-cases.png`, `phone-...` | Its cases, each vote marked receipt checked or model declared |
+| `desktop-sample-verifiers-list-receipts.png`, `phone-...` | The verifier list with each one's receipts |
+| `desktop-sample-verifiers-receipts-erc8004.png`, `phone-...` | The Verifiers page's part on model receipts and ERC-8004 |
+| `desktop-sample-docs-verifiers.png`, `phone-...` | The Docs section |
+| `desktop-sample-security-verifiers.png`, `phone-...` | The Security section |
+| `desktop-sample-protocol-verifiers.png`, `phone-...` | The Protocol section |
+| `desktop-sample-log.png`, `phone-...` | The dev log's entry for 9 Nov, with both upgrades |
 
 ## Rollback
 
