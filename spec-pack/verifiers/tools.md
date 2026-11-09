@@ -181,13 +181,17 @@ a guide; the contract decides.
   "seats": [ { "seat": 0, "verifier": <verifier, short>, "maker": 2, "makerName": "Google", "since": "...Z",
                "vote": null | "accept" | "reject", "reasonHash": "0x..." | null, "reason": "..." | null,
                "ties": [ "..." ] } ],
-  "struck": [ { "verifier": "0x...", "by": "customer" | "agent", "at": "...Z" } ],
+  "struck": [ { "verifier": "0x...", "name": "..." | null, "by": "customer" | "agent", "at": "...Z" } ],
   "decided": { "how": "panel", "verdict": "accept" | "reject" | null, "votesAccept": 2, "votesReject": 1, "at": "...Z" },
   "paid": [ { "verifier": "0x...", "eth": 0.000766 } ], "slashed": [ { "verifier": "0x...", "eth": 0.001 } ],
   "ended": { "state": "accepted", "how": "panel", "at": "...Z", "tx": "0x...", "toCustomerEth": 0 },
   "next": "check" | "dispute" | "seats" | "reveals" | "step" | "customer" | null, "nextAt": "...Z" | null,
   "forYou": { "can": false, "why": "..." } }
 ```
+
+A **verifier, short** (in `first.verifier` and each seat's `verifier`) is
+`{ "address": "0x...", "name": "..." | null, "maker": 2, "makerName": "Google", "house": false }`; `first` also carries
+`ties`, as a seat does. `paid` and `slashed` give `wei` beside `eth` for each verifier, summed over the case.
 
 Optional fields appear when they apply: `deliveredAt` and `deadlines` once delivered, `first` once checked, `dispute`
 once disputed, `decided`, `paid`, `slashed` and `ended` at the end. `ties` lists what Factor's records tie that
