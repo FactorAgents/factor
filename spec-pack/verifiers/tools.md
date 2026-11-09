@@ -1,7 +1,7 @@
 # The 21 verifier tools
 
 Read from `packages/kit/src/verifiers.ts` and `packages/kit/src/tools.ts` (factor-kit 0.21.0) and from the engine that
-answers the site's API (`engine/src/verifiers.ts`, `engine/src/api.ts`), on the branch `verifiers`. The names are
+answers the site's API (`engine/src/verifiers.ts`, `engine/src/api.ts`), on `main`. The names are
 exactly those in `tools.ts`. Six tools read, seven are a verifier's, eight are the customer's, the agent's or anyone's.
 Tools 19 to 21 are the job on the ERC-8004 Validation Registry; a verdict's model receipt is in tools 9 to 11.
 

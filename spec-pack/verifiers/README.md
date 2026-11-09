@@ -3,13 +3,13 @@
 Standalone. Everything a kit needs to wrap Factor's verifier tools: what a verified job is, the contract's calls and
 its ABI, the API that reads it, the 21 tools, and what a kit must show or handle. With two upgrades: a verdict's
 model receipt, and every verified job on the ERC-8004 Validation Registry. Written from the contract
-`contracts/src/FactorVerifiers.sol` and the engine `engine/src/verifiers.ts` on the branch `verifiers`
+`contracts/src/FactorVerifiers.sol` and the engine `engine/src/verifiers.ts` on `main`
 (factor-kit 0.21.0), on 9 Nov 2026. The rules in plain words are `docs/VERIFIERS.md`.
 
-**Not deployed yet.** The contract is built, tested against the live desk on a fork of the chain, and waits for its
-release. Its address comes from `GET https://factoragents.fun/api/v1/verifiers/about` (`contract`) once it is
-deployed; until then that answer says `enabled: false` and `contract: null`, and a kit should show the tools as not
-available. Never hard-code an address from anywhere else.
+**Live since 9 Nov 2026** on Robinhood Chain (4663): `FactorVerifiers` at
+`0x6a830Efc946F48Ce8D772fCD69168A9e63a90CA6` (deployed in block 110233884). A kit should still read the address from
+`GET https://factoragents.fun/api/v1/verifiers/about` (`contract`, with `enabled`), and show the tools as not available
+whenever that answer says `enabled: false`.
 
 | File | What |
 |---|---|
