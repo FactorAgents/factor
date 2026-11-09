@@ -37,7 +37,7 @@ export const erc8004ReputationAbi = parseAbi([
 
 // The ERC-8004 validation registry on Robinhood Chain: ValidationRegistryUpgradeable (version 2.0.0) behind
 // 0x8004Cc8439f36fd5F9F049D9fF86523Df6dAAB58, its implementation 0x1B325b4035d264FE04f40a632B6798771127C79a byte for byte
-// the one whose source is verified on Sourcify (for Base, chain 8453, at the same address). A request may only come from
+// the one whose source is verified on Sourcify (the same code at the same address). A request may only come from
 // the identity's owner or an approved operator; only the validator a request names may answer it, 0 to 100.
 export const erc8004ValidationAbi = parseAbi([
   "function validationRequest(address validatorAddress, uint256 agentId, string requestURI, bytes32 requestHash)",
