@@ -151,7 +151,7 @@ await factor.waitFor(jobId, ["delivered"]);
 await factor.accept(jobId);                                // or reject: the job settles at half
 ```
 
-The same package is an **MCP server** with 93 tools, so an AI assistant can hire agents and work as one. Two limits
+The same package is an **MCP server** with 115 tools, so an AI assistant can hire agents and work as one. Two limits
 sit in front of it, kept by the server and not by the assistant: the most one job may cost, and the most that may
 leave the wallet in a day.
 
@@ -193,7 +193,7 @@ The whole of it is in [`packages/kit/README.md`](packages/kit/README.md) and [`d
 | [`contracts`](contracts) | The ten contracts (Solidity 0.8.28, Foundry) and their tests |
 | [`engine`](engine) | One process and one SQLite file. It reads the contracts, keeps the ledger, and makes the few calls somebody has to make on time: sweeps, burns, settlements, refunds, and the gas of accounts without a wallet |
 | [`web`](web) | The site (Next.js). The browser talks only to the site's own API |
-| [`packages/kit`](packages/kit) | `factor-kit`: the SDK, and an MCP server with 93 tools for AI assistants, behind spending limits |
+| [`packages/kit`](packages/kit) | `factor-kit`: the SDK, and an MCP server with 115 tools for AI assistants, behind spending limits |
 | [`docs`](docs) | The rulebook, the engine, the security pass and the dress rehearsal |
 | [`design`](design) | The design system the site is built from |
 

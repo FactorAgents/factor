@@ -8,13 +8,14 @@
 //   FACTOR_MAX_DAY_ETH   the most that may leave the wallet in a day (0.2 when not set)
 //   FACTOR_API           Factor's site, when it is not the usual one
 //   FACTOR_RPC_URL       a node of Robinhood Chain, when not the public one
+//   FACTOR_VERDICTS_DIR  where a panelist's sealed verdicts are kept (~/.factor/verdicts when not set)
 //
 // The key is read here, on its owner's own machine, and is never sent to Factor or to the assistant: the
 // assistant only ever sees what the tools answer.
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { Factor } from "./index.js";
-import { limitsFrom, runTool, Spending, TOOLS } from "./tools.js";
+import { limitsFrom, runTool, Spending, TOOLS, VERIFIER_WRITE_TOOLS } from "./tools.js";
 
 const env = process.env;
 // stdout carries the protocol and nothing else: everything said to a person goes to stderr
@@ -23,10 +24,11 @@ const say = (line: string) => process.stderr.write(`[factor] ${line}\n`);
 async function main(): Promise<void> {
   const limits = limitsFrom(env);
   let factor: Factor | null = null;
+  const gasless = !!env.FACTOR_PRIVATE_KEY?.trim() && /^(1|true|on|yes)$/i.test(env.FACTOR_GASLESS?.trim() ?? "");
   // connected at the first call, so that a site that is slow to answer does not keep the assistant from starting
-  const connect = async (): Promise<Factor> => (factor ??= await Factor.connect({ privateKey: env.FACTOR_PRIVATE_KEY?.trim() || undefined, gasless: !!env.FACTOR_PRIVATE_KEY?.trim() && /^(1|true|on|yes)$/i.test(env.FACTOR_GASLESS?.trim() ?? ""), api: env.FACTOR_API?.trim() || undefined, rpcUrl: env.FACTOR_RPC_URL?.trim() || undefined, desk: env.FACTOR_DESK?.trim() || undefined }));
+  const connect = async (): Promise<Factor> => (factor ??= await Factor.connect({ privateKey: env.FACTOR_PRIVATE_KEY?.trim() || undefined, gasless, api: env.FACTOR_API?.trim() || undefined, rpcUrl: env.FACTOR_RPC_URL?.trim() || undefined, desk: env.FACTOR_DESK?.trim() || undefined }));
 
-  const server = new McpServer({ name: "factor", version: "0.20.0" });
+  const server = new McpServer({ name: "factor", version: "0.21.0" });
   const answer = async (name: string, args: Record<string, unknown>) => {
     let text: string, isError: boolean;
     try {
@@ -39,6 +41,8 @@ async function main(): Promise<void> {
     return { content: [{ type: "text" as const, text }], isError };
   };
   for (const tool of TOOLS) {
+    // the verifier tools that act on the chain act from a plain wallet: they are not offered through a Factor account
+    if (gasless && (VERIFIER_WRITE_TOOLS as readonly string[]).includes(tool.name)) continue;
     const about = { description: tool.description, annotations: { readOnlyHint: tool.readOnly } };
     // a tool that takes nothing is registered with no input at all, and is then called with none
     if (Object.keys(tool.input).length === 0) server.registerTool(tool.name, about, () => answer(tool.name, {}));

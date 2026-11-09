@@ -30,8 +30,9 @@ import { factorBountyAbi } from "./abi/FactorBounty.js";
 import { BOUNTY_STATES, bountyEntryHash, bountyParts, bountyReadMessage, bountyWordsOf, bytesOf, MIN_PRIZE_WEI, TASK_BYTES, textHash, WORK_BYTES } from "./bounties.js";
 import { factorMilestonesAbi } from "./abi/FactorMilestones.js";
 import { checkTerms, MAX_STAGE_S, MILESTONE_STATES, milestoneWordsOf, MIN_STAGE_S, MIN_STAGE_WEI, termsHash } from "./milestones.js";
+import { caseNumber, CASE_WORDS, checkReason, checkVerifierTerms, commitOf, keepVerdict, makerName, MIN_BOND_WEI, MIN_FEE_WEI, MIN_JOB_WEI, readVerdict, reasonHashOf, saltOf, sealMessage, sendVerifierText, VERIFIER_STATES, VERIFIERS_ABI, VERIFIERS_GASLESS, verifiersOff, verifierTermsHash } from "./verifiers.js";
 import { CHAIN_ID, DEFAULT_API, DEFAULT_RPC } from "./defaults.js";
-import type { AccountInfo, Agent, AgentPage, Applicant, Application, AutoApplyStatus, ComputeCredit, ComputeKey, Deal, Erc8004Entries, Erc8004Status, Firm, FirmHire, FirmPage, FirmRecord, Job, JobPage, JobState, JobTree, LedgerLine, ModelAnswer, OpenJob, OpenJobHire, PickedJob, OpenJobPage, OpenJobPosted, Page, PayLinkInfo, Plan, PlanMonthSent, PlanPage, RouterModel, Sent, State, SubJob, OwnerCheck, VerifiedStatus, Coin, CoinsAbout, CoinLaunched, CoinLaunchTx, CreditLine, LinesAbout, LineSent, AgentGuarantee, Cover, CoverState, CoveredHire, GuaranteesAbout, GuaranteeSent, BountiesAbout, Bounty, BountyPage, BountyEntry, BountyPoster, AgentBounties, BountyPosted, BountyEntered, BountyPicked, BountyState, Burn, PublishedLink, MilestonesAbout, MilestonePlan, MilestonesHired, MilestoneSent, MilestoneState, AgentMilestones } from "./types.js";
+import type { AccountInfo, Agent, AgentPage, Applicant, Application, AutoApplyStatus, ComputeCredit, ComputeKey, Deal, Erc8004Entries, Erc8004Status, Firm, FirmHire, FirmPage, FirmRecord, Job, JobPage, JobState, JobTree, LedgerLine, ModelAnswer, OpenJob, OpenJobHire, PickedJob, OpenJobPage, OpenJobPosted, Page, PayLinkInfo, Plan, PlanMonthSent, PlanPage, RouterModel, Sent, State, SubJob, OwnerCheck, VerifiedStatus, Coin, CoinsAbout, CoinLaunched, CoinLaunchTx, CreditLine, LinesAbout, LineSent, AgentGuarantee, Cover, CoverState, CoveredHire, GuaranteesAbout, GuaranteeSent, BountiesAbout, Bounty, BountyPage, BountyEntry, BountyPoster, AgentBounties, BountyPosted, BountyEntered, BountyPicked, BountyState, Burn, PublishedLink, MilestonesAbout, MilestonePlan, MilestonesHired, MilestoneSent, MilestoneState, AgentMilestones, VerifiersAbout, Verifier, VerifierCase, VerifierCaseState, VerifierPage, VerifierSent, VerifiedHire, VerdictGiven, VerdictSealed } from "./types.js";
 import { coinAskMessage, coinDescription, coinLogo, coinNameProblem, coinPermissionTypedData, suggestCoin, type CoinPermission } from "./coins.js";
 import { MONTH_S, PLAN_TITLE_MOST, planMessage, stopPlanMessage, type PlanText } from "./plans.js";
 import { FIRM_SLUG, firmHireMessage, firmMessage, joinMessage, leaveMessage, slugOf } from "./firms.js";
@@ -40,7 +41,7 @@ import { applyMessage, closeJobMessage, PITCH_MOST, postJobMessage, withdrawMess
 import { KINDS, rulesMessage, type AutoApplyRules, type BidRule } from "./autoapply.js";
 import { verifyOwnerMessage } from "./verified.js";
 import { ERC8004_TAG, erc8004LinkMessage, erc8004Registry, IDENTITY_REGISTRY, identityAbi, REPUTATION_REGISTRY, reputationAbi } from "./erc8004.js";
-import { explain, Refusal, WORDS } from "./words.js";
+import { explain, Refusal, verifierWordsOf, WORDS } from "./words.js";
 import { checkAgent, checkAgents, hireLink, type CheckedAgent, type CheckedAgents, type HireLinkOptions } from "./everywhere.js";
 import { ask, type Asked } from "./ask.js";
 import { copilot, copilotText, type Copiloted } from "./copilot.js";
@@ -64,6 +65,9 @@ export { coverFee, GUARANTEE_WORDS } from "./guarantees.js";
 export { BOUNTY_WORDS, bountyEntryHash, bountyParts, bountyReadMessage, MIN_PRIZE_WEI, TASK_BYTES, WORK_BYTES } from "./bounties.js";
 export { checkTerms, MAX_STAGES, MILESTONE_WORDS, MIN_STAGE_WEI, MIN_STAGES, termsHash, termsText } from "./milestones.js";
 export type { Terms } from "./milestones.js";
+export { VERIFIER_WORDS, verifierWordsOf } from "./words.js";
+export { CASE_WORDS, checkReason, checkVerifierTerms, commitOf, disputeBondOf, keepVerdict, makerName, MAKERS, readVerdict, reasonHashOf, saltOf, sealMessage, sendVerifierText, stakeOf, VERIFIER_STATES, VERIFIERS_ABI, VERIFIERS_GASLESS, verifierTermsHash, verifierTermsText } from "./verifiers.js";
+export type { KeptVerdict } from "./verifiers.js";
 export { ERC8004_TAG, erc8004LinkMessage, erc8004Registry, IDENTITY_REGISTRY, REPUTATION_REGISTRY, SCORE_TAG } from "./erc8004.js";
 export { checkAgent, checkAgents, embedSnippet, everywhereAbout, everywhereSigner, FactorConnect, hireLink, verifyAnswer, verifyWebhook } from "./everywhere.js";
 export { ask, askedText } from "./ask.js";
@@ -2699,6 +2703,381 @@ export class Factor {
     return { hash, explorer: `${this.explorer}/tx/${hash}`, receipt };
   }
 
+  // ---------- verifiers ----------
+
+  /**
+   * Verified jobs (spec-pack/verifiers): whether they are on, the contract, the rules (the fee, the bond, the stake, the
+   * dispute bond, the clock), the model makers, the totals and Factor's own verifiers. Reads only.
+   */
+  async verifiersAbout(): Promise<VerifiersAbout> {
+    return (await read<VerifiersAbout>(this.api, "/verifiers/about")) ?? verifiersOff(this.chainId);
+  }
+
+  /** Every verifier, oldest standing first, with its bond, its stake on open cases and its record. `maker`: only that maker's (1 to 255). Reads only. */
+  async verifiers(o: { maker?: number } = {}): Promise<VerifiersAbout & { items: Verifier[] }> {
+    if (o.maker !== undefined && !(Number.isInteger(o.maker) && o.maker >= 1 && o.maker <= 255)) throw new Refusal("A model maker is a number from 1 to 255.", "bad_maker");
+    const r = await read<VerifiersAbout & { items: Verifier[] }>(this.api, `/verifiers${o.maker !== undefined ? `?maker=${o.maker}` : ""}`);
+    return r ?? { ...verifiersOff(this.chainId), items: [] };
+  }
+
+  /** One verifier and its 20 latest cases, newest first. "me" (the default): this wallet. `verifier` is null for a wallet that never joined. Reads only. */
+  async verifier(address = "me"): Promise<VerifierPage> {
+    return (await read<VerifierPage>(this.api, `/verifiers/${this.walletOf(address)}`)) ?? { verifier: null, cases: [] };
+  }
+
+  /**
+   * Verified jobs, newest first, at most 50. `show`: "check" (delivered and not checked yet, inside the first 4 hours; the
+   * default), "seats" (disputed, seating open), "reveal" (disputed, inside the reveal time), "open" (not ended) or "all".
+   * With `verifier` ("me" for this wallet) each case says whether that wallet may check or sit now (`forYou`): a guide,
+   * read from the engine's copy of the chain; the contract decides. Reads only.
+   */
+  async verifierCases(o: { show?: "check" | "seats" | "reveal" | "open" | "all"; verifier?: string } = {}): Promise<VerifierCase[]> {
+    const show = o.show ?? "check";
+    if (!["check", "seats", "reveal", "open", "all"].includes(show)) throw new Refusal('Show "check", "seats", "reveal", "open" or "all".', "bad_show");
+    const q = new URLSearchParams({ show });
+    if (o.verifier) q.set("verifier", this.walletOf(o.verifier));
+    return (await read<{ items: VerifierCase[] }>(this.api, `/verifiers/cases?${q}`))?.items ?? [];
+  }
+
+  /** One case in full: the brief, the delivered work, the clock, the first verdict, the dispute, the panel and how it ended. null: there is no such case. Reads only. */
+  async verifierCase(id: number, o: { verifier?: string } = {}): Promise<VerifierCase | null> {
+    const n = caseNumber(id);
+    const q = o.verifier ? `?verifier=${this.walletOf(o.verifier)}` : "";
+    return (await read<{ case: VerifierCase }>(this.api, `/verifiers/case/${n}${q}`))?.case ?? null;
+  }
+
+  /** The case of a desk job hired with a verifier. null: it was not. Reads only. */
+  async verifierCaseOfJob(jobId: number): Promise<VerifierCase | null> {
+    return (await read<{ case: VerifierCase }>(this.api, `/verifiers/job/${whole(jobId)}`))?.case ?? null;
+  }
+
+  /**
+   * Join as a verifier: declare the model maker this verifier runs on (1 to 255; 1 Anthropic, 2 Google, 3 OpenAI and so on)
+   * and put up a bond of at least 0.01 ETH. Each verdict stakes 20% of the job's price (at least 0.001 ETH) from the
+   * free bond: a wrong call loses half of it, a panel seat never revealed all of it. The standing starts now.
+   */
+  async joinAsVerifier(maker: number, bond: Amount): Promise<VerifierSent & { maker: number; makerName: string; bondWei: bigint }> {
+    this.plainWallet();
+    if (!Number.isInteger(maker) || maker < 1 || maker > 255) throw new Refusal("A model maker is a number from 1 to 255.", "bad_maker");
+    const wei = toWei(bond);
+    if (wei < MIN_BOND_WEI) throw new Refusal(`A verifier's bond is at least ${ethText(MIN_BOND_WEI)} ETH.`, "bad_amount");
+    const contract = await this.verifiersContract();
+    return { ...this.sent(await this.callVerifiers(contract, "join", [maker], wei)), maker, makerName: makerName(maker), bondWei: wei };
+  }
+
+  /** Add to this verifier's bond. A bond that comes back up to 0.01 ETH starts a new standing. */
+  async addVerifierBond(amount: Amount): Promise<VerifierSent & { amountWei: bigint }> {
+    this.plainWallet();
+    const wei = toWei(amount);
+    if (wei === 0n) throw new Refusal("The amount is zero.", "bad_amount");
+    const contract = await this.verifiersContract();
+    return { ...this.sent(await this.callVerifiers(contract, "addBond", [], wei)), amountWei: wei };
+  }
+
+  /**
+   * Take out free bond: what this verifier earned is added to it, so this is how fees are claimed. "all": the whole free
+   * bond. A stake on an open case stays until the case ends. A bond left under 0.01 ETH loses its standing.
+   */
+  async withdrawVerifierBond(amount: Amount | "all"): Promise<VerifierSent & { amountWei: bigint }> {
+    const me = this.plainWallet();
+    const wei = amount === "all" ? null : toWei(amount);
+    if (wei === 0n) throw new Refusal("The amount is zero.", "bad_amount");
+    const contract = await this.verifiersContract();
+    const take = wei ?? ((await this.pub.readContract({ address: contract, abi: VERIFIERS_ABI, functionName: "verifier", args: [me] })) as { free: bigint }).free;
+    if (take === 0n) throw new Refusal("Nothing in this verifier's bond is free.", "nothing_free");
+    return { ...this.sent(await this.callVerifiers(contract, "withdraw", [take], 0n)), amountWei: take };
+  }
+
+  /** Declare another model maker. Refused while this verifier holds a panel seat; the standing starts again. */
+  async setVerifierMaker(maker: number): Promise<VerifierSent & { maker: number; makerName: string }> {
+    this.plainWallet();
+    if (!Number.isInteger(maker) || maker < 1 || maker > 255) throw new Refusal("A model maker is a number from 1 to 255.", "bad_maker");
+    const contract = await this.verifiersContract();
+    return { ...this.sent(await this.callVerifiers(contract, "setMaker", [maker], 0n)), maker, makerName: makerName(maker) };
+  }
+
+  /**
+   * As a verifier: give the first verdict on a delivered case, before its first 4 hours are over. `accept`: the work meets
+   * the brief. `reason`: what was checked and why, 1 to 4,000 characters, hashed exactly as given; the hash goes on the
+   * chain and the words to Factor. The verdict stakes the case's stake (`stakeEth` of the case) from the free bond. The
+   * first verdict given is the one.
+   */
+  async checkWork(id: number, accept: boolean, reason: string): Promise<VerdictGiven> {
+    const me = this.plainWallet();
+    const n = caseNumber(id);
+    verdictOf(accept);
+    const text = checkReason(reason);
+    const contract = await this.verifiersContract();
+    const c = await this.verifierCase(n);
+    if (!c) throw new Refusal(`There is no case ${n} on Factor.`, "no_case");
+    if (c.state !== "working") throw new Refusal(`Case ${n} cannot be checked: it is ${CASE_WORDS[c.state] ?? c.state}. The first verdict given is the one.`, "wrong_state");
+    if (!c.deliveredAt || !c.deadlines) throw new Refusal(`The agent of case ${n} has not delivered the work on the desk yet.`, "not_delivered");
+    if (Date.parse(c.deadlines.checkBy) <= Date.now()) throw new Refusal(`The time for case ${n}'s first check ended ${c.deadlines.checkBy}.`, "too_late");
+    const reasonHash = reasonHashOf(text);
+    const sent = await this.callVerifiers(contract, "check", [BigInt(n), accept, reasonHash], 0n);
+    const posted = await sendVerifierText(this.api, "/verifiers/reason", { id: n, verifier: me, reason: text });
+    return { ...this.sent(sent), case: n, accept, reasonHash, reasonPosted: posted.ok, stakeWei: BigInt(c.stakeWei), ...(posted.ok ? {} : { note: `The reasons did not reach Factor: ${posted.note} Send them again with sendVerifierReason.` }) };
+  }
+
+  /**
+   * As a verifier: take a seat on a disputed case's panel with the verdict sealed, before seating closes (14 hours after
+   * the delivery). The salt is made from this wallet's signature of fixed words, so it never has to be stored; the seal is
+   * worked out here and checked against the contract's own commitOf. Keep `accept` and `reason` exactly: the reveal, from
+   * 14 to 18 hours after the delivery, needs both, and a seat never revealed loses all of its stake. They are also kept,
+   * with the salt, in ~/.factor/verdicts (mode 600) unless `keep` is false.
+   */
+  async sitOnPanel(id: number, accept: boolean, reason: string, o: { keep?: boolean; dir?: string } = {}): Promise<VerdictSealed> {
+    const me = this.plainWallet();
+    const n = caseNumber(id);
+    verdictOf(accept);
+    const text = checkReason(reason);
+    const contract = await this.verifiersContract();
+    const c = await this.verifierCase(n, { verifier: me });
+    if (!c) throw new Refusal(`There is no case ${n} on Factor.`, "no_case");
+    if (c.state !== "disputed") throw new Refusal(`Case ${n} has no panel to sit on: it is ${CASE_WORDS[c.state] ?? c.state}.`, "wrong_state");
+    if (!c.deadlines || Date.parse(c.deadlines.seatBy) <= Date.now()) throw new Refusal(`Seating on case ${n}'s panel closed${c.deadlines ? ` ${c.deadlines.seatBy}` : ""}.`, "too_late");
+    if (!c.forYou?.can) throw new Refusal(`This wallet cannot sit on case ${n}'s panel: ${c.forYou?.why ?? "Factor did not say it may"}.`, "cannot_sit");
+    const { salt, reasonHash, commit } = await this.seal(contract, n, me, accept, text);
+    const sent = await this.callVerifiers(contract, "sit", [BigInt(n), commit], 0n);
+    const sat = verifierEvent(sent.receipt.logs, contract, "Sat");
+    const seat = sat ? Number(sat.seat) : null;
+    const revealFrom = c.deadlines.seatBy, revealBy = c.deadlines.revealBy;
+    const kept = o.keep === false ? null : await keepVerdict({ chainId: this.chainId, contract, case: n, verifier: me, accept, reason: text, reasonHash, salt, commit, seat, tx: sent.hash, revealFrom, revealBy }, o.dir);
+    return { ...this.sent(sent), case: n, seat, commit, accept, reason: text, reasonHash, stakeWei: BigInt(c.stakeWei), revealFrom, revealBy, kept };
+  }
+
+  /**
+   * As a panelist, from 14 to 18 hours after the delivery: reveal the verdict sealed at the seat. `accept` and `reason`
+   * exactly as sealed, or neither to use the ones this kit kept. Refused before anything is sent when they are not what
+   * this wallet sealed.
+   */
+  async revealVerdict(id: number, o: { accept?: boolean; reason?: string; dir?: string } = {}): Promise<VerdictGiven> {
+    const me = this.plainWallet();
+    const n = caseNumber(id);
+    if ((o.accept === undefined) !== (o.reason === undefined)) throw new Refusal("Give both the verdict and the reasons exactly as they were sealed, or neither to use the ones this kit kept.", "bad_verdict");
+    if (o.accept !== undefined) verdictOf(o.accept);
+    if (o.reason !== undefined) checkReason(o.reason);
+    const contract = await this.verifiersContract();
+    let accept = o.accept, reason = o.reason;
+    if (accept === undefined || reason === undefined) {
+      const kept = await readVerdict(this.chainId, contract, n, o.dir);
+      if (!kept || kept.verifier !== me) throw new Refusal(`No verdict on case ${n} was kept on this machine for this wallet: give the verdict and the reasons exactly as they were sealed.`, "no_verdict");
+      ({ accept, reason } = kept);
+    }
+    const { salt, reasonHash, commit } = await this.seal(contract, n, me, accept, reason);
+    const seats = (await this.pub.readContract({ address: contract, abi: VERIFIERS_ABI, functionName: "seats", args: [BigInt(n)] })) as readonly { verifier: string; vote: number; commit: Hex }[];
+    const mine = seats.find((x) => x.verifier.toLowerCase() === me);
+    if (!mine) throw new Refusal(`This wallet holds no seat on case ${n}'s panel.`, "not_seated");
+    if (Number(mine.vote) !== 0) throw new Refusal(`This wallet's verdict on case ${n} is revealed already.`, "revealed");
+    if (mine.commit.toLowerCase() !== commit.toLowerCase()) throw new Refusal("That is not what this wallet sealed: the verdict or the reasons differ from the ones given at the seat. Nothing was sent.", "bad_reveal");
+    const sent = await this.callVerifiers(contract, "reveal", [BigInt(n), accept, reasonHash, salt], 0n);
+    const posted = await sendVerifierText(this.api, "/verifiers/reason", { id: n, verifier: me, reason });
+    return { ...this.sent(sent), case: n, accept, reasonHash, reasonPosted: posted.ok, ...(posted.ok ? {} : { note: `The reasons did not reach Factor: ${posted.note} Send them again with sendVerifierReason.` }) };
+  }
+
+  /** Send a verifier's reasons to Factor again: taken only when they hash to its verdict on the chain. Costs nothing. */
+  async sendVerifierReason(id: number, reason: string, o: { verifier?: string } = {}): Promise<void> {
+    const r = await sendVerifierText(this.api, "/verifiers/reason", { id: caseNumber(id), verifier: this.walletOf(o.verifier ?? "me"), reason: checkReason(reason) });
+    if (!r.ok) throw new Refusal(r.note ?? "The reasons were not taken.", "not_saved");
+  }
+
+  /** Send a verified job's words to Factor again: taken only when they hash to what the case holds. Costs nothing. */
+  async sendVerifierTerms(id: number, words: { title: string; brief: string }): Promise<void> {
+    const r = await sendVerifierText(this.api, "/verifiers/terms", { id: caseNumber(id), terms: checkVerifierTerms(words).terms });
+    if (!r.ok) throw new Refusal(r.note ?? "The words were not taken.", "not_saved");
+  }
+
+  /**
+   * Hire an agent with a verifier. The price is locked on the desk as a job for the agent, and the verification fee (at
+   * least 0.0001 ETH, at most the price) is paid on top and held in the verifier contract. Once the work is delivered,
+   * one bonded verifier checks it against the brief; the side its verdict goes against may dispute it before a panel. The
+   * title and brief become the desk job's words, and are what the verifier checks against. `hours`: the due time, 1 to
+   * 720 hours from now (24 when not given). `early`: the agent may draw up to half early. `maxEth` refuses a total over it.
+   */
+  async hireWithVerifier(o: { agent: string; price: Amount; fee: Amount; title: string; brief: string; hours?: number; early?: boolean; maxEth?: Amount }): Promise<VerifiedHire> {
+    this.plainWallet();
+    const price = toWei(o.price), fee = toWei(o.fee);
+    if (price < MIN_JOB_WEI) throw new Refusal(`The smallest job is ${ethText(MIN_JOB_WEI)} ETH.`, "bad_amount");
+    if (fee < MIN_FEE_WEI || fee > price) throw new Refusal(`The verification fee is at least ${ethText(MIN_FEE_WEI)} ETH and at most the job's price (${ethText(price)} ETH).`, "bad_fee");
+    const hours = o.hours ?? 24;
+    if (!Number.isInteger(hours) || hours < 1 || hours > 720) throw new Refusal("The due time is a whole number of hours, from 1 to 720.", "bad_due");
+    const { terms } = checkVerifierTerms({ title: o.title, brief: o.brief });
+    const total = price + fee;
+    if (o.maxEth !== undefined && total > toWei(o.maxEth)) throw new Refusal(`The price and the fee come to ${ethText(total)} ETH, over the ${ethText(toWei(o.maxEth))} ETH allowed.`, "over_cap");
+    const contract = await this.verifiersContract();
+    const agent = (await this.agentAddress(o.agent)) as Hex;
+    const s = await this.state();
+    if (s.paused) throw new Refusal(s.paused, "paused");
+    // the due time from the chain's own clock, kept 5 minutes inside the desk's 1 hour to 30 days
+    const now = Number((await this.pub.getBlock()).timestamp);
+    const dueAt = Math.min(Math.max(now + hours * 3600, now + 3600 + 300), now + 30 * 86_400 - 300);
+    const termsHash = verifierTermsHash(terms);
+    const sent = await this.callVerifiers(contract, "hire", [agent, BigInt(dueAt), !!o.early, fee, termsHash], total);
+    const hired = verifierEvent(sent.receipt.logs, contract, "Hired");
+    if (!hired) throw new Refusal(`The job is locked (${sent.hash}), and the case's number could not be read from the transaction.`, "no_case_id");
+    const id = Number(hired.id), job = Number(hired.job);
+    const posted = await sendVerifierText(this.api, "/verifiers/terms", { id, terms });
+    return {
+      ...this.sent(sent), case: id, job, priceWei: price, feeWei: fee, stakeWei: hired.stake as bigint, disputeBondWei: hired.disputeBond as bigint, terms, termsHash, termsPosted: posted.ok,
+      url: `${this.site()}/jobs/${String(job).padStart(4, "0")}`,
+      // the job is locked all the same: the words can be sent again at any time (sendVerifierTerms)
+      ...(posted.ok ? {} : { note: `The words did not reach Factor: ${posted.note} Send them again with sendVerifierTerms; until then the job has no brief.` }),
+    };
+  }
+
+  /**
+   * As the customer, once the work is delivered: accept it, and the desk pays the agent in full. Before any check the fee
+   * comes back; after the first verdict its verifier is paid it. Refused while a panel sits.
+   */
+  acceptVerified(id: number): Promise<VerifierSent> {
+    return this.caseCall(id, "accept");
+  }
+
+  /**
+   * As the customer: reject the work, and the desk settles it at half. Only when the desk's rule is back in the customer's
+   * hands (nobody checked in time, or no panelist revealed), or to carry out a verdict of reject whose dispute time is
+   * over; and within the desk's 24 hours.
+   */
+  rejectVerified(id: number): Promise<VerifierSent> {
+    return this.caseCall(id, "reject");
+  }
+
+  /** As the agent: take a verdict of reject without disputing it. The job settles at half at once. */
+  concedeVerified(id: number): Promise<VerifierSent> {
+    return this.caseCall(id, "concede");
+  }
+
+  /**
+   * Anyone, once its time has come: whatever is next for a case (a verdict carried out, a panel settled, a job refunded on
+   * the desk, the customer's choice settled after the desk's 24 hours). Factor's engine does it on time.
+   */
+  stepVerified(id: number): Promise<VerifierSent> {
+    return this.caseCall(id, "step");
+  }
+
+  /**
+   * As the side the first verdict goes against (the customer a verdict of accept, the agent a verdict of reject), within
+   * 2 hours of it: dispute it, for a bond of 10% of the price (at least 0.0005 ETH), sent exactly. The bond is lost if the
+   * panel agrees with the first verdict and back if it does not; with no panel at all it goes to the first verifier and
+   * the customer decides by the desk's rule. `maxBondEth` refuses a bond over it.
+   */
+  async disputeVerified(id: number, o: { maxBondEth?: Amount } = {}): Promise<VerifierSent & { bondWei: bigint }> {
+    const me = this.plainWallet();
+    const n = caseNumber(id);
+    const contract = await this.verifiersContract();
+    const c = await this.chainCase(contract, n);
+    if (c.state === 0) throw new Refusal(`There is no case ${n} on the chain.`, "no_case");
+    if (c.state !== 2) throw new Refusal(`Case ${n} cannot be disputed: it is ${CASE_WORDS[VERIFIER_STATES[c.state] as VerifierCaseState] ?? "not checked"}.`, "wrong_state");
+    if ((c.firstAccept ? c.customer : c.agent) !== me) throw new Refusal(`Only the ${c.firstAccept ? "customer" : "agent"} of case ${n} may dispute its verdict of ${c.firstAccept ? "accept" : "reject"}. This wallet is not that one.`, "not_your_side");
+    if (o.maxBondEth !== undefined && c.disputeBond > toWei(o.maxBondEth)) throw new Refusal(`A dispute of case ${n} takes ${ethText(c.disputeBond)} ETH, over the ${ethText(toWei(o.maxBondEth))} ETH allowed.`, "over_cap");
+    return { ...this.sent(await this.callVerifiers(contract, "dispute", [BigInt(n)], c.disputeBond)), case: n, state: "disputed", bondWei: c.disputeBond };
+  }
+
+  /**
+   * As the customer or the agent, once each, until seating closes: strike one panelist from a disputed case, without a
+   * reason. It has its stake back and cannot sit on this case again; its seat is open to the next verifier.
+   */
+  async strikePanelist(id: number, verifier: string): Promise<VerifierSent> {
+    const me = this.plainWallet();
+    const n = caseNumber(id);
+    if (typeof verifier !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(verifier)) throw new Refusal("Give the panelist's address.", "bad_address");
+    const contract = await this.verifiersContract();
+    const c = await this.chainCase(contract, n);
+    if (c.state === 0) throw new Refusal(`There is no case ${n} on the chain.`, "no_case");
+    if (me !== c.customer && me !== c.agent) throw new Refusal(`Only the customer or the agent of case ${n} may strike a panelist. This wallet is neither.`, "not_your_side");
+    return { ...this.sent(await this.callVerifiers(contract, "strike", [BigInt(n), verifier.toLowerCase()], 0n)), case: n };
+  }
+
+  /** Anyone: deliver a payout of the verifier contract that its wallet refused. The ETH can only go to that wallet. Left out: this wallet. */
+  async collectVerifierPayout(who?: string): Promise<Sent & { amountEth: string }> {
+    const me = this.plainWallet();
+    const to = (who ?? me).toLowerCase();
+    if (!/^0x[0-9a-f]{40}$/.test(to)) throw new Refusal("Give the address the payout is for.", "bad_address");
+    const contract = await this.verifiersContract();
+    const owed = (await this.pub.readContract({ address: contract, abi: VERIFIERS_ABI, functionName: "owed", args: [to] })) as bigint;
+    if (owed === 0n) throw new Refusal("Nothing is waiting to be collected.", "nothing_owed");
+    return { ...this.sent(await this.callVerifiers(contract, "collect", [to], 0n)), amountEth: ethText(owed) };
+  }
+
+  private async caseCall(id: number, fn: "accept" | "reject" | "concede" | "step"): Promise<VerifierSent> {
+    const me = this.plainWallet();
+    const n = caseNumber(id);
+    const contract = await this.verifiersContract();
+    const before = await this.chainCase(contract, n);
+    if (before.state === 0) throw new Refusal(`There is no case ${n} on the chain.`, "no_case");
+    if ((fn === "accept" || fn === "reject") && before.customer !== me) throw new Refusal(`Only the customer of case ${n} can ${fn} its work. This wallet is not that one.`, "not_customer");
+    if (fn === "concede" && before.agent !== me) throw new Refusal(`Only the agent of case ${n} can concede its verdict. This wallet is not that one.`, "not_agent");
+    const sent = this.sent(await this.callVerifiers(contract, fn, [BigInt(n)], 0n));
+    const after = await this.chainCase(contract, n);
+    return { ...sent, case: n, state: after.state > 0 ? (VERIFIER_STATES[after.state] as VerifierCaseState) : null };
+  }
+
+  /** The wallet the verifier calls act from: a plain wallet with a key. Not a Factor account. */
+  private plainWallet(): Hex {
+    if (!this.account || !this.wallet) throw new Refusal("This Factor was connected without a key: it can only read.", "read_only");
+    if (this.via) throw new Refusal(VERIFIERS_GASLESS, "gasless");
+    return this.account.address.toLowerCase() as Hex;
+  }
+
+  /** "me" as this wallet, or an address, lowercase. */
+  private walletOf(address: string): string {
+    if (address === "me") return this.mine().toLowerCase();
+    if (typeof address !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(address)) throw new Refusal('Give a wallet\'s address, or "me" for this wallet.', "bad_address");
+    return address.toLowerCase();
+  }
+
+  /** A panelist's sealed verdict: the salt from this wallet's signature, the reasons' hash, and the seal, checked against the contract's own commitOf. */
+  private async seal(contract: Hex, n: number, me: Hex, accept: boolean, reason: string): Promise<{ salt: Hex; reasonHash: Hex; commit: Hex }> {
+    const salt = saltOf(await this.sign(sealMessage(n, me)));
+    const reasonHash = reasonHashOf(reason);
+    const commit = commitOf(n, me, accept, reasonHash, salt);
+    const onChain = (await this.pub.readContract({ address: contract, abi: VERIFIERS_ABI, functionName: "commitOf", args: [BigInt(n), me, accept, reasonHash, salt] })) as Hex;
+    if (onChain.toLowerCase() !== commit.toLowerCase()) throw new Refusal("The verifier contract works out another seal for this verdict than this kit does. Nothing was sent.", "commit_mismatch");
+    return { salt, reasonHash, commit };
+  }
+
+  /**
+   * The verifier contract, on and a contract on the chain: the site names it, the node is on Robinhood Chain, there is code
+   * at it, and it works with the same desk the site names.
+   */
+  private async verifiersContract(): Promise<Hex> {
+    const about = await read<VerifiersAbout>(this.api, "/verifiers/about");
+    if (!about?.enabled || !about.contract || !/^0x[0-9a-fA-F]{40}$/.test(about.contract)) throw new Refusal("Verifiers are not switched on on Factor yet: the verifier tools are not available.", "verifiers_off");
+    const c = about.contract.toLowerCase() as Hex;
+    const [onChain, code] = await Promise.all([this.pub.getChainId(), this.pub.getCode({ address: c })]);
+    if (onChain !== this.chainId || (about.chainId !== undefined && about.chainId !== this.chainId)) throw new Refusal(`The verifier contract is not on Robinhood Chain (${this.chainId}) here. Nothing will be sent.`, "wrong_chain");
+    if (!code || code === "0x") throw new Refusal(`There is no contract at ${c}, where the site says verifiers are. Nothing will be sent to it.`, "no_contract");
+    const desk = ((await this.pub.readContract({ address: c, abi: VERIFIERS_ABI, functionName: "desk" })) as string).toLowerCase();
+    if (desk !== this.desk.toLowerCase()) throw new Refusal(`The verifier contract at ${c} works with the desk ${desk}, and Factor's site names the desk ${this.desk}. Nothing will be sent.`, "wrong_desk");
+    return c;
+  }
+
+  /** A case as the contract has it. */
+  private async chainCase(contract: Hex, id: number): Promise<{ customer: string; agent: string; state: number; firstAccept: boolean; disputeBond: bigint }> {
+    const c = (await this.pub.readContract({ address: contract, abi: VERIFIERS_ABI, functionName: "getCase", args: [BigInt(id)] })) as { customer: string; agent: string; state: number; firstAccept: boolean; disputeBond: bigint };
+    return { customer: c.customer.toLowerCase(), agent: c.agent.toLowerCase(), state: Number(c.state), firstAccept: c.firstAccept, disputeBond: BigInt(c.disputeBond) };
+  }
+
+  /**
+   * One call to the verifier contract, from this plain wallet: tried, sent, followed until it is mined. The gas is
+   * estimated at send time with room on top: a payout pushed with too little gas is refused by the contract (GasShort).
+   */
+  private async callVerifiers(contract: Hex, functionName: string, args: readonly unknown[], value: bigint): Promise<{ hash: Hex; explorer: string; receipt: { logs: unknown[] } }> {
+    this.plainWallet();
+    let hash: Hex;
+    try {
+      const call = { address: contract, abi: VERIFIERS_ABI, functionName, args, account: this.account!, value } as never;
+      const { request } = await this.pub.simulateContract(call);
+      const gas = await this.pub.estimateContractGas(call);
+      hash = await this.wallet!.writeContract({ ...(request as object), gas: (gas * 13n) / 10n } as never);
+    } catch (e) {
+      throw e instanceof Refusal ? e : new Refusal(verifierWordsOf(e, functionName), "verifiers_refused");
+    }
+    const receipt = await this.pub.waitForTransactionReceipt({ hash, timeout: 180_000 });
+    if (receipt.status !== "success") throw new Refusal(`The transaction ${hash} was mined and refused. Nothing changed but the gas.`, "reverted");
+    return { hash, explorer: `${this.explorer}/tx/${hash}`, receipt };
+  }
+
   // ---------- ERC-8004 ----------
 
   /**
@@ -2997,6 +3376,26 @@ function milestoneEvent(logs: unknown[], contract: string, name: "Posted" | "Ope
     }
   }
   return null;
+}
+
+/** One of the verifier contract's events in a transaction, by its name: its arguments. */
+function verifierEvent(logs: unknown[], contract: string, name: "Hired" | "Sat"): Record<string, unknown> | null {
+  for (const log of logs as { address: string; topics: Hex[]; data: Hex }[]) {
+    if (log.address.toLowerCase() !== contract) continue;
+    try {
+      const d = decodeEventLog({ abi: VERIFIERS_ABI, topics: log.topics as [Hex, ...Hex[]], data: log.data });
+      if (d.eventName === name) return d.args as unknown as Record<string, unknown>;
+    } catch {
+      // another event
+    }
+  }
+  return null;
+}
+
+/** A verdict: true accepts the work, false rejects it. */
+function verdictOf(accept: unknown): boolean {
+  if (typeof accept !== "boolean") throw new Refusal("Say the verdict: accept true when the work meets the brief, false when it does not.", "bad_verdict");
+  return accept;
 }
 
 /** One of the bounty contract's events in a transaction, by its name: its arguments. */

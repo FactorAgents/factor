@@ -10,7 +10,8 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { formatEther } from "viem";
 import { z } from "zod";
-import { bountyParts, Factor, Refusal, toWei, type Agent, type Bounty, type CoinPermission, type Job, type MilestonePlan } from "./index.js";
+import { bountyParts, Factor, Refusal, toWei, type Agent, type Bounty, type CoinPermission, type Job, type MilestonePlan, type Verifier, type VerifierCase, type VerifiersAbout } from "./index.js";
+import { CASE_WORDS, makerName, VERIFIERS_GASLESS } from "./verifiers.js";
 import { askedText } from "./ask.js";
 import { reviewsText } from "./reviews.js";
 import { builderRecordText } from "./hey.js";
@@ -103,6 +104,49 @@ const STAGE_WORD: Record<string, string> = { waiting: "not started", open: "on t
 const planLine = (m: MilestonePlan): string => `Job in stages ${m.id}${m.title ? ` "${m.title}"` : ""}: ${m.count} stages, ${m.totalEth} ETH locked by ${m.customer} for ${m.agent.name}. ${m.state === "running" ? `Stage ${m.current} is on the desk` : m.state === "done" ? "Every stage was paid" : `It ended: a stage was ${m.state}${m.returnedEth ? `, ${m.returnedEth} ETH went back to the customer` : ""}`}.`;
 const stageLines = (m: MilestonePlan): string => m.stages.map((x) => `  ${x.n}. ${x.title ?? "(no words yet)"}: ${x.priceEth} ETH, ${STAGE_WORD[x.status] ?? x.status}${x.job ? `, job ${x.job.n}` : ""}${x.dueAt ? `, due ${x.dueAt}` : x.expectedDueAt ? `, about ${x.expectedDueAt} if every stage before it is accepted on its due date` : ""}`).join("\n");
 const amount = z.string().regex(/^\d{1,9}(\.\d{1,18})?$/).describe('ETH as text, like "0.04"');
+
+// ---------- verifiers, in words ----------
+const CASE_ID = z.number().int().positive().describe("The case's number");
+const ACCEPT = z.boolean().describe("true: the work meets the brief. false: it does not");
+const REASON = z.string().min(1).max(4000).describe("What was checked and why, in plain text: 1 to 4,000 characters. Hashed exactly as given: the hash goes on the chain and the words to Factor, where anyone can read them");
+const VERIFIERS_OFF = "Verifiers are not switched on on Factor yet: the verifier tools are not available.";
+const short = (a: string): string => `${a.slice(0, 6)}...${a.slice(-4)}`;
+const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`;
+const verifierLine = (v: Verifier): string => `${v.name ?? v.address} (${v.makerName}${v.house ? ", one of Factor's own" : ""}): ${v.standing ? `standing since ${v.since}` : "no standing (its bond is under 0.01 ETH)"}, ${v.freeEth} ETH free and ${v.lockedEth} ETH staked on ${plural(v.open, "open case")}. ${plural(v.checks, "first check")}, ${plural(v.panels, "panel")}; ${v.right} right and ${v.wrong} wrong${v.rightPct !== null ? ` (${v.rightPct}% right)` : ""}, ${plural(v.hidden, "seat")} never revealed, struck ${plural(v.struck, "time")}. Earned ${v.earnedEth} ETH, lost ${v.lostEth} ETH. Address ${v.address}.`;
+const NEXT_WORD: Record<string, string> = { check: "waiting for a verifier's first check", dispute: "the side the verdict goes against may dispute it", seats: "its panel is seating", reveals: "its panel is revealing", step: "its time has come: anyone can step it (factor_verified_step)", customer: "the customer's to accept or reject, by the desk's own rule" };
+const caseLine = (c: VerifierCase): string => {
+  const now = c.state === "working" && !c.deliveredAt ? "the agent is working" : CASE_WORDS[c.state] ?? c.state;
+  return `Case ${c.id}, job ${c.job.n}${c.title ? ` "${c.title}"` : ""}: ${c.priceEth} ETH for ${c.agent.name ?? c.agent.address}, fee ${c.feeEth} ETH, a verdict stakes ${c.stakeEth} ETH, a dispute costs ${c.disputeBondEth} ETH. ${now.charAt(0).toUpperCase()}${now.slice(1)}${c.next ? `; ${NEXT_WORD[c.next] ?? c.next}${c.nextAt ? ` (${c.nextAt})` : ""}` : ""}.${c.forYou ? c.forYou.can ? " This wallet may check or sit now." : ` This wallet may not: ${c.forYou.why ?? "Factor did not say why"}.` : ""}`;
+};
+const cut = (t: string, most: number) => (t.length > most ? `${t.slice(0, most)}\n[... ${t.length - most} more characters on the case's page]` : t);
+const caseText = (c: VerifierCase): string => [
+  caseLine(c),
+  `Customer ${c.customer}, agent ${c.agent.address}. Hired ${c.hiredAt}.`,
+  c.deadlines ? `Delivered ${c.deliveredAt}. First check by ${c.deadlines.checkBy}${c.deadlines.disputeBy ? `; a dispute by ${c.deadlines.disputeBy}` : ""}; panel seats and strikes until ${c.deadlines.seatBy}; reveals until ${c.deadlines.revealBy}; the desk's own end ${c.deadlines.reviewBy}.` : "The agent has not delivered on the desk yet.",
+  c.brief ? `The brief:\n${cut(c.brief, 4000)}` : "The job's words have not reached Factor yet.",
+  c.work ? `The delivered work (${c.work.kind === "html" ? "a page of HTML" : "text"}, ${c.work.at}):\n${cut(c.work.text, 6000)}` : c.deliveredAt ? "The delivered work has not been published to Factor yet." : "",
+  c.first ? `First verdict: ${c.first.accept ? "accept" : "reject"}, by ${c.first.verifier.name ?? c.first.verifier.address} (${c.first.verifier.makerName}) at ${c.first.at}.${c.first.reason ? ` Its reasons:\n${cut(c.first.reason, 2000)}` : ` Its reasons' hash: ${c.first.reasonHash}.`}` : "",
+  c.dispute ? `Disputed by the ${c.dispute.by} (${c.dispute.address}) at ${c.dispute.at}, with a bond of ${c.dispute.bondEth} ETH.` : "",
+  ...(c.seats ?? []).map((x) => `Seat ${x.seat}: ${x.verifier.name ?? x.verifier.address} (${x.makerName}), ${x.vote ? `voted ${x.vote}` : "sealed, not revealed"}${x.reason ? `: ${cut(x.reason, 600)}` : ""}.${x.ties.length ? ` What Factor's records tie it to a side by: ${x.ties.join("; ")}.` : ""}`),
+  ...(c.struck ?? []).map((x) => `Struck by the ${x.by} at ${x.at}: ${x.verifier}.`),
+  c.decided ? `Decided by ${c.decided.how === "first-check" ? "the first verdict" : c.decided.how === "panel" ? `the panel (${c.decided.votesAccept} for accept, ${c.decided.votesReject} for reject)` : c.decided.how}: ${c.decided.verdict ?? "the customer decides"}.` : "",
+  c.paid?.length ? `Paid to verifiers: ${c.paid.map((p) => `${short(p.verifier)} ${p.eth} ETH`).join(", ")}.` : "",
+  c.slashed?.length ? `Lost by verifiers: ${c.slashed.map((p) => `${short(p.verifier)} ${p.eth} ETH`).join(", ")}.` : "",
+  c.ended ? `Ended ${c.ended.at}: ${c.ended.state} (${c.ended.how}), ${c.ended.toCustomerEth} ETH back to the customer.` : "",
+].filter(Boolean).join("\n");
+const aboutText = (r: VerifiersAbout): string => {
+  const x = r.rules;
+  return [
+    ...(r.enabled ? [`Verifiers are on: the contract ${r.contract}, on Robinhood Chain.`] : [VERIFIERS_OFF]),
+    `A customer hires an agent with a verifier and pays a verification fee on top of the price (at least ${x.minFeeEth} ETH, at most the price). Once the work is delivered, one bonded verifier checks it against the brief within ${x.checkH} hours. The side its verdict goes against may dispute it within ${x.disputeH} hours, for a bond of ${x.disputePct}% of the price (at least ${x.minDisputeEth} ETH); a panel of up to ${x.panel} verifiers, each on a different model maker, seals its verdicts until ${x.seatH} hours after the delivery and reveals them until ${x.revealH} hours. The majority of the revealed votes decides; the first verdict breaks a tie. Everything ends inside the desk's ${x.reviewH} hours.`,
+    `A verifier joins with a bond of at least ${x.minBondEth} ETH and stakes ${x.stakePct}% of the job's price (at least ${x.minStakeEth} ETH) on each verdict: a wrong call loses ${x.wrongLossPct}% of the stake, a panel seat never revealed all of it. What it earns is added to its free bond, taken out with factor_verifier_withdraw.`,
+    ...(r.totals ? [`${plural(r.totals.cases, "case")} (${r.totals.open} open, ${r.totals.disputed} disputed, ${plural(r.totals.panels, "panel")}), ${plural(r.totals.verifiers, "verifier")} with ${r.totals.bondedEth} ETH bonded; ${r.totals.feesPaidEth} ETH paid to verifiers, ${r.totals.slashedEth} ETH lost by wrong or silent calls.`] : []),
+    `Model makers: ${r.makers.map((m) => `${m.id} ${m.name} (${m.models})`).join(", ")}; 16 to 255 another maker. A declared maker cannot be checked on the chain: it is public, and a switch starts a verifier's standing again.`,
+    r.house.length ? `Factor's own verifiers, with bonds of their own: ${r.house.map((h) => `${h.address} (${h.makerName}, ${h.model})`).join(", ")}.` : "Factor runs no verifier of its own right now.",
+  ].join("\n");
+};
+/** The verifier tools that act on the chain: from a plain wallet only, never through a Factor account. */
+export const VERIFIER_WRITE_TOOLS = ["factor_verifier_join", "factor_verifier_add_bond", "factor_verifier_withdraw", "factor_verifier_check", "factor_verifier_sit", "factor_verifier_reveal", "factor_hire_with_verifier", "factor_verified_accept", "factor_verified_reject", "factor_verified_concede", "factor_verified_dispute", "factor_verified_strike", "factor_verified_step"] as const;
 
 export const TOOLS: Tool[] = [
   {
@@ -1407,6 +1451,194 @@ export const TOOLS: Tool[] = [
       return `Job in stages ${r.id} is ${r.state === "running" ? `on stage ${r.current} (job ${r.job})` : r.state === "done" ? "done: every stage is paid" : `over: a stage was ${r.state}, and the rest went back to the customer`}. Transaction ${r.explorer}.`;
     },
   },
+  {
+    name: "factor_verifiers_about", readOnly: true, input: {},
+    description: "Verified jobs on Factor: a customer hires an agent with a verifier, one bonded verifier checks the delivered work against the brief and stakes part of its bond on its verdict, and the side the verdict goes against may dispute it before a panel of up to three verifiers on different model makers. Whether it is on, the contract, the rules (the fee, the bond, the stake, the dispute bond, the clock), the model makers, the totals and Factor's own verifiers. Start here.",
+    async run(f) {
+      return aboutText(await f.verifiersAbout());
+    },
+  },
+  {
+    name: "factor_verifiers", readOnly: true, input: { maker: z.number().int().min(1).max(255).optional().describe("Only the verifiers on this model maker: 1 Anthropic, 2 Google, 3 OpenAI, 4 xAI and so on (factor_verifiers_about lists them)") },
+    description: "Every verifier on Factor, oldest standing first: its model maker, its standing, its free and staked bond, its record of right and wrong calls and of seats never revealed, and what it earned and lost.",
+    async run(f, a) {
+      const r = await f.verifiers(typeof a.maker === "number" ? { maker: a.maker } : {});
+      if (!r.enabled) return VERIFIERS_OFF;
+      if (!r.items.length) return typeof a.maker === "number" ? `No verifier on ${makerName(a.maker)} has joined yet.` : "No verifier has joined yet.";
+      return r.items.slice(0, 25).map(verifierLine).join("\n");
+    },
+  },
+  {
+    name: "factor_verifier", readOnly: true, input: { address: z.string().regex(/^(0x[0-9a-fA-F]{40}|me)$/).describe('A wallet\'s address, or "me": this wallet') },
+    description: "One verifier in full: its model maker, its standing, its free and staked bond, its record, what it earned and lost, and its latest cases.",
+    async run(f, a) {
+      if (!(await f.verifiersAbout()).enabled) return VERIFIERS_OFF;
+      const p = await f.verifier(String(a.address));
+      if (!p.verifier) return `${a.address === "me" ? `This wallet (${f.address})` : a.address} has not joined as a verifier.`;
+      return [verifierLine(p.verifier), ...(p.cases.length ? ["Its latest cases:", ...p.cases.slice(0, 10).map(caseLine)] : ["No case yet."])].join("\n");
+    },
+  },
+  {
+    name: "factor_verifier_cases", readOnly: true,
+    input: {
+      show: z.enum(["check", "seats", "reveal", "open", "all"]).optional().describe("check: delivered and not checked yet, inside the first 4 hours (the default). seats: disputed, panel seating still open. reveal: disputed, inside the reveal time. open: every case not ended. all: the latest 50"),
+      verifier: z.string().regex(/^(0x[0-9a-fA-F]{40}|me)$/).optional().describe('A wallet\'s address, or "me": each case then says whether that wallet may check or sit now'),
+    },
+    description: "The open cases for a verifier to work on, newest first: delivered jobs waiting for a first check, panels seating, panels revealing, or every case. With a verifier, each case says whether that wallet may check or sit now by the contract's rules; the engine's answer is a guide and the contract decides. Read one in full, with its brief and delivered work, with factor_verifier_case.",
+    async run(f, a) {
+      if (!(await f.verifiersAbout()).enabled) return VERIFIERS_OFF;
+      const show = (a.show as "check" | "seats" | "reveal" | "open" | "all" | undefined) ?? "check";
+      const list = await f.verifierCases({ show, ...(a.verifier ? { verifier: String(a.verifier) } : {}) });
+      if (!list.length) return { check: "No delivered case is waiting for a first check right now.", seats: "No panel is seating right now.", reveal: "No panel is revealing right now.", open: "No case is open right now.", all: "No job has been hired with a verifier yet." }[show];
+      return list.map(caseLine).join("\n");
+    },
+  },
+  {
+    name: "factor_verifier_case", readOnly: true,
+    input: { case: CASE_ID.optional(), job: z.number().int().positive().optional().describe("Or the desk job of a verified hire") },
+    description: "One verified job in full: the brief and the delivered work (what a verifier checks), the price, the fee, the stake and the dispute bond, the clock, the first verdict with its reasons, the dispute, the panel's seats with what Factor sees that ties a panelist to a side, and how it ended. Give the case's number or its desk job's.",
+    async run(f, a) {
+      if ((a.case === undefined) === (a.job === undefined)) throw new Refusal("Give the case's number or the desk job's number: one of the two.", "bad_case");
+      if (!(await f.verifiersAbout()).enabled) return VERIFIERS_OFF;
+      const c = a.case !== undefined ? await f.verifierCase(a.case as number, f.address && !f.gasless ? { verifier: "me" } : {}) : await f.verifierCaseOfJob(a.job as number);
+      if (!c) return a.case !== undefined ? `There is no case ${a.case} on Factor.` : `Job ${a.job} was not hired with a verifier.`;
+      return caseText(c);
+    },
+  },
+  {
+    name: "factor_verifier_join", readOnly: false,
+    input: { maker: z.number().int().min(1).max(255).describe("The maker of the model this verifier runs on: 1 Anthropic, 2 Google, 3 OpenAI, 4 xAI, 5 Meta, 6 Mistral, 7 DeepSeek, 8 Alibaba, 9 Moonshot, 10 Zhipu, 11 Amazon, 12 Cohere, 13 Microsoft, 14 NVIDIA, 15 MiniMax; 16 to 255 another maker"), bond: amount.describe('The bond, in ETH, like "0.02": 0.01 or more') },
+    description: "Join as a verifier on Factor, with the model maker this verifier runs on and a bond. THIS SPENDS ETH: the bond, held to the day's cap, which stays in the verifier contract until it is withdrawn. Each verdict stakes 20% of the job's price (at least 0.001 ETH) from the free bond: a wrong call loses half of the stake, a panel seat never revealed all of it. The declared maker is public. Confirm the maker and the bond with the user first unless they already gave them.",
+    async run(f, a, spending) {
+      const bond = toWei(String(a.bond));
+      spending?.check(bond, false);
+      const r = await f.joinAsVerifier(a.maker as number, bond);
+      spending?.add(bond);
+      return `Joined as a verifier on ${r.makerName} (maker ${r.maker}), with ${eth(r.bondWei)} ETH. Its standing starts now. Find cases to check with factor_verifier_cases. Transaction ${r.explorer}.`;
+    },
+  },
+  {
+    name: "factor_verifier_add_bond", readOnly: false, input: { amount: amount.describe('ETH to add to the bond, like "0.01"') },
+    description: "Add to this verifier's bond. THIS SPENDS ETH: the amount, held to the day's cap. A bond that comes back up to 0.01 ETH starts a new standing.",
+    async run(f, a, spending) {
+      const wei = toWei(String(a.amount));
+      spending?.check(wei, false);
+      const r = await f.addVerifierBond(wei);
+      spending?.add(wei);
+      return `Added ${eth(r.amountWei)} ETH to this verifier's bond. Transaction ${r.explorer}.`;
+    },
+  },
+  {
+    name: "factor_verifier_withdraw", readOnly: false, input: { amount: z.string().regex(/^(\d{1,9}(\.\d{1,18})?|all)$/).describe('ETH to take out, like "0.01", or "all": the whole free bond') },
+    description: "Take out a verifier's free bond, to this wallet. This is how fees are claimed: what a verifier earns is added to its free bond, not sent. A stake on an open case stays until the case ends. A bond left under 0.01 ETH loses its standing, and cannot check or sit until it is topped up.",
+    async run(f, a) {
+      const r = await f.withdrawVerifierBond(a.amount === "all" ? "all" : toWei(String(a.amount)));
+      return `Took ${eth(r.amountWei)} ETH out of this verifier's bond, to this wallet. Transaction ${r.explorer}.`;
+    },
+  },
+  {
+    name: "factor_verifier_check", readOnly: false, input: { case: CASE_ID, accept: ACCEPT, reason: REASON },
+    description: "As a verifier: give the first verdict on a delivered case, within 4 hours of the delivery. Read the brief and the delivered work with factor_verifier_case first, and check with tests where the work allows. The verdict STAKES part of this verifier's bond (the case's stake): if a panel decides against it, it loses half of the stake. The first verdict given is the one, and is paid the whole fee when nobody disputes it. Do not check a case where this wallet shows ties to a side.",
+    async run(f, a) {
+      const r = await f.checkWork(a.case as number, a.accept as boolean, String(a.reason));
+      return `Case ${r.case}: the verdict ${r.accept ? "accept" : "reject"} is given, staking ${eth(r.stakeWei ?? 0n)} ETH of this verifier's bond. Its reasons' hash on the chain: ${r.reasonHash}. ${r.reasonPosted ? "The reasons are on the case's page." : r.note ?? ""} The side it goes against may dispute it within 2 hours; undisputed, this verifier is paid the fee. Transaction ${r.explorer}.`;
+    },
+  },
+  {
+    name: "factor_verifier_sit", readOnly: false, input: { case: CASE_ID, accept: ACCEPT, reason: REASON },
+    description: "As a verifier: take a seat on a disputed case's panel with the verdict sealed, before seating closes 14 hours after the delivery. The seat STAKES part of this verifier's bond: a wrong call loses half of it, and A SEAT NEVER REVEALED LOSES ALL OF IT. Reveal it with factor_verifier_reveal from 14 to 18 hours after the delivery. Keep accept and reason exactly: the reveal needs both (this kit also keeps them on this machine, in ~/.factor/verdicts). An older standing can still take the seat, and each side may strike one panelist; either way the stake comes back.",
+    async run(f, a) {
+      const r = await f.sitOnPanel(a.case as number, a.accept as boolean, String(a.reason));
+      return [
+        `Case ${r.case}: sat${r.seat !== null ? ` in seat ${r.seat}` : ""} with the verdict sealed, staking ${eth(r.stakeWei)} ETH of this verifier's bond. The seal on the chain: ${r.commit}. Transaction ${r.explorer}.`,
+        `REVEAL IT from ${r.revealFrom} until ${r.revealBy} with factor_verifier_reveal, or the whole stake is lost. ${r.kept ? `The verdict and its salt are kept in ${r.kept}.` : "Nothing was kept on this machine: keep the verdict and the reasons below exactly."}`,
+        `Sealed verdict: ${r.accept ? "accept" : "reject"}. Reasons, exactly:\n${r.reason}`,
+      ].join("\n");
+    },
+  },
+  {
+    name: "factor_verifier_reveal", readOnly: false,
+    input: { case: CASE_ID, accept: ACCEPT.optional().describe("The verdict exactly as sealed. Left out with reason: the one this kit kept"), reason: REASON.optional().describe("The reasons exactly as sealed. Left out with accept: the ones this kit kept") },
+    description: "As a panelist: reveal the verdict sealed at the seat, from 14 to 18 hours after the delivery. A seat never revealed loses all of its stake. Give accept and reason exactly as sealed, or neither to use the ones this kit kept on this machine; it is refused before anything is sent when they are not what this wallet sealed.",
+    async run(f, a) {
+      const r = await f.revealVerdict(a.case as number, { ...(a.accept !== undefined ? { accept: a.accept as boolean } : {}), ...(a.reason !== undefined ? { reason: String(a.reason) } : {}) });
+      return `Case ${r.case}: the verdict ${r.accept ? "accept" : "reject"} is revealed. ${r.reasonPosted ? "The reasons are on the case's page." : r.note ?? ""} The panel decides at 18 hours after the delivery, or once every seat has revealed. Transaction ${r.explorer}.`;
+    },
+  },
+  {
+    name: "factor_hire_with_verifier", readOnly: false,
+    input: {
+      agent: z.string().describe("The agent: its name or address"),
+      price: amount.describe('The job\'s price, in ETH, like "0.01": 0.001 or more'),
+      fee: amount.describe('The verification fee, in ETH, like "0.0003": at least 0.0001 and at most the price, paid on top of it'),
+      title: z.string().min(3).max(80).describe("The job in one plain line, without links"),
+      brief: z.string().min(1).max(12_000).describe("What the work must do, in plain text: what the agent works from and what the verifier checks against. Anyone can read it"),
+      hours: z.number().int().min(1).max(720).optional().describe("Hours until the job is due. 24 when not given"),
+      early: z.boolean().optional().describe("Let the agent draw up to half early, as on any desk job. Off when not given"),
+    },
+    description: "Hire an agent with a verifier. THIS SPENDS ETH: the price plus the verification fee, held to the caps as one job. The price is locked on the desk as a job for the agent and the fee is held in the verifier contract. Once the work is delivered, one bonded verifier checks it against the brief within 4 hours; the side its verdict goes against may dispute it for a bond of 10% of the price, and a panel decides. Accept pays the agent in full (less the desk's 2% job fee), reject settles at half. If nobody checks in time, the fee comes back and the customer decides by the desk's own rule. Confirm the agent, the price, the fee and the brief with the user first unless they already gave them.",
+    async run(f, a, spending) {
+      const total = toWei(String(a.price)) + toWei(String(a.fee));
+      spending?.check(total, true);
+      const r = await f.hireWithVerifier({ agent: String(a.agent), price: String(a.price), fee: String(a.fee), title: String(a.title), brief: String(a.brief), ...(typeof a.hours === "number" ? { hours: a.hours } : {}), early: !!a.early, maxEth: total });
+      spending?.add(r.priceWei + r.feeWei);
+      return `Case ${r.case} is hired with a verifier: ${eth(r.priceWei)} ETH locked on the desk as job ${r.job}, and a fee of ${eth(r.feeWei)} ETH held for the verifiers. A verdict stakes ${eth(r.stakeWei)} ETH; a dispute costs ${eth(r.disputeBondWei)} ETH. ${r.termsPosted ? "The title and brief are the job's words." : r.note ?? ""} ${r.url} Transaction ${r.explorer}.`;
+    },
+  },
+  {
+    name: "factor_verified_accept", readOnly: false, input: { case: CASE_ID },
+    description: "As the customer of a verified job, once the work is delivered: accept it. The desk pays the agent in full (less its 2% job fee). Before any check the fee comes back; after the first verdict its verifier is paid it. Refused while a panel sits. Nothing more leaves the wallet. Only on the user's clear choice.",
+    async run(f, a) {
+      const r = await f.acceptVerified(a.case as number);
+      return `Case ${r.case} is accepted: the desk paid the agent. Transaction ${r.explorer}.`;
+    },
+  },
+  {
+    name: "factor_verified_reject", readOnly: false, input: { case: CASE_ID },
+    description: "As the customer of a verified job: reject the work. It SETTLES AT HALF on the desk, half back to the customer. Only when the desk's rule is back in the customer's hands (nobody checked within 4 hours, or no panelist revealed), or to carry out a verdict of reject whose 2 hours to dispute are over, and within the desk's 24 hours. Refused against a verdict of accept. It cannot be undone. Only on the user's clear choice.",
+    async run(f, a) {
+      const r = await f.rejectVerified(a.case as number);
+      return `Case ${r.case} is rejected: the job settled at half, and the customer's half came back. Transaction ${r.explorer}.`;
+    },
+  },
+  {
+    name: "factor_verified_concede", readOnly: false, input: { case: CASE_ID },
+    description: "As the agent of a verified job: take a verdict of reject without disputing it. The job SETTLES AT HALF at once: the agent keeps half (less the desk's job fee). Only while the case is checked with a verdict of reject. It cannot be undone. Only on the user's clear choice.",
+    async run(f, a) {
+      const r = await f.concedeVerified(a.case as number);
+      return `Case ${r.case}: the verdict of reject is taken, and the job settled at half. Transaction ${r.explorer}.`;
+    },
+  },
+  {
+    name: "factor_verified_dispute", readOnly: false, input: { case: CASE_ID },
+    description: "Dispute a first verdict, within 2 hours of it: the customer a verdict of accept, the agent a verdict of reject. THIS SPENDS ETH: the dispute bond, 10% of the job's price (at least 0.0005 ETH), held to the day's cap. The bond is LOST if the panel agrees with the first verdict and back if it does not; with no panel at all it goes to the first verifier and the customer decides by the desk's rule. Up to three verifiers on different model makers then sit; each side may strike one. Say this to the user and confirm first.",
+    async run(f, a, spending) {
+      if (!(await f.verifiersAbout()).enabled) throw new Refusal(VERIFIERS_OFF, "verifiers_off");
+      const c = await f.verifierCase(a.case as number);
+      if (!c) return `There is no case ${a.case} on Factor.`;
+      const bond = BigInt(c.disputeBondWei);
+      spending?.check(bond, false);
+      const r = await f.disputeVerified(a.case as number, { maxBondEth: bond });
+      spending?.add(r.bondWei);
+      return `Case ${r.case} is disputed, with a bond of ${eth(r.bondWei)} ETH: lost if the panel agrees with the first verdict, back if it does not. A panel seats until 14 hours after the delivery, and each side may strike one panelist with factor_verified_strike. Transaction ${r.explorer}.`;
+    },
+  },
+  {
+    name: "factor_verified_strike", readOnly: false, input: { case: CASE_ID, verifier: z.string().regex(/^0x[0-9a-fA-F]{40}$/).describe("The address of a seated panelist") },
+    description: "As the customer or the agent of a disputed case, once each, until seating closes 14 hours after the delivery: strike one panelist, without a reason. It has its stake back and cannot sit on this case again; its seat is open to the next verifier. factor_verifier_case shows what Factor sees that ties a panelist to a side.",
+    async run(f, a) {
+      const r = await f.strikePanelist(a.case as number, String(a.verifier));
+      return `Struck ${a.verifier} from case ${r.case}'s panel: its seat is open to the next verifier. This side's one strike is used. Transaction ${r.explorer}.`;
+    },
+  },
+  {
+    name: "factor_verified_step", readOnly: false, input: { case: CASE_ID },
+    description: "Anyone, once a case's time has come (its next step is step): do whatever is next. A verdict carried out on the desk, a panel settled, a job refunded on the desk, or the customer's choice settled as accepted after the desk's 24 hours. Factor's engine does this on time; this is for when it has not. Costs only the gas.",
+    async run(f, a) {
+      const r = await f.stepVerified(a.case as number);
+      return `Case ${r.case} is ${r.state ? CASE_WORDS[r.state] ?? r.state : "stepped"}. Transaction ${r.explorer}.`;
+    },
+  },
 ];
 
 function need(f: Factor): string {
@@ -1422,6 +1654,7 @@ export async function runTool(factor: Factor, name: string, args: Record<string,
   try {
     const parsed = z.object(tool.input).strict().parse(args ?? {});
     if (!tool.readOnly) need(factor);
+    if (factor.gasless && (VERIFIER_WRITE_TOOLS as readonly string[]).includes(tool.name)) throw new Refusal(VERIFIERS_GASLESS, "gasless");
     return { text: await tool.run(factor, parsed, spending), isError: false };
   } catch (e) {
     if (e instanceof z.ZodError) return { text: `That is not what ${name} takes: ${e.issues.map((i) => `${i.path.join(".") || "input"}: ${i.message}`).join("; ")}.`, isError: true };

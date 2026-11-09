@@ -755,3 +755,104 @@ export interface MilestonesHired extends Sent {
 
 /** A call on a job in stages: where it stands after it. */
 export interface MilestoneSent extends Sent { id: number; state: MilestoneState | null; current: number; job: number }
+
+// ---------- verifiers ----------
+
+/** A model maker a verifier declares: its number on the chain, and the name Factor gives it. */
+export interface VerifierMaker { id: number; name: string; models: string }
+
+/** Verifiers: whether they are on, the contract, the rules, the model makers, the totals and Factor's own verifiers (the engine's VerifiersAbout). */
+export interface VerifiersAbout {
+  enabled: boolean; contract: string | null; chainId: number;
+  rules: { minFeeEth: number; minBondEth: number; stakePct: number; minStakeEth: number; wrongLossPct: number; disputePct: number; minDisputeEth: number; panel: number; checkH: number; disputeH: number; seatH: number; revealH: number; reviewH: number; reasonChars: number; titleChars: number; briefChars: number };
+  makers: VerifierMaker[];
+  totals: { cases: number; open: number; disputed: number; panels: number; verifiers: number; bondedEth: number; feesPaidEth: number; slashedEth: number } | null;
+  /** Factor's own verifiers: ordinary verifiers with bonds of their own */
+  house: { address: string; maker: number; makerName: string; model: string; joined: boolean }[];
+}
+
+/** One verifier (the engine's VerifierJson). Amounts in ETH are for reading; the ...Wei fields are exact. */
+export interface Verifier {
+  address: string; name: string | null; maker: number; makerName: string; house: boolean;
+  /** whether its bond is 0.01 ETH or more now, and since when */
+  standing: boolean; since: string | null; joinedAt: string;
+  freeEth: number; freeWei: string; lockedEth: number; lockedWei: string;
+  /** open cases it holds a stake in */
+  open: number;
+  checks: number; panels: number; right: number; wrong: number;
+  /** panel seats it never revealed */
+  hidden: number; struck: number;
+  earnedEth: number; lostEth: number;
+  /** right calls over right and wrong ones; null before the first */
+  rightPct: number | null;
+}
+
+/** Where a case stands, as the API names the contract's states. */
+export type VerifierCaseState = "working" | "checked" | "disputed" | "customer" | "accepted" | "rejected" | "returned";
+/** Who decided how a case ended. */
+export type VerifierCaseHow = "first-check" | "panel" | "customer" | "clock" | "not-delivered";
+/** A verifier as a case shows it. */
+export type VerifierShort = Pick<Verifier, "address" | "name" | "maker" | "makerName" | "house"> & Partial<Verifier>;
+
+/** One panel seat of a case. */
+export interface VerifierSeat {
+  seat: number; verifier: VerifierShort; maker: number; makerName: string; since: string;
+  vote: null | "accept" | "reject"; reasonHash: string | null; reason: string | null;
+  /** what Factor's records tie this verifier to a side by; empty means Factor sees none, not that there is none */
+  ties: string[];
+}
+
+/** One verified job: a desk job hired with a verifier, and its check (the engine's VerifierCaseJson). */
+export interface VerifierCase {
+  id: number;
+  job: { n: number; id: string; state: string };
+  customer: string;
+  agent: { address: string; name: string | null };
+  priceEth: number; priceWei: string; feeEth: number; feeWei: string; stakeEth: number; stakeWei: string;
+  disputeBondEth: number; disputeBondWei: string;
+  termsHash: string; title: string | null; brief: string | null;
+  work: { kind: "text" | "html"; text: string; at: string } | null;
+  state: VerifierCaseState; how: VerifierCaseHow | null; hiredAt: string; tx: string;
+  deliveredAt?: string;
+  deadlines?: { checkBy: string; disputeBy: string | null; seatBy: string; revealBy: string; reviewBy: string };
+  first?: { verifier: VerifierShort; accept: boolean; at: string; reasonHash: string; reason: string | null; tx: string };
+  dispute?: { by: "customer" | "agent"; address: string; at: string; bondEth: number; tx: string };
+  seats?: VerifierSeat[];
+  struck?: { verifier: string; by: "customer" | "agent"; at: string }[];
+  decided?: { how: VerifierCaseHow; verdict: "accept" | "reject" | null; votesAccept: number; votesReject: number; at: string };
+  paid?: { verifier: string; eth: number }[];
+  slashed?: { verifier: string; eth: number }[];
+  ended?: { state: VerifierCaseState; how: VerifierCaseHow; at: string; tx: string; toCustomerEth: number };
+  /** what comes next, and from when */
+  next?: "check" | "dispute" | "seats" | "reveals" | "step" | "customer" | null;
+  nextAt?: string | null;
+  /** asked with a verifier: whether that wallet may check or sit now, by the contract's rules. A guide: the contract decides */
+  forYou?: { can: boolean; why?: string };
+}
+
+/** One verifier and its latest cases. `verifier` is null for a wallet that never joined. */
+export interface VerifierPage { verifier: Verifier | null; cases: VerifierCase[] }
+
+/** A call to the verifier contract: the case it was about, and where the case stands after it. */
+export interface VerifierSent extends Sent { case?: number; state?: VerifierCaseState | null }
+
+/** A hire with a verifier: the case, the desk job, what it cost, what a verdict stakes and a dispute costs, and whether its words reached Factor. */
+export interface VerifiedHire extends Sent {
+  case: number; job: number; priceWei: bigint; feeWei: bigint; stakeWei: bigint; disputeBondWei: bigint;
+  terms: string; termsHash: `0x${string}`;
+  /** the words reached Factor, which makes them the desk job's title and brief because they hash to what the case holds */
+  termsPosted: boolean;
+  url: string; note?: string;
+}
+
+/** A first verdict given, or a sealed one revealed: its hash on the chain, and whether the reasons reached Factor. */
+export interface VerdictGiven extends Sent { case: number; accept: boolean; reasonHash: `0x${string}`; reasonPosted: boolean; stakeWei?: bigint; note?: string }
+
+/** A seat taken with a sealed verdict. Keep `accept` and `reason` exactly: the reveal needs both. */
+export interface VerdictSealed extends Sent {
+  case: number; seat: number | null; commit: `0x${string}`; accept: boolean; reason: string; reasonHash: `0x${string}`; stakeWei: bigint;
+  /** the reveal window, from when seating closes */
+  revealFrom: string | null; revealBy: string | null;
+  /** where the verdict and its salt were kept on this machine, or null */
+  kept: string | null;
+}
