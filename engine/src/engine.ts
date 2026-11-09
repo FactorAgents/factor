@@ -50,6 +50,7 @@ import { Lines } from "./lines.js";
 import { Guarantees } from "./guarantees.js";
 import { Bounties } from "./bounties.js";
 import { Milestones } from "./milestones.js";
+import { Verifiers, chainPriceOf, routerAsker } from "./verifiers.js";
 import { answerSigner, Connect, type AnswerSigner } from "./everywhere.js";
 import { Erc8004Scores } from "./erc8004score.js";
 import { Ask, askModelOf, type AskModel } from "./ask.js";
@@ -147,6 +148,8 @@ export class Engine {
   bounties: Bounties | null = null;
   /** milestones (./milestones.ts): plans in stages, each stage a desk job, read and stepped by the keeper */
   milestones: Milestones | null = null;
+  /** verifiers (./verifiers.ts): jobs checked by bonded verifiers, read and stepped by the keeper, checked by Factor's own verifiers */
+  verifiers: Verifiers | null = null;
   /** Factor Connect (./everywhere.ts): marketplaces, their hire links and the webhooks they are sent */
   connect: Connect | null = null;
   /** the Factor Score written to ERC-8004 (./erc8004score.ts) */
@@ -224,7 +227,7 @@ export class Engine {
     for (const [name, l] of this.loops) loops[name] = { lastRunAt: l.lastRunAt, lastOkAt: l.lastOkAt, runs: l.runs, failures: l.failures, waitMs: l.waitMs, backingOff: l.backingOff };
     return {
       config: this.config, state: this.state, problems: this.problems, warnings: this.warnings, lastError: this.lastError, loops, ctx: this.ctx, rpc: this.chain?.health() ?? null, now: this.now,
-      links: { pons: link(this.env.FACTOR_PONS_URL), github: link(this.env.FACTOR_GITHUB_URL), x: link(this.env.FACTOR_X_URL) }, dataDirSet: !!this.env.FACTOR_DATA_DIR?.trim(), profiles: this.profiles, gateway: this.gateway, accounts: this.accounts, house: this.house, demo: this.demo, pulse: this.pulse, deskMind: this.deskMind, launchList: this.launchList, activity: this.activity, matcher: this.matcher, pay: this.pay, subjobs: this.subjobs, recordSigner: this.recordSigner, firms: this.firms, plans: this.plans, erc8004: this.erc8004, openjobs: this.openjobs, autoapply: this.autoapply, verified: this.verified, coins: this.coins, lines: this.lines, guarantees: this.guarantees, bounties: this.bounties, milestones: this.milestones,
+      links: { pons: link(this.env.FACTOR_PONS_URL), github: link(this.env.FACTOR_GITHUB_URL), x: link(this.env.FACTOR_X_URL) }, dataDirSet: !!this.env.FACTOR_DATA_DIR?.trim(), profiles: this.profiles, gateway: this.gateway, accounts: this.accounts, house: this.house, demo: this.demo, pulse: this.pulse, deskMind: this.deskMind, launchList: this.launchList, activity: this.activity, matcher: this.matcher, pay: this.pay, subjobs: this.subjobs, recordSigner: this.recordSigner, firms: this.firms, plans: this.plans, erc8004: this.erc8004, openjobs: this.openjobs, autoapply: this.autoapply, verified: this.verified, coins: this.coins, lines: this.lines, guarantees: this.guarantees, bounties: this.bounties, milestones: this.milestones, verifiers: this.verifiers,
       connect: this.connect, erc8004Scores: this.erc8004Scores, answerSigner: this.answerSigner, ask: this.ask, copilot: this.copilot, reviews: this.reviews, hey: this.hey,
     };
   }
@@ -375,7 +378,7 @@ export class Engine {
       params: c.params,
       chainId: c.chainId,
       explorer: c.explorer,
-      addr: { splitter: c.splitter, burnPot: c.burnPot, desk: c.desk, accounts: c.accounts.factory, skimTo: c.skimTo, line: c.lines.enabled ? c.lines.line : null, guarantee: c.guarantees.enabled ? c.guarantees.guarantee : null, bounty: c.bounties.enabled ? c.bounties.bounty : null, milestones: c.milestones.enabled ? c.milestones.milestones : null },
+      addr: { splitter: c.splitter, burnPot: c.burnPot, desk: c.desk, accounts: c.accounts.factory, skimTo: c.skimTo, line: c.lines.enabled ? c.lines.line : null, guarantee: c.guarantees.enabled ? c.guarantees.guarantee : null, bounty: c.bounties.enabled ? c.bounties.bounty : null, milestones: c.milestones.enabled ? c.milestones.milestones : null, verifiers: c.verifiers.enabled ? c.verifiers.contract : null },
       accounts: c.accounts,
       deployBlock: c.deployBlock,
       chain: this.chain,
@@ -622,6 +625,22 @@ export class Engine {
     if (c.milestones.enabled && c.milestones.note) this.log(`[milestones] NOT ON: ${c.milestones.note}`);
     else if (c.milestones.enabled) this.log(`[milestones] on: plans in stages are read from ${c.milestones.milestones}; the keeper steps a plan once the stage on the desk has come to its time`);
     // paid reviews: made whether or not they are on, so what was stored still shows once they are turned back on
+    // the agent's own hand, as far as Factor can see it (docs/REVIEWS.md, section 3): a review is held to it, and a verifier
+    // on either side of a case (docs/VERIFIERS.md) is shown with it
+    const tieOf = async (agent: string, reviewer: string): Promise<string | null> => {
+      if (agent === reviewer) return "the agent's own wallet";
+      if (setters(agent).includes(reviewer)) return "the wallet that runs the agent on Factor";
+      if (this.subjobs!.sameHand(agent, reviewer)) return "run by the same hand as the agent, as Factor's own records show";
+      if (factorOwn(agent) && factorOwn(reviewer)) return "both are Factor's own";
+      if (this.verified?.json(agent)?.owner === reviewer) return "the wallet that verified the agent's owner";
+      if (db.q("SELECT 1 FROM desk_jobs WHERE customer = ? AND agent = ? AND state IN (?, ?) LIMIT 1").get(agent, reviewer, STATE.settled, STATE.half)) return "a ring: the agent has itself paid this customer for a job on the desk";
+      const link = this.erc8004?.store.link(agent);
+      if (link?.agent_id && !link.lost) {
+        const [who] = await this.erc8004!.identities([Number(link.agent_id)]).catch(() => [null]);
+        if (who && (who.owner === reviewer || who.wallet === reviewer)) return `it owns, or is the agentWallet of, the agent's ERC-8004 identity #${link.agent_id}`;
+      }
+      return null;
+    };
     this.reviews = new Reviews(c.reviews, {
       db, chain: this.chain, chainId: c.chainId, desk: c.desk, now: this.now, nowS, log: this.log, setters,
       erc8004: () => this.erc8004,
@@ -633,24 +652,32 @@ export class Engine {
         if (b) return { reviewer: b.poster, kind };
         const m = this.milestones?.reading() ? this.milestones.ofJob(j.id) : null;
         if (m) return { reviewer: m.plan.customer, kind };
+        const vc = this.verifiers?.reading() ? this.verifiers.ofJob(j.id) : null;
+        if (vc) return { reviewer: vc.customer, kind };
         return { reviewer: j.customer, kind };
       },
       // the agent's own hand, as far as Factor can see it (docs/REVIEWS.md, section 3)
-      selfDealing: async (agent, reviewer) => {
-        if (agent === reviewer) return "the agent's own wallet";
-        if (setters(agent).includes(reviewer)) return "the wallet that runs the agent on Factor";
-        if (this.subjobs!.sameHand(agent, reviewer)) return "run by the same hand as the agent, as Factor's own records show";
-        if (factorOwn(agent) && factorOwn(reviewer)) return "both are Factor's own";
-        if (this.verified?.json(agent)?.owner === reviewer) return "the wallet that verified the agent's owner";
-        if (db.q("SELECT 1 FROM desk_jobs WHERE customer = ? AND agent = ? AND state IN (?, ?) LIMIT 1").get(agent, reviewer, STATE.settled, STATE.half)) return "a ring: the agent has itself paid this customer for a job on the desk";
-        const link = this.erc8004?.store.link(agent);
-        if (link?.agent_id && !link.lost) {
-          const [who] = await this.erc8004!.identities([Number(link.agent_id)]).catch(() => [null]);
-          if (who && (who.owner === reviewer || who.wallet === reviewer)) return `it owns, or is the agentWallet of, the agent's ERC-8004 identity #${link.agent_id}`;
-        }
-        return null;
+      selfDealing: tieOf,
+    });
+    // verifiers: made whether or not they are on, and read nothing until VERIFIERS=on and the contract is given
+    this.verifiers = new Verifiers({
+      cfg: c.verifiers, db, chain: this.chain, chainId: c.chainId, nowS, now: this.now, log: this.log,
+      names: () => this.profiles!.all(),
+      ties: tieOf,
+      factorOwn,
+      brief: (job, by, title, brief) => this.profiles!.stageBrief(job, by, title, brief),
+      work: (job) => this.profiles!.work(job),
+      house: {
+        seed: c.verifiers.house.enabled ? takeHouseSeed(this.env) : null,
+        accounts: () => (c.accounts.enabled ? this.accounts : null),
+        live: () => this.ctx?.mode === "live" && !!this.ctx.signer && this.state === "running",
+        ask: this.env.OPENROUTER_API_KEY?.trim() ? routerAsker(this.env.OPENROUTER_API_KEY.trim(), this.env.COMPUTE_ROUTER_URL?.trim() || undefined) : null,
+        priceOf: chainPriceOf(this.chain),
       },
     });
+    this.ctx.verifiers = this.verifiers;
+    if (c.verifiers.enabled && c.verifiers.note) this.log(`[verifiers] NOT ON: ${c.verifiers.note}`);
+    else if (c.verifiers.enabled) this.log(`[verifiers] on: verified jobs are read from ${c.verifiers.contract}; the keeper steps a case once its time has come${c.verifiers.house.enabled ? `, and Factor's own verifiers check on ${Object.values(c.verifiers.house.models).join(", ")}, up to $${c.verifiers.house.dailyMicro / 1e6} a day on models${this.env.OPENROUTER_API_KEY?.trim() ? "" : " (NOT checking: no OPENROUTER_API_KEY)"}` : ""}`);
     // HEY builder records: made whether or not they are on, so an agent's link is kept; HEY is asked nothing while off
     this.hey = new Hey({
       cfg: c.hey, db, now: this.now, log: this.log, setters,
@@ -869,6 +896,12 @@ export class Engine {
     if (this.milestones?.reading()) {
       if ((await this.milestones.watch(this.ctx, pass.head)).length && this.api) this.api.forget();
       await this.milestones.refresh();
+    }
+    // verifiers: their logs, then what is read of them (./verifiers.ts); Factor's own verifiers are never waited on
+    if (this.verifiers?.reading()) {
+      if ((await this.verifiers.watch(this.ctx, pass.head)).length && this.api) this.api.forget();
+      await this.verifiers.refresh();
+      void this.verifiers.housePass().catch((e: unknown) => this.log(`[verifiers] Factor's own verifiers: the pass failed: ${e instanceof Error ? e.message : String(e)}`));
     }
     // an open job whose rule is the best Factor Score is picked as soon as its moment has come (./openjobs.ts)
     try { this.openjobs?.pickDue(); } catch (e) { this.log(`[openjobs] picking failed: ${e instanceof Error ? e.message : String(e)}`); }

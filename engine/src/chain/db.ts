@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS engine_locks (name TEXT PRIMARY KEY, holder TEXT NOT 
 -- Everything the engine sent, would have sent (dry), or could not send: what, why, and how it ended.
 CREATE TABLE IF NOT EXISTS engine_actions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  kind TEXT NOT NULL,                -- sweep, claim_token, burn, settle_job, refund_job, collect, return_compute, erc8004, line, guarantee, bounty, milestone, unstick
+  kind TEXT NOT NULL,                -- sweep, claim_token, burn, settle_job, refund_job, collect, return_compute, erc8004, line, guarantee, bounty, milestone, verifier, unstick
   ref TEXT NOT NULL DEFAULT '',
   mode TEXT NOT NULL,                -- dry or live
   status TEXT NOT NULL,              -- dry, signed, sent, done, failed, replaced
@@ -564,6 +564,87 @@ CREATE TABLE IF NOT EXISTS milestone_stages (
 );
 CREATE INDEX IF NOT EXISTS milestone_stages_job ON milestone_stages (job);
 CREATE INDEX IF NOT EXISTS milestone_stages_block ON milestone_stages (block);
+-- Verifiers (../verifiers.ts): each case as its logs say, its panel's seats, what verifiers were paid and lost, and the
+-- verifiers themselves with their record as last read from the contract. Words and reasons are in tables of their own.
+CREATE TABLE IF NOT EXISTS verifier_cases (
+  id INTEGER PRIMARY KEY,
+  block INTEGER NOT NULL,
+  at INTEGER NOT NULL,
+  tx_hash TEXT NOT NULL,
+  job INTEGER NOT NULL,
+  customer TEXT NOT NULL,
+  agent TEXT NOT NULL,
+  price TEXT NOT NULL,
+  fee TEXT NOT NULL,
+  stake TEXT NOT NULL,
+  dispute_bond TEXT NOT NULL,
+  terms_hash TEXT NOT NULL,
+  state TEXT NOT NULL DEFAULT 'working',
+  how TEXT,
+  checker TEXT,
+  first_accept INTEGER,
+  checked_at INTEGER,
+  check_tx TEXT,
+  reason_hash TEXT,
+  disputer TEXT,
+  disputed_at INTEGER,
+  dispute_tx TEXT,
+  decided_how TEXT,
+  verdict TEXT,
+  votes_accept INTEGER NOT NULL DEFAULT 0,
+  votes_reject INTEGER NOT NULL DEFAULT 0,
+  decided_at INTEGER,
+  ended_at INTEGER,
+  ended_tx TEXT,
+  to_customer TEXT
+);
+CREATE INDEX IF NOT EXISTS verifier_cases_job ON verifier_cases (job);
+CREATE INDEX IF NOT EXISTS verifier_cases_agent ON verifier_cases (agent, id);
+CREATE INDEX IF NOT EXISTS verifier_cases_state ON verifier_cases (state);
+CREATE INDEX IF NOT EXISTS verifier_cases_block ON verifier_cases (block);
+CREATE TABLE IF NOT EXISTS verifier_seats (
+  case_id INTEGER NOT NULL,
+  verifier TEXT NOT NULL,
+  block INTEGER NOT NULL,
+  seat INTEGER NOT NULL,
+  maker INTEGER NOT NULL,
+  since INTEGER NOT NULL,
+  sat_at INTEGER NOT NULL,
+  sat_tx TEXT NOT NULL,
+  gone TEXT,                          -- displaced | struck
+  gone_by TEXT,
+  gone_at INTEGER,
+  vote TEXT,                          -- accept | reject, once revealed
+  reason_hash TEXT,
+  revealed_at INTEGER,
+  PRIMARY KEY (case_id, verifier)
+);
+CREATE INDEX IF NOT EXISTS verifier_seats_block ON verifier_seats (block);
+CREATE INDEX IF NOT EXISTS verifier_seats_verifier ON verifier_seats (verifier);
+CREATE TABLE IF NOT EXISTS verifier_money (
+  case_id INTEGER NOT NULL,
+  verifier TEXT NOT NULL,
+  kind TEXT NOT NULL,                 -- paid | slashed
+  amount TEXT NOT NULL,
+  block INTEGER NOT NULL,
+  at INTEGER NOT NULL,
+  tx_hash TEXT NOT NULL,
+  log_index INTEGER NOT NULL,
+  PRIMARY KEY (tx_hash, log_index)
+);
+CREATE INDEX IF NOT EXISTS verifier_money_case ON verifier_money (case_id);
+CREATE INDEX IF NOT EXISTS verifier_money_block ON verifier_money (block);
+CREATE TABLE IF NOT EXISTS verifier_list (
+  address TEXT PRIMARY KEY,
+  block INTEGER NOT NULL,
+  maker INTEGER NOT NULL,
+  since INTEGER NOT NULL,
+  joined_at INTEGER NOT NULL,
+  joined_tx TEXT NOT NULL,
+  record TEXT NOT NULL DEFAULT '{}',
+  record_at INTEGER NOT NULL DEFAULT 0  -- ms: 0 marks it to be read again
+);
+CREATE INDEX IF NOT EXISTS verifier_list_block ON verifier_list (block);
 -- Each move on a guarantee: a bond in or out, an offer, a cover ended, a payout refused.
 CREATE TABLE IF NOT EXISTS guarantee_moves (
   tx_hash TEXT NOT NULL,
@@ -587,7 +668,7 @@ CREATE TABLE IF NOT EXISTS job_titles (
 );
 `;
 
-export type ActionKind = "sweep" | "retry_split" | "claim_token" | "burn" | "settle_job" | "refund_job" | "collect" | "return_compute" | "skim" | "relay" | "erc8004" | "coin_sweep" | "line" | "guarantee" | "bounty" | "milestone" | "erc8004_score" | "unstick";
+export type ActionKind = "sweep" | "retry_split" | "claim_token" | "burn" | "settle_job" | "refund_job" | "collect" | "return_compute" | "skim" | "relay" | "erc8004" | "coin_sweep" | "line" | "guarantee" | "bounty" | "milestone" | "verifier" | "erc8004_score" | "unstick";
 export type ActionStatus = "dry" | "signed" | "sent" | "done" | "failed" | "replaced";
 
 export interface ActionRow {
@@ -619,7 +700,7 @@ export interface EventRow {
 }
 
 // The tables a stretch of blocks writes to, all keyed by block: what a reorg or a reindex takes back.
-const BY_BLOCK = ["chain_events", "chain_splits", "chain_burns", "ledger", "desk_advances", "coins", "coin_splits", "coin_trades", "coin_transfers", "lines", "line_moves", "guarantee_bonds", "guarantee_covers", "guarantee_moves", "bounties", "bounty_entries", "milestone_plans", "milestone_stages"];
+const BY_BLOCK = ["chain_events", "chain_splits", "chain_burns", "ledger", "desk_advances", "coins", "coin_splits", "coin_trades", "coin_transfers", "lines", "line_moves", "guarantee_bonds", "guarantee_covers", "guarantee_moves", "bounties", "bounty_entries", "milestone_plans", "milestone_stages", "verifier_cases", "verifier_seats", "verifier_money", "verifier_list"];
 
 export class EngineDb {
   readonly holder = randomBytes(6).toString("hex"); // this process, for the locks

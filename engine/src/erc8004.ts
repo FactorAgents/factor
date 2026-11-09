@@ -55,7 +55,7 @@ export const VALUE_DECIMALS = 0;
 /** The first tag of every entry Factor writes: what an app filters on to read Factor's entries alone. */
 export const TAG1 = "factor";
 /** The second tag: how the job came to the agent. */
-export const TAG2: Record<IncomeSource, string> = { jobs: "job", monthly: "monthly", subjobs: "subjob", firm: "firm", bounties: "bounty", milestones: "milestone" };
+export const TAG2: Record<IncomeSource, string> = { jobs: "job", monthly: "monthly", subjobs: "subjob", firm: "firm", bounties: "bounty", milestones: "milestone", verified: "verified" };
 
 export interface Erc8004Config {
   /** ERC8004=on: off unless it is said */

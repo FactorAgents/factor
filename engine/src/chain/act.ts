@@ -52,7 +52,7 @@ import type { ActionKind, ActionRow } from "./db.js";
 import { ponsEscrowAbi } from "./pons.js";
 
 export type SendKind = Exclude<ActionKind, "unstick">;
-export const KINDS: SendKind[] = ["relay", "sweep", "coin_sweep", "retry_split", "claim_token", "burn", "guarantee", "bounty", "milestone", "settle_job", "refund_job", "collect", "line", "return_compute", "skim", "erc8004", "erc8004_score"];
+export const KINDS: SendKind[] = ["relay", "sweep", "coin_sweep", "retry_split", "claim_token", "burn", "guarantee", "bounty", "milestone", "verifier", "settle_job", "refund_job", "collect", "line", "return_compute", "skim", "erc8004", "erc8004_score"];
 // In dry mode nothing changes on the chain, so a trigger stays true: what would be sent is shown again this often.
 export const DRY_REPEAT_S = 1800;
 const BPS = 10_000n;
@@ -863,6 +863,16 @@ async function lineStep(ctx: Ctx, head: Head): Promise<string> {
   return say(ctx, "line", await ctx.lines.step(ctx, head, (kind, ref, call, detail, feeCap) => attempt(ctx, kind, ref, call, detail, feeCap)));
 }
 
+// ---------- verifiers ----------
+
+// A case whose time has come is stepped: a first verdict carried out after its two hours, a panel settled, the customer's
+// choice settled after the desk's 24 hours, or a job refunded after its grace (../verifiers.ts decides; the attempt is the
+// same as every other one here).
+async function verifierStep(ctx: Ctx, head: Head): Promise<string> {
+  if (!ctx.verifiers) return say(ctx, "verifier", "verifiers are not switched on");
+  return say(ctx, "verifier", await ctx.verifiers.step(ctx, head, (kind, ref, call, detail, feeCap) => attempt(ctx, kind, ref, call, detail, feeCap)));
+}
+
 const STEPS: [SendKind, (ctx: Ctx, head: Head) => Promise<string>][] = [
   ["relay", relay],
   ["sweep", sweep],
@@ -873,6 +883,7 @@ const STEPS: [SendKind, (ctx: Ctx, head: Head) => Promise<string>][] = [
   ["guarantee", guaranteeStep],
   ["bounty", bountyStep],
   ["milestone", milestoneStep],
+  ["verifier", verifierStep],
   ["settle_job", settleJobs],
   ["refund_job", refundJobs],
   ["collect", collect],

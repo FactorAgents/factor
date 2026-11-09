@@ -9,6 +9,7 @@ import type { Lines } from "../lines.js";
 import type { Guarantees } from "../guarantees.js";
 import type { Bounties } from "../bounties.js";
 import type { Milestones } from "../milestones.js";
+import type { Verifiers } from "../verifiers.js";
 import type { Chain, Signer } from "./chain.js";
 import type { EngineMode, EngineParams } from "./config.js";
 import type { EngineDb } from "./db.js";
@@ -29,6 +30,8 @@ export interface Addresses {
   bounty?: string | null;
   // the milestone contract, when milestones are read (../milestones.ts)
   milestones?: string | null;
+  // the verifier contract, when verifiers are read (../verifiers.ts)
+  verifiers?: string | null;
 }
 
 // What the engine learns from the chain and keeps for the life of the process. The token is never cached as
@@ -69,6 +72,7 @@ export interface Ctx {
   guarantees?: Guarantees | null; // guarantees: read, covers tied, closed and let lapse (../guarantees.ts)
   bounties?: Bounties | null; // bounties: read, closed, bonds sent back (../bounties.ts)
   milestones?: Milestones | null; // milestones: read, stepped (../milestones.ts)
+  verifiers?: Verifiers | null; // verifiers: read, stepped (../verifiers.ts)
 }
 
 // The chain as the engine last read it. Amounts are wei in text; times are unix seconds unless they say ms.

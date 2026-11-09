@@ -35,6 +35,10 @@
 //
 // "milestones" (./milestones.ts) is its plans in stages: taken, done, missed, and the stages paid. Each stage is a desk job
 // and already in the record above. Outside the attestation too.
+//
+// "verified" (./verifiers.ts) is how its jobs hired with a verifier went: accepted, rejected, disputed, disputes won and
+// lost. Each is a desk job and already in the record above. "asVerifier" is its record as a verifier, when its own address
+// is one. Both outside the attestation.
 
 import { concat, formatEther, hashTypedData, keccak256, toHex, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
@@ -46,6 +50,7 @@ import type { VerifiedJson } from "./verified.js";
 import type { AgentGuaranteeJson } from "./guarantees.js";
 import type { AgentBountiesJson } from "./bounties.js";
 import type { AgentMilestonesJson } from "./milestones.js";
+import type { AgentVerifiedJson, VerifierJson } from "./verifiers.js";
 import { takeHouseSeed } from "./house/house.js";
 import type { EngineDb } from "./chain/db.js";
 
@@ -144,6 +149,10 @@ export interface RecordJson {
   bounties?: { entered: number; won: number; wonEth: number; splitEth: number };
   /** its plans in stages (./milestones.ts): taken, done, missed, and the stages paid, outside the attestation. Present while milestones are on and it has had one */
   milestones?: { plans: number; done: number; missed: number; stagesPaid: number; paidEth: number };
+  /** its jobs hired with a verifier (./verifiers.ts): how they went, outside the attestation. Present while verifiers are on and it has had one */
+  verified?: AgentVerifiedJson;
+  /** its record as a verifier itself, when its address is one (./verifiers.ts), outside the attestation */
+  asVerifier?: VerifierJson;
   page: string;
   badge: string;
   attestation: { signer: string; signature: Hex; digest: Hex; message: RecordMessage; issuedAt: string; expiresAt: string } | null;
@@ -167,6 +176,8 @@ export async function recordOf(o: {
   guarantee?: AgentGuaranteeJson | null;
   bounties?: AgentBountiesJson | null;
   milestones?: AgentMilestonesJson | null;
+  verified?: AgentVerifiedJson | null;
+  asVerifier?: VerifierJson | null;
 }): Promise<RecordJson> {
   const r: AgentRecord = o.row.record;
   const { byState, distinct } = jobCounts(o.db, o.row.address);
@@ -201,6 +212,8 @@ export async function recordOf(o: {
     ...(o.guarantee ? { guarantee: { upToEth: o.guarantee.selling ? o.guarantee.upToEth : 0, sharePct: o.guarantee.sharePct, bondEth: o.guarantee.bondEth, covers: o.guarantee.covers, delivered: o.guarantee.released, paidOut: o.guarantee.paid, paidOutEth: o.guarantee.paidOutEth, declined: o.guarantee.declined } } : {}),
     ...(o.bounties ? { bounties: { entered: o.bounties.entered, won: o.bounties.won, wonEth: o.bounties.wonEth, splitEth: o.bounties.splitEth } } : {}),
     ...(o.milestones ? { milestones: { plans: o.milestones.plans, done: o.milestones.done, missed: o.milestones.missed, stagesPaid: o.milestones.stagesPaid, paidEth: o.milestones.paidEth } } : {}),
+    ...(o.verified ? { verified: o.verified } : {}),
+    ...(o.asVerifier ? { asVerifier: o.asVerifier } : {}),
     page: `${o.site}/agents/${path}`, badge: `${o.site}/api/v1/badge/${o.row.address}`,
     attestation,
   };

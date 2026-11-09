@@ -60,7 +60,7 @@
 
 import type { EngineDb } from "./chain/db.js";
 
-export const SWITCHES = ["keeper", "accounts", "compute", "house", "hiring", "erc8004", "autoapply", "bids", "verified", "coins", "lines", "guarantees", "bounties", "raeto", "milestones", "everywhere", "connect", "scores", "ask", "copilot", "reviews", "hey"] as const;
+export const SWITCHES = ["keeper", "accounts", "compute", "house", "hiring", "erc8004", "autoapply", "bids", "verified", "coins", "lines", "guarantees", "bounties", "raeto", "milestones", "everywhere", "connect", "scores", "ask", "copilot", "reviews", "hey", "verifiers"] as const;
 export type Switch = (typeof SWITCHES)[number];
 const key = (name: Switch) => `switch:${name}`;
 

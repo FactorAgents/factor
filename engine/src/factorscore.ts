@@ -27,12 +27,12 @@ import { canDrawOf, limitOf, scoreOf, scoreParts } from "./score.js";
  * How a job came to the agent. Each settled job counts once: a bounty's prize, else a stage of a plan in stages, else a month of a plan, else firm work (a job hired through
  * a firm it leads, or a part of a firm's job it took as a member), else a sub-job, else a job of its own.
  */
-export type IncomeSource = "monthly" | "firm" | "subjobs" | "jobs" | "bounties" | "milestones";
+export type IncomeSource = "monthly" | "firm" | "subjobs" | "jobs" | "bounties" | "milestones" | "verified";
 export const INCOME_ORDER: IncomeSource[] = ["jobs", "monthly", "subjobs", "firm"];
 /** The same with bounty wins as a line of their own: while bounties are on (./bounties.ts). */
 export const INCOME_WITH_BOUNTIES: IncomeSource[] = [...INCOME_ORDER, "bounties"];
-/** The lines of income to show: the four that are always there, and bounties and milestones while each is on. */
-export const incomeLines = (o: { bounties: boolean; milestones: boolean }): IncomeSource[] => [...INCOME_ORDER, ...(o.bounties ? (["bounties"] as const) : []), ...(o.milestones ? (["milestones"] as const) : [])];
+/** The lines of income to show: the four that are always there, and bounties, milestones and verified jobs while each is on. */
+export const incomeLines = (o: { bounties: boolean; milestones: boolean; verified?: boolean }): IncomeSource[] => [...INCOME_ORDER, ...(o.bounties ? (["bounties"] as const) : []), ...(o.milestones ? (["milestones"] as const) : []), ...(o.verified ? (["verified"] as const) : [])];
 export const INCOME_NAME: Record<IncomeSource, { name: string; line: string }> = {
   jobs: { name: "Jobs", line: "hired by a customer: on the site, through a Pay with Factor link, or by program" },
   monthly: { name: "Monthly clients", line: "the months of monthly plans" },
@@ -40,12 +40,14 @@ export const INCOME_NAME: Record<IncomeSource, { name: string; line: string }> =
   firm: { name: "Firm work", line: "jobs hired through a firm it leads, and the parts of a firm's jobs it took as a member" },
   bounties: { name: "Bounties", line: "prizes it won and was paid through the desk, as a job from the bounty contract" },
   milestones: { name: "Milestones", line: "stages of jobs in stages, each paid through the desk as a job from the milestone contract" },
+  verified: { name: "Verified jobs", line: "jobs hired with a verifier, each paid through the desk as a job from the verifier contract once it was checked" },
 };
 
 /** How one job came to an agent: the first way that fits it, a bounty's prize, a month of a plan, firm work, a sub-job, or a job of its own. */
-export function sourceOfJob(o: { isMonth: (id: number) => boolean; firm: (id: number) => { part: boolean; team: string[] } | null; isSubjob: (id: number) => boolean; isBounty?: (id: number) => boolean; isStage?: (id: number) => boolean }, agent: string, id: number): IncomeSource {
+export function sourceOfJob(o: { isMonth: (id: number) => boolean; firm: (id: number) => { part: boolean; team: string[] } | null; isSubjob: (id: number) => boolean; isBounty?: (id: number) => boolean; isStage?: (id: number) => boolean; isVerified?: (id: number) => boolean }, agent: string, id: number): IncomeSource {
   if (o.isBounty?.(id)) return "bounties";
   if (o.isStage?.(id)) return "milestones";
+  if (o.isVerified?.(id)) return "verified";
   if (o.isMonth(id)) return "monthly";
   const f = o.firm(id);
   if (f && (!f.part || f.team.includes(agent))) return "firm";
