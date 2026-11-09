@@ -11,12 +11,14 @@ import { existsSync, readFileSync } from "node:fs";
 import { createServer } from "node:http";
 
 const PORT = Number(process.env.SMOKE_PORT) || 3611, BASE = `http://127.0.0.1:${PORT}`, BARE = `http://127.0.0.1:${PORT + 1}`;
-const PAGES = ["/bounties", "/bounties/1", "/bounties/2", "/bounties/3", "/bounties/4", "/", "/agents/orbit-ops", "/ledger", "/ledger?show=burned", "/agents", "/agents/lumen-07", "/jobs/0412", "/jobs/0406", "/jobs/0404", "/jobs/0403", "/hire", "/hire?agent=page-smith", "/hire?agent=lumen-07&cover=1", "/work", "/protocol", "/token", "/burn", "/docs", "/log", "/security", "/pay", "/firms/night-desk", "/hire?firm=night-desk", "/plans/0x5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a", "/open-jobs", "/open-jobs/0x0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b", "/coins", "/coins?sort=new", "/coins/page-smith", "/jobs/0416", "/jobs/0408", "/agents/page-smith", "/hire?stages=1", "/everywhere", "/hire?agent=lumen-07&price=0.01&title=Summarise+one+contract&due=48&early=1", "/ask", "/ask?q=A+landing+page+for+my+coin", "/hire?agent=page-smith&price=0.003&title=A+landing+page&due=38&via=ask", "/copilot", "/copilot?q=What+is+lumen-07%27s+score"];
+// the sample's verifiers (lib/verifiersSample.ts): factor-claude, one of Factor's own
+const CLAUDE = "0x5abe732d259d4a69189773efce14dea3dc976cbc";
+const PAGES = ["/bounties", "/bounties/1", "/bounties/2", "/bounties/3", "/bounties/4", "/", "/agents/orbit-ops", "/ledger", "/ledger?show=burned", "/agents", "/agents/lumen-07", "/jobs/0412", "/jobs/0406", "/jobs/0404", "/jobs/0403", "/hire", "/hire?agent=page-smith", "/hire?agent=lumen-07&cover=1", "/work", "/protocol", "/token", "/burn", "/docs", "/log", "/security", "/pay", "/firms/night-desk", "/hire?firm=night-desk", "/plans/0x5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a", "/open-jobs", "/open-jobs/0x0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b", "/coins", "/coins?sort=new", "/coins/page-smith", "/jobs/0416", "/jobs/0408", "/agents/page-smith", "/hire?stages=1", "/everywhere", "/hire?agent=lumen-07&price=0.01&title=Summarise+one+contract&due=48&early=1", "/ask", "/ask?q=A+landing+page+for+my+coin", "/hire?agent=page-smith&price=0.003&title=A+landing+page&due=38&via=ask", "/copilot", "/copilot?q=What+is+lumen-07%27s+score", "/verifiers", `/verifiers/${CLAUDE}`, "/jobs/0419", "/jobs/0421", "/jobs/0422", "/jobs/0424", "/hire?agent=price-desk&verifier=1"];
 // The header's five groups and the pages in each, in order. A group of one page is a plain link.
-const GROUPS = { Hire: ["/ask", "/copilot", "/hire", "/open-jobs", "/bounties"], Agents: ["/agents", "/coins", "/work"], Ledger: ["/ledger"], Protocol: ["/protocol", "/docs", "/everywhere", "/roadmap"], Token: ["/token", "/burn"] };
+const GROUPS = { Hire: ["/ask", "/copilot", "/hire", "/open-jobs", "/bounties"], Agents: ["/agents", "/coins", "/work", "/verifiers"], Ledger: ["/ledger"], Protocol: ["/protocol", "/docs", "/everywhere", "/roadmap"], Token: ["/token", "/burn"] };
 const NAV = Object.values(GROUPS).flat();
 // the group each page is in, which the header marks as the current one (none for a page of no group)
-const CURRENT = { "/ask": "Hire", "/copilot": "Hire", "/bounties": "Hire", "/bounties/1": "Hire", "/hire": "Hire", "/open-jobs": "Hire", "/agents": "Agents", "/agents/lumen-07": "Agents", "/jobs/0412": "Agents", "/coins/page-smith": "Agents", "/work": "Agents", "/ledger": "Ledger", "/protocol": "Protocol", "/docs": "Protocol", "/everywhere": "Protocol", "/token": "Token", "/burn": "Token", "/": null, "/log": null, "/security": null, "/pay": null };
+const CURRENT = { "/ask": "Hire", "/copilot": "Hire", "/bounties": "Hire", "/bounties/1": "Hire", "/hire": "Hire", "/open-jobs": "Hire", "/agents": "Agents", "/agents/lumen-07": "Agents", "/jobs/0412": "Agents", "/coins/page-smith": "Agents", "/work": "Agents", "/verifiers": "Agents", [`/verifiers/${CLAUDE}`]: "Agents", "/ledger": "Ledger", "/protocol": "Protocol", "/docs": "Protocol", "/everywhere": "Protocol", "/token": "Token", "/burn": "Token", "/": null, "/log": null, "/security": null, "/pay": null };
 // Words the copy does not use: no long dash, no promise of gain. A list kept beside this file and out of the repo
 // (forbidden.local.json, pairs of pattern and flags) adds to them on the machine it is on.
 const LOCAL = new URL("./forbidden.local.json", import.meta.url);
@@ -37,6 +39,8 @@ const fakeEngine = createServer((req, res) => {
 });
 const engineSays = (event, data) => { for (const r of engine.streams) r.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`); };
 const text = (html) => html.replace(/<script[\s\S]*?<\/script>/g, " ").replace(/<style[\s\S]*?<\/style>/g, " ").replace(/<[^>]+>/g, " ").replace(/&amp;/g, "&").replace(/&#x27;/g, "'").replace(/\s+/g, " ");
+// a page's words with React's joins taken out: "Anthropic , running" reads "Anthropic, running"
+const plain = (html) => text(html).replace(/<!-- -->/g, "").replace(/ ([,.;:%])/g, "$1");
 const get = async (path, base = BASE) => { const r = await fetch(base + path); return { status: r.status, html: await r.text(), headers: r.headers }; };
 // next itself, in a process group of its own, so that stopping it leaves nothing running
 const start = (port, env) => new Promise((resolve, reject) => {
@@ -968,7 +972,7 @@ test("Factor everywhere: its page under Protocol with a snippet for each case, t
   const init = await mcp({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "smoke", version: "1" } } });
   assert.equal(init.result.serverInfo.name, "factor");
   const tools = (await mcp({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} })).result.tools;
-  assert.deepEqual(tools.map((x) => x.name).sort(), ["factor_agent", "factor_agents", "factor_ask", "factor_builder_record", "factor_check_agent", "factor_copilot", "factor_erc8004", "factor_firm_record", "factor_guarantee", "factor_hire_link", "factor_line", "factor_open_jobs", "factor_overview", "factor_record", "factor_reviews"]);
+  assert.deepEqual(tools.map((x) => x.name).sort(), ["factor_agent", "factor_agents", "factor_ask", "factor_builder_record", "factor_check_agent", "factor_copilot", "factor_erc8004", "factor_firm_record", "factor_guarantee", "factor_hire_link", "factor_line", "factor_open_jobs", "factor_overview", "factor_record", "factor_reviews", "factor_verifier", "factor_verifier_case", "factor_verifier_cases", "factor_verifiers", "factor_verifiers_about"]);
   assert.ok(tools.every((x) => x.annotations.readOnlyHint === true));
   assert.equal((await fetch(`${BASE}/mcp`)).status, 405);
 
@@ -1175,4 +1179,173 @@ test("paid reviews: the average under each agent in the list, the section on an 
   // with no engine: nothing of reviews anywhere
   for (const path of ["/agents", "/jobs/0412", "/docs", "/copilot"]) assert.doesNotMatch(text((await get(path, BARE)).html), /paid review|customer's review|Only who paid|Review a job you paid for/i, path);
   assert.doesNotMatch(text((await get("/security", BARE)).html), /Only who paid can review/);
+});
+
+test("verifiers: the page under Agents with how a verified job goes, the numbers, the clock, the makers, Factor's own, every verifier and the open cases, and the form to join; nothing to send on the sample", async () => {
+  const page = await get("/verifiers");
+  const t = plain(page.html);
+  assert.match(t, /Work checked before it is paid ?\./);
+  assert.match(t, /How a verified job goes .*You hire with a verifier .*The agent delivers .*One verifier checks it .*Either side may dispute it .*The desk carries it out/);
+  // the numbers are the contract's rules, as the engine reads them
+  assert.match(t, /The verification fee .* 0\.0001 ETH to the price/);
+  assert.match(t, /A verifier's bond to join .* 0\.01 ETH or more/);
+  assert.match(t, /A wrong verdict loses 50 ?% of its stake A panel seat never revealed loses all of its stake/);
+  assert.match(t, /On a 0\.01 ETH job .*What a verifier stakes on its verdict 0\.002 ETH .*What a dispute costs 0\.001 ETH/);
+  // the clock, drawn: every window, on the desk's 24 hours
+  assert.match(t, /The first check one verifier, by 4 h A dispute within 2 h of the verdict Panel seats and strikes from the dispute until 14 h Reveals 14 h to 18 h/);
+  assert.match(page.html, /class="vclock"/);
+  // the makers as marks drawn in SVG, each with how many verifiers declare it
+  assert.match(t, /Anthropic Claude 1 verifier Google Gemini 1 verifier OpenAI GPT 1 verifier/);
+  assert.match(t, /MiniMax MiniMax none yet/);
+  assert.equal((page.html.match(/<svg class="mk/g) ?? []).length >= 15, true);
+  // Factor's own, marked as such, and every verifier with its record
+  assert.match(t, /Factor's own verifiers Ordinary verifiers, with bonds of their own ?\./);
+  assert.match(t, /factor-claude Anthropic · anthropic\/claude-sonnet-5\.5/);
+  assert.match(t, /The verifiers · 6/);
+  assert.match(t, /factor-claude Factor's own Anthropic · standing since/);
+  assert.match(t, /kimi-reads Moonshot · no standing: bond under the least/);
+  assert.match(page.html, new RegExp(`href="/verifiers/${CLAUDE}"`));
+  // the open cases, each to its job's page, and the ones ended lately
+  assert.match(t, /Open cases · 5/);
+  assert.match(t, /A plain reading of a supplier contract job 0424 .* Waiting for a check/);
+  assert.match(t, /Release notes for version 2\.4 .* Panel seating/);
+  assert.match(t, /A landing page for a bike repair shop .* Panel revealing/);
+  assert.match(t, /Chart the October sales sheet .* The customer decides/);
+  assert.match(t, /Ended lately/);
+  assert.match(page.html, /href="\/jobs\/0424#verifiers"/);
+  // the form to join: the makers, the bond, and nothing to send on the sample
+  assert.match(t, /Become a verifier/);
+  assert.match(t, /The maker of the model you run on/);
+  assert.match(t, /Your bond, in ETH/);
+  assert.match(t, /Not open yet/);
+  assert.doesNotMatch(page.html, />CONNECT</);
+  assert.match(t, /joinAsVerifier/);
+  // drawn, never a character, and no long dash
+  assert.doesNotMatch(page.html, /[\u{2605}\u{2606}\u{2B50}\u{2705}\u{2714}\u{2716}\u{274C}\u{2197}\u{FE0F}]|[\u{1F300}-\u{1FAFF}]/u);
+  assert.doesNotMatch(t, /—/);
+});
+
+test("verifiers: a verifier's own page, the job page's check, verdicts, dispute and panel in every state, hiring with a verifier, an agent's verified jobs, the Factor Score's verified income, the docs, the security page, the protocol and the log", async () => {
+  // a verifier's own page
+  const v = plain((await get(`/verifiers/${CLAUDE}`)).html);
+  assert.match(v, /factor-claude Factor's own/);
+  assert.match(v, /A verifier on Anthropic, running anthropic\/claude-sonnet-5\.5\. It has had its standing since/);
+  assert.match(v, /89 ?% right, of 9 calls judged/);
+  assert.match(v, /Free what it can stake, or take out 0\.0812 ETH/);
+  assert.match(v, /Its cases · 4/);
+  assert.match(v, /Summarise a 30-page supply agreement job 0419 .* Panel seat 1 Accept Accepted Paid 0\.00115 ETH/);
+  const kimi = plain((await get("/verifiers/0x71d3d3cca211b6d6daa735d19eb9c7a82f2231d3")).html);
+  assert.match(kimi, /It has no standing: its bond is under 0\.01 ETH/);
+  assert.match(kimi, /First check Reject Accepted Lost 0\.0010 ETH/);
+  assert.equal((await get(`/verifiers/0x${"12".repeat(20)}`)).status, 404);
+  // the job page: waiting for its first check
+  const w = plain((await get("/jobs/0424")).html);
+  assert.match(w, /Hired with a verifier\./);
+  assert.match(w, /The customer through the verifier contract/);
+  assert.match(w, /Checked by verifiers How verifiers work → Waiting for its first check ?\./);
+  assert.match(w, /Nobody has checked it yet\. One verifier will, by/);
+  // checked, open to the customer's dispute: the reasons with the tests it ran
+  const c = plain((await get("/jobs/0423")).html);
+  assert.match(c, /The first check says accept ?\. The customer may dispute it until .* for a bond of 0\.0005 ETH/);
+  assert.match(c, /Passed NVDA within 0\.1% of its Chainlink feed/);
+  assert.match(c, /Anthropic, anthropic\/claude-sonnet-5\.5/);
+  // disputed and seating: the seats, what ties one to a side, a strike, an open seat
+  const d = plain((await get("/jobs/0422")).html);
+  assert.match(d, /Disputed\. A panel decides ?\./);
+  assert.match(d, /Failed the brief lists eleven changes; nine are in the notes/);
+  assert.match(d, /Disputed by the agent, quill-02, .* with a bond of 0\.0015 ETH/);
+  assert.match(d, /Seat 1 factor-gemini Factor's own Sealed/);
+  assert.match(d, /What Factor sees tying it to a side the wallet that verified the agent's owner sent it ETH/);
+  assert.match(d, /Seat 3 Open until/);
+  assert.match(d, /Struck by the customer: 0xfa8c…3bc7/);
+  // revealing: a revealed vote with its reasons beside a sealed one
+  const r = plain((await get("/jobs/0421")).html);
+  assert.match(r, /Seat 1 factor-gemini Factor's own Reject/);
+  assert.match(r, /Failed the button to book leads nowhere/);
+  assert.match(r, /Seat 3 0xd39c…0a68 Sealed/);
+  assert.match(r, /Its vote is sealed until the reveals/);
+  // back with the customer, and ended by the panel and by the first check
+  assert.match(text((await get("/jobs/0420")).html), /Back in the customer's hands ?\. Nobody checked it in the first 4 hours/);
+  const p = plain((await get("/jobs/0419")).html);
+  assert.match(p, /Accepted, by the panel ?, 2 to 1 ?\./);
+  assert.match(p, /The dispute won: its bond went back to the agent/);
+  assert.match(p, /Paid to factor-claude added to its free bond 0\.00115 ETH Paid to second-look added to its free bond 0\.00115 ETH Lost by kimi-reads judged wrong, or never revealed 0\.0010 ETH/);
+  assert.match(p, /The panel · accept, 2 to accept and 1 to reject/);
+  const f = plain((await get("/jobs/0418")).html);
+  assert.match(f, /Rejected, by the first check ?\. The job settled at half: 0\.0040 ETH went back to the customer/);
+  // the sample has no verifier contract: nothing to dispute, strike or step from it
+  for (const t of [c, d, p]) assert.doesNotMatch(t, /Dispute it: |Strike |Take the step/);
+  assert.match(d, /The customer and the agent act on it here once the verifier contract is live/);
+  // an ordinary job has no such section
+  assert.doesNotMatch(text((await get("/jobs/0412")).html), /Checked by verifiers/);
+  // hiring with a verifier: the fourth way on the form, the fee, the stake and the dispute bond from the price
+  const once = text((await get("/hire")).html);
+  assert.match(once, /One job (Monthly )?In stages With a verifier/);
+  assert.match(once, /A job with a verifier is one job whose work is checked before it is paid/);
+  const h = plain((await get("/hire?agent=price-desk&verifier=1")).html);
+  assert.match(h, /The verification fee, in ETH/);
+  assert.match(h, /A verifier stakes on its verdict .* 0\.002 ETH A dispute costs .* 0\.001 ETH You send now the price and the fee 0\.0103 ETH/);
+  assert.match(h, /The verifier checks the work against these words/);
+  assert.match(h, /Not open yet/);
+  // an agent's verified jobs, its record as a verifier, and the Factor Score's income from them
+  const lumen = plain((await get("/agents/lumen-07")).html);
+  assert.match(lumen, /Verifiers How verifiers work → Work checked before it was paid ?\./);
+  assert.match(lumen, /Hired with a verifier 2 Accepted paid in full 2/);
+  assert.match(lumen, /Verified jobs hired with a verifier, who checked the work before it was paid 2 0 0\.0250 ETH 0\.0005 ETH/);
+  assert.match(lumen, /Hire with a verifier/);
+  const orbit = plain((await get("/agents/orbit-ops")).html);
+  assert.match(orbit, /It checks other agents' work ?\./);
+  assert.match(orbit, /A verifier on DeepSeek/);
+  assert.doesNotMatch(text((await get("/agents/tally-bot")).html), /Work checked before it was paid|It checks other agents/);
+  // the docs, the security page, the protocol and the log
+  const docs = plain((await get("/docs")).html);
+  assert.match(docs, /Verifiers The verifiers → Work checked before it is paid, by a verifier with a bond on it ?\./);
+  assert.match(docs, /hireWithVerifier/);
+  assert.match(docs, /api\/v1\/verifiers\/terms/);
+  assert.match(docs, /\{(&quot;|")title(&quot;|"):\.\.\.,(&quot;|")brief(&quot;|"):\.\.\.\}/);
+  assert.match(docs, /factor_hire_with_verifier/);
+  const sec = plain((await get("/security")).html);
+  assert.match(sec, /The verifier contract No owner, no admin, no switch ?\./);
+  assert.match(sec, /What can be stopped\. Only what Factor runs beside it/);
+  assert.match(sec, /The verifiers verification fees, verifiers' bonds and stakes/);
+  const protocol = plain((await get("/protocol")).html);
+  assert.match(protocol, /Verifiers The verifiers → A verdict with a bond on it, carried out by the desk ?\./);
+  assert.match(protocol, /0\.002 ETH on a 0\.01 ETH job/);
+  assert.match(text((await get("/log")).html), /Verifiers A customer can hire an agent with a verifier/);
+  // drawn marks, never a character
+  for (const path of ["/jobs/0423", "/jobs/0422", `/verifiers/${CLAUDE}`]) assert.doesNotMatch((await get(path)).html, /[\u{2605}\u{2606}\u{2B50}\u{2705}\u{2714}\u{2716}\u{274C}\u{2197}\u{FE0F}]|[\u{1F300}-\u{1FAFF}]/u, path);
+});
+
+test("verifiers: the door passes the reads and the two writes, and with no engine the page explains and opens once the contract is live", async () => {
+  const about = await (await fetch(`${BASE}/api/v1/verifiers/about`)).json();
+  assert.equal(about.enabled, true);
+  assert.equal(about.contract, null);
+  assert.equal(about.makers.length, 15);
+  assert.deepEqual([about.rules.minFeeEth, about.rules.minBondEth, about.rules.stakePct, about.rules.disputePct, about.rules.revealH], [0.0001, 0.01, 20, 10, 18]);
+  assert.equal((await (await fetch(`${BASE}/api/v1/verifiers`)).json()).items.length, 6);
+  assert.equal((await (await fetch(`${BASE}/api/v1/verifiers?maker=1`)).json()).items.length, 1);
+  assert.equal((await (await fetch(`${BASE}/api/v1/verifiers/cases?show=check`)).json()).items[0].id, 8);
+  assert.equal((await (await fetch(`${BASE}/api/v1/verifiers/cases?show=open`)).json()).items.length, 5);
+  assert.equal((await (await fetch(`${BASE}/api/v1/verifiers/case/3`)).json()).case.decided.votesAccept, 2);
+  assert.equal((await (await fetch(`${BASE}/api/v1/verifiers/job/422`)).json()).case.state, "disputed");
+  assert.equal((await fetch(`${BASE}/api/v1/verifiers/job/412`)).status, 404);
+  assert.equal((await (await fetch(`${BASE}/api/v1/verifiers/${CLAUDE}`)).json()).verifier.house, true);
+  for (const path of ["verifiers/admin", "verifiers/case/x", "verifiers/0x12"]) assert.equal((await fetch(`${BASE}/api/v1/${path}`)).status, 404, path);
+  const post = (path, body) => fetch(`${BASE}/api/v1/${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  // the words of a job and a verifier's reasons go through to the engine; the sample has none to take them
+  assert.equal((await post("verifiers/terms", { id: 1, terms: "{\"title\":\"abc\",\"brief\":\"x\"}" })).status, 503);
+  assert.equal((await post("verifiers/reason", { id: 1, verifier: CLAUDE, reason: "x" })).status, 503);
+  assert.equal((await post("verifiers/check", {})).status, 404);
+  // with no engine: the page explains and says when it opens, and nothing of it elsewhere
+  const bare = await get("/verifiers", BARE);
+  assert.equal(bare.status, 200);
+  const t = plain(bare.html);
+  assert.match(t, /Verifiers open once their contract is live/);
+  assert.match(t, /Staked on one verdict .* 20 ?%, at least 0\.001 ETH/);
+  assert.match(t, /Joining opens once the verifier contract is live/);
+  assert.doesNotMatch(t, /factor-claude|kimi-reads|Open cases · /);
+  assert.doesNotMatch(bare.html, />CONNECT</);
+  assert.doesNotMatch(text((await get("/hire", BARE)).html), /With a verifier/);
+  for (const path of ["/docs", "/security", "/protocol"]) assert.doesNotMatch(text((await get(path, BARE)).html), /The verifier contract|Work checked before it is paid, by a verifier/, path);
+  assert.equal((await get(`/verifiers/${CLAUDE}`, BARE)).status, 404);
 });

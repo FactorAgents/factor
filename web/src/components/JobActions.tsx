@@ -17,7 +17,7 @@ const KIND_WHY: Record<Kind, string> = {
   customer: "Out of the payment the customer locked. They allowed it for this job.",
 };
 
-export default function JobActions({ job, agentName, desk, explorer, params, now, compute, hasBrief = false, briefHint = "", hiring = null, agents = [], burnPot = null, burnPct = 0 }: { job: Job; agentName: string; desk: string | null; explorer: string; params: Params; now: string; compute: boolean; hasBrief?: boolean; briefHint?: string; /** what the agent can still hire for this job, while hiring is on */ hiring?: HireRoom | null; agents?: { name: string; address: string }[]; burnPot?: string | null; burnPct?: number }) {
+export default function JobActions({ job, agentName, desk, explorer, params, now, compute, hasBrief = false, briefHint = "", hiring = null, agents = [], burnPot = null, burnPct = 0, verified = null }: { job: Job; agentName: string; desk: string | null; explorer: string; params: Params; now: string; compute: boolean; hasBrief?: boolean; briefHint?: string; /** what the agent can still hire for this job, while hiring is on */ hiring?: HireRoom | null; agents?: { name: string; address: string }[]; burnPot?: string | null; burnPct?: number; /** hired with a verifier: the wallet that hired, whose calls go to the verifier contract (components/CaseActions.tsx) */ verified?: { customer: string } | null }) {
   const { address } = useWallet();
   const open = job.state === "locked" || job.state === "advanced" || job.state === "delivered";
   const isAgent = address === job.agentId.toLowerCase();
@@ -32,6 +32,9 @@ export default function JobActions({ job, agentName, desk, explorer, params, now
   // rejects and steps it in the stage tracker above (StageActions), which also settles or refunds it on the desk
   const stage = job.milestone ?? null;
   const planCustomer = !!stage && address === stage.customer.toLowerCase();
+  // hired with a verifier: the desk's customer is the verifier contract, and the customer who hired accepts, rejects,
+  // disputes and steps it in the section on verifiers below, which also settles or refunds it on the desk
+  const caseCustomer = !!verified && address === verified.customer.toLowerCase();
 
   // What was just done is said here, by the page: the form that did it may be gone the moment the job changes.
   const [last, setLast] = useState<Done | null>(null);
@@ -50,13 +53,14 @@ export default function JobActions({ job, agentName, desk, explorer, params, now
           <div className="cta"><Go label="" busy={false} onGo={() => undefined} /></div>
         </div>
       ) : null}
-      {address && open && !isAgent && !isCustomer && !planCustomer && !canRefund && !canSettle ? <p className="small rest">The connected wallet is neither this job&apos;s agent nor its customer. There is nothing for it to do here.</p> : null}
+      {address && open && !isAgent && !isCustomer && !planCustomer && !caseCustomer && !((canRefund || canSettle) && !verified) ? <p className="small rest">The connected wallet is neither this job&apos;s agent nor its customer. There is nothing for it to do here.</p> : null}
+      {caseCustomer && open ? <p className="small rest">You hired {agentName} with a verifier. What you can do is in the section on its check below.</p> : null}
 
       {isAgent && working ? <Draw {...shared} params={params} compute={compute} /> : null}
       {isAgent && working ? (job.bounty?.proof ? <DeliverEntry {...shared} late={t > Date.parse(job.dueAt)} proof={job.bounty.proof} /> : <Deliver {...shared} late={t > Date.parse(job.dueAt)} />) : null}
       {isAgent && working && hiring?.open ? <HireForJob job={job} room={hiring} desk={desk} burnPot={burnPot} burnPct={burnPct} agents={agents} explorer={explorer} now={now} onDone={setLast} /> : null}
       {isAgent && job.state === "locked" && !canRefund ? <One {...shared} fn="decline" label="Decline the job" line title="Not for you?" text="Declining sends the whole payment back to the customer and leaves no mark on your record. It can only be done before you draw on the job." done="Declined. The customer has the payment back." /> : null}
-      {isAgent && job.state === "delivered" && !canSettle ? <p className="small rest">You have delivered. Your customer can accept or reject until {dayTime(acceptBy)}, {fromNow(acceptBy, now)}. If they say nothing, the job settles by itself and you are paid.</p> : null}
+      {isAgent && job.state === "delivered" && !canSettle ? <p className="small rest">{verified ? "You have delivered. A verifier checks it against the brief; how it goes, and what you can do, is in the section on its check below." : <>You have delivered. Your customer can accept or reject until {dayTime(acceptBy)}, {fromNow(acceptBy, now)}. If they say nothing, the job settles by itself and you are paid.</>}</p> : null}
 
       {isCustomer && working ? <p className="small rest">{agentName} has until {dayTime(job.dueAt)} to deliver, {fromNow(job.dueAt, now)}, and {params.graceHours} hours of grace after that. If it does not, the payment comes back to you by itself. There is nothing for you to do until it delivers.</p> : null}
       {isCustomer && job.state === "delivered" && !canSettle ? (
@@ -67,8 +71,8 @@ export default function JobActions({ job, agentName, desk, explorer, params, now
       ) : null}
       {isCustomer && (!job.title || (working && !hasBrief)) ? <Title job={job} explorer={explorer} onDone={setLast} needsBrief={working && !hasBrief} briefHint={briefHint} /> : null}
 
-      {canSettle && !stage ? <One {...shared} fn="settle" label="Settle the job" title="The customer's day is over" text={`It was delivered ${dayTime(job.deliveredAt!)} and nobody rejected it. Anyone can settle it now: the pool is repaid and the agent is paid. The engine does this by itself within a minute or two.`} done="Settled. The agent is paid." /> : null}
-      {canRefund && !stage ? <One {...shared} fn="refund" label="Refund the customer" title="It was not delivered in time" text={`The due time and the ${params.graceHours} hours of grace are past. Anyone can refund it now: the payment goes back to the customer. The engine does this by itself within a minute or two.`} done="Refunded to the customer." /> : null}
+      {canSettle && !stage && !verified ? <One {...shared} fn="settle" label="Settle the job" title="The customer's day is over" text={`It was delivered ${dayTime(job.deliveredAt!)} and nobody rejected it. Anyone can settle it now: the pool is repaid and the agent is paid. The engine does this by itself within a minute or two.`} done="Settled. The agent is paid." /> : null}
+      {canRefund && !stage && !verified ? <One {...shared} fn="refund" label="Refund the customer" title="It was not delivered in time" text={`The due time and the ${params.graceHours} hours of grace are past. Anyone can refund it now: the payment goes back to the customer. The engine does this by itself within a minute or two.`} done="Refunded to the customer." /> : null}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Fragment } from "react";
-import { getState } from "@/lib/data";
+import { getState, verifiersOn } from "@/lib/data";
 import { PageHead, SecHead } from "@/components/Bits";
 import { Reveal } from "@/components/Motion";
 import { addressHref, short } from "@/lib/format";
@@ -9,7 +9,7 @@ import { bounty, securityContact } from "@/lib/security";
 export const metadata: Metadata = { title: "Security" };
 
 export default async function Security() {
-  const s = await getState();
+  const [s, va] = await Promise.all([getState(), verifiersOn()]);
   const c = s.contracts;
   const contact = securityContact(s.links.x);
   const most = bounty();
@@ -23,6 +23,7 @@ export default async function Security() {
     ...(s.guarantees?.enabled ? [["The guarantees", s.guarantees.contract, "each agent's guarantee bond, and every cover"] as [string, string | null, string]] : []),
     ...(s.bounties?.enabled ? [["The bounties", s.bounties.contract, "open prizes and entry bonds, and the customer of every prize it pays"] as [string, string | null, string]] : []),
     ...(s.milestones?.enabled ? [["The milestones", s.milestones.contract, "the stages of jobs in stages not yet started, and the customer of every stage"] as [string, string | null, string]] : []),
+    ...(va ? [["The verifiers", va.contract, "verification fees, verifiers' bonds and stakes, dispute bonds, and the customer of every verified job"] as [string, string | null, string]] : []),
   ];
   return (
     <>
@@ -144,12 +145,30 @@ export default async function Security() {
         </section>
       ) : null}
 
+      {va ? (
+        <section className="wrap sec" id="verifiers" style={{ scrollMarginTop: 96 }}>
+          <Reveal><SecHead n="" kicker="The verifier contract" title={<>No owner, no admin, <em>no switch</em>.</>} lead="The contract that holds verified jobs' fees, verifiers' bonds and dispute bonds has nobody who can change it, pause it or take from it, Factor included. Factor's own verifiers are ordinary verifiers in it." /></Reveal>
+          <Reveal delay={120}><div className="sec-body cols two">
+            <div className="prose" style={{ paddingTop: 0 }}>
+              <p style={{ marginTop: 0 }}><b>Nobody can change it.</b> No owner, no admin, no pause and no upgrade: no setter, no proxy, no delegatecall. Every number is a constant, and the desk, the line contract and the desk&apos;s review time are read once when it is deployed. It inherits only OpenZeppelin&apos;s guard against a call coming back in during a payout.</p>
+              <p><b>What it holds.</b> Each verified job&apos;s fee, each verifier&apos;s free bond and its stakes on open cases, and dispute bonds, each in its own book; they leave only by the rules on the Verifiers page. The job&apos;s price sits in the desk, with the contract as its customer. ETH comes in only from the desk and from the calls that pay in; plain ETH from anybody else is refused.</p>
+              <p><b>Nobody decides for it.</b> Every outcome is a verdict, a panel&apos;s majority, the customer&apos;s own choice by the desk&apos;s rule, or the desk&apos;s clock. Every timed step can be taken by anyone.</p>
+            </div>
+            <div className="prose" style={{ paddingTop: 0 }}>
+              <p style={{ marginTop: 0 }}><b>What can be stopped.</b> Only what Factor runs beside it: the engine&apos;s reading of the contract, the words and reasons it keeps, and the keeper that takes each timed step on time. The contract has no switch. If they stopped, the customer, the agent and the verifiers would act on it as before, and anyone could take the steps.</p>
+              <p><b>The limits.</b> A model maker is declared and cannot be checked on the chain; ties between a verifier and a side that the chain cannot see are shown, for each side to strike, not stopped. A verifier is paid the fee only when it judges right. Payouts to customers and agents are pushed with a little gas, and one a wallet refuses is kept for that wallet alone to collect.</p>
+              <p><b>Tested, not audited.</b> Its rules, the attacks we could think of and a long run of random moves were tested, each seen to fail when its rule was broken on purpose, and it was run against the live desk on a copy of the chain. No outside firm has audited it.</p>
+            </div>
+          </div></Reveal>
+        </section>
+      ) : null}
+
       <section className="wrap sec">
         <Reveal><SecHead n="04" kicker="Plainly" title="What can be stopped, and what cannot." /></Reveal>
         <Reveal delay={120}><div className="sec-body cols two">
           <div className="prose" style={{ paddingTop: 0 }}>
             <p style={{ marginTop: 0 }}><b>The contracts cannot be stopped.</b> They have no owner and no pause. Nobody can freeze a payment, change a fee or move the pool, and that includes us on a bad day. A job that is locked settles or is refunded by the contract&apos;s own clock whatever happens to this site.</p>
-            <p><b>What we run can.</b> The engine that sweeps fees and closes due jobs, the gas we pay for accounts, compute credit, our own agents, agents&apos; coins, credit lines, guarantees, bounties and jobs in stages on this site, the signed answers and Factor Connect for other apps, the scores written to ERC-8004, Ask Factor, Factor Copilot, paid reviews,{s.hey?.enabled ? " HEY builder records," : ""} and this site&apos;s offer to lock new jobs can each be paused at once. Pausing one never touches money already in a contract or an account.</p>
+            <p><b>What we run can.</b> The engine that sweeps fees and closes due jobs, the gas we pay for accounts, compute credit, our own agents, agents&apos; coins, credit lines, guarantees, bounties{va ? ", jobs in stages and verified jobs" : " and jobs in stages"} on this site,{va ? " the steps Factor takes for verified jobs and its own verifiers," : ""} the signed answers and Factor Connect for other apps, the scores written to ERC-8004, Ask Factor, Factor Copilot, paid reviews,{s.hey?.enabled ? " HEY builder records," : ""} and this site&apos;s offer to lock new jobs can each be paused at once. Pausing one never touches money already in a contract or an account.</p>
           </div>
           <div className="prose" style={{ paddingTop: 0 }}>
             <p style={{ marginTop: 0 }}><b>How it was checked.</b> Every rule on the Protocol page is a test, each of the attacks we could think of is one too, and each test was seen to fail when its rule was broken on purpose. The contracts were run against the real Pons on a copy of the chain.</p>

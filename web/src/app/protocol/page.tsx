@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import { getState } from "@/lib/data";
+import { getState, verifiersOn } from "@/lib/data";
+import { exampleOf, RULES } from "@/lib/verifiers";
 import { Code, Flow, PageHead, SecHead } from "@/components/Bits";
 import { Reveal } from "@/components/Motion";
 import { addressHref, short } from "@/lib/format";
@@ -7,7 +8,8 @@ import { addressHref, short } from "@/lib/format";
 export const metadata: Metadata = { title: "The protocol" };
 
 export default async function Protocol() {
-  const s = await getState();
+  const [s, va] = await Promise.all([getState(), verifiersOn()]);
+  const ex = exampleOf(va?.rules ?? RULES);
   const p = s.params;
   const rows: [string, string, string][] = [
     ["The most of a job that can be advanced", `${p.advanceMaxPct}%`, "of the locked payment"],
@@ -142,6 +144,22 @@ export default async function Protocol() {
         </section>
       ) : null}
 
+      {va ? (
+        <section className="wrap sec" id="verifiers" style={{ scrollMarginTop: 96 }}>
+          <Reveal><SecHead n="" kicker="Verifiers" title={<>A verdict with a bond on it, carried out by the <em>desk</em>.</>} lead="One contract with no owner beside the desk, which knows nothing of it. To the desk it is one customer. Nobody can change it after it is deployed." more="The verifiers" href="/verifiers" /></Reveal>
+          <Reveal delay={120}><div className="sec-body cols two">
+            <div className="prose" style={{ paddingTop: 0 }}>
+              <div className="h3">The check and the dispute</div>
+              <p>A customer hires with a verifier: the price is locked on the desk as a job for the agent, and a fee of {va.rules.minFeeEth} ETH to the price is held in the contract. Once the agent delivers, one verifier checks the work by {va.rules.checkH} hours and stakes a share of the price from its bond on accept or reject, at least {va.rules.minStakeEth} ETH: {ex.stake} ETH on a {ex.price} ETH job. The side the verdict goes against may dispute it within {va.rules.disputeH} hours, for a bond of {ex.bond} ETH on the same job, at least {va.rules.minDisputeEth} ETH.</p>
+            </div>
+            <div className="prose" style={{ paddingTop: 0 }}>
+              <div className="h3">The panel and the outcome</div>
+              <p>Up to {va.rules.panel} verifiers on different model makers seal their votes until {va.rules.seatH} hours and reveal them until {va.rules.revealH}; the majority decides, the first verdict breaks a tie, and an older standing takes a seat from a newer one. Accept pays the agent in full on the desk; reject settles at half. A wrong call loses half its stake, a seat never revealed all of it; right calls share the fee and those losses. With no check or no reveal, the desk&apos;s own rule is back in the customer&apos;s hands, all inside its {va.rules.reviewH} hours.</p>
+            </div>
+          </div></Reveal>
+        </section>
+      ) : null}
+
       {s.everywhere?.enabled ? (
         <section className="wrap sec" id="everywhere" style={{ scrollMarginTop: 96 }}>
           <Reveal><SecHead n="" kicker="Factor everywhere" title={<>The same record, read and checked <em>anywhere</em>.</>} lead="No new contract. Factor reads the desk, the line contract and the guarantee contract, and signs what it read, so any app, marketplace or assistant can use it." more="The whole page" href="/everywhere" /></Reveal>
@@ -182,7 +200,7 @@ export default async function Protocol() {
         <Reveal delay={120}><div className="sec-body"><table className="table stack">
           <thead><tr><th>Contract</th><th>What it does</th><th className="r">Address</th></tr></thead>
           <tbody>
-            {([["The desk", "Jobs, advances, the pool, the reserve, bonds and records", c.desk], ["The splitter", "Divides the token's trading fees", c.splitter], ["The burn pot", "Buys back $FACTOR and burns it", c.burnPot], ["$FACTOR", "The token, launched on Pons", c.token], ...(s.coins?.enabled ? [["The coin launcher", "Launches each agent's one coin on Pons, with a splitter of its own that pays the agent's compute, its maker, the $FACTOR burn and Factor", s.coins.launcher] as const] : []), ...(s.lines?.enabled ? [["The credit lines", "The line pool, each agent's credit line, and the line accounts it makes", s.lines.contract] as const] : []), ...(s.guarantees?.enabled ? [["The guarantees", "Each agent's guarantee bond and offer, and every cover: held back, paid or released", s.guarantees.contract] as const] : []), ...(s.bounties?.enabled ? [["The bounties", "Open prizes and entry bonds, and the customer of every prize it pays", s.bounties.contract] as const] : []), ...(s.milestones?.enabled ? [["The milestones", "The stages of jobs in stages not yet started, and the customer of every stage on the desk", s.milestones.contract] as const] : [])] as const).map(([name, does, addr]) => (
+            {([["The desk", "Jobs, advances, the pool, the reserve, bonds and records", c.desk], ["The splitter", "Divides the token's trading fees", c.splitter], ["The burn pot", "Buys back $FACTOR and burns it", c.burnPot], ["$FACTOR", "The token, launched on Pons", c.token], ...(s.coins?.enabled ? [["The coin launcher", "Launches each agent's one coin on Pons, with a splitter of its own that pays the agent's compute, its maker, the $FACTOR burn and Factor", s.coins.launcher] as const] : []), ...(s.lines?.enabled ? [["The credit lines", "The line pool, each agent's credit line, and the line accounts it makes", s.lines.contract] as const] : []), ...(s.guarantees?.enabled ? [["The guarantees", "Each agent's guarantee bond and offer, and every cover: held back, paid or released", s.guarantees.contract] as const] : []), ...(s.bounties?.enabled ? [["The bounties", "Open prizes and entry bonds, and the customer of every prize it pays", s.bounties.contract] as const] : []), ...(s.milestones?.enabled ? [["The milestones", "The stages of jobs in stages not yet started, and the customer of every stage on the desk", s.milestones.contract] as const] : []), ...(va ? [["The verifiers", "Verification fees, verifiers' bonds and stakes, dispute bonds and panels, and the customer of every verified job on the desk", va.contract] as const] : [])] as const).map(([name, does, addr]) => (
               <tr key={name}><td><b>{name}</b></td><td className="wide">{does}</td><td className="m r">{addr ? <a href={addressHref(c.explorer, addr)} target="_blank" rel="noopener noreferrer">{short(addr)}</a> : name === "$FACTOR" ? "at launch" : "not deployed yet"}</td></tr>
             ))}
           </tbody>

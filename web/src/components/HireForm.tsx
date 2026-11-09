@@ -9,10 +9,11 @@ import { firmHireMessage, signAndSend } from "@/lib/firms";
 import { lockMonth, MONTH_S, PLAN_TITLE_MOST, signPlan } from "@/lib/plans";
 import { feeFor, hireWithCover } from "@/lib/guarantees";
 import { STATE_TONE, STATE_WORD, eth } from "@/lib/format";
-import type { Agent, GuaranteesAbout, Job, MilestonesAbout, Page, Params } from "@/lib/types";
+import type { Agent, GuaranteesAbout, Job, MilestonesAbout, Page, Params, VerifiersAbout } from "@/lib/types";
 import { engineNow, Go, saveSigned, StatusLine, useSend, useWallet } from "./Wallet";
 import MatchBox, { type Suggestion } from "./MatchBox";
 import HireInStages from "./HireInStages";
+import HireWithVerifier from "./HireWithVerifier";
 import { readEvery } from "@/lib/livebus";
 import type { AskStage } from "@/lib/ask";
 
@@ -31,14 +32,16 @@ const TITLE = /^[^<>\n\r]{3,80}$/;
 
 const MONTHS = [2, 3, 6, 12, 24];
 
-export default function HireForm({ agents, firms = [], pickedFirm = "", picked, desk, explorer, params, paused = false, monthly = null, burnPot = null, pickedMonthly = false, guarantees = null, pickedCover = false, milestones = null, pickedStages = false, prefill = null }: { agents: Pick_[]; firms?: FirmPick[]; pickedFirm?: string; picked: string; desk: string | null; explorer: string; params: Params; paused?: boolean; /** monthly plans, while they are on: the longest plan */ monthly?: { mostMonths: number } | null; burnPot?: string | null; pickedMonthly?: boolean; /** guarantees, while they are on: a customer can hire an agent that sells cover with cover */ guarantees?: GuaranteesAbout | null; pickedCover?: boolean; /** milestones, while they are on: a job in stages, the whole budget locked up front */ milestones?: MilestonesAbout | null; pickedStages?: boolean; /** what a link filled in */ prefill?: Prefill | null }) {
+export default function HireForm({ agents, firms = [], pickedFirm = "", picked, desk, explorer, params, paused = false, monthly = null, burnPot = null, pickedMonthly = false, guarantees = null, pickedCover = false, milestones = null, pickedStages = false, verifiers = null, pickedVerifier = false, prefill = null }: { agents: Pick_[]; firms?: FirmPick[]; pickedFirm?: string; picked: string; desk: string | null; explorer: string; params: Params; paused?: boolean; /** monthly plans, while they are on: the longest plan */ monthly?: { mostMonths: number } | null; burnPot?: string | null; pickedMonthly?: boolean; /** guarantees, while they are on: a customer can hire an agent that sells cover with cover */ guarantees?: GuaranteesAbout | null; pickedCover?: boolean; /** milestones, while they are on: a job in stages, the whole budget locked up front */ milestones?: MilestonesAbout | null; pickedStages?: boolean; /** verifiers, while they are on: the work checked by a verifier before it is paid */ verifiers?: VerifiersAbout | null; pickedVerifier?: boolean; /** what a link filled in */ prefill?: Prefill | null }) {
   const ticket = prefill?.ticket ?? null;
   const { address, wallet, kind } = useWallet();
   const { status, run, busy } = useSend();
-  // one job, a monthly plan (every month an ordinary job, locked month by month), or a job in stages (the whole budget
-  // locked up front, each stage an ordinary job, locked when the one before it is accepted)
+  // one job, a monthly plan (every month an ordinary job, locked month by month), a job in stages (the whole budget
+  // locked up front, each stage an ordinary job, locked when the one before it is accepted), or one job with a verifier
+  // (checked against its brief before it is paid)
   const staged = !!milestones?.enabled;
-  const [mode, setMode] = useState<"once" | "monthly" | "stages">(ticket ? "once" : pickedStages && staged ? "stages" : pickedMonthly && monthly ? "monthly" : "once");
+  const checked = !!verifiers?.enabled;
+  const [mode, setMode] = useState<"once" | "monthly" | "stages" | "verifier">(ticket ? "once" : pickedVerifier && checked ? "verifier" : pickedStages && staged ? "stages" : pickedMonthly && monthly ? "monthly" : "once");
   const [months, setMonths] = useState(3);
   const plan = mode === "monthly" && !!monthly;
   // the choice is an agent's address, or "firm:<slug>": a firm is hired through its lead
@@ -172,13 +175,23 @@ export default function HireForm({ agents, firms = [], pickedFirm = "", picked, 
     window.setTimeout(() => document.getElementById("hire-brief")?.scrollIntoView({ behavior: "smooth", block: "center" }), 60);
   };
 
-  const modes = (monthly || staged) && !ticket ? (
-    <div className={`modes${monthly && staged ? " three" : ""}`} role="group" aria-label="One job, a monthly plan or a job in stages">
+  const count = 1 + (monthly ? 1 : 0) + (staged ? 1 : 0) + (checked ? 1 : 0);
+  const modes = count > 1 && !ticket ? (
+    <div className={`modes${count === 3 ? " three" : count === 4 ? " four" : ""}`} role="group" aria-label="One job, a monthly plan, a job in stages or one job with a verifier">
       <button type="button" aria-pressed={mode === "once"} onClick={() => setMode("once")} disabled={busy}>One job</button>
       {monthly ? <button type="button" aria-pressed={mode === "monthly"} onClick={() => setMode("monthly")} disabled={busy}>Monthly</button> : null}
       {staged ? <button type="button" aria-pressed={mode === "stages"} onClick={() => setMode("stages")} disabled={busy}>In stages</button> : null}
+      {checked ? <button type="button" aria-pressed={mode === "verifier"} onClick={() => setMode("verifier")} disabled={busy}>With a verifier</button> : null}
     </div>
   ) : null;
+  if (mode === "verifier" && verifiers) {
+    return (
+      <div className="form">
+        {modes}
+        <HireWithVerifier agents={agents} picked={firm ? firm.lead : agent} about={verifiers} explorer={explorer} params={params} paused={paused} prefill={prefill ? { title: prefill.title, brief: prefill.brief, price: prefill.price, dueS: prefill.dueS, early: prefill.early } : null} />
+      </div>
+    );
+  }
   if (mode === "stages" && milestones) {
     return (
       <div className="form">

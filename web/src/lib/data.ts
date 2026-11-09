@@ -9,8 +9,9 @@
 import "server-only";
 import { cache } from "react";
 import { connection } from "next/server";
-import { sampleAgent, sampleAutoApply, sampleBounties, sampleBounty, sampleMilestoneOfJob, sampleCoin, sampleCoins, sampleFirm, sampleJob, sampleJobs, sampleLedger, sampleOpenJob, sampleOpenJobs, samplePlan, sampleState } from "./sample";
-import type { Agent, AgentPage, AutoApplyStatus, BountyList, BountyPage, MilestonePlan, Coin, FactorState, FirmPage, HeyAgent, Job, JobPage, LedgerEvent, OpenJobList, OpenJobPage, Page, Params, PlanPage, VerifiedStatus } from "./types";
+import { sampleAgent, sampleAutoApply, sampleBounties, sampleBounty, sampleMilestoneOfJob, sampleCoin, sampleCoins, sampleFirm, sampleJobs, sampleLedger, sampleOpenJob, sampleOpenJobs, samplePlan, sampleState } from "./sample";
+import { sampleCaseOfJob, sampleJobPage, sampleVerifierCases, sampleVerifierList, sampleVerifierPage, sampleVerifiersAbout, withVerifiers } from "./verifiersSample";
+import type { Agent, AgentPage, AutoApplyStatus, BountyList, BountyPage, MilestonePlan, Coin, FactorState, FirmPage, HeyAgent, Job, JobPage, LedgerEvent, OpenJobList, OpenJobPage, Page, Params, PlanPage, VerifiedStatus, VerifierCase, VerifierList, VerifierPage, VerifiersAbout } from "./types";
 import type { PayInfo, PublishedLink } from "./pay";
 import type { CoinsAbout } from "./coins";
 import { liveGen } from "./live";
@@ -95,7 +96,7 @@ const AGENT_ID = /^[0-9a-zA-Z-]{3,42}$/;
 export const getAgent = cache(async (id: string): Promise<AgentPage | null | "down"> => {
   await connection();
   if (!AGENT_ID.test(id)) return null;
-  if (SAMPLE) return sampleAgent(id);
+  if (SAMPLE) return withVerifiers(sampleAgent(id));
   if (!ENGINE) return null;
   try {
     return await ask<AgentPage>(`/v1/agents/${id}`);
@@ -108,7 +109,7 @@ export const getAgent = cache(async (id: string): Promise<AgentPage | null | "do
 export const getJob = cache(async (id: string): Promise<JobPage | null | "down"> => {
   await connection();
   if (!/^\d{1,9}$/.test(id)) return null;
-  if (SAMPLE) return sampleJob(Number(id));
+  if (SAMPLE) return sampleJobPage(Number(id));
   if (!ENGINE) return null;
   try {
     return await ask<JobPage>(`/v1/jobs/${Number(id)}`);
@@ -176,6 +177,72 @@ export const getStagePlan = cache(async (job: number): Promise<MilestonePlan | n
   if (!ENGINE) return null;
   try {
     return await ask<MilestonePlan>(`/v1/milestones/job/${job}`);
+  } catch {
+    return null;
+  }
+});
+
+/** What verifiers are: on or not, the contract, the rules, the makers, the totals, Factor's own. null: no engine, or it said nothing. "down": it did not answer. */
+export const getVerifiersAbout = cache(async (): Promise<VerifiersAbout | null | "down"> => {
+  await connection();
+  if (SAMPLE) return sampleVerifiersAbout();
+  if (!ENGINE) return null;
+  try {
+    return await ask<VerifiersAbout>(`/v1/verifiers/about`);
+  } catch {
+    return "down";
+  }
+});
+/** The same, for a page that only shows something while verifiers are on: null unless they are. */
+export async function verifiersOn(): Promise<VerifiersAbout | null> {
+  const a = await getVerifiersAbout();
+  return a && a !== "down" && a.enabled ? a : null;
+}
+
+/** Every verifier, oldest standing first, with the about answer. "down": the engine did not answer. */
+export async function getVerifiers(): Promise<VerifierList | null | "down"> {
+  await connection();
+  if (SAMPLE) return sampleVerifierList();
+  if (!ENGINE) return null;
+  try {
+    return await ask<VerifierList>(`/v1/verifiers`);
+  } catch {
+    return "down";
+  }
+}
+
+/** One verifier by its address, with its newest cases. `verifier` null: that wallet never joined. "down": the engine did not answer. */
+export const getVerifier = cache(async (address: string): Promise<VerifierPage | null | "down"> => {
+  await connection();
+  if (!/^0x[0-9a-fA-F]{40}$/.test(address)) return null;
+  if (SAMPLE) return sampleVerifierPage(address.toLowerCase());
+  if (!ENGINE) return null;
+  try {
+    return await ask<VerifierPage>(`/v1/verifiers/${address.toLowerCase()}`);
+  } catch {
+    return "down";
+  }
+});
+
+/** Verified jobs by where they stand: check, seats, reveal, open (not ended) or all (the latest 50). "down": the engine did not answer. */
+export async function getVerifierCases(show: "check" | "seats" | "reveal" | "open" | "all"): Promise<{ items: VerifierCase[] } | null | "down"> {
+  await connection();
+  if (SAMPLE) return sampleVerifierCases(show);
+  if (!ENGINE) return null;
+  try {
+    return await ask<{ items: VerifierCase[] }>(`/v1/verifiers/cases?show=${show}`);
+  } catch {
+    return "down";
+  }
+}
+
+/** The verified job a desk job belongs to. null: it is not one, or verifiers are off. */
+export const getCaseOfJob = cache(async (job: number): Promise<VerifierCase | null> => {
+  await connection();
+  if (SAMPLE) return sampleCaseOfJob(job);
+  if (!ENGINE) return null;
+  try {
+    return (await ask<{ case: VerifierCase }>(`/v1/verifiers/job/${job}`))?.case ?? null;
   } catch {
     return null;
   }

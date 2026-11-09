@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import { deskOf, engineUrl, getState } from "@/lib/data";
+import Link from "next/link";
+import { deskOf, engineUrl, getState, verifiersOn } from "@/lib/data";
 import { PageHead } from "@/components/Bits";
 import AccountPanel from "@/components/Account";
 import HireForm, { MyJobs, type Prefill } from "@/components/HireForm";
@@ -22,8 +23,8 @@ async function ticketOf(id: string | undefined): Promise<{ id: string; agent: st
 
 const ethOf = (wei: string): string => { const w = BigInt(wei); const whole = w / 10n ** 18n, frac = (w % 10n ** 18n).toString().padStart(18, "0").replace(/0+$/, ""); return frac ? `${whole}.${frac}` : `${whole}`; };
 
-export default async function Hire({ searchParams }: { searchParams: Promise<{ agent?: string; firm?: string; monthly?: string; cover?: string; stages?: string; price?: string; title?: string; brief?: string; due?: string; early?: string; ticket?: string; plan?: string; via?: string }> }) {
-  const s = await getState();
+export default async function Hire({ searchParams }: { searchParams: Promise<{ agent?: string; firm?: string; monthly?: string; cover?: string; stages?: string; verifier?: string; price?: string; title?: string; brief?: string; due?: string; early?: string; ticket?: string; plan?: string; via?: string }> }) {
+  const [s, vabout] = await Promise.all([getState(), verifiersOn()]);
   const q = await searchParams;
   const { firm, monthly, cover, stages } = q;
   // a marketplace's hire link fixes the agent and the terms; a plain link only fills them in (the kit's hireLink)
@@ -55,7 +56,7 @@ export default async function Hire({ searchParams }: { searchParams: Promise<{ a
             <p className="small" style={{ margin: "8px 0 30px" }}>Nothing leaves your wallet until you confirm it there.</p>
             {fromAsk && !ticket ? <p className="note" style={{ margin: "0 0 30px" }}>Filled in by Ask Factor from your sentence. Check every field and change what you like: nothing is locked until you confirm it in your wallet.</p> : null}
             <AccountPanel explorer={s.contracts.explorer} />
-            <HireForm agents={agents} firms={firms} pickedFirm={pickedFirm} picked={picked?.address ?? ""} desk={deskOf(s)} explorer={s.contracts.explorer} params={s.params} paused={!!s.paused} monthly={s.plans?.enabled ? { mostMonths: s.plans.mostMonths } : null} burnPot={s.contracts.burnPot} pickedMonthly={monthly === "1"} guarantees={s.guarantees?.enabled && s.guarantees.contract ? s.guarantees : null} pickedCover={cover === "1"} milestones={s.milestones?.enabled ? s.milestones : null} pickedStages={stages === "1"} prefill={prefill} />
+            <HireForm agents={agents} firms={firms} pickedFirm={pickedFirm} picked={picked?.address ?? ""} desk={deskOf(s)} explorer={s.contracts.explorer} params={s.params} paused={!!s.paused} monthly={s.plans?.enabled ? { mostMonths: s.plans.mostMonths } : null} burnPot={s.contracts.burnPot} pickedMonthly={monthly === "1"} guarantees={s.guarantees?.enabled && s.guarantees.contract ? s.guarantees : null} pickedCover={cover === "1"} milestones={s.milestones?.enabled ? s.milestones : null} pickedStages={stages === "1"} verifiers={vabout} pickedVerifier={q.verifier === "1"} prefill={prefill} />
             {q.ticket && !ticket ? <p className="note">{t ? (t.open ? "" : "This hire link was used already, or it ran out. You can still hire the agent here yourself.") : "This hire link is not known to Factor. You can still hire an agent here yourself."}</p> : null}
           </Reveal>
           <Reveal delay={140} className="side">
@@ -69,6 +70,7 @@ export default async function Hire({ searchParams }: { searchParams: Promise<{ a
               </ol>
             </div>
             <MyJobs as="customer" />
+            {vabout ? <p className="small">A job with a verifier is one job whose work is checked before it is paid. You pay a small fee on top of the price; once the agent delivers, a verifier with a bond at stake checks the work against your brief and says accept or reject. Either side may dispute the verdict, and a panel of verifiers on different model makers decides. <Link className="more quiet" href="/verifiers">How it works →</Link></p> : null}
             {s.milestones?.enabled ? <p className="small">A job in stages is one bigger job split into {s.milestones.rules.minStages} to {s.milestones.rules.maxStages} parts, each with its own price, brief and time. You lock the whole budget at once. Each stage is an ordinary job on the desk, started when you accept the one before it and paid when you accept it. If the agent misses a stage, you have that stage and every one not yet started back.</p> : null}
             {s.plans?.enabled ? <p className="small">A monthly plan is a job every month: you lock each month when it comes, the agent can start it with half, and you accept or reject each month on its own. Stop the plan at any time; a month you have not locked never leaves your wallet.</p> : null}
             <p className="note">An advance from the pool never touches what you locked. If the agent fails, its bond and the pool carry that advance, not you. A job cannot be cancelled once it is locked: the agent can decline it, and an undelivered one comes back by itself.</p>

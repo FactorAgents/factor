@@ -4,7 +4,7 @@ import { Fragment } from "react";
 import { FileLine } from "@/components/Desk";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { deskOf, getAgent, getAutoApply, getCoinsAbout, getHey, getPayLinks, getState, getVerified } from "@/lib/data";
+import { deskOf, getAgent, getAutoApply, getCoinsAbout, getHey, getPayLinks, getState, getVerified, verifiersOn } from "@/lib/data";
 import { CoinMark, OwnRisk } from "@/components/Coins";
 import CoinLaunch from "@/components/CoinLaunch";
 import { VerifiedMark, VerifyPanel } from "@/components/Verified";
@@ -20,6 +20,7 @@ import CreditLineCard, { OpenLineCard } from "@/components/CreditLine";
 import GuaranteeCard, { GuaranteeMark, NoGuaranteeCard } from "@/components/Guarantee";
 import BountyCard from "@/components/BountyCard";
 import MilestonesCard from "@/components/MilestonesCard";
+import VerifiedJobsCard from "@/components/VerifiedJobsCard";
 import { AgentReviews } from "@/components/Reviews";
 import { ReviewLine } from "@/components/Stars";
 import { HeyBuilder, HeyMark } from "@/components/Hey";
@@ -38,11 +39,11 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
   const [s, got] = await Promise.all([getState(), getAgent((await params).id)]);
   if (got === "down") return <section className="wrap page-head"><Link className="more quiet back" href="/agents">← All agents</Link><h1 className="h1">This agent&apos;s page is not arriving right now.</h1><p className="lead">Its record is on the chain and is not lost. Try again in a moment.</p></section>;
   if (!got) notFound();
-  const { agent: a, jobs, hiring, firms, plans, factorScore, erc8004, coin, line, guarantee, bounties, milestones, raetoSpend, scoreOnChain, reviews } = got;
+  const { agent: a, jobs, hiring, firms, plans, factorScore, erc8004, coin, line, guarantee, bounties, milestones, raetoSpend, scoreOnChain, reviews, verified, asVerifier } = got;
   const hiredBy = hiring?.hiredBy ?? [], hires = hiring?.hires ?? [];
   const who = (x: { address: string; name: string; named: boolean }) => `/agents/${x.named ? x.name : x.address}`;
   const less = 50 * a.settledAtHalf;
-  const [links, auto, ver, coinsAbout, hey] = await Promise.all([getPayLinks(a.address), getAutoApply(a.address), getVerified(a.address), s.coins?.enabled ? getCoinsAbout() : Promise.resolve(null), s.hey?.enabled ? getHey(a.address) : Promise.resolve(null)]);
+  const [links, auto, ver, coinsAbout, hey, vOn] = await Promise.all([getPayLinks(a.address), getAutoApply(a.address), getVerified(a.address), s.coins?.enabled ? getCoinsAbout() : Promise.resolve(null), s.hey?.enabled ? getHey(a.address) : Promise.resolve(null), verifiersOn()]);
   // HEY builder records (components/Hey.tsx): the mark only when the linked project is one HEY marks a Verified Builder
   const heyShips = !!hey?.link && !!hey.record?.found && hey.record.facts.verified_builder === true;
   // the agent's coin, or the launch of it: only while coins are on, and never for an agent the pool has barred
@@ -67,6 +68,7 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
           <Link className={`btn ${links[0] ? "line" : "go"}`} href={`/hire?agent=${a.address}`}>Hire {a.name}</Link>
           {a.guarantee && s.guarantees?.enabled && s.guarantees.contract ? <Link className="btn line" href={`/hire?agent=${a.address}&cover=1`}>Hire with cover</Link> : null}
           {s.plans?.enabled ? <Link className="btn line" href={`/hire?agent=${a.address}&monthly=1`}>Monthly plan</Link> : null}
+          {vOn ? <Link className="btn line" href={`/hire?agent=${a.address}&verifier=1`}>Hire with a verifier</Link> : null}
         </div>
         {ver && s.verified?.enabled ? <VerifyPanel agent={a.address} name={a.name} owners={ver.owners} v={ver.verifiedOwner} checks={s.verified.checks} validDays={s.verified.validDays} explorer={s.contracts.explorer} /> : null}
       </section>
@@ -110,6 +112,7 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
 
       {bounties && s.bounties?.enabled ? <BountyCard b={bounties} who={a.name} address={a.address} /> : null}
       {milestones && s.milestones?.enabled ? <MilestonesCard m={milestones} who={a.name} /> : null}
+      <VerifiedJobsCard v={verified} asVerifier={asVerifier} who={a.name} hire={vOn ? `/hire?agent=${a.address}&verifier=1` : null} />
       {guarantee && s.guarantees?.enabled ? <GuaranteeCard g={guarantee} about={s.guarantees} name={a.name} address={a.address} explorer={s.contracts.explorer} hire={`/hire?agent=${a.address}&cover=1`} house={a.house} />
         : s.guarantees?.enabled && s.guarantees.contract && !a.house && !a.hosted && !a.barred ? <NoGuaranteeCard address={a.address} keyOf={a.line?.role === "account" ? a.line.key : null} name={a.name} about={s.guarantees} explorer={s.contracts.explorer} /> : null}
 

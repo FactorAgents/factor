@@ -513,6 +513,8 @@ export function sampleState(): FactorState {
 }
 
 const find = (id: string): Agent | undefined => agents.find((a) => a.address === id.toLowerCase() || (a.named && a.name === id.toLowerCase()));
+/** The sample's own makings, for the verifiers' sample (lib/verifiersSample.ts): the same addresses, times and agents. */
+export const sampleBits = { A, TX, at, later, addressOf, find };
 export function sampleAgent(id: string): AgentPage | null {
   const a = find(id);
   return a ? { ...(RAETO_ON && a.name === "orbit-ops" ? { raetoSpend: RAETO_SPEND } : {}), reviews: { ...(reviewSummary(a.address) ?? { average: null, count: 0, notCounted: 0 }), items: reviews.filter((r) => r.agent === a.address), repliers: [a.address] }, agent: withReviews(a), factorScore: { ...sampleScore(a, SETTLED_BY[a.name] ?? {}), ...(a.name === "orbit-ops" ? { line: { other: LINE_ACCOUNT, role: "key" as const, onTime: 1, late: 0, defaulted: false, points: 0, why: "Its credit line has always been repaid on time." } } : {}) }, jobs: jobs.filter((j) => j.agentId === a.address), events: events.filter((x) => x.agentId === a.address), ...(a.name === "quill-02" ? { plans: planSummary() } : {}), ...(a.name === "lumen-07" ? { erc8004: sampleErc8004(a.address) } : {}), ...((c) => (c ? { coin: c } : {}))(sampleCoin(a.address)), ...((l) => (l ? { line: l } : {}))(sampleLine(a.address)), ...((g) => (g ? { guarantee: g } : {}))(sampleGuarantee(a.address)), ...((x) => (x ? { milestones: x } : {}))(agentMilestones(a.address)) } : null;

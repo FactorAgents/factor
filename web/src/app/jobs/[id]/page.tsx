@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { deskOf, getJob, getStagePlan, getState } from "@/lib/data";
+import { deskOf, getCaseOfJob, getJob, getStagePlan, getState, verifiersOn } from "@/lib/data";
+import VerifiedCase from "@/components/VerifiedCase";
 import { JobBill, SecHead, Tag } from "@/components/Bits";
 import JobActions from "@/components/JobActions";
 import StageTracker from "@/components/StageTracker";
@@ -28,12 +29,16 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   const kinds = [...new Set(j.advances.map((x) => ADVANCE_WORD[x.kind]))];
   // a stage of a job in stages: the whole plan, read beside the job
   const plan = j.milestone && s.milestones?.enabled ? await getStagePlan(j.n) : null;
+  // hired with a verifier: its desk customer is the verifier contract, and the case is read beside the job
+  const vabout = await verifiersOn();
+  const vc = vabout && (!vabout.contract || j.customer.toLowerCase() === vabout.contract.toLowerCase()) ? await getCaseOfJob(j.n) : null;
   return (
     <>
       <section className="wrap page-head">
         <Link className="more quiet back" href="/ledger">← The ledger</Link>
         <h1 className="h1">{j.title || `Job ${j.id}`}</h1>
         {j.milestone ? <p className="small" style={{ marginTop: 12 }}>Stage {j.milestone.stage} of {j.milestone.count}{j.milestone.title ? ` of ${j.milestone.title}` : ""}, a job in stages. The whole budget was locked up front; this stage is paid when its customer accepts it, through the milestone contract.</p> : null}
+        {vc ? <p className="small" style={{ marginTop: 12 }}>Hired with a verifier. The price is locked on the desk as for any job; once it is delivered, a verifier checks the work against the brief before it is paid. <a className="more quiet" href="#verifiers">How its check went →</a></p> : null}
         {j.bounty ? <p className="small" style={{ marginTop: 12 }}>This job is the prize of <Link href={`/bounties/${j.bounty.id}`}>bounty {j.bounty.id}{j.bounty.title ? `: ${j.bounty.title}` : ""}</Link>. The bounty contract is its customer, and it never rejects.</p> : null}
         <p className="small mono" style={{ marginTop: 12, color: "var(--dim)" }}>job {j.id} · locked {dayTime(j.lockedAt)} · due {dayTime(j.dueAt)}{j.deal ? <span className="house" title={j.deal.via === "x402" ? "Paid by another agent's program through a Pay with Factor link, over x402" : "Paid through one of the agent's Pay with Factor links"}>Pay with Factor{j.deal.via === "x402" ? " · x402" : ""}</span> : null}{j.parent ? <span className="house" title="Its customer is the agent of the job above it, which hired this agent for part of that job">Part of job {j.parent.id}</span> : null}{j.plan ? <Link className="house" href={`/plans/${j.plan.id}`} title="One month of a monthly plan: its own job on the desk, accepted or rejected on its own">Month {j.plan.month} of {j.plan.months}</Link> : null}{j.open ? <Link className="house" href={`/open-jobs/${j.open.id}`} title={j.open.offers ? "Posted open to offers: the customer picked this agent's offer and locked its own price" : j.open.by === "factor" ? "Posted as an open job: Factor picked this agent by the best Factor Score, and the customer locked the price for it" : "Posted as an open job: the customer picked this agent from the applicants and locked the price for it"}>{j.open.offers ? "Picked from offers" : "From an open job"}</Link> : null}{j.firm ? <Link className="house" href={`/firms/${j.firm.slug}`} title={j.firm.part ? "Part of a job a customer hired this firm for" : "The customer hired this firm: the job is locked for its lead"}>{j.firm.part ? `${j.firm.name}'s work` : `Hired: ${j.firm.name}`}</Link> : null}{cover && cover.state !== "lapsed" ? <a className="house" href="#cover" title="Hired with cover: paid from the agent's guarantee bond if it is not delivered">Covered {cover.coverEth} ETH</a> : null}</p>
       </section>
@@ -46,7 +51,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
               <dl className="kv" style={{ marginTop: 18 }}>
                 {j.firm && !j.firm.part ? <><dt>The firm<small>its lead takes the job and splits it</small></dt><dd><Link href={`/firms/${j.firm.slug}`}>{j.firm.name}</Link></dd></> : null}
                 <dt>{j.firm && !j.firm.part ? "Its lead" : "The agent"}</dt><dd>{a ? <Link href={agentHref(a)}>{a.name}</Link> : short(j.agentId)}</dd>
-                {j.milestone ? <><dt>The customer<small>through the milestone contract</small></dt><dd><a href={addressHref(ex, j.milestone.customer)} target="_blank" rel="noopener noreferrer">{short(j.milestone.customer)}</a></dd></> : <><dt>The customer{j.parent ? <small>the agent of job {j.parent.id}, hiring for part of it</small> : null}</dt><dd>{j.parent && names(j.customer).href ? <Link href={names(j.customer).href!}>{names(j.customer).name}</Link> : <a href={addressHref(ex, j.customer)} target="_blank" rel="noopener noreferrer">{short(j.customer)}</a>}</dd></>}
+                {vc ? <><dt>The customer<small>through the verifier contract</small></dt><dd><a href={addressHref(ex, vc.customer)} target="_blank" rel="noopener noreferrer">{short(vc.customer)}</a></dd></> : j.milestone ? <><dt>The customer<small>through the milestone contract</small></dt><dd><a href={addressHref(ex, j.milestone.customer)} target="_blank" rel="noopener noreferrer">{short(j.milestone.customer)}</a></dd></> : <><dt>The customer{j.parent ? <small>the agent of job {j.parent.id}, hiring for part of it</small> : null}</dt><dd>{j.parent && names(j.customer).href ? <Link href={names(j.customer).href!}>{names(j.customer).name}</Link> : <a href={addressHref(ex, j.customer)} target="_blank" rel="noopener noreferrer">{short(j.customer)}</a>}</dd></>}
                 <dt>The advance</dt><dd>{kinds.length ? kinds.join(", ") : j.allowEarly ? "none yet, early allowed" : "none"}</dd>
                 {j.plan ? <><dt>A monthly plan<small>month {j.plan.month} of {j.plan.months}, accepted or rejected on its own</small></dt><dd><Link href={`/plans/${j.plan.id}`}>The plan</Link></dd></> : null}
                 {j.open ? <><dt>From an open job<small>{j.open.offers ? `${j.open.applicants} offer${j.open.applicants === 1 ? "" : "s"}; the customer picked this one and locked its price` : <>{j.open.applicants} agent{j.open.applicants === 1 ? "" : "s"} applied; {j.open.by === "factor" ? "Factor picked the best Factor Score" : "the customer picked this one"}</>}</small></dt><dd><Link href={`/open-jobs/${j.open.id}`}>The listing</Link></dd></> : null}
@@ -65,10 +70,11 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             {plan && s.milestones ? <StageTracker plan={plan} job={j.n} about={s.milestones} explorer={ex} now={s.asOf} /> : null}
             {raetoSpend ? <ComputeSpent spend={raetoSpend} from="this job's compute credit" /> : null}
             {cover && s.guarantees?.enabled ? <div id="cover" style={{ scrollMarginTop: 96 }}><CoverBlock cover={cover} job={j.n} about={s.guarantees} explorer={ex} now={s.asOf} /></div> : null}
-            <JobActions job={j} agentName={a?.name ?? short(j.agentId)} desk={deskOf(s)} explorer={ex} params={s.params} now={s.asOf} compute={s.compute.enabled} hasBrief={!!brief} briefHint={a?.service?.needs ?? ""} hiring={hiring ?? null} agents={s.agents.filter((x) => x.named).map((x) => ({ name: x.name, address: x.address }))} burnPot={s.contracts.burnPot} burnPct={burnPct} />
+            <JobActions job={j} agentName={a?.name ?? short(j.agentId)} desk={deskOf(s)} explorer={ex} params={s.params} now={s.asOf} compute={s.compute.enabled} hasBrief={!!brief} briefHint={a?.service?.needs ?? ""} hiring={hiring ?? null} agents={s.agents.filter((x) => x.named).map((x) => ({ name: x.name, address: x.address }))} burnPot={s.contracts.burnPot} burnPct={burnPct} verified={vc ? { customer: vc.customer } : null} />
           </Reveal>
         </div>
       </section>
+      {vc && vabout ? <VerifiedCase c={vc} rules={vabout.rules} contract={vabout.contract} explorer={ex} now={s.asOf} /> : null}
       {reviewable ? (
         <section className="wrap" id="review" style={{ paddingTop: 72, scrollMarginTop: 96 }}>
           <Reveal><div className="grid2 job-review">
@@ -96,7 +102,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             {brief ? (
               <Reveal>
                 <span className="label">The brief</span>
-                <p className="small" style={{ marginTop: 8 }}>{briefBy === "agent" ? "What the agent offered in its Pay with Factor link, signed by the agent. The customer paid the link." : j.milestone ? "What the customer asked for in this stage, from the plan's words, which hash to what the plan holds on the chain." : "What the customer asked for, signed by the wallet that locked the job."}</p>
+                <p className="small" style={{ marginTop: 8 }}>{briefBy === "agent" ? "What the agent offered in its Pay with Factor link, signed by the agent. The customer paid the link." : vc ? "What the customer asked for, in the job's words, which hash to what the verifier contract holds on the chain. It is what the verifier checks the work against." : j.milestone ? "What the customer asked for in this stage, from the plan's words, which hash to what the plan holds on the chain." : "What the customer asked for, signed by the wallet that locked the job."}</p>
                 <div className="worktext">{brief}</div>
               </Reveal>
             ) : null}

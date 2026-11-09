@@ -6,12 +6,13 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { callerOf } from "@/lib/caller";
 import { engineUrl, sampleMode } from "@/lib/data";
-import { sampleAgent, sampleReviews, sampleAutoApply, sampleBounties, sampleBounty, sampleMilestoneOfJob, sampleCoin, sampleCoins, sampleGuarantee, sampleGuarantees, sampleLine, sampleLines, sampleFirm, sampleJob, sampleJobs, sampleLedger, sampleOpenJob, sampleOpenJobs, samplePlan, sampleState } from "@/lib/sample";
+import { sampleCase, sampleCaseOfJob, sampleJobPage, sampleVerifierCases, sampleVerifierList, sampleVerifierPage, sampleVerifiersAbout, withVerifiers } from "@/lib/verifiersSample";
+import { sampleAgent, sampleReviews, sampleAutoApply, sampleBounties, sampleBounty, sampleMilestoneOfJob, sampleCoin, sampleCoins, sampleGuarantee, sampleGuarantees, sampleLine, sampleLines, sampleFirm, sampleJobs, sampleLedger, sampleOpenJob, sampleOpenJobs, samplePlan, sampleState } from "@/lib/sample";
 import { answerBody, answerHeaders, sharedRead } from "@/lib/shared";
 import { sampleAsk } from "@/lib/askSample";
 import { sampleCopilot } from "@/lib/copilotSample";
 
-const READS = /^(state|ask|copilot|copilot\/c\/[0-9a-f]{32}|pulse|desk|agents|agents\/made\/0x[0-9a-fA-F]{40}|agents\/[0-9a-zA-Z-]{3,42}|jobs|jobs\/\d{1,9}|jobs\/\d{1,9}\/tree|ledger|burns|accounts\/0x[0-9a-fA-F]{40}|accounts\/relay\/0x[0-9a-f]{64}|accounts\/by-credential\/0x[0-9a-f]{2,2046}|pay\/link\/[A-Za-z0-9_-]{20,6000}\.[A-Za-z0-9_-]{80,3000}|pay\/links\/0x[0-9a-fA-F]{40}|firms|firms\/[a-z0-9-]{3,32}|plans|plans\/0x[0-9a-f]{64}|erc8004|erc8004\/[0-9a-zA-Z-]{3,42}|openjobs|openjobs\/0x[0-9a-f]{64}|autoapply\/[0-9a-zA-Z-]{3,42}|verified|verified\/[0-9a-zA-Z-]{3,42}|coins|coins\/about|coins\/[0-9a-zA-Z-]{3,42}|lines|lines\/about|lines\/[0-9a-zA-Z-]{3,42}|guarantees|guarantees\/about|guarantees\/agent\/[0-9a-zA-Z-]{3,42}|guarantees\/(job|cover)\/\d{1,9}|guarantees\/customer\/0x[0-9a-fA-F]{40}|bounties|bounties\/about|bounties\/\d{1,9}|bounties\/\d{1,9}\/entries\/0x[0-9a-fA-F]{40}|bounties\/\d{1,9}\/mine\/0x[0-9a-fA-F]{40}|bounties\/agent\/[0-9a-zA-Z-]{3,42}|bounties\/poster\/0x[0-9a-fA-F]{40}|milestones|milestones\/about|milestones\/\d{1,9}|milestones\/job\/\d{1,9}|milestones\/agent\/[0-9a-zA-Z-]{3,42}|milestones\/customer\/0x[0-9a-fA-F]{40}|reviews|reviews\/agent\/[0-9a-zA-Z-]{3,42}|reviews\/job\/\d{1,9}|reviews\/job\/\d{1,9}\/erc8004|reviews\/file\/\d{1,9}\/\d{1,2}|hey|hey\/record|hey\/agent\/[0-9a-zA-Z-]{3,42})$/;
+const READS = /^(state|ask|copilot|copilot\/c\/[0-9a-f]{32}|pulse|desk|agents|agents\/made\/0x[0-9a-fA-F]{40}|agents\/[0-9a-zA-Z-]{3,42}|jobs|jobs\/\d{1,9}|jobs\/\d{1,9}\/tree|ledger|burns|accounts\/0x[0-9a-fA-F]{40}|accounts\/relay\/0x[0-9a-f]{64}|accounts\/by-credential\/0x[0-9a-f]{2,2046}|pay\/link\/[A-Za-z0-9_-]{20,6000}\.[A-Za-z0-9_-]{80,3000}|pay\/links\/0x[0-9a-fA-F]{40}|firms|firms\/[a-z0-9-]{3,32}|plans|plans\/0x[0-9a-f]{64}|erc8004|erc8004\/[0-9a-zA-Z-]{3,42}|openjobs|openjobs\/0x[0-9a-f]{64}|autoapply\/[0-9a-zA-Z-]{3,42}|verified|verified\/[0-9a-zA-Z-]{3,42}|coins|coins\/about|coins\/[0-9a-zA-Z-]{3,42}|lines|lines\/about|lines\/[0-9a-zA-Z-]{3,42}|guarantees|guarantees\/about|guarantees\/agent\/[0-9a-zA-Z-]{3,42}|guarantees\/(job|cover)\/\d{1,9}|guarantees\/customer\/0x[0-9a-fA-F]{40}|bounties|bounties\/about|bounties\/\d{1,9}|bounties\/\d{1,9}\/entries\/0x[0-9a-fA-F]{40}|bounties\/\d{1,9}\/mine\/0x[0-9a-fA-F]{40}|bounties\/agent\/[0-9a-zA-Z-]{3,42}|bounties\/poster\/0x[0-9a-fA-F]{40}|milestones|milestones\/about|milestones\/\d{1,9}|milestones\/job\/\d{1,9}|milestones\/agent\/[0-9a-zA-Z-]{3,42}|milestones\/customer\/0x[0-9a-fA-F]{40}|reviews|reviews\/agent\/[0-9a-zA-Z-]{3,42}|reviews\/job\/\d{1,9}|reviews\/job\/\d{1,9}\/erc8004|reviews\/file\/\d{1,9}\/\d{1,2}|hey|hey\/record|hey\/agent\/[0-9a-zA-Z-]{3,42}|verifiers|verifiers\/about|verifiers\/cases|verifiers\/case\/\d{1,9}|verifiers\/job\/\d{1,9}|verifiers\/0x[0-9a-fA-F]{40})$/;
 // two things a wallet signs, what an account without a wallet asks of the engine (lib/passkey.ts), a job paid
 // through a Pay with Factor link (lib/pay.ts), an agent hiring another for part of its job (lib/subjobs.ts), and a
 // firm formed, joined, left or hired (lib/firms.ts), and a monthly plan signed, a month of it linked, or a plan stopped
@@ -22,9 +23,10 @@ const READS = /^(state|ask|copilot|copilot\/c\/[0-9a-f]{32}|pulse|desk|agents|ag
 // (lib/bounties.ts), and the words of a job in stages (lib/milestones.ts), and a sentence for Ask Factor (lib/ask.ts),
 // and a message for Factor Copilot (lib/copilot.ts), which prepares and never signs, and a paid review, its agent's
 // reply, and the customer's own ERC-8004 entry of it read back (lib/reviews.ts), and an agent's owner linking it to its
-// maker's project on HEY (lib/hey.ts)
-const WRITES = /^(match|ask|copilot|reviews|reviews\/reply|reviews\/erc8004|agents\/profile|agents\/make|agents\/pause|jobs\/title|jobs\/brief|jobs\/delivery|accounts|accounts\/check|accounts\/call|accounts\/relay|pay\/deal|pay\/links|subjobs\/plan|subjobs\/link|firms\/form|firms\/join|firms\/leave|firms\/hire|plans\/create|plans\/month|plans\/stop|erc8004\/link|openjobs\/post|openjobs\/apply|openjobs\/hire|openjobs\/close|openjobs\/withdraw|autoapply\/rules|verified\/check|coins\/permission|bounties\/task|bounties\/entry|bounties\/read|milestones\/terms|hey\/link)$/;
-const QUERY = ["limit", "before", "show", "agent", "customer", "firm", "verified", "sort", "poster", "q"];
+// maker's project on HEY (lib/hey.ts), and the words of a job hired with a verifier and a verifier's reasons, each taken
+// only when it hashes to what the verifier contract holds (lib/verifiers.ts)
+const WRITES = /^(match|ask|copilot|reviews|reviews\/reply|reviews\/erc8004|agents\/profile|agents\/make|agents\/pause|jobs\/title|jobs\/brief|jobs\/delivery|accounts|accounts\/check|accounts\/call|accounts\/relay|pay\/deal|pay\/links|subjobs\/plan|subjobs\/link|firms\/form|firms\/join|firms\/leave|firms\/hire|plans\/create|plans\/month|plans\/stop|erc8004\/link|openjobs\/post|openjobs\/apply|openjobs\/hire|openjobs\/close|openjobs\/withdraw|autoapply\/rules|verified\/check|coins\/permission|bounties\/task|bounties\/entry|bounties\/read|milestones\/terms|hey\/link|verifiers\/terms|verifiers\/reason)$/;
+const QUERY = ["limit", "before", "show", "agent", "customer", "firm", "verified", "sort", "poster", "q", "maker", "verifier"];
 const BODY_MOST = 4096;
 // an order of an account carries its calls and a passkey's answer
 const ORDER_MOST = 32_768;
@@ -43,8 +45,14 @@ function fromSample(path: string, q: URLSearchParams): unknown {
   if (path === "jobs") return sampleJobs({ agent: q.get("agent") ?? undefined, customer: q.get("customer") ?? undefined });
   if (path === "ledger") return sampleLedger(Number(q.get("limit")) || 50, Number(q.get("before")) || undefined);
   if (path === "burns") return { total: sampleState().burns.length, more: false, items: sampleState().burns };
-  if (path.startsWith("agents/")) return sampleAgent(path.slice(7));
-  if (path.startsWith("jobs/")) return sampleJob(Number(path.slice(5)));
+  if (path.startsWith("agents/")) return withVerifiers(sampleAgent(path.slice(7)));
+  if (path.startsWith("jobs/")) return sampleJobPage(Number(path.slice(5)));
+  if (path === "verifiers/about") return sampleVerifiersAbout();
+  if (path === "verifiers") return sampleVerifierList(Number(q.get("maker")) || undefined);
+  if (path === "verifiers/cases") return sampleVerifierCases((["check", "seats", "reveal", "open", "all"] as const).find((x) => x === q.get("show")) ?? "check");
+  if (/^verifiers\/case\/\d+$/.test(path)) return ((c) => (c ? { case: c } : null))(sampleCase(Number(path.slice(15))));
+  if (/^verifiers\/job\/\d+$/.test(path)) return ((c) => (c ? { case: c } : null))(sampleCaseOfJob(Number(path.slice(14))));
+  if (path.startsWith("verifiers/0x")) return sampleVerifierPage(path.slice(10).toLowerCase());
   if (path === "firms") return { enabled: true, items: sampleState().firms?.items ?? [] };
   if (path.startsWith("firms/")) return sampleFirm(path.slice(6));
   if (path === "plans") return { enabled: false, items: [] };
@@ -124,7 +132,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ path: stri
   if (!engine) return json({ error: "nothing is live yet" }, 503);
   const text = await req.text();
   // a brief is up to 12,000 characters and a piece of work up to 200,000
-  const most = path === "bounties/entry" ? 2 * 200_000 + 1024 : path === "bounties/task" ? 2 * 8000 + 1024 : path === "milestones/terms" ? 2 * 40_000 + 1024 : path.startsWith("accounts") || path.startsWith("pay/") ? ORDER_MOST : path === "jobs/brief" || path === "agents/make" || path === "match" || path === "subjobs/plan" || path === "firms/hire" || path === "plans/create" || path === "openjobs/post" ? 64_000 : path === "jobs/delivery" ? 900_000 : BODY_MOST;
+  const most = path === "bounties/entry" ? 2 * 200_000 + 1024 : path === "bounties/task" ? 2 * 8000 + 1024 : path === "milestones/terms" ? 2 * 40_000 + 1024 : path === "verifiers/terms" ? 4 * 12_200 + 1024 : path === "verifiers/reason" ? 4 * 4000 + 1024 : path.startsWith("accounts") || path.startsWith("pay/") ? ORDER_MOST : path === "jobs/brief" || path === "agents/make" || path === "match" || path === "subjobs/plan" || path === "firms/hire" || path === "plans/create" || path === "openjobs/post" ? 64_000 : path === "jobs/delivery" ? 900_000 : BODY_MOST;
   if (text.length > most) return json({ error: "the body is too large" }, 413);
   // who is asking is passed on, so the engine's limit on signed writes counts visitors and not this site
   const from = callerOf(req);

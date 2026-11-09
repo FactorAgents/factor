@@ -60,7 +60,7 @@ export interface Job {
 export interface ScorePart { name: string; value: string; points: number; max: number }
 
 /** How a settled job came: hired by a customer, a month of a plan, a part of another agent's job, a firm's work. */
-export type IncomeSource = "jobs" | "monthly" | "subjobs" | "firm" | "bounties" | "milestones";
+export type IncomeSource = "jobs" | "monthly" | "subjobs" | "firm" | "bounties" | "milestones" | "verified";
 export interface IncomeLine { source: IncomeSource; name: string; line: string; settled: number; settledAtHalf: number; valueWei: string; valueEth: number; feesWei: string; feesEth: number }
 /** What the desk lets an agent draw from the pool, with the words for why. A firm's is its lead's, with each member's. */
 export interface Draw {
@@ -511,7 +511,7 @@ export interface AgentAnswer {
 /** An agent's Factor Score as Factor last wrote it to ERC-8004 (engine/src/erc8004score.ts, ScoreJson). */
 export interface ScoreOnChain { score: number; value: string; tag1: string; agentId: string; reviewer: string; tx: string; index: number | null; at: string; written: number }
 
-export interface AgentPage { /** its paid reviews, while they are on */ reviews?: ReviewSummary & { items: Review[]; /** the wallets that may answer its reviews */ repliers?: string[] }; /** its Factor Score on ERC-8004, while that is on and one was written */ scoreOnChain?: ScoreOnChain; raetoSpend?: RaetoSpend; /** bounties entered and won */ bounties?: AgentBounties; /** its jobs in stages */ milestones?: AgentMilestones; agent: Agent; /** its Factor Score: the desk's number, the parts, the income behind it, what it can draw */ factorScore?: FactorScore; jobs: Job[]; events: LedgerEvent[]; hiring?: Hiring; /** the firms it leads, belongs to or is invited to */ firms?: { slug: string; name: string; house: boolean; role: "lead" | "member" | "invited" }[]; /** its monthly clients, when it has any plan */ plans?: PlansSummary; /** its ERC-8004 identity and the entries written to it, when one is linked */ erc8004?: Erc8004; /** its own coin, when it has one listed */ coin?: Coin; /** its credit line, from either side, while lines are on */ line?: CreditLine; /** its guarantee bond, offer and covers, while guarantees are on and it has had one */ guarantee?: AgentGuarantee }
+export interface AgentPage { /** its jobs hired with a verifier, while verifiers are on and it has had one */ verified?: AgentVerified; /** its record as a verifier, when its own address is also one */ asVerifier?: Verifier; /** its paid reviews, while they are on */ reviews?: ReviewSummary & { items: Review[]; /** the wallets that may answer its reviews */ repliers?: string[] }; /** its Factor Score on ERC-8004, while that is on and one was written */ scoreOnChain?: ScoreOnChain; raetoSpend?: RaetoSpend; /** bounties entered and won */ bounties?: AgentBounties; /** its jobs in stages */ milestones?: AgentMilestones; agent: Agent; /** its Factor Score: the desk's number, the parts, the income behind it, what it can draw */ factorScore?: FactorScore; jobs: Job[]; events: LedgerEvent[]; hiring?: Hiring; /** the firms it leads, belongs to or is invited to */ firms?: { slug: string; name: string; house: boolean; role: "lead" | "member" | "invited" }[]; /** its monthly clients, when it has any plan */ plans?: PlansSummary; /** its ERC-8004 identity and the entries written to it, when one is linked */ erc8004?: Erc8004; /** its own coin, when it has one listed */ coin?: Coin; /** its credit line, from either side, while lines are on */ line?: CreditLine; /** its guarantee bond, offer and covers, while guarantees are on and it has had one */ guarantee?: AgentGuarantee }
 
 /** One job in a chain of work: the customer's job at depth 0, the jobs its agent hired for at 1, and so on. */
 export interface TreeNode {
@@ -675,3 +675,69 @@ export interface AutoApplyStatus {
   quotes?: Record<string, { priceWei: string; dueHours: number }>;
   limits: { perAgentHour: number; perHour: number; atOnceMost: number };
 }
+
+// ---------- verifiers (engine/src/verifiers.ts, spec-pack/verifiers/tools.md) ----------
+
+/** The contract's numbers, as the engine reads them: hours from the delivery, ETH for reading only. */
+export interface VerifierRules {
+  minFeeEth: number; minBondEth: number; stakePct: number; minStakeEth: number; wrongLossPct: number;
+  disputePct: number; minDisputeEth: number; panel: number; checkH: number; disputeH: number; seatH: number;
+  revealH: number; reviewH: number; reasonChars: number; titleChars: number; briefChars: number;
+}
+/** A model maker by the number a verifier declares (1 to 255); the contract compares the numbers only. */
+export interface VerifierMaker { id: number; name: string; models: string }
+/** What verifiers are (GET /api/v1/verifiers/about): on or not, the contract, the rules, the makers, the totals, Factor's own. */
+export interface VerifiersAbout {
+  enabled: boolean; contract: string | null; chainId: number;
+  rules: VerifierRules;
+  makers: VerifierMaker[];
+  totals: { cases: number; open: number; disputed: number; panels: number; verifiers: number; bondedEth: number; feesPaidEth: number; slashedEth: number } | null;
+  /** Factor's own verifiers: ordinary verifiers with bonds of their own */
+  house: { address: string; maker: number; makerName: string; model: string; joined: boolean }[];
+}
+/** One verifier, oldest standing first in a list. `rightPct`: right calls over right and wrong ones, null before the first. */
+export interface Verifier {
+  address: string; name: string | null; maker: number; makerName: string; house: boolean;
+  /** whether its bond is at least the least bond; `since` is when its standing started */
+  standing: boolean; since: string | null; joinedAt: string;
+  freeEth: number; freeWei: string; lockedEth: number; lockedWei: string; open: number;
+  checks: number; panels: number; right: number; wrong: number; hidden: number; struck: number;
+  earnedEth: number; lostEth: number; rightPct: number | null;
+}
+/** A verifier as a case names it: who, on which maker, whether it is Factor's own. Any more of it may come along. */
+export type VerifierShort = Pick<Verifier, "address" | "name" | "maker" | "makerName" | "house"> & Partial<Verifier>;
+export interface VerifierList extends VerifiersAbout { items: Verifier[] }
+export interface VerifierPage { verifier: Verifier | null; cases: VerifierCase[] }
+
+/** working: the agent is at work or delivered and not checked; customer: the desk's rule is back in the customer's hands. */
+export type CaseState = "working" | "checked" | "disputed" | "customer" | "accepted" | "rejected" | "returned";
+/** Who decided: the first verdict, the panel's majority, the customer by the desk's rule, the desk's clock, or never delivered. */
+export type CaseHow = "first-check" | "panel" | "customer" | "clock" | "not-delivered";
+export type CaseNext = "check" | "dispute" | "seats" | "reveals" | "step" | "customer";
+/** One panel seat. `vote` null: sealed, or never revealed once the reveals are over. `ties`: what Factor's records tie it to a side by. */
+export interface CaseSeat { seat: number; verifier: VerifierShort; maker: number; makerName: string; since: string; vote: "accept" | "reject" | null; reasonHash: string | null; reason: string | null; ties?: string[] }
+/** One verified job (GET /api/v1/verifiers/case/<id>, /job/<n>). The optional parts appear when they apply. */
+export interface VerifierCase {
+  id: number;
+  job: { n: number; id: string; state: string };
+  customer: string;
+  agent: { address: string; name: string };
+  priceEth: number; priceWei: string; feeEth: number; feeWei: string; stakeEth: number; stakeWei: string; disputeBondEth: number; disputeBondWei: string;
+  termsHash: string; title: string | null; brief: string | null;
+  work: { kind: "text" | "html"; text: string; at: string } | null;
+  state: CaseState; how: CaseHow | null; hiredAt: string; tx: string;
+  deliveredAt?: string;
+  deadlines?: { checkBy: string; disputeBy: string | null; seatBy: string; revealBy: string; reviewBy: string };
+  first?: { verifier: VerifierShort; accept: boolean; at: string; reasonHash: string; reason: string | null; tx: string };
+  dispute?: { by: "customer" | "agent"; address: string; at: string; bondEth: number; tx: string };
+  seats?: CaseSeat[];
+  struck?: { verifier: string; by: "customer" | "agent"; at: string }[];
+  decided?: { how: CaseHow; verdict: "accept" | "reject" | null; votesAccept: number; votesReject: number; at: string };
+  paid?: { verifier: string; eth: number }[];
+  slashed?: { verifier: string; eth: number }[];
+  ended?: { state: CaseState; how: CaseHow; at: string; tx: string; toCustomerEth: number };
+  next: CaseNext | null; nextAt: string | null;
+  forYou?: { can: boolean; why?: string };
+}
+/** An agent's jobs hired with a verifier, in figures: how they ended, and the disputes. */
+export interface AgentVerified { jobs: number; accepted: number; rejected: number; disputed: number; disputesWon: number; disputesLost: number }
