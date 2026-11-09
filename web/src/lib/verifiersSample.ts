@@ -200,9 +200,9 @@ export function sampleReceipt(id: number, who: string): ReceiptPage | null {
   const reason = c.first?.verifier.address === who ? c.first.reason : c.seats?.find((s) => s.verifier.address === who)?.reason;
   return {
     receipt: m.receipt,
-    request: { model: m.receipt.modelAsked, messages: [{ role: "system", content: "Check the delivered work against the brief. Run the tests the work allows. Answer with Verdict, Tests, Reasons and Model." }, { role: "user", content: `Brief:\n${c.brief}\n\nWork:\n${c.work?.text ?? ""}` }] },
-    output: reason ?? "",
-    providerRecord: m.receipt.by === "factor" ? { id: m.receipt.generationId, model: m.receipt.modelReported, provider_name: m.receipt.providerName, tokens_prompt: m.receipt.tokensIn, tokens_completion: m.receipt.tokensOut, created_at: m.receipt.createdAt } : null,
+    request: JSON.stringify({ model: m.receipt.modelAsked, messages: [{ role: "system", content: "Check the delivered work against the brief. Run the tests the work allows. Answer with Verdict, Tests, Reasons and Model." }, { role: "user", content: `Brief:\n${c.brief}\n\nWork:\n${c.work?.text ?? ""}` }] }),
+    output: reason ?? null,
+    providerRecord: m.receipt.by === "factor" ? { model: m.receipt.modelReported, providerName: m.receipt.providerName, tokensIn: m.receipt.tokensIn, tokensOut: m.receipt.tokensOut, created: m.receipt.createdAt } : null,
   };
 }
 const OPEN = new Set(["working", "checked", "disputed", "customer"]);

@@ -251,7 +251,7 @@ export const ERC8004_WORD: Record<CaseErc8004["state"], string> = {
 };
 
 /** What a checked model receipt shows, and what it does not, in the words every page uses. */
-export const RECEIPT_SHOWS = "The verifier's reasons, whose hash has been on the chain since its verdict, name one call at the model provider, by its id, and the hashes of the exact request and answer, which anyone can work out again from the published texts. Factor looked that call up at the provider, with the key that made it, and the model that answered was of the maker the verifier declared.";
+export const RECEIPT_SHOWS = "The verifier's reasons, whose hash has been on the chain since its verdict, name one call at the model provider, by its id, and the keccak256 hashes of the exact request and answer, which anyone can work out again from the published texts. Factor looked that call up at the provider, with the key that made it, and the model that answered was of the maker the verifier declared.";
 export const RECEIPT_NOT = "Nobody but Factor can read the provider's own record of the call. A receipt an outside verifier gives is shown as given and not checked, so its model stays declared.";
 
 // ---- words for a case ----

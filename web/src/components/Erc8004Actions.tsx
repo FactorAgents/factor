@@ -24,7 +24,7 @@ export default function Erc8004Actions({ e, explorer }: { e: CaseErc8004; explor
   if (e.state === "prepared" && e.requestCall) {
     return (
       <div className="act">
-        <p className="small">The registry takes the request from one wallet only: {owner}. It names the validator {e.validator ? short(e.validator) : "Factor gives"} and the hash of the case file.</p>
+        <p className="small">The registry takes the request from one wallet only: {owner}. It names the validator{e.validator ? ` ${short(e.validator)}` : ""}, the verifier whose verdict was carried out, and the hash of the case file.</p>
         <div className="cta"><Go line label="Put this verdict on ERC-8004" busy={ask.busy} onGo={() => send(ask, e.requestCall!, owner, "Requested. The validator answers on the registry.")} /></div>
         <StatusLine status={ask.status} explorer={explorer} />
       </div>

@@ -6,14 +6,17 @@ import { ERC8004_WORD } from "@/lib/verifiers";
 import type { CaseErc8004 } from "@/lib/types";
 import Erc8004Actions from "./Erc8004Actions";
 
+/** The registry's answer is the verdict carried out, not a score: 100 accept, 0 reject. */
+export const answerWord = (r: number | null): string => (r === 100 ? "100: accept" : r === 0 ? "0: reject" : r === null ? "none yet" : String(r));
+
 function sentence(e: CaseErc8004): string {
   const id = e.agentId ? `agent identity #${e.agentId}` : "the agent's identity";
   switch (e.state) {
     case "no-identity": return `This verdict cannot be put there: ${e.why ? e.why.replace(/[.!?]$/, "") : "the agent has no ERC-8004 identity linked on Factor"}.`;
     case "no-verdict": return "Once the job has its outcome, Factor writes the case file, and the owner of the agent's ERC-8004 identity can ask for the verdict to be validated there.";
-    case "prepared": return `The case file is written. The owner of ${id}, or a wallet it approved, can ask for validation on the registry, naming the validator below.`;
+    case "prepared": return `The case file is written. The owner of ${id}, or a wallet it approved, can ask for validation on the registry. The validator is set by rule: the verifier whose verdict was carried out (the first verifier when its verdict stood, otherwise the first panelist of the majority).`;
     case "requested": return `Requested ${e.requestedAt ? dayTime(e.requestedAt) : ""}. Only the validator the request names can answer, under the tag ${e.tag}.`;
-    case "answered": return `Answered ${e.answeredAt ? dayTime(e.answeredAt) : ""} by the validator, under the tag ${e.tag}: ${e.response ?? "no figure"} of 100. Any app that reads the standard sees it beside ${id}.`;
+    case "answered": return `Answered ${e.answeredAt ? dayTime(e.answeredAt) : ""} by the validator, under the tag ${e.tag}: ${answerWord(e.response)}. Any app that reads the standard sees it beside ${id}.`;
     default: return "";
   }
 }
@@ -27,11 +30,11 @@ export default function Erc8004Block({ e, explorer }: { e: CaseErc8004; explorer
         <dt>The registry<small>the ERC-8004 Validation Registry on Robinhood Chain</small></dt><dd><a href={addressHref(explorer, e.registry)} target="_blank" rel="noopener noreferrer">{short(e.registry)}</a></dd>
         <dt>The tag</dt><dd>{e.tag}</dd>
         {e.agentId ? <><dt>The agent&apos;s identity</dt><dd>#{e.agentId}</dd></> : null}
-        {e.validator ? <><dt>The validator<small>the only wallet that may answer</small></dt><dd><a href={addressHref(explorer, e.validator)} target="_blank" rel="noopener noreferrer">{short(e.validator)}</a></dd></> : null}
-        {e.response !== null ? <><dt>Its answer<small>on a scale of 0 to 100</small></dt><dd className="sum">{e.response}</dd></> : null}
-        {e.file ? <><dt>The case file<small>the job, its words, the verdicts and the outcome</small></dt><dd><a href={e.file} target="_blank" rel="noopener noreferrer">The file</a></dd></> : null}
+        {e.validator ? <><dt>The validator<small>the verifier whose verdict was carried out, the only wallet that may answer</small></dt><dd><a href={addressHref(explorer, e.validator)} target="_blank" rel="noopener noreferrer">{short(e.validator)}</a></dd></> : null}
+        {e.response !== null ? <><dt>Its answer<small>the verdict carried out: 100 accept, 0 reject</small></dt><dd className="sum">{answerWord(e.response)}</dd></> : null}
+        {e.file ? <><dt>The case file<small>the job, its words, the verdicts and the outcome; its keccak256 goes with the request</small></dt><dd><a href={e.file} target="_blank" rel="noopener noreferrer">The file</a></dd></> : null}
       </dl>
-      {e.fileHash ? <p className="small mono vhash">keccak256 of the file, sent with the request: {e.fileHash}</p> : null}
+      {e.fileHash ? <p className="small mono vhash">keccak256 of the file&apos;s UTF-8 text: {e.fileHash}</p> : null}
       <Erc8004Actions e={e} explorer={explorer} />
     </div>
   );

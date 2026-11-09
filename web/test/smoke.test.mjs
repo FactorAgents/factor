@@ -1364,12 +1364,12 @@ test("verifiers: model receipts beside every verdict, checked or declared, a rec
   assert.match(p, /On ERC-8004 · Requested, waiting for the answer/);
   assert.match(p, /Only the validator the request names can answer, under the tag factorVerify/);
   assert.match(p, /The agent's identity # ?211/);
-  assert.match(p, /keccak256 of the file, sent with the request: 0x[0-9a-f]{64}/);
+  assert.match(p, /keccak256 of the file.s UTF-8 text: 0x[0-9a-f]{64}/);
   const job = (await get("/jobs/0419")).html;
   assert.match(job, /href="\/api\/v1\/verifiers\/file\/3"/);
   assert.match(job, new RegExp(`href="/verifiers/receipt/3/${CLAUDE}"`));
   assert.match(job, /href="https:\/\/robinhoodchain\.blockscout\.com\/address\/0x8004Cc8439f36fd5F9F049D9fF86523Df6dAAB58"/);
-  assert.match(plain((await get("/jobs/0417")).html), /On ERC-8004 · Answered .* under the tag factorVerify: 100 of 100/);
+  assert.match(plain((await get("/jobs/0417")).html), /On ERC-8004 · Answered .* under the tag factorVerify: 100: accept/);
   assert.match(plain((await get("/jobs/0418")).html), /On ERC-8004 · The agent has no identity there This verdict cannot be put there: quill-02 has no ERC-8004 identity linked on Factor\./);
   assert.match(plain((await get("/jobs/0424")).html), /On ERC-8004 · Waiting for the outcome/);
   // a receipt's own page: the call, the hashes, the texts; an outside verifier's is shown as given
@@ -1394,7 +1394,7 @@ test("verifiers: model receipts beside every verdict, checked or declared, a rec
   assert.match(list, /What a checked receipt shows\. The verifier's reasons, whose hash has been on the chain since its verdict, name one call at the model provider/);
   assert.match(list, /Verdicts on ERC-8004 Once a verified job has its outcome, Factor writes its case file/);
   // the agent's verified jobs on ERC-8004
-  assert.match(plain((await get("/agents/lumen-07")).html), /Verified jobs on ERC-8004 answered on the Validation Registry, tag factorVerify 1 · 100 of 100/);
+  assert.match(plain((await get("/agents/lumen-07")).html), /Verified jobs on ERC-8004 answered on the Validation Registry, tag factorVerify: 100 accept, 0 reject 1 · average 100/);
   // the docs, the security page, the protocol and the log
   assert.match(plain((await get("/docs")).html), /Model receipts\. Each verdict carries model: mark is checked or declared/);
   assert.match(plain((await get("/docs")).html), /On ERC-8004\. A case with its outcome has a case file/);
@@ -1417,7 +1417,7 @@ test("verifiers: model receipts beside every verdict, checked or declared, a rec
   assert.equal((await fetch(`${BASE}/api/v1/verifiers/file/8`)).status, 404);
   const receipt = await (await fetch(`${BASE}/api/v1/verifiers/receipt/3/${CLAUDE}`)).json();
   assert.equal(receipt.receipt.by, "factor");
-  assert.ok(receipt.request && typeof receipt.output === "string" && receipt.providerRecord);
+  assert.ok(typeof receipt.request === "string" && typeof receipt.output === "string" && receipt.providerRecord.model);
   for (const path of ["verifiers/erc8004/x", "verifiers/file/x", "verifiers/receipt/3/0x12"]) assert.equal((await fetch(`${BASE}/api/v1/${path}`)).status, 404, path);
   // with no engine: no receipt and no ERC-8004 anywhere
   assert.equal((await get(`/verifiers/receipt/3/${CLAUDE}`, BARE)).status, 404);

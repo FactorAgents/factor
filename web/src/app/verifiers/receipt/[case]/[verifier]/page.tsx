@@ -56,7 +56,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ case: 
             <span className="label">What it shows, and what it does not</span>
             <p className="small" style={{ marginTop: 18 }}>{RECEIPT_SHOWS}</p>
             <p className="small" style={{ marginTop: 12 }}>{RECEIPT_NOT}</p>
-            <span className="label" style={{ display: "block", marginTop: 26 }}>The hashes</span>
+            <span className="label" style={{ display: "block", marginTop: 26 }}>keccak256 of each text, as UTF-8</span>
             <p className="small mono vhash" style={{ marginTop: 12 }}>request {r.requestHash}</p>
             <p className="small mono vhash">answer {r.outputHash}</p>
             <p className="small" style={{ marginTop: 14 }}>Work them out again from the texts below. <a className="more quiet" href={`/api/v1/verifiers/receipt/${c.id}/${who}`}>As JSON →</a>{c.first?.tx && c.first.verifier.address.toLowerCase() === who ? <> <a className="more quiet" href={`${ex}/tx/${c.first.tx}`} target="_blank" rel="noopener noreferrer">The verdict on the chain →</a></> : null}</p>
@@ -69,12 +69,12 @@ export default async function ReceiptPage({ params }: { params: Promise<{ case: 
           <Reveal>
             <span className="label">The request</span>
             <p className="small" style={{ marginTop: 8 }}>Exactly as it was sent to the model.</p>
-            <div className="worktext mono">{asText(got.request)}</div>
+            <div className="worktext mono">{got.request === null ? "Not on Factor." : asText(got.request)}</div>
           </Reveal>
           <Reveal delay={120}>
             <span className="label">The answer</span>
             <p className="small" style={{ marginTop: 8 }}>Exactly as the model gave it: the verifier&apos;s reasons, whose hash is in its verdict on the chain.</p>
-            <div className="worktext mono">{asText(got.output)}</div>
+            <div className="worktext mono">{got.output === null ? "Not on Factor." : asText(got.output)}</div>
           </Reveal>
           {got.providerRecord ? (
             <Reveal delay={180}>

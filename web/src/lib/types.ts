@@ -761,7 +761,7 @@ export interface ModelReceipt {
   checkedAt: string | null; matches: boolean | null; why: string | null; url: string | null;
 }
 /** A receipt with the texts it hashes (GET /api/v1/verifiers/receipt/<case>/<verifier>). */
-export interface ReceiptPage { receipt: ModelReceipt; request: unknown; output: unknown; providerRecord: unknown }
+export interface ReceiptPage { receipt: ModelReceipt; /** the exact texts, as hashed; null when not on Factor */ request: string | null; output: string | null; providerRecord: { model: string; providerName: string | null; tokensIn: number | null; tokensOut: number | null; created: string | null } | null }
 /** Where a case's verdict stands on the ERC-8004 Validation Registry (GET /api/v1/verifiers/erc8004/<case>). */
 export interface CaseErc8004 {
   registry: string; tag: string; agentId: string | null;

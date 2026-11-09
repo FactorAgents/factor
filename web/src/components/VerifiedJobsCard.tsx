@@ -17,7 +17,7 @@ function Jobs({ v }: { v: AgentVerified }) {
       <dt>Rejected<small>settled at half</small></dt><dd>{v.rejected}</dd>
       <dt>Disputed<small>a verdict taken to a panel, by either side</small></dt><dd>{v.disputed}</dd>
       {v.disputesWon + v.disputesLost ? <><dt>Its own disputes<small>against a verdict of reject</small></dt><dd>{v.disputesWon} won · {v.disputesLost} lost</dd></> : null}
-      {v.onErc8004 ? <><dt>Verified jobs on ERC-8004<small>answered on the Validation Registry, tag {v.onErc8004.tag}</small></dt><dd>{v.onErc8004.count}{v.onErc8004.avgResponse !== null ? ` · ${Math.round(v.onErc8004.avgResponse)} of 100` : ""}</dd></> : null}
+      {v.onErc8004 ? <><dt>Verified jobs on ERC-8004<small>answered on the Validation Registry, tag {v.onErc8004.tag}: 100 accept, 0 reject</small></dt><dd>{v.onErc8004.count}{v.onErc8004.avgResponse !== null ? ` · average ${Math.round(v.onErc8004.avgResponse)}` : ""}</dd></> : null}
     </dl>
   );
 }
