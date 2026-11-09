@@ -705,7 +705,7 @@ export class Verifiers {
     const nx = this.next(c, job, t);
     const named = (a: string) => ({ address: a, name: this.name(a) });
     const seats = await Promise.all(this.seated(c.id).map(async (s) => ({
-      seat: s.seat, verifier: this.short(s.verifier), maker: s.maker, makerName: makerName(s.maker), since: s.since ? iso(s.since) : null,
+      seat: s.seat, verifier: this.short(s.verifier), maker: s.maker, makerName: makerName(s.maker), since: s.since ? iso(s.since) : null, satAt: iso(s.sat_at),
       vote: s.vote as "accept" | "reject" | null, reasonHash: s.reason_hash, reason: s.vote ? this.reason(c.id, s.verifier) : null, ties: await this.tiesOf(c, s.verifier),
     })));
     const money = this.d.db.q("SELECT verifier, kind, amount FROM verifier_money WHERE case_id = ? ORDER BY log_index").all(c.id) as { verifier: string; kind: string; amount: string }[];
@@ -725,11 +725,16 @@ export class Verifiers {
       ...(c.decided_at ? { decided: { how: c.decided_how ?? "first-check", verdict: c.verdict as "accept" | "reject" | null, votesAccept: c.votes_accept, votesReject: c.votes_reject, at: iso(c.decided_at) } } : {}),
       ...(money.some((m) => m.kind === "paid") ? { paid: sumBy(money.filter((m) => m.kind === "paid")) } : {}),
       ...(money.some((m) => m.kind === "slashed") ? { slashed: sumBy(money.filter((m) => m.kind === "slashed")) } : {}),
-      ...(c.ended_at ? { ended: { state: c.state, how: c.how, at: iso(c.ended_at), tx: c.ended_tx ?? "", toCustomerEth: ethNum(c.to_customer ?? "0") } } : {}),
+      ...(c.ended_at ? { ended: { state: c.state, how: c.how, at: iso(c.ended_at), tx: c.ended_tx ?? "", toCustomerEth: ethNum(c.to_customer ?? "0"), ...(this.bondBack(c) ? { disputeBondBackEth: ethNum(c.dispute_bond), disputeBondBackTo: c.disputer === c.customer ? "customer" as const : "agent" as const } : {}) } } : {}),
       next: nx.next === "work" ? null : nx.next, nextAt: nx.at ? iso(nx.at) : null,
     };
     if (forWho) out.forYou = await this.forYou(c, job, forWho, t);
     return out;
+  }
+
+  /** A dispute that won: the panel decided against the first verdict, and its bond went back to the side that raised it. */
+  private bondBack(c: CaseRow): boolean {
+    return !!c.disputer && c.decided_how === "panel" && c.verdict !== null && (c.verdict === "accept") !== (c.first_accept === 1);
   }
 
   /** What Factor's own records tie a verifier to either side by: the checks a review is held to. */
@@ -1039,11 +1044,12 @@ export interface CaseJson {
   deadlines?: { checkBy: string; disputeBy: string | null; seatBy: string; revealBy: string; reviewBy: string };
   first?: { verifier: VerifierShort; accept: boolean; at: string; reasonHash: string; reason: string | null; tx: string; ties: string[] };
   dispute?: { by: "customer" | "agent"; address: string; at: string; bondEth: number; tx: string };
-  seats: { seat: number; verifier: VerifierShort; maker: number; makerName: string; since: string | null; vote: "accept" | "reject" | null; reasonHash: string | null; reason: string | null; ties: string[] }[];
+  seats: { seat: number; verifier: VerifierShort; maker: number; makerName: string; since: string | null; satAt: string; vote: "accept" | "reject" | null; reasonHash: string | null; reason: string | null; ties: string[] }[];
   struck: { verifier: string; name: string | null; by: "customer" | "agent"; at: string }[];
   decided?: { how: How; verdict: "accept" | "reject" | null; votesAccept: number; votesReject: number; at: string };
   paid?: { verifier: string; eth: number; wei: string }[]; slashed?: { verifier: string; eth: number; wei: string }[];
-  ended?: { state: CaseState; how: How | null; at: string; tx: string; toCustomerEth: number };
+  /** `toCustomerEth`: what came back from the desk with any fee still held; a dispute that won has its bond back besides */
+  ended?: { state: CaseState; how: How | null; at: string; tx: string; toCustomerEth: number; disputeBondBackEth?: number; disputeBondBackTo?: "customer" | "agent" };
   next: "check" | "dispute" | "seats" | "reveals" | "step" | "customer" | null; nextAt: string | null;
   forYou?: { can: boolean; why?: string };
 }

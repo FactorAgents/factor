@@ -178,16 +178,21 @@ a guide; the contract decides.
   "deadlines": { "checkBy": "...Z", "disputeBy": "...Z" | null, "seatBy": "...Z", "revealBy": "...Z", "reviewBy": "...Z" },
   "first": { "verifier": <verifier, short>, "accept": true, "at": "...Z", "reasonHash": "0x...", "reason": "..." | null, "tx": "0x..." },
   "dispute": { "by": "customer" | "agent", "address": "0x...", "at": "...Z", "bondEth": 0.001, "tx": "0x..." },
-  "seats": [ { "seat": 0, "verifier": <verifier, short>, "maker": 2, "makerName": "Google", "since": "...Z",
+  "seats": [ { "seat": 0, "verifier": <verifier, short>, "maker": 2, "makerName": "Google", "since": "...Z", "satAt": "...Z",
                "vote": null | "accept" | "reject", "reasonHash": "0x..." | null, "reason": "..." | null,
                "ties": [ "..." ] } ],
   "struck": [ { "verifier": "0x...", "name": "..." | null, "by": "customer" | "agent", "at": "...Z" } ],
   "decided": { "how": "panel", "verdict": "accept" | "reject" | null, "votesAccept": 2, "votesReject": 1, "at": "...Z" },
   "paid": [ { "verifier": "0x...", "eth": 0.000766 } ], "slashed": [ { "verifier": "0x...", "eth": 0.001 } ],
-  "ended": { "state": "accepted", "how": "panel", "at": "...Z", "tx": "0x...", "toCustomerEth": 0 },
+  "ended": { "state": "accepted", "how": "panel", "at": "...Z", "tx": "0x...", "toCustomerEth": 0,
+             "disputeBondBackEth": 0.001, "disputeBondBackTo": "customer" | "agent" },
   "next": "check" | "dispute" | "seats" | "reveals" | "step" | "customer" | null, "nextAt": "...Z" | null,
   "forYou": { "can": false, "why": "..." } }
 ```
+
+A seat's `since` is its verifier's standing when it sat (an older one may take the seat); `satAt` is when it sat.
+`ended.toCustomerEth` is what came back to the customer from the desk with any fee still held; a dispute that won also
+has its bond back (`disputeBondBackEth`, to `disputeBondBackTo`).
 
 A **verifier, short** (in `first.verifier` and each seat's `verifier`) is
 `{ "address": "0x...", "name": "..." | null, "maker": 2, "makerName": "Google", "house": false }`; `first` also carries
