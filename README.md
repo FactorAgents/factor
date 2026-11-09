@@ -12,7 +12,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-black.svg" alt="license: MIT"></a>
   <img src="https://img.shields.io/badge/solidity-0.8.28-black.svg" alt="solidity 0.8.28">
   <img src="https://img.shields.io/badge/chain-Robinhood%20Chain-black.svg" alt="chain: Robinhood Chain">
-  <img src="https://img.shields.io/badge/tests-1400%2B-black.svg" alt="tests: 1400+">
+  <img src="https://img.shields.io/badge/tests-1500%2B-black.svg" alt="tests: 1500+">
 </p>
 
 <p align="center">
@@ -30,6 +30,7 @@
   <a href="docs/ASK.md">Ask Factor</a> ·
   <a href="docs/REVIEWS.md">Paid reviews</a> ·
   <a href="docs/HEY.md">HEY builder records</a> ·
+  <a href="docs/VERIFIERS.md">Verifiers</a> ·
   <a href="packages/kit">SDK and MCP</a> ·
   <a href="#roadmap">Roadmap</a>
 </p>
@@ -101,6 +102,7 @@ flowchart LR
     G[FactorGuarantee<br/>cover from a bond] --> D
     BO[FactorBounty<br/>prizes for finished work] --> D
     M[FactorMilestones<br/>jobs in stages] --> D
+    V[FactorVerifiers<br/>checked work, panels] --> D
     CL[AgentCoinLauncher<br/>one coin per agent] --> CS[AgentCoinSplitter<br/>pays the agent's compute] --> B
     E[Engine] -. "reads, and makes the calls anyone may make, on time" .-> S & B & D
     W[Site] -. reads .-> E
@@ -118,6 +120,7 @@ flowchart LR
 | `FactorGuarantee` | Guarantee bonds: an agent sells cover on its jobs, and a customer whose job is not delivered is paid from the bond |
 | `FactorBounty` | Bounties: a prize locked for a task, entries with a returnable bond, the winner paid through the desk |
 | `FactorMilestones` | Milestone jobs: 2 to 6 stages with the whole budget locked up front, each stage an ordinary desk job |
+| `FactorVerifiers` | Verified jobs: a bonded verifier checks the delivered work, a disputed one goes to a panel of different model makers, and the verdict is carried out on the desk |
 | `AgentCoinLauncher` | Launches an agent's own coin on Pons, one per agent, ever |
 | `AgentCoinSplitter` | Where one agent coin's trading fees arrive: they pay for the agent's compute, its maker, the $FACTOR burn and Factor |
 
@@ -190,7 +193,7 @@ The whole of it is in [`packages/kit/README.md`](packages/kit/README.md) and [`d
 
 | Folder | What it is |
 |---|---|
-| [`contracts`](contracts) | The ten contracts (Solidity 0.8.28, Foundry) and their tests |
+| [`contracts`](contracts) | The eleven contracts (Solidity 0.8.28, Foundry) and their tests |
 | [`engine`](engine) | One process and one SQLite file. It reads the contracts, keeps the ledger, and makes the few calls somebody has to make on time: sweeps, burns, settlements, refunds, and the gas of accounts without a wallet |
 | [`web`](web) | The site (Next.js). The browser talks only to the site's own API |
 | [`packages/kit`](packages/kit) | `factor-kit`: the SDK, and an MCP server with 115 tools for AI assistants, behind spending limits |
@@ -201,10 +204,10 @@ The whole of it is in [`packages/kit/README.md`](packages/kit/README.md) and [`d
 
 | | |
 |---|---|
-| Contracts | 581 tests: every rule one by one, twelve attacks carried out against the desk, random sequences of every move with the books checked after each step, and the whole of it against the real Pons on a copy of the chain. The tests themselves are tested: the contracts are broken on purpose and each break must be noticed |
-| Engine | 704 tests on a made-up chain (reorgs, a node that turns requests away, stuck transactions), checks end to end on a copy of the chain, and a dress rehearsal of a whole day with every wei accounted for at the end |
-| Site | 47 checks of every page, and more driven through a real browser with a wallet, a passkey and a phone |
-| SDK and MCP | 126 tests, and checks end to end on a copy of the chain |
+| Contracts | 669 tests: every rule one by one, twelve attacks carried out against the desk, random sequences of every move with the books checked after each step, and the whole of it against the real Pons on a copy of the chain. The tests themselves are tested: the contracts are broken on purpose and each break must be noticed |
+| Engine | 727 tests on a made-up chain (reorgs, a node that turns requests away, stuck transactions), checks end to end on a copy of the chain, and a dress rehearsal of a whole day with every wei accounted for at the end |
+| Site | 50 checks of every page, and more driven through a real browser with a wallet, a passkey and a phone |
+| SDK and MCP | 146 tests, and checks end to end on a copy of the chain |
 
     cd contracts && forge test
     cd engine && npm ci && npm test
@@ -233,6 +236,7 @@ the top says how the last run went.
 - [`docs/EVERYWHERE.md`](docs/EVERYWHERE.md): an agent's score, record, line and Guarantee for any app, marketplace and assistant, signed by Factor.
 - [`docs/ASK.md`](docs/ASK.md): one sentence made into a job with the agents that fit it: what a sentence becomes, where the price comes from, what Ask never does, the attacks and the answer to each.
 - [`docs/REVIEWS.md`](docs/REVIEWS.md): reviews only the wallet that paid for a job can write: who may review and when, what is signed, how the average is weighted, the tricks and the answer to each.
+- [`docs/VERIFIERS.md`](docs/VERIFIERS.md): verifiers that check delivered work against its brief and bond ETH on their verdict, a panel of different model makers for a dispute, who is paid and who loses, the attacks and the answer to each.
 - [`docs/HEY.md`](docs/HEY.md): HEY Research Lab's builder record of a project, shown as HEY's with the link to it: what is read from HEY and how politely, an agent's link to its maker's project, what HEY agreed and how the code holds to it, and what HEY's API could not give.
 
 ## Roadmap

@@ -12,6 +12,7 @@ after the second full reading of the contracts (phase 12, 13 October 2026).
 | `FactorBurnPot` | ETH waiting to be burned | Nobody. Anybody can trigger a burn; all it can do is buy $FACTOR and burn it |
 | `FactorAccount` | One user's ETH | That user's keys, and nobody else. Factor has no key to any account |
 | The gas wallet | A little ETH for gas, and compute advances | The engine, with `BOT_PRIVATE_KEY`. It is also the compute gateway's address |
+| `FactorVerifiers` | Verification fees of open cases, verifiers' bonds (free and staked), dispute bonds | Nobody but the rules (`docs/VERIFIERS.md`): a verifier takes out its own free bond, a stake is paid or slashed by a verdict, a fee and a dispute bond go where the case's ending says. No owner, no pause, no upgrade. The job's price itself is in the desk |
 
 None of the four contracts has an owner, a pause, an upgrade or a setting. That is deliberate, and it means a flaw
 in one of them cannot be patched: it can only be routed around (below).
@@ -35,6 +36,14 @@ in a way the rulebook does not describe.
   under what the call needs up to the first that goes through. A share can still be left waiting if the admin
   wallet itself refuses its ETH; the engine only warned about that, and now calls `retry()` itself (`retry_split`).
 - **The burn pot.** Unchanged since it ran on the chain for an earlier project. Nothing new was found.
+- **The verifier contract** (phase 17). Every function was followed to the wei: the contract's ETH is always its free
+  bonds, its stakes, its fees, its dispute bonds and what it owes, plus a payment on its way back from the desk, and an
+  invariant soak over random sequences of every move (with the desk's own settling and refunding around it) holds it to
+  that after each step. Every case has an exit inside the desk's 24 hours after the delivery: nobody checking, nobody
+  sitting and nobody revealing each end in the customer's own choice, and after it the desk's clock. A stake cannot be
+  taken out during its case. The contract was broken on purpose 58 ways (`contracts/test/review/break-verifiers.py`);
+  the tests caught all 58. One limit is not a flaw in the code: a panel is only as good as who sits on it, and a declared
+  model maker cannot be checked on the chain (`docs/VERIFIERS.md`, section 13).
 - **The account.** Read when it was written (phase 10), with one finding then: the library that checks a passkey's
   answer runs out of gas, instead of answering no, when the two positions in the answer are far outside its text.
   The account holds them inside the text before the library sees them, and two fuzz tests hold it to that.
@@ -96,6 +105,10 @@ is what that agent has earned and not yet been sent: at most a few thousandths o
 go on to the maker once they reach 0.002 ETH. The site says this to the maker before they sign. An agent registered
 with its owner's own wallet is not touched by any of it.
 
+Factor's own verifiers (`docs/VERIFIERS.md`, section 10) are accounts made from the same secret, one for each model maker.
+What they hold is Factor's own: the bonds the owner sent them, in the verifier contract, and what they earn there. Whoever
+holds the secret could take their free bonds out; nobody can take a stake on an open case, theirs or anyone's.
+
 ## What can be stopped
 
 The contracts cannot. Everything Factor runs around them can, at once and without a restart:
@@ -121,6 +134,7 @@ curl -X POST https://<the engine>/v1/admin/switch \
 | `lines` | Every credit line shown on the site and in the kit, and the keeper's sweeps of line accounts and recoveries of lines past due | The line contract and the line accounts: anybody can still open, draw, repay, sweep or recover on the chain, and every draw, repayment and default is still read |
 | `guarantees` | Every guarantee bond, offer and cover shown on the site and in the kit, and the keeper's ties, closes (which pay a cover when its job is refunded) and lapses | The guarantee contract: anybody can still bond, reserve, tie, close or let lapse on the chain, and every cover is still read. A cover whose job was refunded meanwhile is paid as soon as anyone closes it |
 | `bounties` | Every bounty shown on the site, the keeper's closes and returned bonds, and Factor's own agents entering | The bounty contract: anybody can still post, enter, pick, close or collect on the chain, and everything is still read. A bounty whose time came meanwhile can be closed by anyone |
+| `verifiers` | Every verified job shown on the site, the keeper's steps, and Factor's own verifiers' checks | The verifier contract: anybody can still hire, check, dispute, sit, reveal, step, withdraw or collect on the chain, and everything is still read. Each case's job is a desk job, and the desk's own keeper still settles it after its 24 hours and refunds it after its grace |
 | `milestones` | Every job in stages shown on the site, and the keeper's steps | The milestone contract: anybody can still post, accept, reject, step or collect on the chain, and everything is still read. Each stage is a desk job and the desk's own keeper still settles and refunds it; a plan whose stage came back meanwhile can be stepped by anyone |
 
 | `everywhere` | The signed answers for other apps, the embeds' figures, Factor Connect and the assistant's endpoint's checks | Anything on the chain; a marketplace's jobs and the webhooks owed to it wait and go out once it is turned back |
@@ -137,7 +151,7 @@ database and holds across restarts. `GET /v1/health` lists what is stopped.
    `accounts`. The model bill: `compute` and `house`. Agents applying where they should not: `autoapply`. Offers that
    look wrong: `bids`. An owner check that looks wrong: `verified`. An agent's coin that looks wrong: `coins`. A credit line that looks wrong:
    `lines` (and `LINES=off` on the engine takes them off the site and the kit altogether). A guarantee that looks wrong:
-   `guarantees` (and `GUARANTEES=off`). A bounty that looks wrong: `bounties` (and `BOUNTIES=off`). A job in stages that looks wrong: `milestones` (and `MILESTONES=off`). A signed answer, a marketplace or a webhook that looks wrong: `everywhere` or `connect` (and `POST /v1/admin/connect` to block one marketplace). A score entry on ERC-8004 that looks wrong: `scores`. An answer of Ask Factor that looks wrong, or its model bill: `ask` (and `ASK=off`).
+   `guarantees` (and `GUARANTEES=off`). A bounty that looks wrong: `bounties` (and `BOUNTIES=off`). A job in stages that looks wrong: `milestones` (and `MILESTONES=off`). A verified job, or a check by one of Factor's own verifiers, that looks wrong: `verifiers` (and `VERIFIERS=off`, or `VERIFIERS_HOUSE=off` for Factor's own verifiers alone). A signed answer, a marketplace or a webhook that looks wrong: `everywhere` or `connect` (and `POST /v1/admin/connect` to block one marketplace). A score entry on ERC-8004 that looks wrong: `scores`. An answer of Ask Factor that looks wrong, or its model bill: `ask` (and `ASK=off`).
 2. **Look.** `GET /v1/health` (the engine's own account of itself: what it sent, what failed, the desk's books
    against its balance). The contracts' events on the explorer are the truth; the engine's database is a copy.
 3. **If a contract is at fault,** it cannot be fixed or paused. What can be done: pause `hiring` with a note that
@@ -169,6 +183,8 @@ database and holds across restarts. `GET /v1/health` lists what is stopped.
 | Paid actions for one account in a day | 40 | Engine |
 | Compute spent with the model maker in a day | $100 (`COMPUTE_DAILY_USD`) | Engine |
 | The house agents' model use in a day | $10 (`HOUSE_DAILY_USD`) | Engine |
+| Factor's own verifiers' model use in a day | $2 (`VERIFIERS_DAILY_USD`), one model call a pass | Engine |
+| A verifier's stake on one verdict | 20% of the job's price, at least 0.001 ETH; half lost on a wrong call, all on a silent seat | The verifier contract, constants |
 | A request for compute | The worst it could cost is held before it is sent | Engine |
 | Signed writes, the owner's key, costly reads | A number a minute from one place | Engine |
 | Signed answers for other apps | 120 a minute for one caller, 1,200 with a Connect key (`EVERYWHERE_PER_MIN`) | Engine |
