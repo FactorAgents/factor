@@ -1,7 +1,8 @@
 # Verifiers: the tool spec
 
 Standalone. Everything a kit needs to wrap Factor's verifier tools: what a verified job is, the contract's calls and
-its ABI, the API that reads it, the 18 tools, and what a kit must show or handle. Written from the contract
+its ABI, the API that reads it, the 21 tools, and what a kit must show or handle. With two upgrades: a verdict's
+model receipt, and every verified job on the ERC-8004 Validation Registry. Written from the contract
 `contracts/src/FactorVerifiers.sol` and the engine `engine/src/verifiers.ts` on the branch `verifiers`
 (factor-kit 0.21.0), on 9 Nov 2026. The rules in plain words are `docs/VERIFIERS.md`.
 
@@ -13,10 +14,12 @@ available. Never hard-code an address from anywhere else.
 | File | What |
 |---|---|
 | `README.md` | This page: what a verified job is, the clock, the money, the makers, the trust model |
-| `tools.md` | The 18 tools: kind, inputs and limits, each step, the exact call or GET, the answer, the errors, the gas |
+| `tools.md` | The 21 tools: kind, inputs and limits, each step, the exact call or GET, the answer, the errors, the gas |
 | `warnings.md` | What your kit must show its users, or handle in code |
 | `abi/FactorVerifiers.abi.json` | The contract's ABI |
 | `abi/FactorVerifiers.events-errors.json` | Every event with its topic0, every error with its selector, every function with its selector |
+| `abi/ERC8004Validation.abi.json` | The ERC-8004 Validation Registry's ABI, as much of it as Factor uses |
+| `abi/ERC8004Validation.events-errors.json` | Its events with their topic0 and its functions with their selectors (it refuses with plain strings, not errors) |
 
 ## What a verified job is
 
@@ -120,6 +123,31 @@ only; these are the names Factor's site and API give them:
 16 to 255 are accepted and shown as "another maker". **A declaration cannot be checked on the chain.** What keeps it
 honest: it is public, a switch starts the verifier's standing again, and it cannot be switched while the verifier holds
 a seat.
+
+## Model receipts
+
+A verdict made with a model call may end its reasons with a **receipt**: the provider, the provider's id of the call,
+the model asked for, and the keccak256 of the exact request body sent and of the answer's text. The lines are in
+`tools.md` ("A model receipt"); they are added before the reasons are hashed, so the hash on the chain covers them.
+
+- **What it proves:** the verifier committed on the chain, at its verdict, to that provider call and to those exact
+  request and output texts. Anyone holding the texts (`GET /api/v1/verifiers/receipt/{case}/{verifier}`) checks them
+  against the hashes. For Factor's own verifiers, Factor looked the call up at the provider with the key that made it
+  and found it matching (a model of the declared maker, the hashes of the published request and output): the verdict's
+  model is marked **checked**.
+- **What it does not prove:** that a third party can check the provider's record (a provider shows a call only to the
+  key that made it), or that an outside verifier's declared maker is true. An outside verifier's receipt is shown as
+  given and marked **declared**, as is every verdict without one.
+
+## On ERC-8004
+
+Every verified job can go on the **ERC-8004 Validation Registry** on Robinhood Chain
+(`0x8004Cc8439f36fd5F9F049D9fF86523Df6dAAB58`, tag `factorVerify`). The owner of the agent's ERC-8004 identity, or an
+operator it approved, asks the verifier whose verdict was carried out to validate the job's case file; only that
+verifier answers, **100** for a verdict of accept and **0** for reject. Factor prepares both calls and serves the case
+file exactly as hashed; Factor's own verifiers answer by themselves, an outside verifier with the kit. An agent's count
+and average answer are read from the registry's `getSummary`. Factor holds no power over the registry: it cannot ask
+for an agent or answer for a verifier.
 
 ## Trust model
 

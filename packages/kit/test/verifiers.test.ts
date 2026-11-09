@@ -5,8 +5,9 @@
 import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { concat, ContractFunctionRevertedError, encodeAbiParameters, encodeErrorResult, keccak256, numberToHex, pad, stringToBytes, type Hex } from "viem";
-import { VERIFIERS_ABI } from "../src/verifiers.js";
+import { concat, ContractFunctionRevertedError, encodeAbiParameters, encodeErrorResult, encodeFunctionData, keccak256, numberToHex, pad, stringToBytes, type Hex } from "viem";
+import { checkReceipt, readReceipt, receiptBlock, receiptHashes, VALIDATION_REGISTRY, VERIFIERS_ABI, withReceipt } from "../src/verifiers.js";
+import { erc8004ValidationAbi } from "../src/abi/Erc8004Validation.js";
 import { privateKeyToAccount } from "viem/accounts";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { factorVerifiersAbi } from "../src/abi/FactorVerifiers.js";
@@ -370,15 +371,151 @@ describe("the texts handed to Factor", () => {
   });
 });
 
-describe("the tools", () => {
-  const NAMES = ["factor_verifiers_about", "factor_verifiers", "factor_verifier", "factor_verifier_cases", "factor_verifier_case", "factor_verifier_join", "factor_verifier_add_bond", "factor_verifier_withdraw", "factor_verifier_check", "factor_verifier_sit", "factor_verifier_reveal", "factor_hire_with_verifier", "factor_verified_accept", "factor_verified_reject", "factor_verified_concede", "factor_verified_dispute", "factor_verified_strike", "factor_verified_step"];
+describe("model receipts", () => {
+  const RECEIPT = { provider: "openrouter", generationId: "gen-1731150000-abc", model: "anthropic/claude-sonnet-5-5", requestHash: `0x${"AB".repeat(32)}`, outputHash: `0x${"cd".repeat(32)}` };
+  const BASE = "Verdict: reject\nTests:\n- fail: AAPL is 3% off the feed";
 
-  it("are the spec's 18, five of them reads, and 115 tools in all", () => {
+  it("adds the receipt's lines at the end of the reasons, before they are hashed, and reads them back", () => {
+    const block = `Receipt:\n- provider: openrouter\n- generation: gen-1731150000-abc\n- model: anthropic/claude-sonnet-5-5\n- request-hash: 0x${"ab".repeat(32)}\n- output-hash: 0x${"cd".repeat(32)}`;
+    expect(receiptBlock(checkReceipt(RECEIPT))).toBe(block);
+    expect(withReceipt(`${BASE}\n\n  `, RECEIPT)).toBe(`${BASE}\n${block}`);
+    expect(withReceipt(BASE)).toBe(BASE);
+    expect(reasonHashOf(withReceipt(BASE, RECEIPT))).toBe(keccak256(stringToBytes(`${BASE}\n${block}`)));
+    expect(readReceipt(withReceipt(BASE, RECEIPT))).toEqual({ ...checkReceipt(RECEIPT), more: {} });
+    // Factor's own verifiers add lines of their own after the five
+    expect(readReceipt(`${BASE}\n${block}\n- reported-model: anthropic/claude-sonnet-5-5-20261101\n- tokens: 1200 in, 340 out`)!.more).toEqual({ "reported-model": "anthropic/claude-sonnet-5-5-20261101", tokens: "1200 in, 340 out" });
+    expect(readReceipt(BASE)).toBeNull();
+    expect(receiptHashes('{"model":"x"}', "the answer")).toEqual({ requestHash: keccak256(stringToBytes('{"model":"x"}')), outputHash: keccak256(stringToBytes("the answer")) });
+  });
+
+  it("refuses a receipt that does not fit its lines, before anything is sent", () => {
+    for (const bad of [{ ...RECEIPT, requestHash: "0x12" }, { ...RECEIPT, generationId: "two words" }, { ...RECEIPT, provider: "" }, { ...RECEIPT, model: "a\nb" }, null]) expect(() => checkReceipt(bad), JSON.stringify(bad)).toThrow(Refusal);
+    expect(() => withReceipt(`${BASE}\nReceipt:\n- provider: x`, RECEIPT)).toThrow(/Receipt: line already/);
+    expect(() => withReceipt("x".repeat(3800), RECEIPT)).toThrow(/1 to 4,000 characters/);
+  });
+
+  it("a reveal makes the same reasons again from the receipt given at the seat, or from the verdict kept", async () => {
+    s.site.verifiers.about = ON;
+    const f = await connect({ privateKey: KEY });
+    const reason = withReceipt(BASE, RECEIPT);
+    const salt = saltOf(await privateKeyToAccount(KEY).signMessage({ message: sealMessage(7, ME) }));
+    const commit = commitOf(7, ME, false, reasonHashOf(reason), salt);
+    s.node.cases.set(7, chainCase());
+    s.node.seats.set(7, [{ verifier: ME, since: 2, maker: 2, vote: 0, commit }]);
+    s.node.verifierRefuse.reveal = { error: "TooSoon", args: [BigInt(Math.floor(Date.now() / 1000) + 3600)] };
+    // the reasons without their receipt are not what was sealed
+    expect((await refusal(f.revealVerdict(7, { accept: false, reason: BASE }))).code).toBe("bad_reveal");
+    expect((await refusal(f.revealVerdict(7, { receipt: RECEIPT }))).code).toBe("bad_verdict");
+    // with it, they are: the contract's clock is what refuses
+    expect((await refusal(f.revealVerdict(7, { accept: false, reason: BASE, receipt: RECEIPT }))).message).toMatch(/^Not before /);
+    const r = await runTool(f, "factor_verifier_reveal", { case: 7, accept: false, reason: BASE, receipt: { provider: "openrouter", generation_id: RECEIPT.generationId, model: RECEIPT.model, request_hash: RECEIPT.requestHash, output_hash: RECEIPT.outputHash } }, null);
+    expect(r.text).toMatch(/^Not before /);
+    await keepVerdict({ chainId: 4663, contract: VERIFIERS, case: 7, verifier: ME, accept: false, reason, reasonHash: reasonHashOf(reason), salt, commit, seat: 0, tx: `0x${"33".repeat(32)}`, revealFrom: null, revealBy: null });
+    expect((await refusal(f.revealVerdict(7))).message).toMatch(/^Not before /);
+    rmSync(join(dir, `4663-${VERIFIERS}-7.json`));
+    expect((await runTool(f, "factor_verifier_check", { case: 7, accept: true, reason: "ok", receipt: { provider: "openrouter" } }, null)).text).toMatch(/^That is not what factor_verifier_check takes/);
+    expect(sent()).toBe(0);
+  });
+
+  it("a case says each verdict's model: a receipt checked by Factor, or declared; and a verdict's receipt is read with its texts", async () => {
+    const checked = { mark: "checked", maker: 1, makerName: "Anthropic", receipt: { by: "factor", provider: "openrouter", generationId: "gen-1", modelAsked: "anthropic/claude-sonnet-5-5", modelReported: "anthropic/claude-sonnet-5-5", providerName: "Anthropic", tokensIn: 1200, tokensOut: 340, createdAt: "2026-11-09T09:20:00.000Z", requestHash: keccak256(stringToBytes("the request")), outputHash: keccak256(stringToBytes("the answer")), checkedAt: "2026-11-09T09:31:00.000Z", matches: true, why: null, url: "https://factoragents.fun/verifiers/receipt/7/0xf1" } };
+    const declared = { mark: "declared", maker: 3, makerName: "OpenAI", receipt: null };
+    s.site.verifiers = { about: ON, items: [], page: null, cases: [], case: { ...DISPUTED, first: { ...DISPUTED.first, model: checked }, seats: [{ ...DISPUTED.seats[0], model: declared }] }, post: null, receipt: { receipt: checked.receipt, request: "the request", output: "the answer!", providerRecord: { id: "gen-1" } } };
+    const f = await connect();
+    const text = (await runTool(f, "factor_verifier_case", { case: 7 }, null)).text;
+    expect(text).toContain("Its model: model receipt checked by Factor (Anthropic); receipt from openrouter, call gen-1, anthropic/claude-sonnet-5-5 asked, https://factoragents.fun/verifiers/receipt/7/0xf1.");
+    expect(text).toContain("Seat 0: 0x00000000000000000000000000000000000000f2 (OpenAI), sealed, not revealed. Its model: model declared (OpenAI).");
+    const r = await f.verdictReceipt(7, "0x00000000000000000000000000000000000000f1");
+    expect(r.hashesMatch).toEqual({ request: true, output: false });
+    expect((await runTool(f, "factor_verifiers", {}, null)).text).toBe("No verifier has joined yet.");
+    s.site.verifiers.items = [{ ...VERIFIER, receipts: { checked: 2, declared: 1 } }];
+    expect((await runTool(f, "factor_verifiers", {}, null)).text).toContain("Model receipts: 2 checked by Factor, 1 declared.");
+  });
+});
+
+describe("ERC-8004 validations", () => {
+  const FILE = '{"case":7,"verdict":"accept"}';
+  const FILE_HASH = keccak256(stringToBytes(FILE));
+  const VALIDATOR = "0x00000000000000000000000000000000000000f1";
+  const E = (over: Record<string, unknown> = {}) => ({
+    registry: VALIDATION_REGISTRY.toLowerCase(), tag: "factorVerify", agentId: "42", state: "prepared", validator: VALIDATOR, response: 100, file: "https://factoragents.fun/api/v1/verifiers/file/7", fileHash: FILE_HASH,
+    requestCall: { to: VALIDATION_REGISTRY.toLowerCase(), data: encodeFunctionData({ abi: erc8004ValidationAbi, functionName: "validationRequest", args: [VALIDATOR, 42n, "https://factoragents.fun/api/v1/verifiers/file/7", FILE_HASH] }) },
+    responseCall: { to: VALIDATION_REGISTRY.toLowerCase(), data: encodeFunctionData({ abi: erc8004ValidationAbi, functionName: "validationResponse", args: [FILE_HASH, 100, "https://factoragents.fun/api/v1/verifiers/file/7", FILE_HASH, "factorVerify"] }) },
+    requestedAt: null, answeredAt: null, ...over,
+  });
+  beforeEach(() => { s.node.registryRefuse = null; s.node.registryCalls = []; });
+
+  it("reads a case's validation and an agent's, and says them in words", async () => {
+    s.site.verifiers = { about: ON, items: [], page: null, cases: [], case: { ...CASE, erc8004: E({ state: "answered", answeredAt: "2026-11-10T10:00:00.000Z" }) }, post: null, erc8004: E() };
+    const f = await connect();
+    expect((await f.verifiedErc8004(7))!.state).toBe("prepared");
+    expect((await runTool(f, "factor_verified_erc8004", { case: 7 }, null)).text).toContain(`ERC-8004 validation: prepared. The owner of identity #42 asks the verifier ${VALIDATOR} to validate the case file with factor_verified_8004_request`);
+    expect((await runTool(f, "factor_verifier_case", { case: 7 }, null)).text).toContain(`On ERC-8004: the verifier ${VALIDATOR} answered 100 (accept) 2026-11-10T10:00:00.000Z for identity #42, tag factorVerify`);
+    expect((await runTool(f, "factor_verified_erc8004", {}, null)).text).toMatch(/one of the two/);
+    expect((await runTool(f, "factor_verified_erc8004", { agent: "lumen-07" }, null)).text).toBe("lumen-07 has no job hired with a verifier.");
+    s.site.state = state({ agents: [{ ...AGENTS[0]!, verified: { jobs: 3, accepted: 2, rejected: 1, disputed: 1, onErc8004: { count: 2, avgResponse: 50, registry: VALIDATION_REGISTRY, tag: "factorVerify" } } }, AGENTS[1]!] });
+    expect((await runTool(f, "factor_verified_erc8004", { agent: "lumen-07" }, null)).text).toBe(`lumen-07: 3 jobs hired with a verifier, 2 accepted, 1 rejected, 1 disputed. On the ERC-8004 Validation Registry (${VALIDATION_REGISTRY}, tag factorVerify): 2 validations, 50 of 100 on average.`);
+    expect((await f.verifiedCaseFile(7).catch((e: Refusal) => e.code))).toBe("no_file");
+    s.site.verifiers.file = FILE;
+    expect(await f.verifiedCaseFile(7)).toEqual({ text: FILE, hash: FILE_HASH });
+  });
+
+  it("asks for a validation only as Factor prepared it, to the registry, for that verifier, identity and file", async () => {
+    s.site.verifiers = { about: ON, items: [], page: null, cases: [], case: null, post: null, erc8004: E({ state: "requested" }), file: FILE };
+    const f = await connect({ privateKey: KEY });
+    expect((await refusal(f.requestErc8004Validation(7))).code).toBe("wrong_state");
+    s.site.verifiers.erc8004 = E({ state: "off", why: "validations are switched off" });
+    expect((await refusal(f.requestErc8004Validation(7))).code).toBe("erc8004_off");
+    s.site.verifiers.erc8004 = E({ registry: "0x00000000000000000000000000000000000dead0" });
+    expect((await refusal(f.requestErc8004Validation(7))).code).toBe("wrong_registry");
+    s.site.verifiers.erc8004 = E({ requestCall: { ...E().requestCall, to: "0x00000000000000000000000000000000000dead0" } });
+    expect((await refusal(f.requestErc8004Validation(7))).code).toBe("wrong_registry");
+    s.site.verifiers.erc8004 = E({ requestCall: { to: VALIDATION_REGISTRY, data: encodeFunctionData({ abi: erc8004ValidationAbi, functionName: "validationRequest", args: [ME as Hex, 42n, "https://factoragents.fun/api/v1/verifiers/file/7", FILE_HASH] }) } });
+    expect((await refusal(f.requestErc8004Validation(7))).code).toBe("bad_answer");
+    s.site.verifiers.erc8004 = E();
+    s.site.verifiers.file = `${FILE} `;
+    expect((await refusal(f.requestErc8004Validation(7))).code).toBe("bad_file");
+    s.site.verifiers.file = FILE;
+    expect(s.node.registryCalls).toEqual([]);
+    // as prepared: tried on the registry, which says who may ask
+    s.node.registryRefuse = "Not authorized";
+    expect((await refusal(f.requestErc8004Validation(7))).message).toBe("Only the owner of the agent's ERC-8004 identity, or an operator it approved, can ask for this validation.");
+    expect(s.node.registryCalls).toEqual(["validationRequest"]);
+    expect((await runTool(f, "factor_verified_8004_request", { case: 7 }, null)).text).toBe("Only the owner of the agent's ERC-8004 identity, or an operator it approved, can ask for this validation.");
+    expect(sent()).toBe(0);
+  });
+
+  it("answers a validation only from the verifier it names, with the verdict carried out", async () => {
+    s.site.verifiers = { about: ON, items: [], page: null, cases: [], case: null, post: null, erc8004: E({ state: "requested" }), file: FILE };
+    const f = await connect({ privateKey: KEY });
+    expect((await refusal(f.answerErc8004Validation(7))).code).toBe("not_validator");
+    const responseCall = { to: VALIDATION_REGISTRY, data: encodeFunctionData({ abi: erc8004ValidationAbi, functionName: "validationResponse", args: [FILE_HASH, 100, "https://factoragents.fun/api/v1/verifiers/file/7", FILE_HASH, "factorVerify"] }) };
+    s.site.verifiers.erc8004 = E({ state: "requested", validator: ME, responseCall });
+    s.node.registryRefuse = "unknown";
+    expect((await refusal(f.answerErc8004Validation(7))).message).toBe("The registry has no such request: the owner of the agent's ERC-8004 identity has not asked for this validation yet.");
+    // a call that says another answer than the verdict carried out is not sent
+    s.site.verifiers.erc8004 = E({ state: "requested", validator: ME, response: 0, responseCall });
+    expect((await refusal(f.answerErc8004Validation(7))).code).toBe("bad_answer");
+    s.site.verifiers.erc8004 = E({ state: "prepared", validator: ME });
+    expect((await refusal(f.answerErc8004Validation(7))).code).toBe("wrong_state");
+    Object.defineProperty(f, "via", { value: "0x00000000000000000000000000000000000acc07" });
+    expect((await runTool(f, "factor_verifier_8004_respond", { case: 7 }, null)).text).toMatch(/not offered through a Factor account/);
+    expect(s.node.registryCalls).toEqual(["validationResponse"]);
+    expect(sent()).toBe(0);
+  });
+});
+
+describe("the tools", () => {
+  const NAMES =["factor_verifiers_about", "factor_verifiers", "factor_verifier", "factor_verifier_cases", "factor_verifier_case", "factor_verifier_join", "factor_verifier_add_bond", "factor_verifier_withdraw", "factor_verifier_check", "factor_verifier_sit", "factor_verifier_reveal", "factor_hire_with_verifier", "factor_verified_accept", "factor_verified_reject", "factor_verified_concede", "factor_verified_dispute", "factor_verified_strike", "factor_verified_step", "factor_verified_erc8004", "factor_verified_8004_request", "factor_verifier_8004_respond"];
+  const READS = [...NAMES.slice(0, 5), "factor_verified_erc8004"];
+  const WRITES = NAMES.filter((x) => !READS.includes(x));
+
+  it("are the spec's 21, six of them reads, and 118 tools in all", () => {
     const mine = TOOLS.filter((t) => NAMES.includes(t.name));
     expect(mine.map((t) => t.name)).toEqual(NAMES);
-    expect(mine.filter((t) => t.readOnly).map((t) => t.name)).toEqual(NAMES.slice(0, 5));
-    expect([...VERIFIER_WRITE_TOOLS]).toEqual(NAMES.slice(5));
-    expect(TOOLS.length).toBe(115);
+    expect(mine.filter((t) => t.readOnly).map((t) => t.name)).toEqual(READS);
+    expect([...VERIFIER_WRITE_TOOLS]).toEqual(WRITES);
+    expect(TOOLS.length).toBe(118);
     expect(new Set(TOOLS.map((t) => t.name)).size).toBe(TOOLS.length);
     for (const name of ["factor_verifier_join", "factor_verifier_add_bond", "factor_hire_with_verifier", "factor_verified_dispute"]) expect(TOOLS.find((t) => t.name === name)!.description, name).toMatch(/SPENDS ETH/);
     for (const name of ["factor_verified_reject", "factor_verified_concede"]) expect(TOOLS.find((t) => t.name === name)!.description, name).toMatch(/SETTLES AT HALF/);
@@ -386,11 +523,11 @@ describe("the tools", () => {
     for (const t of mine) expect(t.description, t.name).not.toContain(String.fromCharCode(0x2014));
   });
 
-  it("the five reads are on the hosted /mcp, and none of the writes", () => {
+  it("the six reads are on the hosted /mcp, and none of the writes", () => {
     const route = readFileSync(join(__dirname, "../../../web/src/app/mcp/route.ts"), "utf8");
     const hosted = JSON.parse(`[${/const HOSTED = \[([^\]]*)\]/.exec(route)![1]}]`) as string[];
-    for (const name of NAMES.slice(0, 5)) expect(hosted, name).toContain(name);
-    for (const name of NAMES.slice(5)) expect(hosted, name).not.toContain(name);
+    for (const name of READS) expect(hosted, name).toContain(name);
+    for (const name of WRITES) expect(hosted, name).not.toContain(name);
     for (const name of hosted) expect(TOOLS.find((t) => t.name === name)?.readOnly, name).toBe(true);
   });
 });

@@ -64,6 +64,21 @@ one itself when its `next` is `step` and nobody has. (`step`, `_rejectOrClock`)
 **15. A refused payout is kept, not lost.** Customers and agents are paid with 50,000 gas; a wallet that refuses it has
 it in `owed(address)`, collected with `collect(who)` or `collectTo(to)`.
 
+## Model receipts and ERC-8004
+
+**19. A receipt is part of the reasons.** It is added at their end before they are hashed, so the reveal must use the
+same receipt, to the character (the kit keeps the whole reasons in its verdict file). A receipt cannot be added later.
+
+**20. Show a verdict's model by its mark.** `checked` only when Factor looked the receipt up at the provider and it
+matched; `declared` for everything else, an outside verifier's receipt included. Never show a declared receipt as
+proof of the model or the maker: a provider's record can be read only with the key that made the call.
+
+**21. Send only the ERC-8004 call that fits the case.** Before sending `requestCall` or `responseCall`, check that it
+goes to the Validation Registry, decodes to the function and arguments of the case's `erc8004` answer (the validator,
+the identity, the file, its hash, the response, the tag `factorVerify`), and that the case file hashes to `fileHash`.
+Only the identity's owner or an approved operator may request (`"Not authorized"`); only the named validator may
+answer (`"unknown"` before a request). Both cost gas only.
+
 ## Amounts and reading
 
 **16. Amounts are wei.** Never compute with the API's `...Eth` numbers; use the `...Wei` fields or the chain.

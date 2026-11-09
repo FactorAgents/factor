@@ -1,0 +1,134 @@
+{
+  "contract": "ERC8004ValidationRegistry",
+  "address": "0x8004Cc8439f36fd5F9F049D9fF86523Df6dAAB58",
+  "chainId": 4663,
+  "note": "It refuses with plain strings, not custom errors: \"Not authorized\" for a request not from the identity's owner or an approved operator, \"unknown\" for a request never made.",
+  "events": [
+    {
+      "name": "ValidationRequest",
+      "signature": "ValidationRequest(address,uint256,string,bytes32)",
+      "topic0": "0x530436c3634a98e1e626b0898be2f1e9980cc1bd2a78c07a0aba52d0a48a5059",
+      "inputs": [
+        {
+          "name": "validatorAddress",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "agentId",
+          "type": "uint256",
+          "indexed": true,
+          "internalType": "uint256"
+        },
+        {
+          "name": "requestURI",
+          "type": "string",
+          "internalType": "string"
+        },
+        {
+          "name": "requestHash",
+          "type": "bytes32",
+          "indexed": true,
+          "internalType": "bytes32"
+        }
+      ]
+    },
+    {
+      "name": "ValidationResponse",
+      "signature": "ValidationResponse(address,uint256,bytes32,uint8,string,bytes32,string)",
+      "topic0": "0xafddf629e874ccc3963b6a888c477bd464a6c8525024fc88759ea3b2326349ae",
+      "inputs": [
+        {
+          "name": "validatorAddress",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "agentId",
+          "type": "uint256",
+          "indexed": true,
+          "internalType": "uint256"
+        },
+        {
+          "name": "requestHash",
+          "type": "bytes32",
+          "indexed": true,
+          "internalType": "bytes32"
+        },
+        {
+          "name": "response",
+          "type": "uint8",
+          "internalType": "uint8"
+        },
+        {
+          "name": "responseURI",
+          "type": "string",
+          "internalType": "string"
+        },
+        {
+          "name": "responseHash",
+          "type": "bytes32",
+          "internalType": "bytes32"
+        },
+        {
+          "name": "tag",
+          "type": "string",
+          "internalType": "string"
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "functions": [
+    {
+      "name": "getAgentValidations",
+      "signature": "getAgentValidations(uint256)",
+      "selector": "0x8d5d0c2d",
+      "stateMutability": "view"
+    },
+    {
+      "name": "getIdentityRegistry",
+      "signature": "getIdentityRegistry()",
+      "selector": "0xbc4d861b",
+      "stateMutability": "view"
+    },
+    {
+      "name": "getSummary",
+      "signature": "getSummary(uint256,address[],string)",
+      "selector": "0x1b7cabd6",
+      "stateMutability": "view"
+    },
+    {
+      "name": "getValidationStatus",
+      "signature": "getValidationStatus(bytes32)",
+      "selector": "0xff2febfc",
+      "stateMutability": "view"
+    },
+    {
+      "name": "getValidatorRequests",
+      "signature": "getValidatorRequests(address)",
+      "selector": "0x4bf3158c",
+      "stateMutability": "view"
+    },
+    {
+      "name": "getVersion",
+      "signature": "getVersion()",
+      "selector": "0x0d8e6e2c",
+      "stateMutability": "pure"
+    },
+    {
+      "name": "validationRequest",
+      "signature": "validationRequest(address,uint256,string,bytes32)",
+      "selector": "0xaaf400c4",
+      "stateMutability": "nonpayable"
+    },
+    {
+      "name": "validationResponse",
+      "signature": "validationResponse(bytes32,uint8,string,bytes32,string)",
+      "selector": "0x3d659a96",
+      "stateMutability": "nonpayable"
+    }
+  ]
+}

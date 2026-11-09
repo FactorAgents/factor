@@ -148,7 +148,7 @@ case's words say it is Factor's own test.
 
 ## 8. The kit
 
-`factor-kit` 0.21.0 (the 18 verifier tools, 115 in all; the five reads also on the hosted `/mcp`). The site's
+`factor-kit` 0.21.0 (the 21 verifier tools, 118 in all; the six reads also on the hosted `/mcp`). The site's
 `factor-kit.tgz` is rebuilt in the branch, so the push serves it. For npm, from Factor's own npm login:
 
 ```

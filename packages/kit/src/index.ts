@@ -15,7 +15,7 @@
 //   - with `gasless: true` the key needs no ETH at all. It acts through a Factor account, a small contract that
 //     obeys this key and nobody else: the key signs what the account should do, and Factor sends it and pays the
 //     gas. Factor cannot sign for the account, move what is in it, or change what was signed.
-import { BaseError, ContractFunctionRevertedError, createPublicClient, createWalletClient, decodeEventLog, defineChain, encodeFunctionData, formatEther, http, keccak256, parseEther, toHex, type Abi, type Account, type Hex, type PublicClient, type WalletClient } from "viem";
+import { BaseError, ContractFunctionRevertedError, createPublicClient, createWalletClient, decodeEventLog, decodeFunctionData, defineChain, encodeFunctionData, formatEther, http, keccak256, parseEther, toHex, type Abi, type Account, type Hex, type PublicClient, type WalletClient } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { factorAccountAbi } from "./abi/FactorAccount.js";
 import { factorAccountsAbi } from "./abi/FactorAccounts.js";
@@ -30,9 +30,10 @@ import { factorBountyAbi } from "./abi/FactorBounty.js";
 import { BOUNTY_STATES, bountyEntryHash, bountyParts, bountyReadMessage, bountyWordsOf, bytesOf, MIN_PRIZE_WEI, TASK_BYTES, textHash, WORK_BYTES } from "./bounties.js";
 import { factorMilestonesAbi } from "./abi/FactorMilestones.js";
 import { checkTerms, MAX_STAGE_S, MILESTONE_STATES, milestoneWordsOf, MIN_STAGE_S, MIN_STAGE_WEI, termsHash } from "./milestones.js";
-import { caseNumber, CASE_WORDS, checkReason, checkVerifierTerms, commitOf, keepVerdict, makerName, MIN_BOND_WEI, MIN_FEE_WEI, MIN_JOB_WEI, readVerdict, reasonHashOf, saltOf, sealMessage, sendVerifierText, VERIFIER_STATES, VERIFIERS_ABI, VERIFIERS_GASLESS, verifiersOff, verifierTermsHash } from "./verifiers.js";
+import { caseNumber, CASE_WORDS, checkReason, checkVerifierTerms, commitOf, keepVerdict, makerName, MIN_BOND_WEI, MIN_FEE_WEI, MIN_JOB_WEI, readVerdict, reasonHashOf, saltOf, sealMessage, sendVerifierText, textHashOf, VALIDATION_REGISTRY, VALIDATION_TAG, validationWordsOf, VERIFIER_STATES, VERIFIERS_ABI, VERIFIERS_GASLESS, verifiersOff, verifierTermsHash, withReceipt } from "./verifiers.js";
+import { erc8004ValidationAbi } from "./abi/Erc8004Validation.js";
 import { CHAIN_ID, DEFAULT_API, DEFAULT_RPC } from "./defaults.js";
-import type { AccountInfo, Agent, AgentPage, Applicant, Application, AutoApplyStatus, ComputeCredit, ComputeKey, Deal, Erc8004Entries, Erc8004Status, Firm, FirmHire, FirmPage, FirmRecord, Job, JobPage, JobState, JobTree, LedgerLine, ModelAnswer, OpenJob, OpenJobHire, PickedJob, OpenJobPage, OpenJobPosted, Page, PayLinkInfo, Plan, PlanMonthSent, PlanPage, RouterModel, Sent, State, SubJob, OwnerCheck, VerifiedStatus, Coin, CoinsAbout, CoinLaunched, CoinLaunchTx, CreditLine, LinesAbout, LineSent, AgentGuarantee, Cover, CoverState, CoveredHire, GuaranteesAbout, GuaranteeSent, BountiesAbout, Bounty, BountyPage, BountyEntry, BountyPoster, AgentBounties, BountyPosted, BountyEntered, BountyPicked, BountyState, Burn, PublishedLink, MilestonesAbout, MilestonePlan, MilestonesHired, MilestoneSent, MilestoneState, AgentMilestones, VerifiersAbout, Verifier, VerifierCase, VerifierCaseState, VerifierPage, VerifierSent, VerifiedHire, VerdictGiven, VerdictSealed } from "./types.js";
+import type { AccountInfo, Agent, AgentPage, Applicant, Application, AutoApplyStatus, ComputeCredit, ComputeKey, Deal, Erc8004Entries, Erc8004Status, Firm, FirmHire, FirmPage, FirmRecord, Job, JobPage, JobState, JobTree, LedgerLine, ModelAnswer, OpenJob, OpenJobHire, PickedJob, OpenJobPage, OpenJobPosted, Page, PayLinkInfo, Plan, PlanMonthSent, PlanPage, RouterModel, Sent, State, SubJob, OwnerCheck, VerifiedStatus, Coin, CoinsAbout, CoinLaunched, CoinLaunchTx, CreditLine, LinesAbout, LineSent, AgentGuarantee, Cover, CoverState, CoveredHire, GuaranteesAbout, GuaranteeSent, BountiesAbout, Bounty, BountyPage, BountyEntry, BountyPoster, AgentBounties, BountyPosted, BountyEntered, BountyPicked, BountyState, Burn, PublishedLink, MilestonesAbout, MilestonePlan, MilestonesHired, MilestoneSent, MilestoneState, AgentMilestones, VerifiersAbout, Verifier, VerifierCase, VerifierCaseState, VerifierPage, VerifierSent, VerifiedHire, VerdictGiven, VerdictSealed, ModelReceiptInput, VerdictReceipt, VerifiedErc8004, AgentVerified } from "./types.js";
 import { coinAskMessage, coinDescription, coinLogo, coinNameProblem, coinPermissionTypedData, suggestCoin, type CoinPermission } from "./coins.js";
 import { MONTH_S, PLAN_TITLE_MOST, planMessage, stopPlanMessage, type PlanText } from "./plans.js";
 import { FIRM_SLUG, firmHireMessage, firmMessage, joinMessage, leaveMessage, slugOf } from "./firms.js";
@@ -66,7 +67,8 @@ export { BOUNTY_WORDS, bountyEntryHash, bountyParts, bountyReadMessage, MIN_PRIZ
 export { checkTerms, MAX_STAGES, MILESTONE_WORDS, MIN_STAGE_WEI, MIN_STAGES, termsHash, termsText } from "./milestones.js";
 export type { Terms } from "./milestones.js";
 export { VERIFIER_WORDS, verifierWordsOf } from "./words.js";
-export { CASE_WORDS, checkReason, checkVerifierTerms, commitOf, disputeBondOf, keepVerdict, makerName, MAKERS, readVerdict, reasonHashOf, saltOf, sealMessage, sendVerifierText, stakeOf, VERIFIER_STATES, VERIFIERS_ABI, VERIFIERS_GASLESS, verifierTermsHash, verifierTermsText } from "./verifiers.js";
+export { CASE_WORDS, checkReason, checkReceipt, readReceipt, receiptBlock, receiptHashes, VALIDATION_REGISTRY, VALIDATION_TAG, validationWordsOf, withReceipt, checkVerifierTerms, commitOf, disputeBondOf, keepVerdict, makerName, MAKERS, readVerdict, reasonHashOf, saltOf, sealMessage, sendVerifierText, stakeOf, VERIFIER_STATES, VERIFIERS_ABI, VERIFIERS_GASLESS, verifierTermsHash, verifierTermsText } from "./verifiers.js";
+export { erc8004ValidationAbi } from "./abi/Erc8004Validation.js";
 export type { KeptVerdict } from "./verifiers.js";
 export { ERC8004_TAG, erc8004LinkMessage, erc8004Registry, IDENTITY_REGISTRY, REPUTATION_REGISTRY, SCORE_TAG } from "./erc8004.js";
 export { checkAgent, checkAgents, embedSnippet, everywhereAbout, everywhereSigner, FactorConnect, hireLink, verifyAnswer, verifyWebhook } from "./everywhere.js";
@@ -2800,13 +2802,14 @@ export class Factor {
    * As a verifier: give the first verdict on a delivered case, before its first 4 hours are over. `accept`: the work meets
    * the brief. `reason`: what was checked and why, 1 to 4,000 characters, hashed exactly as given; the hash goes on the
    * chain and the words to Factor. The verdict stakes the case's stake (`stakeEth` of the case) from the free bond. The
-   * first verdict given is the one.
+   * first verdict given is the one. `receipt`: a model receipt, added at the end of the reasons before they are hashed
+   * (receiptBlock), so the verdict commits on the chain to that provider call and to the exact request and answer.
    */
-  async checkWork(id: number, accept: boolean, reason: string): Promise<VerdictGiven> {
+  async checkWork(id: number, accept: boolean, reason: string, o: { receipt?: ModelReceiptInput } = {}): Promise<VerdictGiven> {
     const me = this.plainWallet();
     const n = caseNumber(id);
     verdictOf(accept);
-    const text = checkReason(reason);
+    const text = withReceipt(checkReason(reason), o.receipt);
     const contract = await this.verifiersContract();
     const c = await this.verifierCase(n);
     if (!c) throw new Refusal(`There is no case ${n} on Factor.`, "no_case");
@@ -2824,13 +2827,14 @@ export class Factor {
    * the delivery). The salt is made from this wallet's signature of fixed words, so it never has to be stored; the seal is
    * worked out here and checked against the contract's own commitOf. Keep `accept` and `reason` exactly: the reveal, from
    * 14 to 18 hours after the delivery, needs both, and a seat never revealed loses all of its stake. They are also kept,
-   * with the salt, in ~/.factor/verdicts (mode 600) unless `keep` is false.
+   * with the salt, in ~/.factor/verdicts (mode 600) unless `keep` is false. `receipt`: a model receipt, added at the end of
+   * the reasons before they are sealed, and kept with them.
    */
-  async sitOnPanel(id: number, accept: boolean, reason: string, o: { keep?: boolean; dir?: string } = {}): Promise<VerdictSealed> {
+  async sitOnPanel(id: number, accept: boolean, reason: string, o: { keep?: boolean; dir?: string; receipt?: ModelReceiptInput } = {}): Promise<VerdictSealed> {
     const me = this.plainWallet();
     const n = caseNumber(id);
     verdictOf(accept);
-    const text = checkReason(reason);
+    const text = withReceipt(checkReason(reason), o.receipt);
     const contract = await this.verifiersContract();
     const c = await this.verifierCase(n, { verifier: me });
     if (!c) throw new Refusal(`There is no case ${n} on Factor.`, "no_case");
@@ -2848,17 +2852,19 @@ export class Factor {
 
   /**
    * As a panelist, from 14 to 18 hours after the delivery: reveal the verdict sealed at the seat. `accept` and `reason`
-   * exactly as sealed, or neither to use the ones this kit kept. Refused before anything is sent when they are not what
+   * exactly as sealed (with the same `receipt`, when one was given), or neither to use the ones this kit kept. Refused
+   * before anything is sent when they are not what
    * this wallet sealed.
    */
-  async revealVerdict(id: number, o: { accept?: boolean; reason?: string; dir?: string } = {}): Promise<VerdictGiven> {
+  async revealVerdict(id: number, o: { accept?: boolean; reason?: string; receipt?: ModelReceiptInput; dir?: string } = {}): Promise<VerdictGiven> {
     const me = this.plainWallet();
     const n = caseNumber(id);
     if ((o.accept === undefined) !== (o.reason === undefined)) throw new Refusal("Give both the verdict and the reasons exactly as they were sealed, or neither to use the ones this kit kept.", "bad_verdict");
     if (o.accept !== undefined) verdictOf(o.accept);
-    if (o.reason !== undefined) checkReason(o.reason);
+    const given = o.reason !== undefined ? withReceipt(checkReason(o.reason), o.receipt) : undefined;
+    if (o.receipt && given === undefined) throw new Refusal("A receipt goes with the verdict and the reasons it was sealed with.", "bad_verdict");
     const contract = await this.verifiersContract();
-    let accept = o.accept, reason = o.reason;
+    let accept = o.accept, reason = given;
     if (accept === undefined || reason === undefined) {
       const kept = await readVerdict(this.chainId, contract, n, o.dir);
       if (!kept || kept.verifier !== me) throw new Refusal(`No verdict on case ${n} was kept on this machine for this wallet: give the verdict and the reasons exactly as they were sealed.`, "no_verdict");
@@ -2997,6 +3003,133 @@ export class Factor {
     const owed = (await this.pub.readContract({ address: contract, abi: VERIFIERS_ABI, functionName: "owed", args: [to] })) as bigint;
     if (owed === 0n) throw new Refusal("Nothing is waiting to be collected.", "nothing_owed");
     return { ...this.sent(await this.callVerifiers(contract, "collect", [to], 0n)), amountEth: ethText(owed) };
+  }
+
+  /**
+   * A verdict's model receipt in full: the receipt, the exact request body and answer text its hashes are of, and the
+   * provider's own record when Factor read it (its own verifiers only). `hashesMatch` says whether the texts given hash
+   * to the receipt's hashes, worked out here. Reads only.
+   */
+  async verdictReceipt(id: number, verifier: string): Promise<VerdictReceipt & { hashesMatch: { request: boolean | null; output: boolean | null } }> {
+    const n = caseNumber(id), who = this.walletOf(verifier);
+    const r = await read<VerdictReceipt>(this.api, `/verifiers/receipt/${n}/${who}`);
+    if (!r) return { receipt: null, request: null, output: null, providerRecord: null, hashesMatch: { request: null, output: null } };
+    const same = (text: string | null, hash: string | undefined) => (text === null || !hash ? null : textHashOf(text) === hash.toLowerCase());
+    return { ...r, hashesMatch: { request: same(r.request, r.receipt?.requestHash), output: same(r.output, r.receipt?.outputHash) } };
+  }
+
+  /**
+   * A verified job on the ERC-8004 Validation Registry: where its validation stands, the case file and its hash, the
+   * verifier who validates it and its answer (100 accept, 0 reject), and the two calls ready to send. null: no such case.
+   * Reads only.
+   */
+  async verifiedErc8004(id: number): Promise<VerifiedErc8004 | null> {
+    return (await read<{ erc8004: VerifiedErc8004 }>(this.api, `/verifiers/erc8004/${caseNumber(id)}`))?.erc8004 ?? null;
+  }
+
+  /** An agent's jobs hired with a verifier, how they ended, and its validations on ERC-8004. null: it has none. Left out: this wallet's own. Reads only. */
+  async agentVerified(agent?: string): Promise<AgentVerified | null> {
+    const id = agent ?? this.mine();
+    const page = await this.agent(id);
+    if (!page) throw new Refusal(`There is no agent ${id} on Factor.`, "no_agent");
+    return page.agent.verified ?? null;
+  }
+
+  /** A verified job's case file, exactly as Factor serves it and as its hash is taken: the text, and the keccak256 of its bytes. */
+  async verifiedCaseFile(id: number): Promise<{ text: string; hash: Hex }> {
+    let r: Response;
+    try {
+      r = await fetch(`${this.api}/verifiers/file/${caseNumber(id)}`, { signal: AbortSignal.timeout(20_000) });
+    } catch {
+      throw new Refusal("Factor's site could not be reached.", "no_site");
+    }
+    if (!r.ok) throw new Refusal(r.status === 404 ? `Case ${id} has no case file yet.` : `Factor's site answered ${r.status}.`, r.status === 404 ? "no_file" : "no_site");
+    const bytes = new Uint8Array(await r.arrayBuffer());
+    return { text: new TextDecoder().decode(bytes), hash: keccak256(bytes) };
+  }
+
+  /**
+   * As the owner of the agent's ERC-8004 identity (or an operator it approved): ask the verifier whose verdict was
+   * carried out to validate a verified job on the ERC-8004 Validation Registry. Sends the request Factor prepared, once
+   * the kit has checked it: to the registry, for that verifier, identity and case file, whose hash it works out itself.
+   * Gas only.
+   */
+  async requestErc8004Validation(id: number): Promise<Sent & { case: number; agentId: string; validator: string; file: string; fileHash: Hex }> {
+    this.plainWallet();
+    const n = caseNumber(id);
+    const e = await this.erc8004Ready(n, "prepared");
+    const call = this.checkedRegistryCall(e.requestCall, "validationRequest", (a) => String(a[0]).toLowerCase() === e.validator!.toLowerCase() && BigInt(a[1] as bigint) === BigInt(e.agentId!) && a[2] === e.file && String(a[3]).toLowerCase() === e.fileHash!.toLowerCase());
+    await this.checkFileHash(n, e.fileHash!);
+    const sent = await this.callRegistry(call.functionName, call.args);
+    return { ...this.sent(sent), case: n, agentId: e.agentId!, validator: e.validator!.toLowerCase(), file: e.file!, fileHash: e.fileHash!.toLowerCase() as Hex };
+  }
+
+  /**
+   * As the verifier whose verdict was carried out, once the agent identity's owner asked: answer the validation on the
+   * ERC-8004 Validation Registry, 100 for a verdict of accept carried out and 0 for reject, with the case file and the
+   * tag factorVerify. Factor's own verifiers answer by themselves. Gas only.
+   */
+  async answerErc8004Validation(id: number): Promise<Sent & { case: number; response: 0 | 100; fileHash: Hex }> {
+    const me = this.plainWallet();
+    const n = caseNumber(id);
+    const e = await this.erc8004Ready(n, "requested");
+    if (!e.validator || e.validator.toLowerCase() !== me) throw new Refusal(`Only the verifier the request names (${e.validator ?? "none"}) can answer case ${n}'s validation. This wallet is not that one.`, "not_validator");
+    if (e.response !== 0 && e.response !== 100) throw new Refusal(`Case ${n} has no verdict carried out to answer with.`, "no_verdict");
+    const call = this.checkedRegistryCall(e.responseCall, "validationResponse", (a) => String(a[0]).toLowerCase() === e.fileHash!.toLowerCase() && Number(a[1]) === e.response && a[2] === e.file && String(a[3]).toLowerCase() === e.fileHash!.toLowerCase() && a[4] === VALIDATION_TAG);
+    await this.checkFileHash(n, e.fileHash!);
+    const sent = await this.callRegistry(call.functionName, call.args);
+    return { ...this.sent(sent), case: n, response: e.response, fileHash: e.fileHash!.toLowerCase() as Hex };
+  }
+
+  /** A case's ERC-8004 validation, in the state a call needs, with what the call needs. */
+  private async erc8004Ready(n: number, want: "prepared" | "requested"): Promise<VerifiedErc8004> {
+    await this.verifiersContract();
+    const e = await this.verifiedErc8004(n);
+    if (!e) throw new Refusal(`There is no case ${n} on Factor.`, "no_case");
+    const now: Record<string, string> = { off: "Factor does not prepare ERC-8004 validations right now", "no-identity": "the agent has no ERC-8004 identity linked on Factor", "no-verdict": "no verdict has been carried out yet", prepared: "it is prepared: the owner of the agent's identity asks first (factor_verified_8004_request)", requested: "it is requested already: the verifier answers (factor_verifier_8004_respond)", answered: "it is answered already" };
+    if (e.state !== want) throw new Refusal(`Case ${n}'s ERC-8004 validation cannot be ${want === "prepared" ? "requested" : "answered"} now: ${now[e.state] ?? e.state}.${e.why ? ` ${sentence(e.why)}` : ""}`, e.state === "off" ? "erc8004_off" : "wrong_state");
+    if (!e.validator || !e.agentId || !e.file || !e.fileHash || !/^0x[0-9a-fA-F]{64}$/.test(e.fileHash)) throw new Refusal(`Factor's answer for case ${n}'s validation is not complete. Nothing will be sent.`, "bad_answer");
+    if (e.registry.toLowerCase() !== VALIDATION_REGISTRY.toLowerCase()) throw new Refusal(`Factor names ${e.registry} as the Validation Registry, and the registry on Robinhood Chain is ${VALIDATION_REGISTRY}. Nothing will be sent.`, "wrong_registry");
+    return e;
+  }
+
+  /** A call Factor prepared for the Validation Registry, held to what it must be: to the registry, that function, those arguments. */
+  private checkedRegistryCall(call: { to: string; data: string } | null, fn: "validationRequest" | "validationResponse", same: (args: readonly unknown[]) => boolean): { functionName: string; args: readonly unknown[] } {
+    if (!call || call.to.toLowerCase() !== VALIDATION_REGISTRY.toLowerCase()) throw new Refusal(`The call Factor prepared is not to the Validation Registry (${VALIDATION_REGISTRY}). Nothing will be sent.`, "wrong_registry");
+    let d: { functionName: string; args?: readonly unknown[] };
+    try {
+      d = decodeFunctionData({ abi: erc8004ValidationAbi, data: call.data as Hex });
+    } catch {
+      throw new Refusal("The call Factor prepared is not one the Validation Registry knows. Nothing will be sent.", "bad_answer");
+    }
+    if (d.functionName !== fn || !same(d.args ?? [])) throw new Refusal(`The call Factor prepared is not the ${fn} this case needs. Nothing will be sent.`, "bad_answer");
+    return { functionName: d.functionName, args: d.args ?? [] };
+  }
+
+  /** The case file's hash, worked out here, must be the one the validation names. */
+  private async checkFileHash(n: number, fileHash: string): Promise<void> {
+    const f = await this.verifiedCaseFile(n);
+    if (f.hash !== fileHash.toLowerCase()) throw new Refusal(`Case ${n}'s file does not hash to ${fileHash}, the hash its validation names. Nothing will be sent.`, "bad_file");
+  }
+
+  /** One call to the Validation Registry, from this plain wallet: there is code at it, tried, sent, followed until it is mined. */
+  private async callRegistry(functionName: string, args: readonly unknown[]): Promise<{ hash: Hex; explorer: string; receipt: { logs: unknown[] } }> {
+    this.plainWallet();
+    const to = VALIDATION_REGISTRY.toLowerCase() as Hex;
+    const code = await this.pub.getCode({ address: to });
+    if (!code || code === "0x") throw new Refusal(`There is no contract at ${to}, where the Validation Registry is. Nothing will be sent to it.`, "no_contract");
+    let hash: Hex;
+    try {
+      const call = { address: to, abi: erc8004ValidationAbi, functionName, args, account: this.account! } as never;
+      const { request } = await this.pub.simulateContract(call);
+      const gas = await this.pub.estimateContractGas(call);
+      hash = await this.wallet!.writeContract({ ...(request as object), gas: (gas * 13n) / 10n } as never);
+    } catch (e) {
+      throw e instanceof Refusal ? e : new Refusal(validationWordsOf(e), "registry_refused");
+    }
+    const receipt = await this.pub.waitForTransactionReceipt({ hash, timeout: 180_000 });
+    if (receipt.status !== "success") throw new Refusal(`The transaction ${hash} was mined and refused. Nothing changed but the gas.`, "reverted");
+    return { hash, explorer: `${this.explorer}/tx/${hash}`, receipt };
   }
 
   private async caseCall(id: number, fn: "accept" | "reject" | "concede" | "step"): Promise<VerifierSent> {

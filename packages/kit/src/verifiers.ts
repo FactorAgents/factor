@@ -7,11 +7,11 @@
 //   reasonHash = keccak256(UTF-8 bytes of the reasons, exactly as given)
 //   salt       = keccak256(the wallet's personal_sign of sealMessage(case, wallet))
 //   commit     = keccak256(abi.encode(uint256 case, address wallet, bool accept, bytes32 reasonHash, bytes32 salt))
-import { encodeAbiParameters, keccak256, toHex, type Abi, type Hex } from "viem";
+import { BaseError, ContractFunctionRevertedError, encodeAbiParameters, keccak256, toHex, type Abi, type Hex } from "viem";
 import { factorDeskAbi } from "./abi/FactorDesk.js";
 import { factorVerifiersAbi } from "./abi/FactorVerifiers.js";
-import type { VerifierCaseState, VerifiersAbout } from "./types.js";
-import { Refusal } from "./words.js";
+import type { ModelReceiptInput, VerifierCaseState, VerifiersAbout } from "./types.js";
+import { explain, Refusal } from "./words.js";
 
 /** The contract's states, in the order it numbers them, as the API names them. */
 export const VERIFIER_STATES = ["none", "working", "checked", "disputed", "customer", "accepted", "rejected", "returned"] as const;
@@ -62,6 +62,86 @@ export function checkReason(reason: unknown): string {
   return reason;
 }
 
+// ---------- model receipts ----------
+
+/**
+ * A model receipt in a verdict's reasons: these lines at the very end, joined to the reasons (their trailing white space
+ * removed) by one line end. The reasons' hash on the chain then commits to that provider call and to the exact request
+ * body and answer text whose hashes it gives.
+ *
+ *   Receipt:
+ *   - provider: openrouter
+ *   - generation: <the provider's id of the call>
+ *   - model: <the model asked for>
+ *   - request-hash: 0x<keccak256 of the exact request body sent, UTF-8>
+ *   - output-hash: 0x<keccak256 of the answer's text, UTF-8>
+ */
+export const receiptBlock = (r: ModelReceiptInput): string =>
+  ["Receipt:", `- provider: ${r.provider}`, `- generation: ${r.generationId}`, `- model: ${r.model}`, `- request-hash: ${r.requestHash}`, `- output-hash: ${r.outputHash}`].join("\n");
+
+/** A receipt held to what fits its lines: refused here, before anything is sent. The hashes in lowercase. */
+export function checkReceipt(r: unknown): ModelReceiptInput {
+  const o = (r && typeof r === "object" ? r : {}) as Record<string, unknown>;
+  const field = (x: unknown, most: number, what: string, ok: RegExp): string => {
+    const s = typeof x === "string" ? x.trim() : "";
+    if (!s || s.length > most || !ok.test(s)) throw new Refusal(`The receipt's ${what}.`, "bad_receipt");
+    return s;
+  };
+  return {
+    provider: field(o.provider, 40, 'provider is a plain name of up to 40 characters, like "openrouter"', /^[A-Za-z0-9][A-Za-z0-9 ._-]*$/),
+    generationId: field(o.generationId, 200, "generation is the provider's id of the call: up to 200 characters, no spaces", /^[!-~]+$/),
+    model: field(o.model, 200, "model is the model asked for: up to 200 characters, no spaces", /^[!-~]+$/),
+    requestHash: field(o.requestHash, 66, "request hash is 0x and 64 hex characters: the keccak256 of the exact request body sent", /^0x[0-9a-fA-F]{64}$/).toLowerCase(),
+    outputHash: field(o.outputHash, 66, "output hash is 0x and 64 hex characters: the keccak256 of the answer's text", /^0x[0-9a-fA-F]{64}$/).toLowerCase(),
+  };
+}
+
+/** The reasons with a receipt at their end, as they are hashed. Without a receipt, the reasons as given. */
+export function withReceipt(reason: string, receipt?: ModelReceiptInput | null): string {
+  if (!receipt) return reason;
+  const r = checkReceipt(receipt);
+  if (/^Receipt:[ \t]*$/m.test(reason)) throw new Refusal("The reasons have a Receipt: line already. Give the receipt on its own, and the kit adds it at the end.", "bad_receipt");
+  return checkReason(`${reason.replace(/\s+$/, "")}\n${receiptBlock(r)}`);
+}
+
+/** A receipt's two hashes, from the exact request body sent to the provider and the answer's text. */
+export const receiptHashes = (request: string, output: string): { requestHash: Hex; outputHash: Hex } => ({ requestHash: textHashOf(request), outputHash: textHashOf(output) });
+
+/** The receipt at the end of a verdict's reasons, with any further lines (Factor's own verifiers add some). null: there is none. */
+export function readReceipt(reasons: string): (ModelReceiptInput & { more: Record<string, string> }) | null {
+  const lines = reasons.split("\n");
+  const at = lines.map((l) => l.trim()).lastIndexOf("Receipt:");
+  if (at < 0) return null;
+  const kv: Record<string, string> = {};
+  for (const l of lines.slice(at + 1)) {
+    const m = /^- ([a-z-]+): (.*)$/.exec(l.trim());
+    if (!m) return null;
+    kv[m[1]!] = m[2]!.trim();
+  }
+  const { provider, generation, model, "request-hash": requestHash, "output-hash": outputHash, ...more } = kv;
+  if (!provider || !generation || !model || !requestHash || !outputHash) return null;
+  return { provider, generationId: generation, model, requestHash, outputHash, more };
+}
+
+// ---------- ERC-8004 validations ----------
+
+/** The ERC-8004 Validation Registry on Robinhood Chain, and the tag Factor's validations of verified jobs carry. */
+export const VALIDATION_REGISTRY = "0x8004Cc8439f36fd5F9F049D9fF86523Df6dAAB58";
+export const VALIDATION_TAG = "factorVerify";
+
+/** What a failed call to the Validation Registry was, in words. It refuses with plain strings. */
+export function validationWordsOf(e: unknown): string {
+  if (e instanceof Refusal) return e.message;
+  if (e instanceof BaseError) {
+    const hit = e.walk((x) => x instanceof ContractFunctionRevertedError);
+    const said = hit instanceof ContractFunctionRevertedError ? hit.reason ?? "" : "";
+    if (/not authorized/i.test(said)) return "Only the owner of the agent's ERC-8004 identity, or an operator it approved, can ask for this validation.";
+    if (/^unknown$/i.test(said.trim())) return "The registry has no such request: the owner of the agent's ERC-8004 identity has not asked for this validation yet.";
+    if (said) return `The Validation Registry refuses it: ${said}.`;
+  }
+  return explain(e);
+}
+
 /** A case's number: a whole number, like 7. */
 export function caseNumber(id: unknown): number {
   if (typeof id !== "number" || !Number.isSafeInteger(id) || id < 1) throw new Refusal("A case's number is a whole number, like 7.", "bad_case");
@@ -96,6 +176,7 @@ export const verifiersOff = (chainId: number): VerifiersAbout => ({
   enabled: false, contract: null, chainId,
   rules: { minFeeEth: 0.0001, minBondEth: 0.01, stakePct: 20, minStakeEth: 0.001, wrongLossPct: 50, disputePct: 10, minDisputeEth: 0.0005, panel: 3, checkH: 4, disputeH: 2, seatH: 14, revealH: 18, reviewH: 24, reasonChars: REASON_MOST, titleChars: TITLE_MOST, briefChars: BRIEF_MOST },
   makers: Object.entries(MAKERS).map(([id, m]) => ({ id: Number(id), name: m.name, models: m.models })),
+  erc8004: { enabled: false, registry: VALIDATION_REGISTRY, tag: VALIDATION_TAG },
   totals: null, house: [],
 });
 

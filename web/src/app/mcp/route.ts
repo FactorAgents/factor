@@ -6,8 +6,9 @@
 // factor_copilot, a chat that prepares an unsigned action and a link where the person signs it (docs/COPILOT.md), and
 // factor_reviews, what an agent's paying customers say of it (docs/REVIEWS.md), and factor_builder_record, HEY Research
 // Lab's builder record of a Robinhood Chain project or of the project behind an agent, read through Factor's engine,
-// which is what asks HEY (docs/HEY.md), and the five reads of verified jobs: the rules, the verifiers, one verifier, the
-// open cases and one case (spec-pack/verifiers). None of the verifier tools that act on the chain is offered here.
+// which is what asks HEY (docs/HEY.md), and the six reads of verified jobs: the rules, the verifiers, one verifier, the
+// open cases, one case (spec-pack/verifiers), and where a verified job stands on the ERC-8004 Validation Registry. None
+// of the verifier tools that act on the chain is offered here.
 //
 // No key of any kind is held here, and none is asked for: nothing on this endpoint can send a transaction or sign
 // anything. The tools are the kit's, run as a kit with no key would run them (npx factor-mcp without FACTOR_PRIVATE_KEY),
@@ -25,7 +26,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /** The kit's tools this endpoint offers: the ones that only read, and the hire link, which a person opens and signs. */
-const HOSTED = ["factor_ask", "factor_copilot", "factor_reviews", "factor_builder_record", "factor_check_agent", "factor_hire_link", "factor_record", "factor_agent", "factor_agents", "factor_line", "factor_guarantee", "factor_erc8004", "factor_overview", "factor_open_jobs", "factor_firm_record", "factor_verifiers_about", "factor_verifiers", "factor_verifier", "factor_verifier_cases", "factor_verifier_case"] as const;
+const HOSTED = ["factor_ask", "factor_copilot", "factor_reviews", "factor_builder_record", "factor_check_agent", "factor_hire_link", "factor_record", "factor_agent", "factor_agents", "factor_line", "factor_guarantee", "factor_erc8004", "factor_overview", "factor_open_jobs", "factor_firm_record", "factor_verifiers_about", "factor_verifiers", "factor_verifier", "factor_verifier_cases", "factor_verifier_case", "factor_verified_erc8004"] as const;
 const PER_MINUTE = 60;
 // factor_ask has Factor's model read a sentence: one caller asks a few times a minute, under the engine's own limits
 const ASKS_PER_MINUTE = 4;
@@ -48,7 +49,7 @@ function tooMany(who: string, most = PER_MINUTE): boolean {
 }
 
 function server(caller: string): McpServer {
-  const s = new McpServer({ name: "factor", version: "0.21.0" }, { instructions: "Factor (factoragents.fun) is where AI agents are paid for work on Robinhood Chain. When a person says what they need, factor_ask writes the job and picks the agents that fit, each with a link to hire it. Check an agent's Factor Score, record, credit line and Guarantee before hiring it with factor_check_agent. To hire, give the person a link (from factor_ask or factor_hire_link): they lock the payment from their own wallet and sign there. factor_copilot runs the whole desk as a chat (hire, accept a delivery, a bounty, stages, a job's status, a review of a paid job) and hands back an unsigned action with the link where the person signs it. factor_reviews says what an agent's paying customers say of it. factor_builder_record answers whether the team behind a Robinhood Chain project, or behind an agent, is shipping, from HEY Research Lab's public builder record: give its facts as HEY's and cite the HEY link it returns; it is not a rating. factor_verifiers_about, factor_verifiers, factor_verifier, factor_verifier_cases and factor_verifier_case read verified jobs: the rules, the verifiers and their records, the open cases, and one case with its brief, its delivered work and its verdicts. Nothing here can send or sign anything." });
+  const s = new McpServer({ name: "factor", version: "0.21.0" }, { instructions: "Factor (factoragents.fun) is where AI agents are paid for work on Robinhood Chain. When a person says what they need, factor_ask writes the job and picks the agents that fit, each with a link to hire it. Check an agent's Factor Score, record, credit line and Guarantee before hiring it with factor_check_agent. To hire, give the person a link (from factor_ask or factor_hire_link): they lock the payment from their own wallet and sign there. factor_copilot runs the whole desk as a chat (hire, accept a delivery, a bounty, stages, a job's status, a review of a paid job) and hands back an unsigned action with the link where the person signs it. factor_reviews says what an agent's paying customers say of it. factor_builder_record answers whether the team behind a Robinhood Chain project, or behind an agent, is shipping, from HEY Research Lab's public builder record: give its facts as HEY's and cite the HEY link it returns; it is not a rating. factor_verifiers_about, factor_verifiers, factor_verifier, factor_verifier_cases, factor_verifier_case and factor_verified_erc8004 read verified jobs: the rules, the verifiers and their records, the open cases, and one case with its brief, its delivered work and its verdicts, each with its model receipt checked by Factor or its model declared; factor_verified_erc8004 says where a verified job stands on the ERC-8004 Validation Registry, or an agent's validations there. Nothing here can send or sign anything." });
   for (const name of HOSTED) {
     const tool = TOOLS.find((t) => t.name === name);
     if (!tool) continue;

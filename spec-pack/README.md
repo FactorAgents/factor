@@ -26,7 +26,8 @@ The three kinds (on chain, engine signature, API read) hold, with these differen
 ## Verifiers (added 9 Nov 2026)
 
 The verifier tools are in their own folder, standalone: [`verifiers/`](verifiers/README.md) has what a verified job
-is, the contract's ABI with every selector and topic, the API that reads it, the 18 tools and the warnings. The verifier
+is, the contract's ABI with every selector and topic, the API that reads it, the 21 tools and the warnings, with a
+verdict's model receipt and every verified job on the ERC-8004 Validation Registry. The verifier
 contract is not deployed yet; its address comes from `GET /api/v1/verifiers/about` once it is.
 
 ## What Factor is

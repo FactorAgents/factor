@@ -24,6 +24,8 @@ export interface AgentAnswer {
   line: { status: "open" | "owing" | "late" | "defaulted"; limitEth: number; owedEth: number; headroomEth: number; dueAt: string | null } | null;
   /** its Guarantee, or null: upToEth is the most it covers on one job now */
   guarantee: { selling: boolean; upToEth: number; sharePct: number; bondEth: number; freeEth: number; covers: number; delivered: number; paidOut: number; paidOutEth: number } | null;
+  /** its jobs hired with a verifier and how they ended, with its validations on ERC-8004; left out when it has none */
+  verified?: { jobs: number; accepted: number; rejected: number; disputed: number; onErc8004: { count: number; avgResponse: number; registry: string; tag: string } | null };
   /** the pay flow on Factor's site where a customer hires it */
   hire: string;
 }

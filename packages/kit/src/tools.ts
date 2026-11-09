@@ -10,7 +10,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { formatEther } from "viem";
 import { z } from "zod";
-import { bountyParts, Factor, Refusal, toWei, type Agent, type Bounty, type CoinPermission, type Job, type MilestonePlan, type Verifier, type VerifierCase, type VerifiersAbout } from "./index.js";
+import { bountyParts, Factor, Refusal, toWei, type Agent, type Bounty, type CoinPermission, type Job, type MilestonePlan, type ModelReceiptInput, type VerdictModel, type VerifiedErc8004, type Verifier, type VerifierCase, type VerifiersAbout } from "./index.js";
 import { CASE_WORDS, makerName, VERIFIERS_GASLESS } from "./verifiers.js";
 import { askedText } from "./ask.js";
 import { reviewsText } from "./reviews.js";
@@ -109,10 +109,43 @@ const amount = z.string().regex(/^\d{1,9}(\.\d{1,18})?$/).describe('ETH as text,
 const CASE_ID = z.number().int().positive().describe("The case's number");
 const ACCEPT = z.boolean().describe("true: the work meets the brief. false: it does not");
 const REASON = z.string().min(1).max(4000).describe("What was checked and why, in plain text: 1 to 4,000 characters. Hashed exactly as given: the hash goes on the chain and the words to Factor, where anyone can read them");
+const RECEIPT = z.object({
+  provider: z.string().min(1).max(40).describe('The model provider the call went through, like "openrouter"'),
+  generation_id: z.string().min(1).max(200).describe("The provider's id of the call"),
+  model: z.string().min(1).max(200).describe("The model asked for"),
+  request_hash: z.string().regex(/^0x[0-9a-fA-F]{64}$/).describe("0x and the keccak256 of the exact request body sent to the provider, UTF-8"),
+  output_hash: z.string().regex(/^0x[0-9a-fA-F]{64}$/).describe("0x and the keccak256 of the model's answer text, UTF-8"),
+}).strict().optional().describe("A model receipt, when the verdict came from a model call: the kit adds it at the end of the reasons before they are hashed, so the verdict commits on the chain to that provider call and those exact texts. Factor shows it as declared: a provider's record can only be read with the key that made the call");
+const receiptOf = (r: unknown): { receipt?: ModelReceiptInput } => {
+  if (!r) return {};
+  const x = r as { provider: string; generation_id: string; model: string; request_hash: string; output_hash: string };
+  return { receipt: { provider: x.provider, generationId: x.generation_id, model: x.model, requestHash: x.request_hash, outputHash: x.output_hash } };
+};
+const modelText = (m?: VerdictModel): string => {
+  if (!m) return "";
+  const r = m.receipt;
+  const head = m.mark === "checked" ? `model receipt checked by Factor (${m.makerName})` : `model declared (${m.makerName})`;
+  if (!r) return ` Its model: ${head}.`;
+  return ` Its model: ${head}; receipt from ${r.provider}, call ${r.generationId}, ${r.modelAsked} asked${r.modelReported && r.modelReported !== r.modelAsked ? `, ${r.modelReported} reported` : ""}${r.matches === false && r.why ? `; it did not match at the provider: ${r.why}` : ""}${r.url ? `, ${r.url}` : ""}.`;
+};
+const said = (response: number | null): string => (response === 100 ? "100 (accept)" : response === 0 ? "0 (reject)" : "its answer");
+const erc8004Text = (e: VerifiedErc8004): string => {
+  const who = e.validator ? `the verifier ${e.validator}` : "the verifier";
+  const why = e.why ? ` ${e.why.charAt(0).toUpperCase()}${e.why.slice(1).replace(/([^.!?])$/, "$1.")}` : "";
+  switch (e.state) {
+    case "off": return `ERC-8004 validation: off.${why}`;
+    case "no-identity": return `ERC-8004 validation: none, the agent has no ERC-8004 identity linked on Factor.${why}`;
+    case "no-verdict": return `ERC-8004 validation: none yet, no verdict has been carried out.${why}`;
+    case "prepared": return `ERC-8004 validation: prepared. The owner of identity #${e.agentId} asks ${who} to validate the case file with factor_verified_8004_request; ${who} then answers ${said(e.response)}.${why}`;
+    case "requested": return `ERC-8004 validation: requested ${e.requestedAt ?? ""}. ${who.charAt(0).toUpperCase()}${who.slice(1)} answers ${said(e.response)} with factor_verifier_8004_respond; Factor's own verifiers answer by themselves.${why}`;
+    case "answered": return `On ERC-8004: ${who} answered ${said(e.response)} ${e.answeredAt ?? ""} for identity #${e.agentId}, tag ${e.tag}, on the Validation Registry ${e.registry}. The case file: ${e.file}.${why}`;
+    default: return `ERC-8004 validation: ${e.state}.${why}`;
+  }
+};
 const VERIFIERS_OFF = "Verifiers are not switched on on Factor yet: the verifier tools are not available.";
 const short = (a: string): string => `${a.slice(0, 6)}...${a.slice(-4)}`;
 const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`;
-const verifierLine = (v: Verifier): string => `${v.name ?? v.address} (${v.makerName}${v.house ? ", one of Factor's own" : ""}): ${v.standing ? `standing since ${v.since}` : "no standing (its bond is under 0.01 ETH)"}, ${v.freeEth} ETH free and ${v.lockedEth} ETH staked on ${plural(v.open, "open case")}. ${plural(v.checks, "first check")}, ${plural(v.panels, "panel")}; ${v.right} right and ${v.wrong} wrong${v.rightPct !== null ? ` (${v.rightPct}% right)` : ""}, ${plural(v.hidden, "seat")} never revealed, struck ${plural(v.struck, "time")}. Earned ${v.earnedEth} ETH, lost ${v.lostEth} ETH. Address ${v.address}.`;
+const verifierLine = (v: Verifier): string => `${v.name ?? v.address} (${v.makerName}${v.house ? ", one of Factor's own" : ""}): ${v.standing ? `standing since ${v.since}` : "no standing (its bond is under 0.01 ETH)"}, ${v.freeEth} ETH free and ${v.lockedEth} ETH staked on ${plural(v.open, "open case")}. ${plural(v.checks, "first check")}, ${plural(v.panels, "panel")}; ${v.right} right and ${v.wrong} wrong${v.rightPct !== null ? ` (${v.rightPct}% right)` : ""}, ${plural(v.hidden, "seat")} never revealed, struck ${plural(v.struck, "time")}. Earned ${v.earnedEth} ETH, lost ${v.lostEth} ETH.${v.receipts ? ` Model receipts: ${v.receipts.checked} checked by Factor, ${v.receipts.declared} declared.` : ""} Address ${v.address}.`;
 const NEXT_WORD: Record<string, string> = { check: "waiting for a verifier's first check", dispute: "the side the verdict goes against may dispute it", seats: "its panel is seating", reveals: "its panel is revealing", step: "its time has come: anyone can step it (factor_verified_step)", customer: "the customer's to accept or reject, by the desk's own rule" };
 const caseLine = (c: VerifierCase): string => {
   const now = c.state === "working" && !c.deliveredAt ? "the agent is working" : CASE_WORDS[c.state] ?? c.state;
@@ -125,14 +158,15 @@ const caseText = (c: VerifierCase): string => [
   c.deadlines ? `Delivered ${c.deliveredAt}. First check by ${c.deadlines.checkBy}${c.deadlines.disputeBy ? `; a dispute by ${c.deadlines.disputeBy}` : ""}; panel seats and strikes until ${c.deadlines.seatBy}; reveals until ${c.deadlines.revealBy}; the desk's own end ${c.deadlines.reviewBy}.` : "The agent has not delivered on the desk yet.",
   c.brief ? `The brief:\n${cut(c.brief, 4000)}` : "The job's words have not reached Factor yet.",
   c.work ? `The delivered work (${c.work.kind === "html" ? "a page of HTML" : "text"}, ${c.work.at}):\n${cut(c.work.text, 6000)}` : c.deliveredAt ? "The delivered work has not been published to Factor yet." : "",
-  c.first ? `First verdict: ${c.first.accept ? "accept" : "reject"}, by ${c.first.verifier.name ?? c.first.verifier.address} (${c.first.verifier.makerName}) at ${c.first.at}.${c.first.reason ? ` Its reasons:\n${cut(c.first.reason, 2000)}` : ` Its reasons' hash: ${c.first.reasonHash}.`}` : "",
+  c.first ? `First verdict: ${c.first.accept ? "accept" : "reject"}, by ${c.first.verifier.name ?? c.first.verifier.address} (${c.first.verifier.makerName}) at ${c.first.at}.${c.first.reason ? ` Its reasons:\n${cut(c.first.reason, 2000)}` : ` Its reasons' hash: ${c.first.reasonHash}.`}${modelText(c.first.model)}` : "",
   c.dispute ? `Disputed by the ${c.dispute.by} (${c.dispute.address}) at ${c.dispute.at}, with a bond of ${c.dispute.bondEth} ETH.` : "",
-  ...(c.seats ?? []).map((x) => `Seat ${x.seat}: ${x.verifier.name ?? x.verifier.address} (${x.makerName}), ${x.vote ? `voted ${x.vote}` : "sealed, not revealed"}${x.reason ? `: ${cut(x.reason, 600)}` : ""}.${x.ties.length ? ` What Factor's records tie it to a side by: ${x.ties.join("; ")}.` : ""}`),
+  ...(c.seats ?? []).map((x) => `Seat ${x.seat}: ${x.verifier.name ?? x.verifier.address} (${x.makerName}), ${x.vote ? `voted ${x.vote}` : "sealed, not revealed"}${x.reason ? `: ${cut(x.reason, 600)}` : ""}.${modelText(x.model)}${x.ties.length ? ` What Factor's records tie it to a side by: ${x.ties.join("; ")}.` : ""}`),
   ...(c.struck ?? []).map((x) => `Struck by the ${x.by} at ${x.at}: ${x.verifier}.`),
   c.decided ? `Decided by ${c.decided.how === "first-check" ? "the first verdict" : c.decided.how === "panel" ? `the panel (${c.decided.votesAccept} for accept, ${c.decided.votesReject} for reject)` : c.decided.how}: ${c.decided.verdict ?? "the customer decides"}.` : "",
   c.paid?.length ? `Paid to verifiers: ${c.paid.map((p) => `${short(p.verifier)} ${p.eth} ETH`).join(", ")}.` : "",
   c.slashed?.length ? `Lost by verifiers: ${c.slashed.map((p) => `${short(p.verifier)} ${p.eth} ETH`).join(", ")}.` : "",
   c.ended ? `Ended ${c.ended.at}: ${c.ended.state} (${c.ended.how}), ${c.ended.toCustomerEth} ETH back to the customer.` : "",
+  c.erc8004 ? erc8004Text(c.erc8004) : "",
 ].filter(Boolean).join("\n");
 const aboutText = (r: VerifiersAbout): string => {
   const x = r.rules;
@@ -142,11 +176,12 @@ const aboutText = (r: VerifiersAbout): string => {
     `A verifier joins with a bond of at least ${x.minBondEth} ETH and stakes ${x.stakePct}% of the job's price (at least ${x.minStakeEth} ETH) on each verdict: a wrong call loses ${x.wrongLossPct}% of the stake, a panel seat never revealed all of it. What it earns is added to its free bond, taken out with factor_verifier_withdraw.`,
     ...(r.totals ? [`${plural(r.totals.cases, "case")} (${r.totals.open} open, ${r.totals.disputed} disputed, ${plural(r.totals.panels, "panel")}), ${plural(r.totals.verifiers, "verifier")} with ${r.totals.bondedEth} ETH bonded; ${r.totals.feesPaidEth} ETH paid to verifiers, ${r.totals.slashedEth} ETH lost by wrong or silent calls.`] : []),
     `Model makers: ${r.makers.map((m) => `${m.id} ${m.name} (${m.models})`).join(", ")}; 16 to 255 another maker. A declared maker cannot be checked on the chain: it is public, and a switch starts a verifier's standing again.`,
+    ...(r.erc8004 ? [r.erc8004.enabled ? `Verified jobs go on the ERC-8004 Validation Registry (${r.erc8004.registry}, tag ${r.erc8004.tag}): the agent identity's owner asks, and the verifier whose verdict was carried out answers 100 for accept or 0 for reject.` : "Factor does not prepare ERC-8004 validations of verified jobs right now."] : []),
     r.house.length ? `Factor's own verifiers, with bonds of their own: ${r.house.map((h) => `${h.address} (${h.makerName}, ${h.model})`).join(", ")}.` : "Factor runs no verifier of its own right now.",
   ].join("\n");
 };
 /** The verifier tools that act on the chain: from a plain wallet only, never through a Factor account. */
-export const VERIFIER_WRITE_TOOLS = ["factor_verifier_join", "factor_verifier_add_bond", "factor_verifier_withdraw", "factor_verifier_check", "factor_verifier_sit", "factor_verifier_reveal", "factor_hire_with_verifier", "factor_verified_accept", "factor_verified_reject", "factor_verified_concede", "factor_verified_dispute", "factor_verified_strike", "factor_verified_step"] as const;
+export const VERIFIER_WRITE_TOOLS = ["factor_verifier_join", "factor_verifier_add_bond", "factor_verifier_withdraw", "factor_verifier_check", "factor_verifier_sit", "factor_verifier_reveal", "factor_hire_with_verifier", "factor_verified_accept", "factor_verified_reject", "factor_verified_concede", "factor_verified_dispute", "factor_verified_strike", "factor_verified_step", "factor_verified_8004_request", "factor_verifier_8004_respond"] as const;
 
 export const TOOLS: Tool[] = [
   {
@@ -517,6 +552,7 @@ export const TOOLS: Tool[] = [
         c.line ? `Credit line: ${c.line.status}, ${c.line.headroomEth} ETH left to draw of a ${c.line.limitEth} ETH limit${c.line.owedEth ? `, ${c.line.owedEth} ETH owed` : ""}.` : "No credit line.",
         c.guarantee ? (c.guarantee.selling ? `Guarantee: covers up to ${c.guarantee.upToEth} ETH on one job (${c.guarantee.sharePct}% of a price at most), from a ${c.guarantee.bondEth} ETH bond; ${c.guarantee.covers} covers, ${c.guarantee.paidOut} paid out.` : `Guarantee: none on offer now (bond ${c.guarantee.bondEth} ETH).`) : "No Guarantee.",
         ...(c.agent.erc8004 ? [`ERC-8004 identity #${c.agent.erc8004.agentId}.`] : []),
+        ...(c.verified ? [`Hired with a verifier: ${c.verified.jobs} jobs, ${c.verified.accepted} accepted, ${c.verified.rejected} rejected, ${c.verified.disputed} disputed.${c.verified.onErc8004 ? ` On ERC-8004: ${c.verified.onErc8004.count} validations, ${c.verified.onErc8004.avgResponse} of 100 on average.` : ""}`] : []),
         `Signed by Factor and checked; as of block ${c.block}. Hire it: ${c.hire}`,
       ].join("\n");
     },
@@ -1537,18 +1573,18 @@ export const TOOLS: Tool[] = [
     },
   },
   {
-    name: "factor_verifier_check", readOnly: false, input: { case: CASE_ID, accept: ACCEPT, reason: REASON },
-    description: "As a verifier: give the first verdict on a delivered case, within 4 hours of the delivery. Read the brief and the delivered work with factor_verifier_case first, and check with tests where the work allows. The verdict STAKES part of this verifier's bond (the case's stake): if a panel decides against it, it loses half of the stake. The first verdict given is the one, and is paid the whole fee when nobody disputes it. Do not check a case where this wallet shows ties to a side.",
+    name: "factor_verifier_check", readOnly: false, input: { case: CASE_ID, accept: ACCEPT, reason: REASON, receipt: RECEIPT },
+    description: "As a verifier: give the first verdict on a delivered case, within 4 hours of the delivery. Read the brief and the delivered work with factor_verifier_case first, and check with tests where the work allows. The verdict STAKES part of this verifier's bond (the case's stake): if a panel decides against it, it loses half of the stake. The first verdict given is the one, and is paid the whole fee when nobody disputes it. A model receipt (receipt) commits the verdict to the model call behind it; Factor shows an outside verifier's receipt as declared. Do not check a case where this wallet shows ties to a side.",
     async run(f, a) {
-      const r = await f.checkWork(a.case as number, a.accept as boolean, String(a.reason));
+      const r = await f.checkWork(a.case as number, a.accept as boolean, String(a.reason), receiptOf(a.receipt));
       return `Case ${r.case}: the verdict ${r.accept ? "accept" : "reject"} is given, staking ${eth(r.stakeWei ?? 0n)} ETH of this verifier's bond. Its reasons' hash on the chain: ${r.reasonHash}. ${r.reasonPosted ? "The reasons are on the case's page." : r.note ?? ""} The side it goes against may dispute it within 2 hours; undisputed, this verifier is paid the fee. Transaction ${r.explorer}.`;
     },
   },
   {
-    name: "factor_verifier_sit", readOnly: false, input: { case: CASE_ID, accept: ACCEPT, reason: REASON },
-    description: "As a verifier: take a seat on a disputed case's panel with the verdict sealed, before seating closes 14 hours after the delivery. The seat STAKES part of this verifier's bond: a wrong call loses half of it, and A SEAT NEVER REVEALED LOSES ALL OF IT. Reveal it with factor_verifier_reveal from 14 to 18 hours after the delivery. Keep accept and reason exactly: the reveal needs both (this kit also keeps them on this machine, in ~/.factor/verdicts). An older standing can still take the seat, and each side may strike one panelist; either way the stake comes back.",
+    name: "factor_verifier_sit", readOnly: false, input: { case: CASE_ID, accept: ACCEPT, reason: REASON, receipt: RECEIPT },
+    description: "As a verifier: take a seat on a disputed case's panel with the verdict sealed, before seating closes 14 hours after the delivery. The seat STAKES part of this verifier's bond: a wrong call loses half of it, and A SEAT NEVER REVEALED LOSES ALL OF IT. Reveal it with factor_verifier_reveal from 14 to 18 hours after the delivery. Keep accept, reason and any receipt exactly: the reveal needs them (this kit also keeps them on this machine, in ~/.factor/verdicts). An older standing can still take the seat, and each side may strike one panelist; either way the stake comes back.",
     async run(f, a) {
-      const r = await f.sitOnPanel(a.case as number, a.accept as boolean, String(a.reason));
+      const r = await f.sitOnPanel(a.case as number, a.accept as boolean, String(a.reason), receiptOf(a.receipt));
       return [
         `Case ${r.case}: sat${r.seat !== null ? ` in seat ${r.seat}` : ""} with the verdict sealed, staking ${eth(r.stakeWei)} ETH of this verifier's bond. The seal on the chain: ${r.commit}. Transaction ${r.explorer}.`,
         `REVEAL IT from ${r.revealFrom} until ${r.revealBy} with factor_verifier_reveal, or the whole stake is lost. ${r.kept ? `The verdict and its salt are kept in ${r.kept}.` : "Nothing was kept on this machine: keep the verdict and the reasons below exactly."}`,
@@ -1558,10 +1594,10 @@ export const TOOLS: Tool[] = [
   },
   {
     name: "factor_verifier_reveal", readOnly: false,
-    input: { case: CASE_ID, accept: ACCEPT.optional().describe("The verdict exactly as sealed. Left out with reason: the one this kit kept"), reason: REASON.optional().describe("The reasons exactly as sealed. Left out with accept: the ones this kit kept") },
-    description: "As a panelist: reveal the verdict sealed at the seat, from 14 to 18 hours after the delivery. A seat never revealed loses all of its stake. Give accept and reason exactly as sealed, or neither to use the ones this kit kept on this machine; it is refused before anything is sent when they are not what this wallet sealed.",
+    input: { case: CASE_ID, accept: ACCEPT.optional().describe("The verdict exactly as sealed. Left out with reason: the one this kit kept"), reason: REASON.optional().describe("The reasons exactly as sealed. Left out with accept: the ones this kit kept"), receipt: RECEIPT.describe("The model receipt given at the seat, the same, when the reasons are given here") },
+    description: "As a panelist: reveal the verdict sealed at the seat, from 14 to 18 hours after the delivery. A seat never revealed loses all of its stake. Give accept and reason exactly as sealed (and the same receipt, when one was given at the seat), or neither to use the ones this kit kept on this machine, receipt included; it is refused before anything is sent when they are not what this wallet sealed.",
     async run(f, a) {
-      const r = await f.revealVerdict(a.case as number, { ...(a.accept !== undefined ? { accept: a.accept as boolean } : {}), ...(a.reason !== undefined ? { reason: String(a.reason) } : {}) });
+      const r = await f.revealVerdict(a.case as number, { ...(a.accept !== undefined ? { accept: a.accept as boolean } : {}), ...(a.reason !== undefined ? { reason: String(a.reason) } : {}), ...receiptOf(a.receipt) });
       return `Case ${r.case}: the verdict ${r.accept ? "accept" : "reject"} is revealed. ${r.reasonPosted ? "The reasons are on the case's page." : r.note ?? ""} The panel decides at 18 hours after the delivery, or once every seat has revealed. Transaction ${r.explorer}.`;
     },
   },
@@ -1637,6 +1673,39 @@ export const TOOLS: Tool[] = [
     async run(f, a) {
       const r = await f.stepVerified(a.case as number);
       return `Case ${r.case} is ${r.state ? CASE_WORDS[r.state] ?? r.state : "stepped"}. Transaction ${r.explorer}.`;
+    },
+  },
+  {
+    name: "factor_verified_erc8004", readOnly: true,
+    input: { case: CASE_ID.optional(), agent: z.string().optional().describe("Or an agent's name or address: its verified jobs and its validations on ERC-8004 in all") },
+    description: "Verified jobs on the ERC-8004 Validation Registry. For a case: where its validation stands (prepared, requested, answered), the verifier who validates it, its answer (100 accept, 0 reject), the agent's identity and the case file with its hash. For an agent: how many of its jobs were hired with a verifier and how they ended, and its count and average answer on the registry. Give the case's number or the agent.",
+    async run(f, a) {
+      if ((a.case === undefined) === (a.agent === undefined)) throw new Refusal("Give the case's number or the agent: one of the two.", "bad_case");
+      if (a.agent !== undefined) {
+        const v = await f.agentVerified(String(a.agent));
+        if (!v) return `${a.agent} has no job hired with a verifier.`;
+        return `${a.agent}: ${plural(v.jobs, "job")} hired with a verifier, ${v.accepted} accepted, ${v.rejected} rejected, ${v.disputed} disputed. ${v.onErc8004 ? `On the ERC-8004 Validation Registry (${v.onErc8004.registry}, tag ${v.onErc8004.tag}): ${plural(v.onErc8004.count, "validation")}, ${v.onErc8004.avgResponse} of 100 on average.` : "No validation on ERC-8004 yet."}`;
+      }
+      if (!(await f.verifiersAbout()).enabled) return VERIFIERS_OFF;
+      const e = await f.verifiedErc8004(a.case as number);
+      if (!e) return `There is no case ${a.case} on Factor.`;
+      return [erc8004Text(e), ...(e.agentId ? [`Identity #${e.agentId}; validator ${e.validator ?? "none yet"}.`] : []), ...(e.file ? [`The case file: ${e.file}, keccak256 ${e.fileHash}.`] : [])].join("\n");
+    },
+  },
+  {
+    name: "factor_verified_8004_request", readOnly: false, input: { case: CASE_ID },
+    description: "As the owner of the agent's ERC-8004 identity (or an operator it approved), once a verified job's verdict was carried out: ask the verifier whose verdict it was to validate the job on the ERC-8004 Validation Registry. Sends the request Factor prepared, after the kit checks it is to the registry, for that verifier, identity and case file, and that the file hashes to what it names. Only while the validation is prepared. Costs only the gas.",
+    async run(f, a) {
+      const r = await f.requestErc8004Validation(a.case as number);
+      return `Case ${r.case}: the validation is requested on the ERC-8004 Validation Registry, from the verifier ${r.validator}, for identity #${r.agentId}, with the case file ${r.file} (keccak256 ${r.fileHash}). The verifier answers it. Transaction ${r.explorer}.`;
+    },
+  },
+  {
+    name: "factor_verifier_8004_respond", readOnly: false, input: { case: CASE_ID },
+    description: "As the verifier whose verdict was carried out, once the agent identity's owner asked: answer the validation on the ERC-8004 Validation Registry, 100 for a verdict of accept and 0 for reject, with the case file and the tag factorVerify. Only while the validation is requested and only from the verifier it names; the kit checks the call Factor prepared before it is sent. Costs only the gas.",
+    async run(f, a) {
+      const r = await f.answerErc8004Validation(a.case as number);
+      return `Case ${r.case}: answered ${said(r.response)} on the ERC-8004 Validation Registry, for the case file ${r.fileHash}. Transaction ${r.explorer}.`;
     },
   },
 ];

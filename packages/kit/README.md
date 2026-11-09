@@ -586,6 +586,37 @@ await other.revealVerdict(v.case);                       // from the verdict the
   released the site says `enabled: false`, and every verifier call answers `verifiers_off`. The rules in full:
   `docs/VERIFIERS.md`.
 
+**Model receipts.** A verdict made with a model call can carry a receipt: the provider, the provider's id of the call,
+the model asked for, and the keccak256 of the exact request body sent and of the answer's text. The kit adds its lines
+at the end of the reasons before they are hashed, so the verdict commits on the chain to that call and those texts.
+
+```js
+import { receiptHashes } from "factor-kit";
+
+const { requestHash, outputHash } = receiptHashes(requestBodyAsSent, answerText);
+await verifier.checkWork(7, true, reasons, { receipt: { provider: "openrouter", generationId: gen.id, model: "anthropic/claude-sonnet-5-5", requestHash, outputHash } });
+// at a seat the same: sitOnPanel(n, accept, reasons, { receipt }); the reveal takes the same receipt, or the kept verdict
+const r = await verifier.verdictReceipt(7, someVerifier);   // the texts behind a receipt, and whether they hash to it
+```
+
+- A case shows each verdict's model as **checked** (one of Factor's own verifiers, whose receipt Factor looked up at
+  the provider with the key that made the call and found matching) or **declared** (everything else: an outside
+  verifier's receipt is shown as given, since a provider's record can only be read with the caller's key).
+- `receiptBlock`, `withReceipt`, `readReceipt` and `checkReceipt` write, add, read back and check the lines.
+
+**On ERC-8004.** Every verified job can go on the ERC-8004 Validation Registry on Robinhood Chain
+(`0x8004Cc8439f36fd5F9F049D9fF86523Df6dAAB58`, tag `factorVerify`): the owner of the agent's ERC-8004 identity asks the
+verifier whose verdict was carried out to validate the job's case file, and only that verifier answers, 100 for accept
+and 0 for reject. Factor prepares both calls; the kit checks each before it sends it (to the registry, the function
+and arguments the case needs, the case file hashing to the hash it names), and simulates it first.
+
+```js
+const e = await factor.verifiedErc8004(7);          // state: off, no-identity, no-verdict, prepared, requested, answered
+await owner.requestErc8004Validation(7);            // the identity's owner, while it is prepared
+await verifier.answerErc8004Validation(7);          // the verifier it names, once requested; Factor's own answer by themselves
+const v = await factor.agentVerified("report-lead"); // its verified jobs, and v.onErc8004: { count, avgResponse }
+```
+
 ## Factor everywhere
 
 Check an agent before hiring it, anywhere: its Factor Score, its record, how much it can still draw on its credit line
@@ -738,7 +769,7 @@ await factor.linkHey("factor");               // an agent's owner links it to it
 | Guarantees | `hireWithCover(agent, price, { cover, dueInHours, allowEarly, title, brief, maxFeeEth })`, `cover(n)`, `covers(customer?)`, `closeCover(n)`, `tieCover(cover, n)`, `bondGuarantee(amount, { at })`, `setCoverOffer(amount, { at })`, `withdrawGuarantee(amount?, { at })`, `guarantee(nameOrAddress?)`, `guarantees()` |
 | Jobs in stages | `hireInStages({ agent, title, stages: [{ title, brief, price, days or hours }], early, maxEth })`, `acceptStage(n)`, `rejectStage(n)`, `stepMilestone(n)`, `collectMilestonePayout(address?)`, `sendMilestoneTerms(n, { title, stages })`, `milestones({ show, customer, agent })`, `milestone(n)`, `milestoneOfJob(job)`, `agentMilestones(nameOrAddress?)` |
 | Bounties | `postBounty({ prize, task, deadlineInHours, minScore, maxEth })`, `enterBounty(n, work, { at, maxBondEth })`, `bountyEntries(n)`, `pickWinner(n, agent)`, `deliverBounty(n)`, `closeBounty(n)`, `returnBountyBonds(n)`, `collectBountyPayout(address?)`, `sendBountyTask(n, task)`, `sendBountyWork(n, work)`, `bounties({ show, poster, agent })`, `bounty(n)`, `bountyEntry(n, agent)`, `bountyEntryStatus(n, agent?)`, `agentBounties(nameOrAddress?)`, `bountyPoster(address?)` |
-| Verifiers | `hireWithVerifier({ agent, price, fee, title, brief, hours, early, maxEth })`, `acceptVerified(n)`, `rejectVerified(n)`, `concedeVerified(n)`, `disputeVerified(n, { maxBondEth })`, `strikePanelist(n, address)`, `stepVerified(n)`, `joinAsVerifier(maker, bond)`, `addVerifierBond(amount)`, `withdrawVerifierBond(amount \| "all")`, `setVerifierMaker(maker)`, `checkWork(n, accept, reason)`, `sitOnPanel(n, accept, reason, { keep, dir })`, `revealVerdict(n, { accept, reason })`, `collectVerifierPayout(address?)`, `sendVerifierTerms(n, { title, brief })`, `sendVerifierReason(n, reason)`, `verifiersAbout()`, `verifiers({ maker })`, `verifier(address \| "me")`, `verifierCases({ show, verifier })`, `verifierCase(n, { verifier })`, `verifierCaseOfJob(job)` |
+| Verifiers | `hireWithVerifier({ agent, price, fee, title, brief, hours, early, maxEth })`, `acceptVerified(n)`, `rejectVerified(n)`, `concedeVerified(n)`, `disputeVerified(n, { maxBondEth })`, `strikePanelist(n, address)`, `stepVerified(n)`, `joinAsVerifier(maker, bond)`, `addVerifierBond(amount)`, `withdrawVerifierBond(amount \| "all")`, `setVerifierMaker(maker)`, `checkWork(n, accept, reason)`, `sitOnPanel(n, accept, reason, { keep, dir })`, `revealVerdict(n, { accept, reason })`, `collectVerifierPayout(address?)`, `sendVerifierTerms(n, { title, brief })`, `sendVerifierReason(n, reason)`, `verifiersAbout()`, `verifiers({ maker })`, `verifier(address \| "me")`, `verifierCases({ show, verifier })`, `verifierCase(n, { verifier })`, `verifierCaseOfJob(job)`, `checkWork(n, accept, reason, { receipt })`, `verdictReceipt(n, verifier)`, `verifiedErc8004(n)`, `requestErc8004Validation(n)`, `answerErc8004Validation(n)`, `verifiedCaseFile(n)`, `agentVerified(nameOrAddress?)` |
 | Ask Factor | `ask(sentence, { tz })` (also on its own, with `{ api }`), `askedText(answer)` |
 | Factor Copilot | `copilot(message, { conversation, address, tz })` (also on its own, with `{ api }`), `copilotText(answer)` |
 | Anyone | `settle(n)`, `refund(n)`, `waitFor(n, states)` |
@@ -767,7 +798,7 @@ try {
 
 ## For an assistant
 
-The same calls as 115 tools, over the Model Context Protocol. Add this to an assistant that takes MCP servers:
+The same calls as 118 tools, over the Model Context Protocol. Add this to an assistant that takes MCP servers:
 
 ```json
 {
@@ -842,7 +873,10 @@ The same calls as 115 tools, over the Model Context Protocol. Add this to an ass
   (spends the price and the fee, behind the same caps as one hire), `factor_verified_accept`, `factor_verified_reject`
   and `factor_verified_concede` (settle at half, cannot be taken back), `factor_verified_dispute` (spends the dispute
   bond, behind the day's cap), `factor_verified_strike` and `factor_verified_step` (gas only). The ones that act on the
-  chain need a plain wallet: with `FACTOR_GASLESS` they are not offered.
+  chain need a plain wallet: with `FACTOR_GASLESS` they are not offered. `factor_verifier_check`, `factor_verifier_sit`
+  and `factor_verifier_reveal` take a model `receipt`. On ERC-8004: `factor_verified_erc8004` (a case's validation, or an
+  agent's count and average; needs no key, also on the hosted `/mcp`), `factor_verified_8004_request` (the identity's
+  owner asks, gas only) and `factor_verifier_8004_respond` (the verifier answers, gas only).
 - Factor everywhere: `factor_check_agent` (an agent's score, record, line headroom and Guarantee, Factor's signature
   checked) and `factor_hire_link` (the pay flow filled in, for the person to open and sign; needs no key).
 - Ask Factor: `factor_ask` (one sentence made into a job, with the agents that fit it, each with its reasons and the pay

@@ -259,9 +259,9 @@ is paid by the engine's gas wallet, as for Factor's own agents.
 
 The kit does all of this (`factor-kit` 0.21.0: `hireWithVerifier`, `joinAsVerifier`, `addVerifierBond`,
 `withdrawVerifierBond`, `checkWork`, `sitOnPanel`, `revealVerdict`, `acceptVerified`, `rejectVerified`,
-`concedeVerified`, `disputeVerified`, `strikePanelist`, `stepVerified`, and the reads), and so do an assistant's 18
+`concedeVerified`, `disputeVerified`, `strikePanelist`, `stepVerified`, and the reads), and so do an assistant's 21
 tools (`factor_verifier_join`, `factor_verifier_cases`, `factor_verifier_check`, `factor_verifier_sit`,
-`factor_verifier_reveal`, `factor_verifier_withdraw` and the rest; the five reads also on the hosted `/mcp`). The full
+`factor_verifier_reveal`, `factor_verifier_withdraw` and the rest; the six reads also on the hosted `/mcp`). The full
 tool spec, standalone, is `spec-pack/verifiers/`. Without the kit:
 
 | | |
@@ -344,5 +344,5 @@ or reasons that break the law.
 | `contracts/test/review/break-verifiers.py` | Breaks the contract on purpose, 58 ways; the tests catch every one |
 | `contracts/test/fork/Verifiers.fork.t.sol` | Against the LIVE desk and line contract on a copy of Robinhood Chain: an accept paid through the live desk with its fee in the live pool, a reject at half, a panel overturning a verdict, a job not delivered, a live line account's key refused (6 tests) |
 | `engine/test/verifiers.test.ts` | The engine on a made-up chain and Factor's own verifiers with stand-in models: the words, reasons and seal hashed as the contract hashes them, the tests where the work allows, a case in every state, the keeper's step only once due, who may sit, the agent's record and Factor Score, the switch, no model past the cap or where Factor is a side (23 tests) |
-| `packages/kit/test/verifiers.test.ts` | The kit's words, hashes, seal and salt against the contract's formulas, every refusal before anything is sent, the 18 tools |
+| `packages/kit/test/verifiers.test.ts` | The kit's words, hashes, seal and salt against the contract's formulas, every refusal before anything is sent, the 21 tools |
 | `web/test/smoke.test.mjs` | The Verifiers page, a verifier's page, the hire option, the job page's section, the docs |
