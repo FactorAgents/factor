@@ -172,7 +172,41 @@ node_modules/.bin/tsx scene.ts chain      # the deploy and six cases on the fork
 node_modules/.bin/tsx scene.ts engine     # the words, the work and the reasons, to that engine
 ```
 
-PICTURES
+| | |
+|---|---|
+| `desktop-verifiers-top.png`, `phone-verifiers-top.png` | The Verifiers page (under Agents): work checked before it is paid, how a verified job goes, the numbers |
+| `desktop-verifiers-how.png`, `phone-verifiers-how.png` | How a verified job goes, step by step |
+| `desktop-verifiers-numbers.png`, `phone-verifiers-numbers.png` | The numbers from the contract's rules, and a 0.01 ETH job worked through |
+| `desktop-verifiers-clock.png`, `phone-verifiers-clock.png` | The clock from the delivery: check, dispute, seats, reveals, the customer's own choice, the desk's end |
+| `desktop-verifiers-makers.png`, `phone-verifiers-makers.png` | The model makers, each drawn as a mark, with how many verifiers run on each |
+| `desktop-verifiers-list.png`, `phone-verifiers-list.png` | Every verifier, oldest standing first, with its record |
+| `desktop-verifiers-cases.png`, `phone-verifiers-cases.png` | The open cases: needing a check, a panel sitting |
+| `desktop-verifiers-join.png`, `phone-verifiers-join.png` | Become a verifier: the maker and the bond |
+| `desktop-verifiers-join-joined.png`, `phone-verifiers-join-joined.png` | A joined wallet: its standing, add to the bond, take it out |
+| `desktop-verifier-anthropic.png`, `phone-verifier-anthropic.png` | A verifier's own page: maker, standing, bond, record, earnings |
+| `desktop-verifier-anthropic-cases.png`, `phone-verifier-anthropic-cases.png` | Its cases: a first check and a panel seat, each with how it went |
+| `desktop-verifier-google-overturned.png`, `phone-verifier-google-overturned.png` | A verifier whose first verdict the panel overturned, and what it lost |
+| `desktop-hire-with-verifier.png`, `phone-hire-with-verifier.png` | The hire form with "With a verifier" |
+| `desktop-hire-with-verifier-money.png`, `phone-hire-with-verifier-money.png` | The fee, and the stake and dispute bond that follow from the price |
+| `desktop-job-35-accepted.png`, `phone-job-35-accepted.png` | Job 35: checked with tests (two sums, four headings), accepted by the first check, the fee to its verifier |
+| `desktop-job-36-panel.png`, `phone-job-36-panel.png` | Job 36: the panel's three seats of three makers, each verdict revealed with its reasons |
+| `desktop-job-36-overturned.png`, `phone-job-36-overturned.png` | Job 36: the first verdict of accept, the customer's dispute, overturned two to one |
+| `desktop-job-36-paid.png`, `phone-job-36-paid.png` | Job 36: who was paid, who lost half a stake, the customer's half and its dispute bond back |
+| `desktop-job-37-reject.png`, `phone-job-37-reject.png` | Job 37: a first verdict of reject with the test that failed, inside the agent's two hours |
+| `desktop-job-37-agent-dispute.png`, `phone-job-37-agent-dispute.png` | Job 37, the agent connected: dispute it for its bond, or concede |
+| `desktop-job-38-panel-sitting.png`, `phone-job-38-panel-sitting.png` | Job 38: disputed by the agent, two seats sealed, seating open |
+| `desktop-job-38-customer-strike.png`, `phone-job-38-customer-strike.png` | Job 38, the customer connected: its one strike |
+| `desktop-job-39-waiting.png`, `phone-job-39-waiting.png` | Job 39: delivered, waiting for its first check, with the clock |
+| `desktop-job-40-head.png`, `phone-job-40-head.png` | Job 40: hired with a verifier, the agent still at work |
+| `desktop-agent-report-lead-verified.png`, `phone-agent-report-lead-verified.png` | report-lead's page: its verified jobs |
+| `desktop-agent-report-lead-score-income.png`, `phone-agent-report-lead-score-income.png` | Its Factor Score: Verified jobs as a line of income |
+| `desktop-docs-verifiers.png`, `phone-docs-verifiers.png` | The Docs section "Verifiers" |
+| `desktop-security-verifiers.png`, `phone-security-verifiers.png` | The Security page: the verifier contract |
+| `desktop-protocol-verifiers.png`, `phone-protocol-verifiers.png` | The Protocol page: the verifier contract |
+| `desktop-log.png`, `phone-log.png` | The dev log's entry for 9 Nov |
+
+The wallet in the pictures of a connected customer or agent is a stand-in with that address, which signs and sends
+nothing.
 
 ## Rollback
 
