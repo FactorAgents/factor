@@ -6,13 +6,13 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { callerOf } from "@/lib/caller";
 import { engineUrl, sampleMode } from "@/lib/data";
-import { sampleCase, sampleCaseOfJob, sampleJobPage, sampleVerifierCases, sampleVerifierList, sampleVerifierPage, sampleVerifiersAbout, withVerifiers } from "@/lib/verifiersSample";
+import { sampleCase, sampleCaseFile, sampleReceipt, sampleCaseOfJob, sampleJobPage, sampleVerifierCases, sampleVerifierList, sampleVerifierPage, sampleVerifiersAbout, withVerifiers } from "@/lib/verifiersSample";
 import { sampleAgent, sampleReviews, sampleAutoApply, sampleBounties, sampleBounty, sampleMilestoneOfJob, sampleCoin, sampleCoins, sampleGuarantee, sampleGuarantees, sampleLine, sampleLines, sampleFirm, sampleJobs, sampleLedger, sampleOpenJob, sampleOpenJobs, samplePlan, sampleState } from "@/lib/sample";
 import { answerBody, answerHeaders, sharedRead } from "@/lib/shared";
 import { sampleAsk } from "@/lib/askSample";
 import { sampleCopilot } from "@/lib/copilotSample";
 
-const READS = /^(state|ask|copilot|copilot\/c\/[0-9a-f]{32}|pulse|desk|agents|agents\/made\/0x[0-9a-fA-F]{40}|agents\/[0-9a-zA-Z-]{3,42}|jobs|jobs\/\d{1,9}|jobs\/\d{1,9}\/tree|ledger|burns|accounts\/0x[0-9a-fA-F]{40}|accounts\/relay\/0x[0-9a-f]{64}|accounts\/by-credential\/0x[0-9a-f]{2,2046}|pay\/link\/[A-Za-z0-9_-]{20,6000}\.[A-Za-z0-9_-]{80,3000}|pay\/links\/0x[0-9a-fA-F]{40}|firms|firms\/[a-z0-9-]{3,32}|plans|plans\/0x[0-9a-f]{64}|erc8004|erc8004\/[0-9a-zA-Z-]{3,42}|openjobs|openjobs\/0x[0-9a-f]{64}|autoapply\/[0-9a-zA-Z-]{3,42}|verified|verified\/[0-9a-zA-Z-]{3,42}|coins|coins\/about|coins\/[0-9a-zA-Z-]{3,42}|lines|lines\/about|lines\/[0-9a-zA-Z-]{3,42}|guarantees|guarantees\/about|guarantees\/agent\/[0-9a-zA-Z-]{3,42}|guarantees\/(job|cover)\/\d{1,9}|guarantees\/customer\/0x[0-9a-fA-F]{40}|bounties|bounties\/about|bounties\/\d{1,9}|bounties\/\d{1,9}\/entries\/0x[0-9a-fA-F]{40}|bounties\/\d{1,9}\/mine\/0x[0-9a-fA-F]{40}|bounties\/agent\/[0-9a-zA-Z-]{3,42}|bounties\/poster\/0x[0-9a-fA-F]{40}|milestones|milestones\/about|milestones\/\d{1,9}|milestones\/job\/\d{1,9}|milestones\/agent\/[0-9a-zA-Z-]{3,42}|milestones\/customer\/0x[0-9a-fA-F]{40}|reviews|reviews\/agent\/[0-9a-zA-Z-]{3,42}|reviews\/job\/\d{1,9}|reviews\/job\/\d{1,9}\/erc8004|reviews\/file\/\d{1,9}\/\d{1,2}|hey|hey\/record|hey\/agent\/[0-9a-zA-Z-]{3,42}|verifiers|verifiers\/about|verifiers\/cases|verifiers\/case\/\d{1,9}|verifiers\/job\/\d{1,9}|verifiers\/0x[0-9a-fA-F]{40})$/;
+const READS = /^(state|ask|copilot|copilot\/c\/[0-9a-f]{32}|pulse|desk|agents|agents\/made\/0x[0-9a-fA-F]{40}|agents\/[0-9a-zA-Z-]{3,42}|jobs|jobs\/\d{1,9}|jobs\/\d{1,9}\/tree|ledger|burns|accounts\/0x[0-9a-fA-F]{40}|accounts\/relay\/0x[0-9a-f]{64}|accounts\/by-credential\/0x[0-9a-f]{2,2046}|pay\/link\/[A-Za-z0-9_-]{20,6000}\.[A-Za-z0-9_-]{80,3000}|pay\/links\/0x[0-9a-fA-F]{40}|firms|firms\/[a-z0-9-]{3,32}|plans|plans\/0x[0-9a-f]{64}|erc8004|erc8004\/[0-9a-zA-Z-]{3,42}|openjobs|openjobs\/0x[0-9a-f]{64}|autoapply\/[0-9a-zA-Z-]{3,42}|verified|verified\/[0-9a-zA-Z-]{3,42}|coins|coins\/about|coins\/[0-9a-zA-Z-]{3,42}|lines|lines\/about|lines\/[0-9a-zA-Z-]{3,42}|guarantees|guarantees\/about|guarantees\/agent\/[0-9a-zA-Z-]{3,42}|guarantees\/(job|cover)\/\d{1,9}|guarantees\/customer\/0x[0-9a-fA-F]{40}|bounties|bounties\/about|bounties\/\d{1,9}|bounties\/\d{1,9}\/entries\/0x[0-9a-fA-F]{40}|bounties\/\d{1,9}\/mine\/0x[0-9a-fA-F]{40}|bounties\/agent\/[0-9a-zA-Z-]{3,42}|bounties\/poster\/0x[0-9a-fA-F]{40}|milestones|milestones\/about|milestones\/\d{1,9}|milestones\/job\/\d{1,9}|milestones\/agent\/[0-9a-zA-Z-]{3,42}|milestones\/customer\/0x[0-9a-fA-F]{40}|reviews|reviews\/agent\/[0-9a-zA-Z-]{3,42}|reviews\/job\/\d{1,9}|reviews\/job\/\d{1,9}\/erc8004|reviews\/file\/\d{1,9}\/\d{1,2}|hey|hey\/record|hey\/agent\/[0-9a-zA-Z-]{3,42}|verifiers|verifiers\/about|verifiers\/cases|verifiers\/case\/\d{1,9}|verifiers\/job\/\d{1,9}|verifiers\/0x[0-9a-fA-F]{40}|verifiers\/erc8004\/\d{1,9}|verifiers\/file\/\d{1,9}|verifiers\/receipt\/\d{1,9}\/0x[0-9a-fA-F]{40})$/;
 // two things a wallet signs, what an account without a wallet asks of the engine (lib/passkey.ts), a job paid
 // through a Pay with Factor link (lib/pay.ts), an agent hiring another for part of its job (lib/subjobs.ts), and a
 // firm formed, joined, left or hired (lib/firms.ts), and a monthly plan signed, a month of it linked, or a plan stopped
@@ -53,6 +53,8 @@ function fromSample(path: string, q: URLSearchParams): unknown {
   if (/^verifiers\/case\/\d+$/.test(path)) return ((c) => (c ? { case: c } : null))(sampleCase(Number(path.slice(15))));
   if (/^verifiers\/job\/\d+$/.test(path)) return ((c) => (c ? { case: c } : null))(sampleCaseOfJob(Number(path.slice(14))));
   if (path.startsWith("verifiers/0x")) return sampleVerifierPage(path.slice(10).toLowerCase());
+  if (/^verifiers\/erc8004\/\d+$/.test(path)) return sampleCase(Number(path.slice(18)))?.erc8004 ?? null;
+  if (/^verifiers\/receipt\/\d+\/0x[0-9a-fA-F]{40}$/.test(path)) { const [, id, who] = path.split("/").slice(1); return sampleReceipt(Number(id), who!.toLowerCase()); }
   if (path === "firms") return { enabled: true, items: sampleState().firms?.items ?? [] };
   if (path.startsWith("firms/")) return sampleFirm(path.slice(6));
   if (path === "plans") return { enabled: false, items: [] };
@@ -87,12 +89,23 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ path: strin
     if (v !== null && v.length <= 64) q.set(k, v);
   }
   if (sampleMode()) {
+    // the sample's case file, as its text: what would be hashed
+    if (path.startsWith("verifiers/file/")) { const f = sampleCaseFile(Number(path.slice(15))); return f ? new NextResponse(f, { headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } }) : json({ error: "no such case" }, 404); }
     const body = fromSample(path, q);
     return body ? json(body) : json({ error: "not found" }, 404);
   }
   const engine = engineUrl();
   if (!engine) return json({ error: "nothing is live yet" }, 503);
   const url = `${engine}/v1/${path}${q.size ? `?${q}` : ""}`;
+  // a verified job's case file: its keccak256 is on the chain, so its bytes pass through untouched, with the engine's own type
+  if (path.startsWith("verifiers/file/")) {
+    try {
+      const r = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(12_000) });
+      return new NextResponse(new Uint8Array(await r.arrayBuffer()), { status: r.status, headers: { "content-type": r.headers.get("content-type") ?? "application/json", "cache-control": "no-store", "x-content-type-options": "nosniff" } });
+    } catch {
+      return json({ error: "the engine is not answering" }, 502);
+    }
+  }
   // an account's reads are its own, and cost the engine a question to the chain: asked for each caller, with who it is
   if (path.startsWith("accounts/")) {
     try {

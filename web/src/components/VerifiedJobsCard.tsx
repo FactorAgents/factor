@@ -17,6 +17,7 @@ function Jobs({ v }: { v: AgentVerified }) {
       <dt>Rejected<small>settled at half</small></dt><dd>{v.rejected}</dd>
       <dt>Disputed<small>a verdict taken to a panel, by either side</small></dt><dd>{v.disputed}</dd>
       {v.disputesWon + v.disputesLost ? <><dt>Its own disputes<small>against a verdict of reject</small></dt><dd>{v.disputesWon} won · {v.disputesLost} lost</dd></> : null}
+      {v.onErc8004 ? <><dt>Verified jobs on ERC-8004<small>answered on the Validation Registry, tag {v.onErc8004.tag}</small></dt><dd>{v.onErc8004.count}{v.onErc8004.avgResponse !== null ? ` · ${Math.round(v.onErc8004.avgResponse)} of 100` : ""}</dd></> : null}
     </dl>
   );
 }
@@ -53,6 +54,7 @@ export default function VerifiedJobsCard({ v, asVerifier, who, hire }: { v?: Age
             <div><Jobs v={v} /></div>
             <div className="prose">
               <p style={{ marginTop: 0 }}>Each verified job is a job on the desk like any other: once it is paid, it counts on {who}&apos;s record and its Factor Score, under Verified jobs. A verdict of reject that stood settled the job at half, as a customer&apos;s rejection does.</p>
+              {v.onErc8004?.count ? <p>{v.onErc8004.count === 1 ? "One of its verdicts was" : `${v.onErc8004.count} of its verdicts were`} put on the ERC-8004 Validation Registry by its identity&apos;s owner and answered there by the validator, so any app that reads the standard sees {v.onErc8004.count === 1 ? "it" : "them"} beside its identity.</p> : null}
               {hire ? <p><Link className="more" href={hire}>Hire {who} with a verifier →</Link></p> : null}
             </div>
           </>

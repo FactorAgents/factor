@@ -15,7 +15,7 @@ export async function generateMetadata({ params }: { params: Promise<{ address: 
 }
 
 /** What this verifier did on one case, and how it went for it: its part, its verdict, and what it was paid or lost. */
-function partIn(c: VerifierCase, who: string, now: string): { part: string; vote: "accept" | "reject" | "sealed" | "hidden" | null; went: string; tone: "" | "go" | "bad" } {
+function partIn(c: VerifierCase, who: string, now: string): { part: string; vote: "accept" | "reject" | "sealed" | "hidden" | null; went: string; tone: "" | "go" | "bad"; mark: "checked" | "declared" | null } {
   const me = (a: string) => a.toLowerCase() === who;
   const paid = c.paid?.find((p) => me(p.verifier))?.eth ?? 0;
   const lost = c.slashed?.find((p) => me(p.verifier))?.eth ?? 0;
@@ -26,7 +26,8 @@ function partIn(c: VerifierCase, who: string, now: string): { part: string; vote
   const revealing = !!c.deadlines && Date.parse(now) < Date.parse(c.deadlines.revealBy) && !c.ended && !c.decided;
   const vote = first ? (c.first!.accept ? "accept" : "reject") : seat ? seat.vote ?? (revealing ? "sealed" : "hidden") : null;
   const went = struck ? `Struck by the ${struck.by}: stake back` : paid ? `Paid ${eth(paid)}` : lost ? `Lost ${eth(lost)}` : c.ended ? "Stake back" : "Open";
-  return { part, vote, went, tone: paid ? "go" : lost ? "bad" : "" };
+  const model = first ? c.first!.model : seat?.model;
+  return { part, vote, went, tone: paid ? "go" : lost ? "bad" : "", mark: model?.mark ?? null };
 }
 
 export default async function VerifierPage({ params }: { params: Promise<{ address: string }> }) {
@@ -67,6 +68,7 @@ export default async function VerifierPage({ params }: { params: Promise<{ addre
               <dt>Wrong<small>each lost {r.wrongLossPct}% of its stake</small></dt><dd>{v.wrong}</dd>
               <dt>Never revealed<small>each lost all of its stake</small></dt><dd>{v.hidden}</dd>
               <dt>Struck<small>by a side, stake back</small></dt><dd>{v.struck}</dd>
+              {v.receipts ? <><dt>Model receipts<small>checked by Factor at the provider, or the maker only declared</small></dt><dd className={v.receipts.checked ? "sum" : undefined}>{v.receipts.checked} checked · {v.receipts.declared} declared</dd></> : null}
             </dl>
           </div>
           <div>
@@ -94,7 +96,7 @@ export default async function VerifierPage({ params }: { params: Promise<{ addre
                   <tr key={c.id}>
                     <td className="wide"><Link href={`/jobs/${c.job.id}#verifiers`}>{c.title ?? `Job ${c.job.id}`}</Link><small className="why">job {c.job.id} · {c.agent.name} · {eth(c.priceEth)}</small></td>
                     <td data-l="Its part">{x.part}</td>
-                    <td data-l="Its vote">{x.vote ? <Verdict v={x.vote} /> : "none"}</td>
+                    <td data-l="Its vote">{x.vote ? <Verdict v={x.vote} /> : "none"}{x.mark ? <small className={`why vrc${x.mark === "checked" ? " checked" : ""}`}>{x.mark === "checked" ? (<Link href={`/verifiers/receipt/${c.id}/${who}`}>receipt checked</Link>) : "model declared"}</small> : null}</td>
                     <td data-l="Where it stands">{caseNow(c)}</td>
                     <td className={`m r${x.tone ? ` ${x.tone}` : ""}`} data-l="For it">{x.went}</td>
                   </tr>

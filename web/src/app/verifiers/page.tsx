@@ -6,7 +6,7 @@ import { Reveal } from "@/components/Motion";
 import { CaseRow, ClockChart, MakerMark, MakerRow, VerifierRow } from "@/components/Verifiers";
 import VerifierJoin from "@/components/VerifierJoin";
 import { eth, int } from "@/lib/format";
-import { exampleOf, makersOf, rulesOf } from "@/lib/verifiers";
+import { exampleOf, makersOf, RECEIPT_NOT, RECEIPT_SHOWS, rulesOf } from "@/lib/verifiers";
 import type { VerifierCase } from "@/lib/types";
 
 export const metadata: Metadata = { title: "Verifiers" };
@@ -96,6 +96,27 @@ export default async function VerifiersPage() {
       <section className="wrap sec" id="makers" style={{ scrollMarginTop: 96 }}>
         <Reveal><SecHead n="" kicker="Model makers" title={<>A panel never leans on <em>one model</em>.</>} lead="Each verifier declares the maker of the model it runs on, in public, and each panel seat is a different maker. A declaration cannot be checked on the chain: changing it starts the verifier's standing again, and it cannot be changed while the verifier holds a seat." /></Reveal>
         <Reveal delay={120}><div className="sec-body"><MakerRow makers={makers} counts={counts} /></div></Reveal>
+      </section>
+
+      <section className="wrap sec" id="receipts" style={{ scrollMarginTop: 96 }}>
+        <Reveal><SecHead n="" kicker="Model receipts and ERC-8004" title={<>What a verdict carries <em>with it</em>.</>} lead="Beside each verdict, the model behind it: checked at the provider, or only declared. And once a job has its outcome, the verdict can go on ERC-8004, where any app that reads the standard sees it." /></Reveal>
+        <Reveal delay={120}><div className="sec-body cols two">
+          <div>
+            <span className="label">Model receipts</span>
+            <div className="vmarks" style={{ marginTop: 16 }}>
+              <span className="vmodelmark checked"><span className="vmm-head"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.6" /><path d="M5 8.3l2 2 4-4.4" /></svg><b>Model receipt checked</b></span></span>
+              <span className="vmodelmark"><span className="vmm-head"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.6" strokeDasharray="2.2 2" /></svg><b>Model declared</b></span></span>
+            </div>
+            <p className="small" style={{ marginTop: 16 }}><b className="ink">What a checked receipt shows.</b> {RECEIPT_SHOWS}</p>
+            <p className="small" style={{ marginTop: 12 }}><b className="ink">What it does not.</b> {RECEIPT_NOT}</p>
+          </div>
+          <div>
+            <span className="label">Verdicts on ERC-8004</span>
+            <p className="small" style={{ marginTop: 16 }}>Once a verified job has its outcome, Factor writes its case file: the job, its words, the verdicts and the outcome, as one text, with its hash. The owner of the agent&apos;s ERC-8004 identity, or a wallet it approved, can then ask for validation on the ERC-8004 Validation Registry on Robinhood Chain, naming the validator Factor gives and the file&apos;s hash, from the job&apos;s page. The validator answers on a scale of 0 to 100{about?.erc8004 ? <> under the tag <span className="mono">{about.erc8004.tag}</span></> : null}.</p>
+            <p className="small" style={{ marginTop: 12 }}>The registry takes the request from nobody else, and the answer only from the validator it names. The answers show on the agent&apos;s page and to any app that reads the standard.{about?.erc8004?.registry ? <> <a className="more quiet" href={`${s.contracts.explorer}/address/${about.erc8004.registry}`} target="_blank" rel="noopener noreferrer">The registry →</a></> : null}</p>
+            {about && about.erc8004 && !about.erc8004.enabled ? <p className="note" style={{ marginTop: 16 }}>Verdicts do not go there yet.</p> : null}
+          </div>
+        </div></Reveal>
       </section>
 
       {house.length ? (

@@ -563,7 +563,7 @@ test("each page is small enough for a phone, and nothing loads from another site
   for (const path of PAGES) {
     const { html, headers } = await get(path);
     // the docs, with every section on, are the largest page: still a fraction of one picture
-    assert.ok(html.length < 260_000, `${path} is ${html.length} bytes`);
+    assert.ok(html.length < 270_000, `${path} is ${html.length} bytes`);
     // HEY Research Lab's own badge for Factor in the footer, and the links to Factor's page on HEY, are the one exception
     assert.doesNotMatch(html, /(src|href)="https?:\/\/(?!ponsfamily\.com|github\.com|x\.com|robinhoodchain\.blockscout\.com\/(tx|address)\/0x|heyresearch\.xyz\/(api\/badge\/factor(\?theme=dark)?"|project\/factor(\?utm_source=badge&amp;utm_medium=html)?"))/, `${path} loads from another site`);
     assert.match(headers.get("content-security-policy") ?? "", /default-src 'self'/, `${path} has no content policy`);
@@ -972,7 +972,7 @@ test("Factor everywhere: its page under Protocol with a snippet for each case, t
   const init = await mcp({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "smoke", version: "1" } } });
   assert.equal(init.result.serverInfo.name, "factor");
   const tools = (await mcp({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} })).result.tools;
-  assert.deepEqual(tools.map((x) => x.name).sort(), ["factor_agent", "factor_agents", "factor_ask", "factor_builder_record", "factor_check_agent", "factor_copilot", "factor_erc8004", "factor_firm_record", "factor_guarantee", "factor_hire_link", "factor_line", "factor_open_jobs", "factor_overview", "factor_record", "factor_reviews", "factor_verifier", "factor_verifier_case", "factor_verifier_cases", "factor_verifiers", "factor_verifiers_about"]);
+  assert.deepEqual(tools.map((x) => x.name).sort(), ["factor_agent", "factor_agents", "factor_ask", "factor_builder_record", "factor_check_agent", "factor_copilot", "factor_erc8004", "factor_firm_record", "factor_guarantee", "factor_hire_link", "factor_line", "factor_open_jobs", "factor_overview", "factor_record", "factor_reviews", "factor_verified_erc8004", "factor_verifier", "factor_verifier_case", "factor_verifier_cases", "factor_verifiers", "factor_verifiers_about"]);
   assert.ok(tools.every((x) => x.annotations.readOnlyHint === true));
   assert.equal((await fetch(`${BASE}/mcp`)).status, 405);
 
@@ -1233,10 +1233,10 @@ test("verifiers: a verifier's own page, the job page's check, verdicts, dispute 
   assert.match(v, /89 ?% right, of 9 calls judged/);
   assert.match(v, /Free what it can stake, or take out 0\.0812 ETH/);
   assert.match(v, /Its cases · 4/);
-  assert.match(v, /Summarise a 30-page supply agreement job 0419 .* Panel seat 1 Accept Accepted Paid 0\.00115 ETH/);
+  assert.match(v, /Summarise a 30-page supply agreement job 0419 .* Panel seat 1 Accept (receipt checked )?Accepted Paid 0\.00115 ETH/);
   const kimi = plain((await get("/verifiers/0x71d3d3cca211b6d6daa735d19eb9c7a82f2231d3")).html);
   assert.match(kimi, /It has no standing: its bond is under 0\.01 ETH/);
-  assert.match(kimi, /First check Reject Accepted Lost 0\.0010 ETH/);
+  assert.match(kimi, /First check Reject (model declared )?Accepted Lost 0\.0010 ETH/);
   assert.equal((await get(`/verifiers/0x${"12".repeat(20)}`)).status, 404);
   // the job page: waiting for its first check
   const w = plain((await get("/jobs/0424")).html);
@@ -1257,7 +1257,7 @@ test("verifiers: a verifier's own page, the job page's check, verdicts, dispute 
   assert.match(d, /Seat 1 factor-gemini Factor's own Sealed/);
   assert.match(d, /What Factor sees tying it to a side the wallet that verified the agent's owner sent it ETH/);
   assert.match(d, /Seat 3 Open until/);
-  assert.match(d, /Struck by the customer: 0xfa8c…3bc7/);
+  assert.match(d, /Struck by the customer: orbit-ops/);
   // revealing: a revealed vote with its reasons beside a sealed one
   const r = plain((await get("/jobs/0421")).html);
   assert.match(r, /Seat 1 factor-gemini Factor's own Reject/);
@@ -1306,7 +1306,7 @@ test("verifiers: a verifier's own page, the job page's check, verdicts, dispute 
   assert.match(docs, /hireWithVerifier/);
   assert.match(docs, /api\/v1\/verifiers\/terms/);
   assert.match(docs, /\{(&quot;|")title(&quot;|"):\.\.\.,(&quot;|")brief(&quot;|"):\.\.\.\}/);
-  assert.match(docs, /factor_hire_with_verifier/);
+  assert.match(docs, /21 tools, from factor_verifiers_about to factor_verified_8004_request and factor_verifier_8004_respond/);
   const sec = plain((await get("/security")).html);
   assert.match(sec, /The verifier contract No owner, no admin, no switch ?\./);
   assert.match(sec, /What can be stopped\. Only what Factor runs beside it/);
@@ -1351,4 +1351,75 @@ test("verifiers: the door passes the reads and the two writes, and with no engin
   assert.doesNotMatch(text((await get("/hire", BARE)).html), /With a verifier/);
   for (const path of ["/docs", "/security", "/protocol"]) assert.doesNotMatch(text((await get(path, BARE)).html), /The verifier contract|Work checked before it is paid, by a verifier/, path);
   assert.equal((await get(`/verifiers/${CLAUDE}`, BARE)).status, 404);
+});
+
+test("verifiers: model receipts beside every verdict, checked or declared, a receipt's own page, and verdicts on ERC-8004 on the job page, the agent page, the Verifiers page, the docs, the security page, the protocol and the log", async () => {
+  const SECOND = "0x972d66a024324294ffd0f4b087f06f0bfd9bbb92";
+  // the job page: each verdict's model, and where the verdict stands on ERC-8004
+  const p = plain((await get("/jobs/0419")).html);
+  assert.match(p, /Seat 1 factor-claude Factor's own Accept .* Model receipt checked Anthropic anthropic\/claude-sonnet-5\.5 at stand-in provider · call gen-/);
+  assert.match(p, /Seat 2 second-look Accept .* Model declared OpenAI openai\/gpt-5\.1 at its own provider · call gen-[0-9a-f]+ · \d+ in, \d+ out · its own receipt, as given: not checked/);
+  assert.match(p, /Seat 3 orbit-ops .* Model declared DeepSeek No receipt: only the maker it declared/);
+  assert.match(p, /What a model receipt shows/);
+  assert.match(p, /On ERC-8004 · Requested, waiting for the answer/);
+  assert.match(p, /Only the validator the request names can answer, under the tag factorVerify/);
+  assert.match(p, /The agent's identity # ?211/);
+  assert.match(p, /keccak256 of the file, sent with the request: 0x[0-9a-f]{64}/);
+  const job = (await get("/jobs/0419")).html;
+  assert.match(job, /href="\/api\/v1\/verifiers\/file\/3"/);
+  assert.match(job, new RegExp(`href="/verifiers/receipt/3/${CLAUDE}"`));
+  assert.match(job, /href="https:\/\/robinhoodchain\.blockscout\.com\/address\/0x8004Cc8439f36fd5F9F049D9fF86523Df6dAAB58"/);
+  assert.match(plain((await get("/jobs/0417")).html), /On ERC-8004 · Answered .* under the tag factorVerify: 100 of 100/);
+  assert.match(plain((await get("/jobs/0418")).html), /On ERC-8004 · The agent has no identity there This verdict cannot be put there: quill-02 has no ERC-8004 identity linked on Factor\./);
+  assert.match(plain((await get("/jobs/0424")).html), /On ERC-8004 · Waiting for the outcome/);
+  // a receipt's own page: the call, the hashes, the texts; an outside verifier's is shown as given
+  const rc = plain((await get(`/verifiers/receipt/3/${CLAUDE}`)).html);
+  assert.match(rc, /A model receipt ?\./);
+  assert.match(rc, /Model receipt checked Anthropic/);
+  assert.match(rc, /Factor checked it at the provider/);
+  assert.match(rc, /The model that answered as the provider reports it anthropic\/claude-sonnet-5\.5/);
+  assert.match(rc, /request 0x[0-9a-f]{64} answer 0x[0-9a-f]{64}/);
+  assert.match(rc, /Nobody but Factor can read the provider's own record of the call/);
+  assert.match(rc, /The request .* The answer .* The provider's record/);
+  const outside = plain((await get(`/verifiers/receipt/3/${SECOND}`)).html);
+  assert.match(outside, /Factor did not check this one, so its model stays declared/);
+  assert.match(outside, /Model declared OpenAI/);
+  assert.doesNotMatch(outside, /The provider's record/);
+  assert.equal((await get(`/verifiers/receipt/3/0x${"12".repeat(20)}`)).status, 404);
+  // the counts on a verifier's page and in the list
+  assert.match(plain((await get(`/verifiers/${CLAUDE}`)).html), /Model receipts checked by Factor at the provider, or the maker only declared 9 checked · 0 declared/);
+  const list = plain((await get("/verifiers")).html);
+  assert.match(list, /factor-claude Factor's own Anthropic · standing since \d+ \w+ model receipts: 9 checked · 0 declared/);
+  assert.match(list, /Model receipts and ERC-8004 What a verdict carries with it ?\./);
+  assert.match(list, /What a checked receipt shows\. The verifier's reasons, whose hash has been on the chain since its verdict, name one call at the model provider/);
+  assert.match(list, /Verdicts on ERC-8004 Once a verified job has its outcome, Factor writes its case file/);
+  // the agent's verified jobs on ERC-8004
+  assert.match(plain((await get("/agents/lumen-07")).html), /Verified jobs on ERC-8004 answered on the Validation Registry, tag factorVerify 1 · 100 of 100/);
+  // the docs, the security page, the protocol and the log
+  assert.match(plain((await get("/docs")).html), /Model receipts\. Each verdict carries model: mark is checked or declared/);
+  assert.match(plain((await get("/docs")).html), /On ERC-8004\. A case with its outcome has a case file/);
+  assert.match(plain((await get("/security")).html), /Model receipts\. A checked receipt says what Factor saw at the provider/);
+  assert.match(plain((await get("/security")).html), /On ERC-8004\. Factor sends nothing for the request/);
+  assert.match(plain((await get("/protocol")).html), /Beside each verdict, its model: a receipt Factor checked at the provider, or a maker only declared/);
+  assert.match(plain((await get("/log")).html), /Model receipt checked when the verifier's reasons name one call at the model provider/);
+  // never a word of proof
+  for (const path of ["/jobs/0419", `/verifiers/receipt/3/${CLAUDE}`, `/verifiers/${CLAUDE}`, "/verifiers", "/security", "/protocol", "/log", "/agents/lumen-07"]) assert.doesNotMatch(plain((await get(path)).html), /\bprov(en|es|e)\b/i, path);
+  const docsAll = plain((await get("/docs")).html);
+  assert.doesNotMatch(docsAll.slice(docsAll.indexOf("Verifiers The verifiers")), /\bprov(en|es|e)\b/i);
+  // the door: where a verdict stands, the case file as its own text, a receipt with its texts
+  const e = await (await fetch(`${BASE}/api/v1/verifiers/erc8004/1`)).json();
+  assert.equal(e.state, "answered");
+  assert.equal(e.response, 100);
+  const file = await fetch(`${BASE}/api/v1/verifiers/file/1`);
+  assert.equal(file.status, 200);
+  assert.match(file.headers.get("content-type") ?? "", /application\/json/);
+  assert.equal(JSON.parse(await file.text()).case, 1);
+  assert.equal((await fetch(`${BASE}/api/v1/verifiers/file/8`)).status, 404);
+  const receipt = await (await fetch(`${BASE}/api/v1/verifiers/receipt/3/${CLAUDE}`)).json();
+  assert.equal(receipt.receipt.by, "factor");
+  assert.ok(receipt.request && typeof receipt.output === "string" && receipt.providerRecord);
+  for (const path of ["verifiers/erc8004/x", "verifiers/file/x", "verifiers/receipt/3/0x12"]) assert.equal((await fetch(`${BASE}/api/v1/${path}`)).status, 404, path);
+  // with no engine: no receipt and no ERC-8004 anywhere
+  assert.equal((await get(`/verifiers/receipt/3/${CLAUDE}`, BARE)).status, 404);
+  for (const path of ["/docs", "/security", "/protocol"]) assert.doesNotMatch(plain((await get(path, BARE)).html), /Model receipts\.|On ERC-8004\./, path);
 });

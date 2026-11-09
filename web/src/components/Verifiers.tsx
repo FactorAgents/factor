@@ -5,7 +5,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { dayTime, eth } from "@/lib/format";
 import { CASE_TONE, CASE_WORD, NEXT_WORD, readReason } from "@/lib/verifiers";
-import type { Verifier, VerifierCase, VerifierMaker, VerifierRules, VerifierShort } from "@/lib/types";
+import type { VerdictModel, Verifier, VerifierCase, VerifierMaker, VerifierRules, VerifierShort } from "@/lib/types";
 import { Countdown } from "./Bounties";
 
 type Paint = { fill: string; stroke: string };
@@ -105,6 +105,7 @@ export function VerifierRow({ v }: { v: Verifier }) {
       <div className="what">
         <div className="title"><span className="vmk"><MakerMark id={v.maker} size={20} /></span>{v.name ?? `${v.address.slice(0, 6)}…${v.address.slice(-4)}`}{v.house ? <span className="house">Factor&apos;s own</span> : null}</div>
         <div className="meta mono">{v.makerName} · {v.standing && v.since ? `standing since ${dayTime(v.since).replace(/, .*/, "")}` : "no standing: bond under the least"}</div>
+        {v.receipts ? <div className={`meta mono vrc${v.receipts.checked ? " checked" : ""}`}>model receipts: {v.receipts.checked} checked · {v.receipts.declared} declared</div> : null}
       </div>
       <div className="col"><span className="label">Record</span><div className="v num">{v.right}<span className="of"> right</span></div><div className="meta mono">{v.wrong} wrong · {v.hidden} never revealed</div></div>
       <div className="col"><span className="label">Earned · lost</span><div className={`v num${v.earnedEth ? "" : " none"}`}>{v.earnedEth ? eth(v.earnedEth) : "nothing yet"}</div><div className={`meta mono${v.lostEth ? " lost" : ""}`}>{v.lostEth ? `${eth(v.lostEth)} lost` : "nothing lost"}</div></div>
@@ -134,6 +135,31 @@ export function CaseRow({ c, now }: { c: VerifierCase; now: string }) {
       <div className="col"><span className="label">{c.ended ? "Ended" : "Until"}</span><div className="v small-v">{c.ended ? dayTime(c.ended.at).replace(" UTC", "") : c.nextAt ? <Countdown to={c.nextAt} now={now} /> : "delivery"}</div></div>
       <div className="col who"><span className="label">{c.dispute ? "The panel" : "First check"}</span><div className="v small-v">{c.dispute ? `${seated} of 3 seated` : c.first ? (c.first.accept ? "Accept" : "Reject") : "none yet"}</div><div className="meta mono">{c.decided?.verdict ? `${c.decided.verdict}, ${c.decided.votesAccept} to ${c.decided.votesReject}` : c.dispute && c.first ? `against a first ${c.first.accept ? "accept" : "reject"}` : c.first ? `by ${c.first.verifier.name ?? c.first.verifier.address.slice(0, 8)}` : `stake ${eth(c.stakeEth)}`}</div></div>
     </Link>
+  );
+}
+
+/**
+ * A verdict's model: "Model receipt checked" when Factor looked the call up at the provider and the model was of the
+ * declared maker, "Model declared" otherwise; the receipt's facts beside it, and the way to its page.
+ */
+export function ModelMark({ m, caseId, verifier, bare = false }: { m: VerdictModel; caseId: number; verifier: string; /** the mark alone, without the receipt's facts */ bare?: boolean }) {
+  const r = m.receipt;
+  const checked = m.mark === "checked";
+  return (
+    <div className={`vmodelmark${checked ? " checked" : ""}`}>
+      <span className="vmm-head">
+        <svg viewBox="0 0 16 16" aria-hidden="true">{checked ? <><circle cx="8" cy="8" r="6.6" /><path d="M5 8.3l2 2 4-4.4" /></> : <circle cx="8" cy="8" r="6.6" strokeDasharray="2.2 2" />}</svg>
+        <b>{checked ? "Model receipt checked" : "Model declared"}</b>
+        <span className="mono">{m.makerName}</span>
+      </span>
+      {bare ? null : r ? (
+        <span className="vmm-facts mono">
+          {r.modelReported || r.modelAsked}{r.provider ? ` at ${r.provider}` : ""} · call {r.generationId.length > 18 ? `${r.generationId.slice(0, 16)}…` : r.generationId}{r.tokensIn !== null && r.tokensOut !== null ? ` · ${r.tokensIn} in, ${r.tokensOut} out` : ""}
+          {checked ? null : <> · {r.by === "verifier" ? "its own receipt, as given: not checked" : r.why ?? "not checked"}</>}
+          {" "}<Link className="vmm-link" href={`/verifiers/receipt/${caseId}/${verifier}`}>The receipt →</Link>
+        </span>
+      ) : <span className="vmm-facts">No receipt: only the maker it declared.</span>}
+    </div>
   );
 }
 

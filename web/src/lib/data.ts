@@ -10,8 +10,8 @@ import "server-only";
 import { cache } from "react";
 import { connection } from "next/server";
 import { sampleAgent, sampleAutoApply, sampleBounties, sampleBounty, sampleMilestoneOfJob, sampleCoin, sampleCoins, sampleFirm, sampleJobs, sampleLedger, sampleOpenJob, sampleOpenJobs, samplePlan, sampleState } from "./sample";
-import { sampleCaseOfJob, sampleJobPage, sampleVerifierCases, sampleVerifierList, sampleVerifierPage, sampleVerifiersAbout, withVerifiers } from "./verifiersSample";
-import type { Agent, AgentPage, AutoApplyStatus, BountyList, BountyPage, MilestonePlan, Coin, FactorState, FirmPage, HeyAgent, Job, JobPage, LedgerEvent, OpenJobList, OpenJobPage, Page, Params, PlanPage, VerifiedStatus, VerifierCase, VerifierList, VerifierPage, VerifiersAbout } from "./types";
+import { sampleCase, sampleCaseOfJob, sampleJobPage, sampleReceipt, sampleVerifierCases, sampleVerifierList, sampleVerifierPage, sampleVerifiersAbout, withVerifiers } from "./verifiersSample";
+import type { Agent, AgentPage, AutoApplyStatus, BountyList, BountyPage, MilestonePlan, Coin, FactorState, FirmPage, HeyAgent, Job, JobPage, LedgerEvent, OpenJobList, OpenJobPage, Page, Params, PlanPage, ReceiptPage, VerifiedStatus, VerifierCase, VerifierList, VerifierPage, VerifiersAbout } from "./types";
 import type { PayInfo, PublishedLink } from "./pay";
 import type { CoinsAbout } from "./coins";
 import { liveGen } from "./live";
@@ -231,6 +231,32 @@ export async function getVerifierCases(show: "check" | "seats" | "reveal" | "ope
   if (!ENGINE) return null;
   try {
     return await ask<{ items: VerifierCase[] }>(`/v1/verifiers/cases?show=${show}`);
+  } catch {
+    return "down";
+  }
+}
+
+/** One verified job by its case number. null: there is none. "down": the engine did not answer. */
+export const getVerifierCase = cache(async (id: string): Promise<VerifierCase | null | "down"> => {
+  await connection();
+  if (!/^\d{1,9}$/.test(id)) return null;
+  if (SAMPLE) return sampleCase(Number(id));
+  if (!ENGINE) return null;
+  try {
+    return (await ask<{ case: VerifierCase }>(`/v1/verifiers/case/${Number(id)}`))?.case ?? null;
+  } catch {
+    return "down";
+  }
+});
+
+/** A verdict's model receipt with the texts it hashes. null: none. "down": the engine did not answer. */
+export async function getReceipt(id: string, verifier: string): Promise<ReceiptPage | null | "down"> {
+  await connection();
+  if (!/^\d{1,9}$/.test(id) || !/^0x[0-9a-fA-F]{40}$/.test(verifier)) return null;
+  if (SAMPLE) return sampleReceipt(Number(id), verifier.toLowerCase());
+  if (!ENGINE) return null;
+  try {
+    return await ask<ReceiptPage>(`/v1/verifiers/receipt/${Number(id)}/${verifier.toLowerCase()}`);
   } catch {
     return "down";
   }

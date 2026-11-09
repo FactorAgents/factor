@@ -155,6 +155,7 @@ export default async function Protocol() {
             <div className="prose" style={{ paddingTop: 0 }}>
               <div className="h3">The panel and the outcome</div>
               <p>Up to {va.rules.panel} verifiers on different model makers seal their votes until {va.rules.seatH} hours and reveal them until {va.rules.revealH}; the majority decides, the first verdict breaks a tie, and an older standing takes a seat from a newer one. Accept pays the agent in full on the desk; reject settles at half. A wrong call loses half its stake, a seat never revealed all of it; right calls share the fee and those losses. With no check or no reveal, the desk&apos;s own rule is back in the customer&apos;s hands, all inside its {va.rules.reviewH} hours.</p>
+              <p>Beside each verdict, its model: a receipt Factor checked at the provider, or a maker only declared. {va.erc8004 ? <>Once the job has its outcome, the identity&apos;s owner can put the verdict on the ERC-8004 Validation Registry, where the validator answers from 0 to 100 under the tag <span className="mono">{va.erc8004.tag}</span>.</> : null}</p>
             </div>
           </div></Reveal>
         </section>

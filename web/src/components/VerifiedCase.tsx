@@ -5,12 +5,13 @@
 import Link from "next/link";
 import { Fragment, type ReactNode } from "react";
 import { dayTime, eth, fromNow, short, txHref } from "@/lib/format";
-import { HOW_WORD } from "@/lib/verifiers";
+import { HOW_WORD, RECEIPT_NOT, RECEIPT_SHOWS } from "@/lib/verifiers";
 import type { CaseSeat, VerifierCase, VerifierRules } from "@/lib/types";
 import { Reveal } from "./Motion";
 import { SecHead } from "./Bits";
 import CaseActions from "./CaseActions";
-import { MakerMark, Reason, Verdict, VerifierName } from "./Verifiers";
+import { MakerMark, ModelMark, Reason, Verdict, VerifierName } from "./Verifiers";
+import Erc8004Block from "./CaseErc8004";
 
 type Mark = "done" | "now" | "later" | "missed" | "skip";
 const DOT: Record<Mark, ReactNode> = {
@@ -79,6 +80,7 @@ function SeatItem({ s, c, now, explorer }: { s: CaseSeat; c: VerifierCase; now: 
       </div>
       <div className="vseat-meta mono">{s.makerName}{s.satAt ? ` · seated ${dayTime(s.satAt)}` : ""} · standing since {dayTime(s.since).replace(/, .*/, "")}{s.verifier.address ? <> · <a href={`${explorer}/address/${s.verifier.address}`} target="_blank" rel="noopener noreferrer">{short(s.verifier.address)}</a></> : null}</div>
       {s.reason ? <Reason text={s.reason} /> : s.vote ? <p className="small vnote">Its reasons are not on Factor yet. Their hash is on the chain.</p> : vote === "sealed" ? <p className="small vnote">Its vote is sealed until the reveals.</p> : null}
+      {s.model ? <ModelMark m={s.model} caseId={c.id} verifier={s.verifier.address} /> : null}
       {s.ties?.length ? <div className="vties"><b>What Factor sees tying it to a side</b>{s.ties.map((x, i) => <span key={i}>{x}</span>)}</div> : null}
     </li>
   );
@@ -122,6 +124,14 @@ export default function VerifiedCase({ c, rules, contract, explorer, now }: { c:
             {c.ended?.disputeBondBackEth ? <><dt>Dispute bond back to the {c.ended.disputeBondBackTo ?? c.dispute?.by ?? "side that disputed"}<small>the dispute won</small></dt><dd>{eth(c.ended.disputeBondBackEth)}</dd></> : null}
           </dl>
           <p className="small" style={{ marginTop: 16 }}>Hired {dayTime(c.hiredAt)} by <a href={`${explorer}/address/${c.customer}`} target="_blank" rel="noopener noreferrer">{short(c.customer)}</a>. <a className="more quiet" href={txHref(explorer, c.tx)} target="_blank" rel="noopener noreferrer">The hire →</a>{c.ended ? <> <a className="more quiet" href={txHref(explorer, c.ended.tx)} target="_blank" rel="noopener noreferrer">The end →</a></> : null}</p>
+          {c.first?.model || seats.some((x) => x.model) ? (
+            <details className="vexplain">
+              <summary>What a model receipt shows</summary>
+              <p className="small">{RECEIPT_SHOWS}</p>
+              <p className="small">{RECEIPT_NOT}</p>
+            </details>
+          ) : null}
+          {c.erc8004 && c.erc8004.state !== "off" ? <div className="vside-8004"><Erc8004Block e={c.erc8004} explorer={explorer} /></div> : null}
         </div>
         <div className="vcase-main">
           <div className="vblock">
@@ -135,6 +145,8 @@ export default function VerifiedCase({ c, rules, contract, explorer, now }: { c:
                 </div>
                 <div className="vseat-meta mono">{c.first.verifier.makerName} · {dayTime(c.first.at)} · <a href={txHref(explorer, c.first.tx)} target="_blank" rel="noopener noreferrer">the verdict on the chain</a></div>
                 {c.first.reason ? <Reason text={c.first.reason} /> : <p className="small vnote">Its reasons are not on Factor yet. Their hash is on the chain.</p>}
+                {c.first.model ? <ModelMark m={c.first.model} caseId={c.id} verifier={c.first.verifier.address} /> : null}
+                {c.first.ties?.length ? <div className="vties"><b>What Factor sees tying it to a side</b>{c.first.ties.map((x, i) => <span key={i}>{x}</span>)}</div> : null}
               </>
             ) : <p className="small" style={{ marginTop: 12 }}>{!c.deliveredAt ? `Once ${c.agent.name} delivers, one verifier checks the work against the brief.` : c.state === "working" ? `Nobody has checked it yet. One verifier will, by ${dayTime(c.deadlines!.checkBy)}: with tests where the work allows, otherwise by reasoning against the brief.` : `Nobody checked it in the first ${rules.checkH} hours.`}</p>}
           </div>
@@ -152,7 +164,7 @@ export default function VerifiedCase({ c, rules, contract, explorer, now }: { c:
                 {seatingOpen ? Array.from({ length: open }, (_, i) => <li key={`open${i}`} className="vseat open"><div className="vseat-head"><span className="vseat-n mono">Seat {seats.length + i + 1}</span><span className="small">Open until {dayTime(c.deadlines!.seatBy)}, to a verifier on a maker not yet seated.</span></div></li>) : null}
                 {!seats.length && !seatingOpen ? <li className="vseat open"><p className="small">No verifier took a seat.</p></li> : null}
               </ol>
-              {struck.length ? <p className="small" style={{ marginTop: 14 }}>{struck.map((x, i) => <span key={x.verifier}>{i ? " " : ""}Struck by the {x.by}: <Link className="more quiet" href={`/verifiers/${x.verifier}`}>{nameOf(x.verifier)}</Link>, {dayTime(x.at)}.</span>)}</p> : null}
+              {struck.length ? <p className="small" style={{ marginTop: 14 }}>{struck.map((x, i) => <span key={x.verifier}>{i ? " " : ""}Struck by the {x.by}: <Link className="more quiet" href={`/verifiers/${x.verifier}`}>{x.name ?? nameOf(x.verifier)}</Link>, {dayTime(x.at)}.</span>)}</p> : null}
               {c.decided && c.decided.verdict === null ? <p className="small" style={{ marginTop: 14 }}>No panelist revealed a vote, so the desk&apos;s rule was back in the customer&apos;s hands.</p> : null}
             </div>
           ) : null}

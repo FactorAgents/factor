@@ -1441,6 +1441,30 @@ a.prv-line:hover { border-color: var(--line-2); }
 .table.vcases td.go { color: var(--gilt); }
 .table.vcases td.bad { color: var(--bad); }
 .table.vcases .why { display: block; margin-top: 4px; font-size: 12px; color: var(--dim); }
+/* a verdict's model: a receipt checked at the provider, or the maker only declared */
+.vmodelmark { display: grid; gap: 4px; margin-top: 12px; min-width: 0; }
+.vmm-head { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; color: var(--mid); }
+.vmm-head svg { width: 15px; height: 15px; flex: none; fill: none; stroke: var(--dim); stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
+.vmm-head b { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 400; color: var(--mid); }
+.vmm-head .mono { font-size: 11px; color: var(--dim); }
+.vmodelmark.checked .vmm-head svg { stroke: var(--gilt); }
+.vmodelmark.checked .vmm-head b { color: var(--gilt); }
+.vmm-facts { font-size: 11.5px; line-height: 1.6; color: var(--dim); overflow-wrap: anywhere; }
+.vmm-link { color: var(--mid); border-bottom: 1px solid var(--line-2); white-space: nowrap; }
+.vmm-link:hover { color: var(--ink); border-color: var(--ink); }
+.vmarks { display: flex; flex-wrap: wrap; gap: 10px 26px; }
+.vmarks .vmodelmark { margin-top: 0; }
+.meta.vrc.checked, small.vrc.checked, small.vrc.checked a { color: var(--gilt); }
+small.vrc { display: block; margin-top: 6px; }
+.vhash { margin-top: 10px; font-size: 11.5px; color: var(--dim); overflow-wrap: anywhere; }
+.kv dd.vwrap { white-space: normal; overflow-wrap: anywhere; text-align: right; }
+b.ink { color: var(--ink); font-weight: 500; }
+.vside-8004 { margin-top: 34px; padding-top: 26px; border-top: 1px solid var(--line); }
+.vexplain { margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--line); }
+.vexplain summary { cursor: pointer; width: fit-content; list-style: none; font-size: 13.5px; color: var(--mid); border-bottom: 1px solid var(--line-2); }
+.vexplain summary::-webkit-details-marker { display: none; }
+.vexplain[open] summary { margin-bottom: 4px; }
+.vexplain p { margin-top: 10px; }
 @media (max-width: 1100px) { .vmakers { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 960px) {
   .vrow, .vcase-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }

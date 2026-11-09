@@ -694,6 +694,8 @@ export interface VerifiersAbout {
   totals: { cases: number; open: number; disputed: number; panels: number; verifiers: number; bondedEth: number; feesPaidEth: number; slashedEth: number } | null;
   /** Factor's own verifiers: ordinary verifiers with bonds of their own */
   house: { address: string; maker: number; makerName: string; model: string; joined: boolean }[];
+  /** verdicts on the ERC-8004 Validation Registry: whether they go there, the registry, and the tag the answers carry */
+  erc8004?: { enabled: boolean; registry: string | null; tag: string };
 }
 /** One verifier, oldest standing first in a list. `rightPct`: right calls over right and wrong ones, null before the first. */
 export interface Verifier {
@@ -703,6 +705,8 @@ export interface Verifier {
   freeEth: number; freeWei: string; lockedEth: number; lockedWei: string; open: number;
   checks: number; panels: number; right: number; wrong: number; hidden: number; struck: number;
   earnedEth: number; lostEth: number; rightPct: number | null;
+  /** its verdicts with a model receipt Factor checked, and those whose model is only declared */
+  receipts?: { checked: number; declared: number };
 }
 /** A verifier as a case names it: who, on which maker, whether it is Factor's own. Any more of it may come along. */
 export type VerifierShort = Pick<Verifier, "address" | "name" | "maker" | "makerName" | "house"> & Partial<Verifier>;
@@ -715,7 +719,7 @@ export type CaseState = "working" | "checked" | "disputed" | "customer" | "accep
 export type CaseHow = "first-check" | "panel" | "customer" | "clock" | "not-delivered";
 export type CaseNext = "check" | "dispute" | "seats" | "reveals" | "step" | "customer";
 /** One panel seat. `vote` null: sealed, or never revealed once the reveals are over. `ties`: what Factor's records tie it to a side by. */
-export interface CaseSeat { seat: number; verifier: VerifierShort; maker: number; makerName: string; /** the verifier's standing: when it joined, or came back to the least bond */ since: string; /** when it took this seat */ satAt?: string; vote: "accept" | "reject" | null; reasonHash: string | null; reason: string | null; ties?: string[] }
+export interface CaseSeat { seat: number; verifier: VerifierShort; maker: number; makerName: string; /** the verifier's standing: when it joined, or came back to the least bond */ since: string; /** when it took this seat */ satAt?: string; vote: "accept" | "reject" | null; reasonHash: string | null; reason: string | null; ties?: string[]; /** the model behind the vote, once revealed */ model?: VerdictModel }
 /** One verified job (GET /api/v1/verifiers/case/<id>, /job/<n>). The optional parts appear when they apply. */
 export interface VerifierCase {
   id: number;
@@ -728,17 +732,41 @@ export interface VerifierCase {
   state: CaseState; how: CaseHow | null; hiredAt: string; tx: string;
   deliveredAt?: string;
   deadlines?: { checkBy: string; disputeBy: string | null; seatBy: string; revealBy: string; reviewBy: string };
-  first?: { verifier: VerifierShort; accept: boolean; at: string; reasonHash: string; reason: string | null; tx: string };
+  first?: { verifier: VerifierShort; accept: boolean; at: string; reasonHash: string; reason: string | null; tx: string; ties?: string[]; model?: VerdictModel };
   dispute?: { by: "customer" | "agent"; address: string; at: string; bondEth: number; tx: string };
   seats?: CaseSeat[];
-  struck?: { verifier: string; by: "customer" | "agent"; at: string }[];
+  struck?: { verifier: string; name?: string | null; by: "customer" | "agent"; at: string }[];
   decided?: { how: CaseHow; verdict: "accept" | "reject" | null; votesAccept: number; votesReject: number; at: string };
   paid?: { verifier: string; eth: number }[];
   slashed?: { verifier: string; eth: number }[];
   /** `disputeBondBack...`: a dispute that won had its bond back, to that side */
   ended?: { state: CaseState; how: CaseHow; at: string; tx: string; toCustomerEth: number; disputeBondBackEth?: number; disputeBondBackTo?: "customer" | "agent" };
   next: CaseNext | null; nextAt: string | null;
+  /** where the verdict stands on the ERC-8004 Validation Registry; null while verifiers do not write there */
+  erc8004?: CaseErc8004 | null;
   forYou?: { can: boolean; why?: string };
 }
 /** An agent's jobs hired with a verifier, in figures: how they ended, and the disputes. */
-export interface AgentVerified { jobs: number; accepted: number; rejected: number; disputed: number; disputesWon: number; disputesLost: number }
+export interface AgentVerified { jobs: number; accepted: number; rejected: number; disputed: number; disputesWon: number; disputesLost: number; /** its verified jobs answered on the ERC-8004 Validation Registry */ onErc8004?: { count: number; avgResponse: number | null; registry: string; tag: string } | null }
+
+/**
+ * A verdict's model: "checked" when Factor looked the call its receipt names up at the provider, with the key that made
+ * it, and the model was of the declared maker; "declared" otherwise (no receipt, or an outside verifier's, shown as given).
+ */
+export interface VerdictModel { mark: "checked" | "declared"; maker: number; makerName: string; receipt: ModelReceipt | null }
+/** The one call at the model provider that a verifier's reasons name, with the hashes of the exact request and answer. */
+export interface ModelReceipt {
+  by: "factor" | "verifier"; provider: string; generationId: string; modelAsked: string; modelReported: string; providerName: string | null;
+  tokensIn: number | null; tokensOut: number | null; createdAt: string | null; requestHash: string; outputHash: string;
+  checkedAt: string | null; matches: boolean | null; why: string | null; url: string | null;
+}
+/** A receipt with the texts it hashes (GET /api/v1/verifiers/receipt/<case>/<verifier>). */
+export interface ReceiptPage { receipt: ModelReceipt; request: unknown; output: unknown; providerRecord: unknown }
+/** Where a case's verdict stands on the ERC-8004 Validation Registry (GET /api/v1/verifiers/erc8004/<case>). */
+export interface CaseErc8004 {
+  registry: string; tag: string; agentId: string | null;
+  state: "off" | "no-identity" | "no-verdict" | "prepared" | "requested" | "answered";
+  validator: string | null; response: number | null; file: string | null; fileHash: string | null;
+  requestCall: { to: string; data: string } | null; responseCall: { to: string; data: string } | null;
+  requestedAt: string | null; answeredAt: string | null; why?: string;
+}

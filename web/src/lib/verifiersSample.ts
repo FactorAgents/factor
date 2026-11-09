@@ -3,7 +3,7 @@
 // real. The sample has no contract to send to, so nothing can be hired, joined or disputed from it.
 import { sampleBits, sampleJob, sampleState } from "./sample";
 import { MAKERS, RULES } from "./verifiers";
-import type { Agent, AgentPage, CaseSeat, FactorScore, Job, JobPage, Verifier, VerifierCase, VerifierList, VerifierPage, VerifiersAbout, VerifierShort } from "./types";
+import type { Agent, AgentPage, CaseErc8004, CaseSeat, FactorScore, Job, JobPage, ModelReceipt, ReceiptPage, VerdictModel, Verifier, VerifierCase, VerifierList, VerifierPage, VerifiersAbout, VerifierShort } from "./types";
 
 const { A, TX, at, later, addressOf, find } = sampleBits;
 const MIN = 60;
@@ -147,11 +147,69 @@ add(deskJob(417, "Summarise this month's board minutes", "lumen-07", 0.015, "set
   };
 });
 const cases = built.map((b) => b.c);
+
+// model receipts: Factor's own verifiers check through a provider and Factor looks each call up there; second-look gives
+// receipts of its own, shown as given; the rest only declare their maker
+const REGISTRY = "0x8004Cc8439f36fd5F9F049D9fF86523Df6dAAB58";
+const MODEL: Record<string, string> = { "factor-claude": "anthropic/claude-sonnet-5.5", "factor-gemini": "google/gemini-2.5-pro", "second-look": "openai/gpt-5.1" };
+const RECEIPTS: Record<string, { checked: number; declared: number }> = { "factor-claude": { checked: 9, declared: 0 }, "factor-gemini": { checked: 7, declared: 0 }, "second-look": { checked: 0, declared: 6 }, "orbit-ops": { checked: 0, declared: 4 }, "kimi-reads": { checked: 0, declared: 3 } };
+for (const x of verifiers) x.receipts = RECEIPTS[x.name ?? ""] ?? { checked: 0, declared: 1 };
+function modelOf(v: VerifierShort, caseId: number, at_: string): VerdictModel {
+  const model = MODEL[v.name ?? ""];
+  const n = caseId * 10 + v.maker;
+  if (!model) return { mark: "declared", maker: v.maker, makerName: v.makerName, receipt: null };
+  const factor = v.house;
+  const receipt: ModelReceipt = {
+    by: factor ? "factor" : "verifier", provider: factor ? "stand-in provider" : "its own provider", generationId: `gen-${(0x5f3a91c + n * 7919).toString(16)}`, modelAsked: model, modelReported: model,
+    providerName: v.makerName, tokensIn: 3200 + n * 37, tokensOut: 410 + n * 11, createdAt: new Date(Date.parse(at_) - 50_000).toISOString(),
+    requestHash: TX(7100 + n), outputHash: TX(7200 + n), checkedAt: factor ? new Date(Date.parse(at_) + 40_000).toISOString() : null,
+    matches: factor ? true : null, why: factor ? null : "an outside verifier's receipt, shown as given and not checked", url: null,
+  };
+  return { mark: factor ? "checked" : "declared", maker: v.maker, makerName: v.makerName, receipt };
+}
+for (const c of cases) {
+  if (c.first) c.first.model = modelOf(c.first.verifier, c.id, c.first.at);
+  for (const s of c.seats ?? []) if (s.vote) s.model = modelOf(s.verifier, c.id, s.satAt ?? s.since);
+  // where each verdict stands on ERC-8004: only lumen-07 has an identity of its own on the sample
+  const lumen = c.agent.name === "lumen-07";
+  const state: CaseErc8004["state"] = !c.ended ? "no-verdict" : !lumen ? "no-identity" : c.id === 1 ? "answered" : "requested";
+  const validator = byName("factor-claude").address;
+  c.erc8004 = {
+    registry: REGISTRY, tag: "factorVerify", agentId: lumen ? "211" : null, state, validator: c.ended && lumen ? validator : null,
+    response: state === "answered" ? (c.ended!.state === "accepted" ? 100 : 0) : null,
+    file: c.ended ? `/api/v1/verifiers/file/${c.id}` : null, fileHash: c.ended ? TX(7300 + c.id) : null,
+    requestCall: c.ended && lumen ? { to: REGISTRY, data: `0x${"a1b2c3d4"}${"0".repeat(56)}${c.id.toString(16).padStart(8, "0")}` } : null,
+    responseCall: state === "requested" ? { to: REGISTRY, data: `0x${"e5f6a7b8"}${"0".repeat(56)}${c.id.toString(16).padStart(8, "0")}` } : null,
+    requestedAt: state === "requested" || state === "answered" ? new Date(Date.parse(c.ended!.at) + 600_000).toISOString() : null,
+    answeredAt: state === "answered" ? new Date(Date.parse(c.ended!.at) + 900_000).toISOString() : null,
+    ...(state === "no-identity" ? { why: `${c.agent.name} has no ERC-8004 identity linked on Factor` } : {}),
+  };
+  for (const x of c.struck ?? []) x.name = verifiers.find((v) => v.address === x.verifier)?.name ?? null;
+}
+/** A case's file, as the text that is hashed: the job, its words, the verdicts and the outcome. null: no outcome yet. */
+export function sampleCaseFile(id: number): string | null {
+  const c = cases.find((x) => x.id === id);
+  if (!c?.ended) return null;
+  return JSON.stringify({ case: c.id, job: c.job.n, agent: c.agent.address, termsHash: c.termsHash, first: c.first ? { verifier: c.first.verifier.address, accept: c.first.accept, reasonHash: c.first.reasonHash } : null, panel: (c.seats ?? []).map((s) => ({ verifier: s.verifier.address, vote: s.vote, reasonHash: s.reasonHash })), outcome: c.ended.state, how: c.ended.how });
+}
+/** One verdict's receipt with the texts it hashes. */
+export function sampleReceipt(id: number, who: string): ReceiptPage | null {
+  const c = cases.find((x) => x.id === id);
+  const m = c?.first?.verifier.address === who ? c.first.model : c?.seats?.find((s) => s.verifier.address === who)?.model;
+  if (!c || !m?.receipt) return null;
+  const reason = c.first?.verifier.address === who ? c.first.reason : c.seats?.find((s) => s.verifier.address === who)?.reason;
+  return {
+    receipt: m.receipt,
+    request: { model: m.receipt.modelAsked, messages: [{ role: "system", content: "Check the delivered work against the brief. Run the tests the work allows. Answer with Verdict, Tests, Reasons and Model." }, { role: "user", content: `Brief:\n${c.brief}\n\nWork:\n${c.work?.text ?? ""}` }] },
+    output: reason ?? "",
+    providerRecord: m.receipt.by === "factor" ? { id: m.receipt.generationId, model: m.receipt.modelReported, provider_name: m.receipt.providerName, tokens_prompt: m.receipt.tokensIn, tokens_completion: m.receipt.tokensOut, created_at: m.receipt.createdAt } : null,
+  };
+}
 const OPEN = new Set(["working", "checked", "disputed", "customer"]);
 
 export function sampleVerifiersAbout(): VerifiersAbout {
   return {
-    enabled: true, contract: null, chainId: 4663, rules: RULES, makers: MAKERS,
+    enabled: true, contract: null, chainId: 4663, rules: RULES, makers: MAKERS, erc8004: { enabled: true, registry: REGISTRY, tag: "factorVerify" },
     totals: { cases: cases.length, open: cases.filter((c) => OPEN.has(c.state)).length, disputed: cases.filter((c) => c.dispute).length, panels: cases.filter((c) => c.seats?.length).length, verifiers: verifiers.length, bondedEth: +verifiers.reduce((n, x) => n + x.freeEth + x.lockedEth, 0).toFixed(6), feesPaidEth: 0.0013, slashedEth: 0.002 },
     house: verifiers.filter((x) => x.house).map((x) => ({ address: x.address, maker: x.maker, makerName: x.makerName, model: x.maker === 1 ? "anthropic/claude-sonnet-5.5" : "google/gemini-2.5-pro", joined: true })),
   };
@@ -183,7 +241,7 @@ export function sampleJobPage(n: number): JobPage | null {
 
 // what agents' pages carry of verifiers: their verified jobs in figures, and their record as a verifier
 const VERIFIED: Record<string, NonNullable<AgentPage["verified"]>> = {
-  "lumen-07": { jobs: 2, accepted: 2, rejected: 0, disputed: 1, disputesWon: 1, disputesLost: 0 },
+  "lumen-07": { jobs: 2, accepted: 2, rejected: 0, disputed: 1, disputesWon: 1, disputesLost: 0, onErc8004: { count: 1, avgResponse: 100, registry: REGISTRY, tag: "factorVerify" } },
   "quill-02": { jobs: 2, accepted: 0, rejected: 1, disputed: 1, disputesWon: 0, disputesLost: 0 },
   "page-smith": { jobs: 1, accepted: 0, rejected: 0, disputed: 1, disputesWon: 0, disputesLost: 0 },
 };

@@ -12,7 +12,7 @@ import { factorVerifiersAbi } from "./abi/FactorVerifiers";
 import { factorDeskAbi } from "./abi/FactorDesk";
 import { explain as deskExplain, Refusal, wordsFor } from "./desk";
 import { declined, ensureChain, ethCall, sendTx, waitFor, type Provider, type Receipt } from "./wallet";
-import type { CaseHow, CaseNext, CaseState, VerifierMaker, VerifierRules, VerifiersAbout } from "./types";
+import type { CaseErc8004, CaseHow, CaseNext, CaseState, VerifierMaker, VerifierRules, VerifiersAbout } from "./types";
 
 export const VERIFIERS_ABI = factorVerifiersAbi as Abi;
 const ALL = [...VERIFIERS_ABI, ...(factorDeskAbi as Abi)].filter((x) => x.type === "error") as Abi;
@@ -187,6 +187,72 @@ export async function sendTerms(id: number, terms: string): Promise<void> {
     await new Promise((res) => setTimeout(res, 2000));
   }
 }
+
+// ---- verdicts on the ERC-8004 Validation Registry ----
+
+/** A revert's own words (Error(string)), when a call was refused with some: the registry says "Not authorized". */
+function revertText(e: unknown): string | null {
+  const err = e as { data?: unknown; message?: string; error?: { data?: unknown; message?: string }; cause?: { data?: unknown } };
+  for (const d of [err.data, err.error?.data, err.cause?.data, (err.data as { data?: unknown } | undefined)?.data, (err.data as { originalError?: { data?: unknown } } | undefined)?.originalError?.data]) {
+    if (typeof d === "string" && d.startsWith("0x08c379a0")) {
+      try {
+        return decodeErrorResult({ abi: [{ type: "error", name: "Error", inputs: [{ name: "message", type: "string" }] }] as Abi, data: d as Hex }).args?.[0] as string;
+      } catch {
+        // not a plain reason
+      }
+    }
+  }
+  const m = /reverted(?: with reason string)?:? '?([^'\n]+)'?/i.exec(`${err.message ?? ""} ${err.error?.message ?? ""}`);
+  return m ? m[1]!.trim() : null;
+}
+
+/**
+ * One call to the ERC-8004 Validation Registry exactly as the engine prepared it (a request from the agent identity's
+ * owner, or the validator's answer): tried first without sending, then sent and followed until it is mined. `who`
+ * says, in words, which wallet the registry takes it from, for when it refuses.
+ */
+export async function sendRegistryCall(p: Provider, o: { call: { to: string; data: string }; registry: string; from: string; who: string; on?: (step: "checking" | "wallet" | "mining") => void }): Promise<{ hash: string }> {
+  if (o.call.to.toLowerCase() !== o.registry.toLowerCase()) throw new Refusal("That call is not to the ERC-8004 Validation Registry. Nothing was sent.");
+  o.on?.("checking");
+  await ensureChain(p);
+  const code = await p.request({ method: "eth_getCode", params: [o.registry, "latest"] }).catch(() => null);
+  if (typeof code !== "string" || code.length <= 2) throw new Refusal("Your wallet does not see the ERC-8004 Validation Registry on the chain it is on. Nothing was sent. Check that the wallet is on Robinhood Chain.");
+  const refused = (e: unknown): Refusal => {
+    if (declined(e)) return new Refusal("You declined it in your wallet. Nothing was sent.");
+    const why = revertText(e);
+    return new Refusal(why && /not authori[sz]ed/i.test(why) ? `The registry refuses this wallet: ${o.who}. Nothing was sent.` : why ? `The registry refuses it: ${why}. Nothing was sent.` : deskExplain(e));
+  };
+  try {
+    await ethCall(p, o.call.to, o.call.data, o.from);
+  } catch (e) {
+    throw refused(e);
+  }
+  o.on?.("wallet");
+  let hash: string;
+  try {
+    hash = await sendTx(p, { from: o.from, to: o.call.to, data: o.call.data });
+  } catch (e) {
+    throw refused(e);
+  }
+  o.on?.("mining");
+  const receipt = await waitFor(p, hash);
+  if (receipt.status !== "0x1") throw new Refusal(receipt.reason ?? "The transaction was mined and refused. Nothing changed. Reload the page and look again.");
+  return { hash: receipt.transactionHash || hash };
+}
+
+/** Where a verdict stands on ERC-8004, in a few words. */
+export const ERC8004_WORD: Record<CaseErc8004["state"], string> = {
+  off: "Not written there",
+  "no-identity": "The agent has no identity there",
+  "no-verdict": "Waiting for the outcome",
+  prepared: "Ready to request",
+  requested: "Requested, waiting for the answer",
+  answered: "Answered",
+};
+
+/** What a checked model receipt shows, and what it does not, in the words every page uses. */
+export const RECEIPT_SHOWS = "The verifier's reasons, whose hash has been on the chain since its verdict, name one call at the model provider, by its id, and the hashes of the exact request and answer, which anyone can work out again from the published texts. Factor looked that call up at the provider, with the key that made it, and the model that answered was of the maker the verifier declared.";
+export const RECEIPT_NOT = "Nobody but Factor can read the provider's own record of the call. A receipt an outside verifier gives is shown as given and not checked, so its model stays declared.";
 
 // ---- words for a case ----
 
