@@ -47,6 +47,37 @@ contract VReenterer {
     }
 }
 
+/// A wallet that refuses ETH until it is armed, then takes it and calls back in with all the gas it has.
+contract VFlipper {
+    FactorVerifiers internal vf;
+    bytes public armed;
+    bool public reentered;
+    bool public succeeded;
+
+    constructor(FactorVerifiers vf_) {
+        vf = vf_;
+    }
+
+    function arm(bytes calldata data) external {
+        armed = data;
+    }
+
+    function join(uint8 maker) external payable {
+        vf.join{value: msg.value}(maker);
+    }
+
+    function hire(address agent, uint256 fee, bytes32 terms) external payable returns (uint256) {
+        return vf.hire{value: msg.value}(agent, block.timestamp + 1 days, false, fee, terms);
+    }
+
+    receive() external payable {
+        if (armed.length == 0) revert("no");
+        reentered = true;
+        (bool ok,) = address(vf).call(armed);
+        if (ok) succeeded = true;
+    }
+}
+
 /// Every attack in section 9 of docs/VERIFIERS.md, carried out against the verifier contract and the desk together.
 contract VerifierAttacksTest is VerifierBase {
     /// 1. A verifier checks its own job: the customer or the agent signs up as a verifier. Refused for the first check
@@ -266,6 +297,26 @@ contract VerifierAttacksTest is VerifierBase {
         assertTrue(w.reentered());
         assertFalse(w.succeeded(), "a second withdrawal from inside the first is refused");
         assertEq(vf.verifier(address(w)).free, BOND - 0.01 ether);
+        _vbooks();
+    }
+
+    /// 9b. A collect is guarded too: a wallet whose payout was kept as owed, and that is also a verifier, tries to take
+    ///     its bond out from inside the collect. Refused.
+    function test_attack9b_noWayBackInFromACollect() public {
+        VFlipper r = new VFlipper(vf);
+        vm.deal(address(r), 1 ether);
+        r.join{value: BOND}(13);
+        uint256 id = r.hire{value: PRICE + FEE}(agentA, FEE, TERMS);
+        _deliverCase(id);
+        _check(id, claude, false);
+        vm.warp(block.timestamp + vf.DISPUTE_TIME());
+        vf.step(id); // it refuses its half, which is kept as owed
+        assertEq(vf.owed(address(r)), 0.005 ether);
+        r.arm(abi.encodeCall(FactorVerifiers.withdraw, (0.01 ether)));
+        vf.collect(address(r)); // now with all the gas: it tries to withdraw from inside
+        assertTrue(r.reentered());
+        assertFalse(r.succeeded(), "the withdrawal from inside the collect is refused");
+        assertEq(vf.verifier(address(r)).free, BOND);
         _vbooks();
     }
 

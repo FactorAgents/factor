@@ -409,6 +409,20 @@ contract VerifierTest is VerifierBase {
         _vbooks();
     }
 
+    function test_notDelivered_afterAnEarlyDraw_theEarlyHalfIsTheCustomers() public {
+        vm.deal(hirer, 1 ether);
+        vm.prank(hirer);
+        uint256 id = vf.hire{value: PRICE + FEE}(agentA, block.timestamp + 1 days, true, FEE, TERMS);
+        uint256 job = _jobOf(id);
+        vm.prank(agentA);
+        desk.draw(job, 0.004 ether, FactorDesk.Kind.Early);
+        vm.warp(desk.job(job).dueAt + desk.GRACE() + 1);
+        uint256 h = hirer.balance;
+        vf.step(id);
+        assertEq(hirer.balance - h, PRICE - 0.004 ether + FEE, "the price less the early draw it allowed, and the fee");
+        _vbooks();
+    }
+
     function test_declined_paymentAndFeeComeBack() public {
         uint256 id = _hire();
         uint256 job = _jobOf(id);
@@ -731,6 +745,32 @@ contract VerifierTest is VerifierBase {
         vf.strike(id, gemini);
     }
 
+    function test_anEqualStandingDoesNotMoveASeat() public {
+        uint256 id = _checked(true);
+        _dispute(id);
+        address t1 = makeAddr("twin on maker 7");
+        address t2 = makeAddr("twin on maker 8");
+        address t3 = makeAddr("twin on maker 9");
+        address t4 = makeAddr("twin on maker 10, joined in the same second");
+        _join(t1, 7);
+        _join(t2, 8);
+        _join(t3, 9);
+        _join(t4, 10);
+        _sit(id, t1, true);
+        _sit(id, t2, true);
+        _sit(id, t3, true);
+        bytes32 commit = vf.commitOf(id, t4, true, WHY, _salt(t4));
+        vm.prank(t4);
+        vm.expectRevert(FactorVerifiers.PanelFull.selector);
+        vf.sit(id, commit);
+        address t5 = makeAddr("a second maker 7, joined in the same second");
+        _join(t5, 7);
+        commit = vf.commitOf(id, t5, true, WHY, _salt(t5));
+        vm.prank(t5);
+        vm.expectRevert(FactorVerifiers.MakerTaken.selector);
+        vf.sit(id, commit);
+    }
+
     // ---------- the desk's clock ----------
 
     function test_aRejectCarriedOutAfterTheDesks24Hours_settlesAsAccepted() public {
@@ -792,6 +832,13 @@ contract VerifierTest is VerifierBase {
         _vbooks();
     }
 
+    function test_theConstructorRefusesADeskWithAShortReview() public {
+        ShortDesk d = new ShortDesk();
+        ShortLine l = new ShortLine(address(d));
+        vm.expectRevert(FactorVerifiers.DeskRules.selector);
+        new FactorVerifiers(FactorDesk(payable(address(d))), FactorLine(payable(address(l))));
+    }
+
     // ---------- fuzzed ----------
 
     /// Any price and fee, accepted or rejected by an undisputed first verdict: every wei is where it should be.
@@ -844,5 +891,21 @@ contract VerifierTest is VerifierBase {
 contract RefusingCustomer {
     receive() external payable {
         revert("no");
+    }
+}
+
+/// A desk whose time to answer a delivery is too short for a panel.
+contract ShortDesk {
+    function REVIEW() external pure returns (uint256) {
+        return 23 hours;
+    }
+}
+
+/// A line contract wired to that desk.
+contract ShortLine {
+    address public desk;
+
+    constructor(address d) {
+        desk = d;
     }
 }

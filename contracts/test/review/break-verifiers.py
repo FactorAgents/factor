@@ -1,9 +1,12 @@
 # Break FactorVerifiers on purpose, one rule at a time, and see that the tests notice each break.
 #   cd contracts && python3 test/review/break-verifiers.py
 #
-# Not on the list: taking the re-entry guard off one function. Payouts to customers and agents are pushed with 50,000
-# gas, and what a verifier earns is added to its bond, so a receiver called back in has too little gas to move anything
-# with or without the guard. The one full-gas paths are `collect` and `withdraw`, whose guards are on the list.
+# Not on the list: taking the re-entry guard off one function that pushes. Payouts to customers, agents and verifiers
+# (a withdrawal among them) are pushed with 50,000 gas, and every function that moves ETH needs 95,000 left before it
+# pushes, so a receiver called back in has too little gas to move anything with or without the guard (test_attack9
+# shows the call back in failing). The one full-gas path is `collect`, whose guard is on the list. The line contract's
+# two questions (is the verifier a side's key, is its line account a side) ask the same thing from both ends, so they are
+# taken off together.
 import pathlib, subprocess, os
 src = pathlib.Path("src/FactorVerifiers.sol")
 orig = src.read_text()
@@ -17,7 +20,6 @@ M = [
  ("a join under the bond", "        if (msg.value < MIN_BOND) revert TooSmall(MIN_BOND);\n", ""),
  ("a join with no maker", "        if (maker == 0) revert BadMaker();\n        if (msg.value < MIN_BOND)", "        if (msg.value < MIN_BOND)"),
  ("a withdraw over the free bond", "        if (amount > v.free) revert OverFree(v.free);\n", ""),
- ("withdraw goes unguarded", "    function withdraw(uint256 amount) external nonReentrant {", "    function withdraw(uint256 amount) external {"),
  ("a standing kept with dust", "        if (v.since != 0 && v.free + v.locked < MIN_BOND) {", "        if (v.since != 0 && v.free + v.locked == 0) {"),
  ("a maker switched with an open seat", "        if (v.open != 0) revert HasOpenSeats();\n", ""),
  ("a maker switch keeps the standing", "        if (v.since != 0) {\n            v.since = uint40(block.timestamp);\n            emit Standing(msg.sender, block.timestamp);\n        }\n", ""),
@@ -25,7 +27,7 @@ M = [
  ("a check after its time", "        if (block.timestamp >= uint256(j.deliveredAt) + CHECK_TIME) revert TooLate();\n", ""),
  ("the customer checks its own job", "        if (who == c.customer || who == c.agent) return true;", "        if (who == c.agent) return true;"),
  ("the agent checks its own job", "        if (who == c.customer || who == c.agent) return true;", "        if (who == c.customer) return true;"),
- ("a line account's key checks it", "        if (line.keyOf(c.agent) == who || line.keyOf(c.customer) == who) return true;\n", ""),
+ ("a line account's key checks it", "        if (line.keyOf(c.agent) == who || line.keyOf(c.customer) == who) return true;\n        address acct = line.accountOf(who);\n        return acct != address(0) && (acct == c.agent || acct == c.customer);", "        return false;"),
  ("a verifier with no standing checks", "        if (v.since == 0) revert NoStanding();\n", ""),
  ("a check with too little bond", "        if (v.free < c.stake) revert BondShort(c.stake);\n", ""),
  ("the wrong side disputes", "        if (msg.sender != (c.firstAccept ? c.customer : c.agent)) revert NotYourSide();\n", ""),
@@ -72,6 +74,8 @@ env = dict(os.environ, PATH=os.path.expanduser("~/.foundry/bin") + ":" + os.envi
 caught = missed = 0
 try:
     for name, a, b in M:
+        if os.environ.get("ONLY") and not any(w in name for w in os.environ["ONLY"].split("|")):
+            continue
         if orig.count(a) != 1:
             print(f"SKIPPED (the code moved): {name}"); missed += 1; continue
         src.write_text(orig.replace(a, b))
