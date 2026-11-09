@@ -4,7 +4,6 @@
 // validator the request names. Each is the engine's prepared call to the registry, tried first and sent from the
 // person's own wallet; a refusal is said in words before the wallet is asked.
 import { Refusal } from "@/lib/desk";
-import { short } from "@/lib/format";
 import { sendRegistryCall } from "@/lib/verifiers";
 import type { CaseErc8004 } from "@/lib/types";
 import { Go, StatusLine, useSend, useWallet } from "./Wallet";
@@ -24,7 +23,7 @@ export default function Erc8004Actions({ e, explorer }: { e: CaseErc8004; explor
   if (e.state === "prepared" && e.requestCall) {
     return (
       <div className="act">
-        <p className="small">The registry takes the request from one wallet only: {owner}. It names the validator{e.validator ? ` ${short(e.validator)}` : ""}, the verifier whose verdict was carried out, and the hash of the case file.</p>
+        <p className="small">The registry takes this request from one wallet only: {owner}. It is sent from that wallet, with the case file&apos;s hash.</p>
         <div className="cta"><Go line label="Put this verdict on ERC-8004" busy={ask.busy} onGo={() => send(ask, e.requestCall!, owner, "Requested. The validator answers on the registry.")} /></div>
         <StatusLine status={ask.status} explorer={explorer} />
       </div>

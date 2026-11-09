@@ -1200,7 +1200,7 @@ test("verifiers: the page under Agents with how a verified job goes, the numbers
   assert.equal((page.html.match(/<svg class="mk/g) ?? []).length >= 15, true);
   // Factor's own, marked as such, and every verifier with its record
   assert.match(t, /Factor's own verifiers Ordinary verifiers, with bonds of their own ?\./);
-  assert.match(t, /factor-claude Anthropic · anthropic\/claude-sonnet-5\.5/);
+  assert.match(t, /factor-claude Anthropic · anthropic\/claude-haiku-4\.5/);
   assert.match(t, /The verifiers · 6/);
   assert.match(t, /factor-claude Factor's own Anthropic · standing since/);
   assert.match(t, /kimi-reads Moonshot · no standing: bond under the least/);
@@ -1229,7 +1229,7 @@ test("verifiers: a verifier's own page, the job page's check, verdicts, dispute 
   // a verifier's own page
   const v = plain((await get(`/verifiers/${CLAUDE}`)).html);
   assert.match(v, /factor-claude Factor's own/);
-  assert.match(v, /A verifier on Anthropic, running anthropic\/claude-sonnet-5\.5\. It has had its standing since/);
+  assert.match(v, /A verifier on Anthropic, running anthropic\/claude-haiku-4\.5\. It has had its standing since/);
   assert.match(v, /89 ?% right, of 9 calls judged/);
   assert.match(v, /Free what it can stake, or take out 0\.0812 ETH/);
   assert.match(v, /Its cases · 4/);
@@ -1248,7 +1248,7 @@ test("verifiers: a verifier's own page, the job page's check, verdicts, dispute 
   const c = plain((await get("/jobs/0423")).html);
   assert.match(c, /The first check says accept ?\. The customer may dispute it until .* for a bond of 0\.0005 ETH/);
   assert.match(c, /Passed NVDA within 0\.1% of its Chainlink feed/);
-  assert.match(c, /Anthropic, anthropic\/claude-sonnet-5\.5/);
+  assert.match(c, /Anthropic, anthropic\/claude-haiku-4\.5/);
   // disputed and seating: the seats, what ties one to a side, a strike, an open seat
   const d = plain((await get("/jobs/0422")).html);
   assert.match(d, /Disputed\. A panel decides ?\./);
@@ -1357,8 +1357,8 @@ test("verifiers: model receipts beside every verdict, checked or declared, a rec
   const SECOND = "0x972d66a024324294ffd0f4b087f06f0bfd9bbb92";
   // the job page: each verdict's model, and where the verdict stands on ERC-8004
   const p = plain((await get("/jobs/0419")).html);
-  assert.match(p, /Seat 1 factor-claude Factor's own Accept .* Model receipt checked Anthropic anthropic\/claude-sonnet-5\.5 at stand-in provider · call gen-/);
-  assert.match(p, /Seat 2 second-look Accept .* Model declared OpenAI openai\/gpt-5\.1 at its own provider · call gen-[0-9a-f]+ · \d+ in, \d+ out · its own receipt, as given: not checked/);
+  assert.match(p, /Seat 1 factor-claude Factor's own Accept .* Model receipt checked Anthropic anthropic\/claude-haiku-4\.5 through OpenRouter · call gen-/);
+  assert.match(p, /Seat 2 second-look Accept .* Model declared OpenAI openai\/gpt-5\.1 through OpenAI · call gen-[0-9a-f]+ · \d+ in, \d+ out · its own receipt, as given: not checked/);
   assert.match(p, /Seat 3 orbit-ops .* Model declared DeepSeek No receipt: only the maker it declared/);
   assert.match(p, /What a model receipt shows/);
   assert.match(p, /On ERC-8004 · Requested, waiting for the answer/);
@@ -1370,14 +1370,16 @@ test("verifiers: model receipts beside every verdict, checked or declared, a rec
   assert.match(job, new RegExp(`href="/verifiers/receipt/3/${CLAUDE}"`));
   assert.match(job, /href="https:\/\/robinhoodchain\.blockscout\.com\/address\/0x8004Cc8439f36fd5F9F049D9fF86523Df6dAAB58"/);
   assert.match(plain((await get("/jobs/0417")).html), /On ERC-8004 · Answered .* under the tag factorVerify: 100: accept/);
-  assert.match(plain((await get("/jobs/0418")).html), /On ERC-8004 · The agent has no identity there This verdict cannot be put there: quill-02 has no ERC-8004 identity linked on Factor\./);
+  const prepared = plain((await get("/jobs/0418")).html);
+  assert.match(prepared, /On ERC-8004 · Ready to request The case file is written\. The owner of agent identity #377, or a wallet it approved, can ask for validation on the registry\. The validator is set by rule: the verifier whose verdict was carried out/);
+  assert.match(prepared, /The validator the verifier whose verdict was carried out, the only wallet that may answer 0xf8f5…9427/);
   assert.match(plain((await get("/jobs/0424")).html), /On ERC-8004 · Waiting for the outcome/);
   // a receipt's own page: the call, the hashes, the texts; an outside verifier's is shown as given
   const rc = plain((await get(`/verifiers/receipt/3/${CLAUDE}`)).html);
   assert.match(rc, /A model receipt ?\./);
   assert.match(rc, /Model receipt checked Anthropic/);
   assert.match(rc, /Factor checked it at the provider/);
-  assert.match(rc, /The model that answered as the provider reports it anthropic\/claude-sonnet-5\.5/);
+  assert.match(rc, /The model that answered as the provider reports it anthropic\/claude-haiku-4\.5/);
   assert.match(rc, /request 0x[0-9a-f]{64} answer 0x[0-9a-f]{64}/);
   assert.match(rc, /Nobody but Factor can read the provider's own record of the call/);
   assert.match(rc, /The request .* The answer .* The provider's record/);

@@ -138,6 +138,10 @@ export function CaseRow({ c, now }: { c: VerifierCase; now: string }) {
   );
 }
 
+/** A model provider's name as people write it: "openrouter" is OpenRouter. An unknown one is shown as given. */
+const PROVIDERS: Record<string, string> = { openrouter: "OpenRouter", openai: "OpenAI", anthropic: "Anthropic", google: "Google", xai: "xAI", deepseek: "DeepSeek", mistral: "Mistral" };
+export const providerLabel = (p: string): string => PROVIDERS[p.toLowerCase()] ?? p;
+
 /**
  * A verdict's model: "Model receipt checked" when Factor looked the call up at the provider and the model was of the
  * declared maker, "Model declared" otherwise; the receipt's facts beside it, and the way to its page.
@@ -154,7 +158,7 @@ export function ModelMark({ m, caseId, verifier, bare = false }: { m: VerdictMod
       </span>
       {bare ? null : r ? (
         <span className="vmm-facts mono">
-          {r.modelReported || r.modelAsked}{r.provider ? ` at ${r.provider}` : ""} · call {r.generationId.length > 18 ? `${r.generationId.slice(0, 16)}…` : r.generationId}{r.tokensIn !== null && r.tokensOut !== null ? ` · ${r.tokensIn} in, ${r.tokensOut} out` : ""}
+          {r.modelReported || r.modelAsked}{r.provider ? ` through ${providerLabel(r.provider)}` : ""} · call {r.generationId.length > 18 ? `${r.generationId.slice(0, 16)}…` : r.generationId}{r.tokensIn !== null && r.tokensOut !== null ? ` · ${r.tokensIn} in, ${r.tokensOut} out` : ""}
           {checked ? null : <> · {r.by === "verifier" ? "its own receipt, as given: not checked" : r.why ?? "not checked"}</>}
           {" "}<Link className="vmm-link" href={`/verifiers/receipt/${caseId}/${verifier}`}>The receipt →</Link>
         </span>

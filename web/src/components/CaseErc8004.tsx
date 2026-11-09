@@ -23,19 +23,23 @@ function sentence(e: CaseErc8004): string {
 
 export default function Erc8004Block({ e, explorer }: { e: CaseErc8004; explorer: string }) {
   return (
-    <div className="vblock" id="erc8004" style={{ scrollMarginTop: 96 }}>
-      <span className="label">On ERC-8004 · {ERC8004_WORD[e.state]}</span>
-      <p className="small" style={{ marginTop: 12 }}>{sentence(e)}</p>
-      <dl className="kv fit tight" style={{ marginTop: 16 }}>
-        <dt>The registry<small>the ERC-8004 Validation Registry on Robinhood Chain</small></dt><dd><a href={addressHref(explorer, e.registry)} target="_blank" rel="noopener noreferrer">{short(e.registry)}</a></dd>
-        <dt>The tag</dt><dd>{e.tag}</dd>
-        {e.agentId ? <><dt>The agent&apos;s identity</dt><dd>#{e.agentId}</dd></> : null}
-        {e.validator ? <><dt>The validator<small>the verifier whose verdict was carried out, the only wallet that may answer</small></dt><dd><a href={addressHref(explorer, e.validator)} target="_blank" rel="noopener noreferrer">{short(e.validator)}</a></dd></> : null}
-        {e.response !== null ? <><dt>Its answer<small>the verdict carried out: 100 accept, 0 reject</small></dt><dd className="sum">{answerWord(e.response)}</dd></> : null}
-        {e.file ? <><dt>The case file<small>the job, its words, the verdicts and the outcome; its keccak256 goes with the request</small></dt><dd><a href={e.file} target="_blank" rel="noopener noreferrer">The file</a></dd></> : null}
-      </dl>
-      {e.fileHash ? <p className="small mono vhash">keccak256 of the file&apos;s UTF-8 text: {e.fileHash}</p> : null}
-      <Erc8004Actions e={e} explorer={explorer} />
+    <div className="v8004" id="erc8004" style={{ scrollMarginTop: 96 }}>
+      <div className="v8004-say">
+        <span className="label">On ERC-8004 · {ERC8004_WORD[e.state]}</span>
+        <p className="small" style={{ marginTop: 12 }}>{sentence(e)}</p>
+        <Erc8004Actions e={e} explorer={explorer} />
+      </div>
+      <div className="v8004-facts">
+        <dl className="kv fit tight">
+          <dt>The registry<small>the ERC-8004 Validation Registry on Robinhood Chain</small></dt><dd><a href={addressHref(explorer, e.registry)} target="_blank" rel="noopener noreferrer">{short(e.registry)}</a></dd>
+          <dt>The tag</dt><dd>{e.tag}</dd>
+          {e.agentId ? <><dt>The agent&apos;s identity</dt><dd>#{e.agentId}</dd></> : null}
+          {e.validator ? <><dt>The validator<small>the verifier whose verdict was carried out, the only wallet that may answer</small></dt><dd><a href={addressHref(explorer, e.validator)} target="_blank" rel="noopener noreferrer">{short(e.validator)}</a></dd></> : null}
+          {e.response !== null ? <><dt>Its answer<small>the verdict carried out: 100 accept, 0 reject</small></dt><dd className="sum">{answerWord(e.response)}</dd></> : null}
+          {e.file ? <><dt>The case file<small>the job, its words, the verdicts and the outcome; its keccak256 goes with the request</small></dt><dd><a href={e.file} target="_blank" rel="noopener noreferrer">The file</a></dd></> : null}
+        </dl>
+        {e.fileHash ? <p className="small mono vhash">keccak256 of the file&apos;s UTF-8 text: {e.fileHash}</p> : null}
+      </div>
     </div>
   );
 }

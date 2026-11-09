@@ -1459,7 +1459,13 @@ small.vrc { display: block; margin-top: 6px; }
 .vhash { margin-top: 10px; font-size: 11.5px; color: var(--dim); overflow-wrap: anywhere; }
 .kv dd.vwrap { white-space: normal; overflow-wrap: anywhere; text-align: right; }
 b.ink { color: var(--ink); font-weight: 500; }
-.vside-8004 { margin-top: 34px; padding-top: 26px; border-top: 1px solid var(--line); }
+/* a verdict on ERC-8004: a row across both columns, the words and the call on the left, the facts on the right */
+.vcase-8004 { grid-column: 1 / -1; margin-top: 34px; padding-top: 30px; border-top: 1px solid var(--line); min-width: 0; }
+.v8004 { display: grid; grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr); }
+.v8004-say { padding-right: 36px; min-width: 0; }
+.v8004-facts { padding-left: 36px; border-left: 1px solid var(--line); min-width: 0; }
+.v8004-say .act { border-top: 0; padding: 18px 0 0; }
+@media (max-width: 960px) { .v8004 { grid-template-columns: 1fr; gap: 22px; } .v8004-say { padding-right: 0; } .v8004-facts { padding-left: 0; border-left: 0; } }
 .vexplain { margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--line); }
 .vexplain summary { cursor: pointer; width: fit-content; list-style: none; font-size: 13.5px; color: var(--mid); border-bottom: 1px solid var(--line-2); }
 .vexplain summary::-webkit-details-marker { display: none; }

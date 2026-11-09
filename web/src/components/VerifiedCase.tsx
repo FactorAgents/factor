@@ -131,7 +131,6 @@ export default function VerifiedCase({ c, rules, contract, explorer, now }: { c:
               <p className="small">{RECEIPT_NOT}</p>
             </details>
           ) : null}
-          {c.erc8004 && c.erc8004.state !== "off" ? <div className="vside-8004"><Erc8004Block e={c.erc8004} explorer={explorer} /></div> : null}
         </div>
         <div className="vcase-main">
           <div className="vblock">
@@ -171,6 +170,7 @@ export default function VerifiedCase({ c, rules, contract, explorer, now }: { c:
           {c.ended ? null : <CaseActions contract={contract} explorer={explorer} now={now} c={{ id: c.id, state: c.state, customer: c.customer, agent: c.agent, priceEth: c.priceEth, disputeBondWei: c.disputeBondWei, disputeBondEth: c.disputeBondEth, firstAccept: c.first ? c.first.accept : null, delivered: !!c.deliveredAt, disputeBy: c.deadlines?.disputeBy ?? null, seatBy: c.deadlines?.seatBy ?? null, reviewBy: c.deadlines?.reviewBy ?? null, seats: seats.map((s) => ({ address: s.verifier.address, name: s.verifier.name ?? short(s.verifier.address) })), struckBy: struck.map((x) => x.by), next: c.next, nextAt: c.nextAt }} />}
           {!contract && !c.ended ? <p className="small vnote" style={{ marginTop: 18 }}>The customer and the agent act on it here once the verifier contract is live: a dispute, a strike, the customer&apos;s own choice, and a step anyone may take.</p> : null}
         </div>
+        {c.erc8004 && c.erc8004.state !== "off" ? <div className="vcase-8004"><Erc8004Block e={c.erc8004} explorer={explorer} /></div> : null}
       </div></Reveal>
       <p className="small" style={{ marginTop: 22 }}><Link className="more quiet" href="/verifiers#cases">Every verified job →</Link></p>
     </section>

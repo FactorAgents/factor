@@ -29,7 +29,7 @@ const verifiers: Verifier[] = [
 const byName = (name: string) => verifiers.find((x) => x.name === name)!;
 const short = (x: Verifier): VerifierShort => ({ address: x.address, name: x.name, maker: x.maker, makerName: x.makerName, house: x.house });
 
-const SHEET_REASON = "Verdict: accept\nTests:\n- pass: four tickers asked for, four on the sheet\n- pass: NVDA within 0.1% of its Chainlink feed at the delivery's block\n- pass: TSLA within 0.1% of its Chainlink feed at the delivery's block\n- pass: ETH within 0.1% of its Chainlink feed at the delivery's block\n- pass: every feed's address is the one on the chain\nReasons:\nThe brief asks for a price sheet of NVDA, TSLA, AAPL and ETH read from the chain's feeds. Every figure matches its feed at the block the sheet names, and each line says how old the feed's answer was.\nModel: Anthropic, anthropic/claude-sonnet-5.5";
+const SHEET_REASON = "Verdict: accept\nTests:\n- pass: four tickers asked for, four on the sheet\n- pass: NVDA within 0.1% of its Chainlink feed at the delivery's block\n- pass: TSLA within 0.1% of its Chainlink feed at the delivery's block\n- pass: ETH within 0.1% of its Chainlink feed at the delivery's block\n- pass: every feed's address is the one on the chain\nReasons:\nThe brief asks for a price sheet of NVDA, TSLA, AAPL and ETH read from the chain's feeds. Every figure matches its feed at the block the sheet names, and each line says how old the feed's answer was.\nModel: Anthropic, anthropic/claude-haiku-4.5";
 const NOTES_REJECT = "Verdict: reject\nTests:\n- pass: a section for each of the three areas the brief names\n- fail: the brief lists eleven changes; nine are in the notes\n- fail: the breaking change to the export format is not marked as one\nReasons:\nTwo of the changes the brief lists are missing, and the one the brief calls out as breaking is written as a small fix.\nModel: OpenAI, openai/gpt-5.1";
 
 /** A desk job of the sample, locked by the verifier contract for an agent. */
@@ -93,10 +93,10 @@ add(deskJob(421, "A landing page for a bike repair shop", "page-smith", 0.02, "d
   const c = base(5, j, 125, 0.0005, "One page for a bike repair shop: what it fixes, its hours, its address and a button to book. Calm colours.", { kind: "text", text: "A page with the shop's name, what it fixes, its hours and its address, and a button to book.", at: at(900) }, 1000);
   return {
     ...c, state: "disputed", deadlines: { ...c.deadlines!, disputeBy: at(720) },
-    first: { verifier: short(byName("factor-claude")), accept: true, at: at(840), reasonHash: TX(6005), reason: "Verdict: accept\nTests:\n- pass: the shop's name, hours and address are on the page\n- pass: a button to book\n- pass: the page runs no script and loads nothing from elsewhere\nReasons:\nEverything the brief names is there, in calm colours.\nModel: Anthropic, anthropic/claude-sonnet-5.5", tx: TX(6105) },
+    first: { verifier: short(byName("factor-claude")), accept: true, at: at(840), reasonHash: TX(6005), reason: "Verdict: accept\nTests:\n- pass: the shop's name, hours and address are on the page\n- pass: a button to book\n- pass: the page runs no script and loads nothing from elsewhere\nReasons:\nEverything the brief names is there, in calm colours.\nModel: Anthropic, anthropic/claude-haiku-4.5", tx: TX(6105) },
     dispute: { by: "customer", address: c.customer, at: at(760), bondEth: c.disputeBondEth, tx: TX(6205) },
     seats: [
-      seat(0, byName("factor-gemini"), 700, "reject", "Verdict: reject\nTests:\n- pass: name, hours and address\n- fail: the button to book leads nowhere\nReasons:\nThe brief asks for a button to book. The page has one, and it goes to no address at all, so nobody can book from it.\nModel: Google, google/gemini-2.5-pro"),
+      seat(0, byName("factor-gemini"), 700, "reject", "Verdict: reject\nTests:\n- pass: name, hours and address\n- fail: the button to book leads nowhere\nReasons:\nThe brief asks for a button to book. The page has one, and it goes to no address at all, so nobody can book from it.\nModel: Google, google/gemini-2.5-flash"),
       seat(1, byName("second-look"), 640, "accept", "The brief asks for a button to book and does not say where it should lead. The page has the button; the shop can point it at its booking line. Everything else asked for is there."),
       seat(2, verifiers[4]!, 300, null, null),
     ],
@@ -116,7 +116,7 @@ add(deskJob(419, "Summarise a 30-page supply agreement", "lumen-07", 0.01, "sett
     first: { verifier: short(byName("kimi-reads")), accept: false, at: at(1740), reasonHash: TX(6003), reason: "The summary leaves out the late-delivery clause.", tx: TX(6103) },
     dispute: { by: "agent", address: c.agent.address, at: at(1700), bondEth: c.disputeBondEth, tx: TX(6203) },
     seats: [
-      seat(0, byName("factor-claude"), 1600, "accept", "Verdict: accept\nTests:\n- pass: one page\n- pass: eleven dates and amounts, each matched to its clause\n- pass: the late-delivery clause is there, under 7.2\nReasons:\nThe first verdict says the late-delivery clause is missing. It is on the page, under 7.2, with its amount.\nModel: Anthropic, anthropic/claude-sonnet-5.5"),
+      seat(0, byName("factor-claude"), 1600, "accept", "Verdict: accept\nTests:\n- pass: one page\n- pass: eleven dates and amounts, each matched to its clause\n- pass: the late-delivery clause is there, under 7.2\nReasons:\nThe first verdict says the late-delivery clause is missing. It is on the page, under 7.2, with its amount.\nModel: Anthropic, anthropic/claude-haiku-4.5"),
       seat(1, byName("second-look"), 1500, "accept", "The late-delivery clause is in the summary, under 7.2. Every amount I checked is right."),
       seat(2, byName("orbit-ops"), 1450, "reject", "Two of the dates are written in a different order from the agreement's own."),
     ],
@@ -131,7 +131,7 @@ add(deskJob(418, "Release notes for a desktop app", "quill-02", 0.008, "half", 3
   const c = base(2, j, 122, 0.0002, "Release notes for the desktop app from the commit list below, grouped by what a user sees.", { kind: "text", text: "Fixed bugs and improved things.", at: at(3000) }, 3200);
   return {
     ...c, state: "rejected", how: "first-check", deadlines: { ...c.deadlines!, disputeBy: at(2820) },
-    first: { verifier: short(byName("factor-gemini")), accept: false, at: at(2940), reasonHash: TX(6002), reason: "Verdict: reject\nTests:\n- fail: none of the 23 commits named\n- fail: no grouping by what a user sees\nReasons:\nThe notes are one line and say nothing of the changes listed in the brief.\nModel: Google, google/gemini-2.5-pro", tx: TX(6102) },
+    first: { verifier: short(byName("factor-gemini")), accept: false, at: at(2940), reasonHash: TX(6002), reason: "Verdict: reject\nTests:\n- fail: none of the 23 commits named\n- fail: no grouping by what a user sees\nReasons:\nThe notes are one line and say nothing of the changes listed in the brief.\nModel: Google, google/gemini-2.5-flash", tx: TX(6102) },
     paid: [{ verifier: byName("factor-gemini").address, eth: 0.0002 }],
     ended: { state: "rejected", how: "first-check", at: at(2850), tx: TX(6302), toCustomerEth: 0.004 },
   };
@@ -141,7 +141,7 @@ add(deskJob(417, "Summarise this month's board minutes", "lumen-07", 0.015, "set
   const c = base(1, j, 121, 0.0003, "Summarise the minutes below: every decision, who owns it, and its date.", { kind: "text", text: "Seven decisions, each with its owner and date.", at: at(4300) }, 4500);
   return {
     ...c, state: "accepted", how: "first-check", deadlines: { ...c.deadlines!, disputeBy: at(4130) },
-    first: { verifier: short(byName("factor-claude")), accept: true, at: at(4250), reasonHash: TX(6001), reason: "Verdict: accept\nTests:\n- pass: seven decisions in the minutes, seven in the summary\n- pass: each has its owner and date\nReasons:\nEvery decision is there, with who owns it and when.\nModel: Anthropic, anthropic/claude-sonnet-5.5", tx: TX(6101) },
+    first: { verifier: short(byName("factor-claude")), accept: true, at: at(4250), reasonHash: TX(6001), reason: "Verdict: accept\nTests:\n- pass: seven decisions in the minutes, seven in the summary\n- pass: each has its owner and date\nReasons:\nEvery decision is there, with who owns it and when.\nModel: Anthropic, anthropic/claude-haiku-4.5", tx: TX(6101) },
     paid: [{ verifier: byName("factor-claude").address, eth: 0.0003 }],
     ended: { state: "accepted", how: "first-check", at: at(4110), tx: TX(6301), toCustomerEth: 0 },
   };
@@ -151,7 +151,7 @@ const cases = built.map((b) => b.c);
 // model receipts: Factor's own verifiers check through a provider and Factor looks each call up there; second-look gives
 // receipts of its own, shown as given; the rest only declare their maker
 const REGISTRY = "0x8004Cc8439f36fd5F9F049D9fF86523Df6dAAB58";
-const MODEL: Record<string, string> = { "factor-claude": "anthropic/claude-sonnet-5.5", "factor-gemini": "google/gemini-2.5-pro", "second-look": "openai/gpt-5.1" };
+const MODEL: Record<string, string> = { "factor-claude": "anthropic/claude-haiku-4.5", "factor-gemini": "google/gemini-2.5-flash", "second-look": "openai/gpt-5.1" };
 const RECEIPTS: Record<string, { checked: number; declared: number }> = { "factor-claude": { checked: 9, declared: 0 }, "factor-gemini": { checked: 7, declared: 0 }, "second-look": { checked: 0, declared: 6 }, "orbit-ops": { checked: 0, declared: 4 }, "kimi-reads": { checked: 0, declared: 3 } };
 for (const x of verifiers) x.receipts = RECEIPTS[x.name ?? ""] ?? { checked: 0, declared: 1 };
 function modelOf(v: VerifierShort, caseId: number, at_: string): VerdictModel {
@@ -160,7 +160,7 @@ function modelOf(v: VerifierShort, caseId: number, at_: string): VerdictModel {
   if (!model) return { mark: "declared", maker: v.maker, makerName: v.makerName, receipt: null };
   const factor = v.house;
   const receipt: ModelReceipt = {
-    by: factor ? "factor" : "verifier", provider: factor ? "stand-in provider" : "its own provider", generationId: `gen-${(0x5f3a91c + n * 7919).toString(16)}`, modelAsked: model, modelReported: model,
+    by: factor ? "factor" : "verifier", provider: factor ? "openrouter" : "openai", generationId: `gen-${(0x5f3a91c + n * 7919).toString(16)}`, modelAsked: model, modelReported: model,
     providerName: v.makerName, tokensIn: 3200 + n * 37, tokensOut: 410 + n * 11, createdAt: new Date(Date.parse(at_) - 50_000).toISOString(),
     requestHash: TX(7100 + n), outputHash: TX(7200 + n), checkedAt: factor ? new Date(Date.parse(at_) + 40_000).toISOString() : null,
     matches: factor ? true : null, why: factor ? null : "an outside verifier's receipt, shown as given and not checked", url: null,
@@ -171,11 +171,17 @@ for (const c of cases) {
   if (c.first) c.first.model = modelOf(c.first.verifier, c.id, c.first.at);
   for (const s of c.seats ?? []) if (s.vote) s.model = modelOf(s.verifier, c.id, s.satAt ?? s.since);
   // where each verdict stands on ERC-8004: only lumen-07 has an identity of its own on the sample
-  const lumen = c.agent.name === "lumen-07";
-  const state: CaseErc8004["state"] = !c.ended ? "no-verdict" : !lumen ? "no-identity" : c.id === 1 ? "answered" : "requested";
-  const validator = byName("factor-claude").address;
+  // lumen-07 and quill-02 have identities of their own on the sample (#211, #377); the other agents have none
+  const IDS: Record<string, string> = { "lumen-07": "211", "quill-02": "377" };
+  const id8004 = IDS[c.agent.name] ?? null;
+  const lumen = !!id8004;
+  const state: CaseErc8004["state"] = !c.ended ? "no-verdict" : !id8004 ? "no-identity" : c.id === 1 ? "answered" : c.id === 3 ? "requested" : "prepared";
+  // the validator, by rule: the verifier whose verdict was carried out, the first verifier when its verdict stood,
+  // otherwise the first panelist of the majority
+  const carried = c.ended?.how === "panel" ? c.seats?.find((x) => x.vote === c.decided?.verdict)?.verifier : c.first?.verifier;
+  const validator = carried?.address ?? null;
   c.erc8004 = {
-    registry: REGISTRY, tag: "factorVerify", agentId: lumen ? "211" : null, state, validator: c.ended && lumen ? validator : null,
+    registry: REGISTRY, tag: "factorVerify", agentId: id8004, state, validator: c.ended && lumen ? validator : null,
     response: state === "answered" ? (c.ended!.state === "accepted" ? 100 : 0) : null,
     file: c.ended ? `/api/v1/verifiers/file/${c.id}` : null, fileHash: c.ended ? TX(7300 + c.id) : null,
     requestCall: c.ended && lumen ? { to: REGISTRY, data: `0x${"a1b2c3d4"}${"0".repeat(56)}${c.id.toString(16).padStart(8, "0")}` } : null,
@@ -211,7 +217,7 @@ export function sampleVerifiersAbout(): VerifiersAbout {
   return {
     enabled: true, contract: null, chainId: 4663, rules: RULES, makers: MAKERS, erc8004: { enabled: true, registry: REGISTRY, tag: "factorVerify" },
     totals: { cases: cases.length, open: cases.filter((c) => OPEN.has(c.state)).length, disputed: cases.filter((c) => c.dispute).length, panels: cases.filter((c) => c.seats?.length).length, verifiers: verifiers.length, bondedEth: +verifiers.reduce((n, x) => n + x.freeEth + x.lockedEth, 0).toFixed(6), feesPaidEth: 0.0013, slashedEth: 0.002 },
-    house: verifiers.filter((x) => x.house).map((x) => ({ address: x.address, maker: x.maker, makerName: x.makerName, model: x.maker === 1 ? "anthropic/claude-sonnet-5.5" : "google/gemini-2.5-pro", joined: true })),
+    house: verifiers.filter((x) => x.house).map((x) => ({ address: x.address, maker: x.maker, makerName: x.makerName, model: x.maker === 1 ? "anthropic/claude-haiku-4.5" : "google/gemini-2.5-flash", joined: true })),
   };
 }
 export function sampleVerifierList(maker?: number): VerifierList {

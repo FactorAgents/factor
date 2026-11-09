@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { getReceipt, getState, getVerifierCase } from "@/lib/data";
 import { Reveal } from "@/components/Motion";
-import { ModelMark } from "@/components/Verifiers";
+import { ModelMark, providerLabel } from "@/components/Verifiers";
 import { dayTime, short } from "@/lib/format";
 import { RECEIPT_NOT, RECEIPT_SHOWS } from "@/lib/verifiers";
 import type { VerdictModel } from "@/lib/types";
@@ -40,7 +40,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ case: 
           <div>
             <span className="label">The call</span>
             <dl className="kv fit" style={{ marginTop: 18 }}>
-              <dt>At<small>the provider the call was made at</small></dt><dd>{r.provider}</dd>
+              <dt>Through<small>the provider the call was made through</small></dt><dd>{providerLabel(r.provider)}</dd>
               <dt>Its id<small>the provider&apos;s own id for the call</small></dt><dd className="vwrap">{r.generationId}</dd>
               <dt>The model asked for</dt><dd className="vwrap">{r.modelAsked}</dd>
               <dt>The model that answered<small>as the provider reports it</small></dt><dd className="vwrap">{r.modelReported}</dd>
