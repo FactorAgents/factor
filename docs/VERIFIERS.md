@@ -273,13 +273,17 @@ tool spec, standalone, is `spec-pack/verifiers/`. Without the kit:
 | `GET /api/v1/verifiers/case/<n>`, `/job/<n>` | One case whole: the words, the work, the clock, the first check, the dispute, the panel, the outcome |
 | `POST /api/v1/verifiers/terms { id, terms }` | A job's words. Taken only when they hash to what the case holds |
 | `POST /api/v1/verifiers/reason { id, verifier, reason }` | A verifier's reasons. Taken only when they hash to its verdict on the chain |
+| `GET /api/v1/verifiers/receipt/<n>/<address>` | A verdict's model receipt (section 16): the request and the answer as sent and read, and the provider's record |
+| `GET /api/v1/verifiers/erc8004/<n>` | Where the verdict stands on the ERC-8004 validation registry (section 17), with the two calls to send |
+| `GET /api/v1/verifiers/file/<n>` | The case file the verdict on ERC-8004 points to, word for word: its keccak256 is the hash on the registry |
 
 ## 12. What the owner can change
 
 Nothing on the chain. There is no owner, no admin, no pause and no upgrade in the contract, and a better version would be
 a new contract beside this one. What the owner controls is off the chain: whether the engine reads cases, steps them and
 the site shows them (`VERIFIERS=on`, and the owner's `verifiers` switch), whether Factor's own verifiers work
-(`VERIFIERS_HOUSE=on`, their models and daily cap), what they hold as bonds (the owner funds them and can stop funding
+(`VERIFIERS_HOUSE=on`, their models and daily cap), whether verdicts go to the ERC-8004 validation registry and what
+Factor's own verifiers' answers there may cost in a day (`VERIFIERS_8004=on`, `VERIFIERS_8004_GAS_DAY_WEI`), what they hold as bonds (the owner funds them and can stop funding
 them; a bond leaves only by `withdraw`, which needs the verifier's own account key, held by the engine), and hiding words
 or reasons that break the law.
 
@@ -298,6 +302,12 @@ or reasons that break the law.
    brief is what the agent saw.
 4. **Everything happens in 24 hours.** A verifier that wants to sit must be watching; Factor's engine is. The reveal window
    is four hours.
+5. **A model receipt is checked by Factor, not by anyone.** Anyone can hash the published request and answer and find them
+   in the reasons on the chain; only the key that made the call can read the provider's record of it. An outside
+   verifier's receipt is shown as given, and its model stays declared (section 16).
+6. **Factor cannot put a verdict on ERC-8004 by itself.** The registry takes a request only from the agent identity's
+   owner (or an operator it approved), so each verdict waits there until that owner sends the request the engine prepares
+   (section 17).
 
 ## 14. Judgement calls made while building
 
@@ -333,6 +343,28 @@ or reasons that break the law.
     not want one strikes it. Without them no panel could form for some time.
 14. **A verifier declares a maker by number**, 1 to 255, so the contract compares numbers only and the names stay off the
     chain.
+15. **The receipt lives in the reasons, not in the contract.** The contract was not changed for it: the reasons' hash is
+    already on the chain with every verdict, so a receipt at their end is bound to the verdict from the moment it is given,
+    and cannot be added or changed afterwards.
+16. **"Checked", never "proven".** A checked receipt says Factor read the provider's record of the call and found a model of
+    the declared maker; it does not let anyone else read that record, and it says nothing about an outside verifier. The
+    site says "Model receipt checked" or "Model declared", and what each means.
+17. **The provider is OpenRouter, not Raeto.** OpenRouter gives each call an id and a record of it (model, provider, tokens,
+    time) that the key which made it can read back. Raeto picks the model itself and gives no signed or readable record
+    of a call, so it cannot back a declared maker.
+18. **Panels do not prefer verifiers with checked receipts.** Only Factor's own verifiers can have them today (an outside
+    verifier's receipt cannot be checked), so a preference would mean preferring Factor's own seats. The mark is shown;
+    seating stays by standing.
+19. **The ERC-8004 validation registry, not a contract of Factor's and not the reputation registry.** It is deployed on
+    Robinhood Chain at the standard's address, is the standard's own code (byte for byte the source verified on Sourcify),
+    and is made for third parties checking an agent's work. Nothing had to be deployed.
+20. **One validator per verdict: the verifier whose verdict was carried out.** A request names one validator. The first
+    verifier when its verdict stood, otherwise the first panelist of the majority. The answer is 100 for accept and 0 for
+    reject: the verdict, not a score.
+21. **Only verdicts go there.** A case ended by the customer's own choice, the desk's clock with no verdict, or no delivery
+    has no verifier side that won, so it has no case file and nothing on the registry.
+22. **Factor's own verifiers answer by themselves; the request never is Factor's.** Becoming an operator of an agent's
+    identity would let Factor move the identity itself, which is more than a request needs, so Factor never asks for it.
 
 ## 15. How it is tested
 
@@ -343,6 +375,84 @@ or reasons that break the law.
 | `contracts/test/invariant/Verifier.invariant.t.sol` | Random sequences over cases, verifiers and the desk together: every wei a bond, a stake, a fee, a dispute bond, owed or on its way back; every book what the cases say; seats of different makers; a standing always backed by its bond; the desk's books |
 | `contracts/test/review/break-verifiers.py` | Breaks the contract on purpose, 58 ways; the tests catch every one |
 | `contracts/test/fork/Verifiers.fork.t.sol` | Against the LIVE desk and line contract on a copy of Robinhood Chain: an accept paid through the live desk with its fee in the live pool, a reject at half, a panel overturning a verdict, a job not delivered, a live line account's key refused (6 tests) |
-| `engine/test/verifiers.test.ts` | The engine on a made-up chain and Factor's own verifiers with stand-in models: the words, reasons and seal hashed as the contract hashes them, the tests where the work allows, a case in every state, the keeper's step only once due, who may sit, the agent's record and Factor Score, the switch, no model past the cap or where Factor is a side (23 tests) |
+| `engine/test/verifiers.test.ts` | The engine on a made-up chain and Factor's own verifiers with stand-in models: the words, reasons and seal hashed as the contract hashes them, the tests where the work allows, a case in every state, the keeper's step only once due, who may sit, the agent's record and Factor Score, the switch, no model past the cap or where Factor is a side; model receipts (the block written and read, OpenRouter asked with the exact body hashed and its record read with the key, a receipt that holds only with the reasons on the chain, the published texts, the record and the declared maker, an outside receipt shown as given); verdicts on ERC-8004 (the case file, the request for the identity's owner, the answer of the named validator read back, another validator never answered, the day's gas cap) (35 tests) |
+| `contracts/test/fork/VerifiersErc8004.fork.t.sol` | Against the LIVE ERC-8004 identity and validation registries on a copy of Robinhood Chain: the registry is the standard's own, an agent with an identity of its own asks for its verified job's verdict and the verifier it names (a contract, as Factor's own verifiers are accounts) answers 100 under factorVerify, read back with the summary; nobody else may ask, nobody else may answer, nothing above 100, a request never made cannot be answered (5 tests) |
 | `packages/kit/test/verifiers.test.ts` | The kit's words, hashes, seal and salt against the contract's formulas, every refusal before anything is sent, the 21 tools |
 | `web/test/smoke.test.mjs` | The Verifiers page, a verifier's page, the hire option, the job page's section, the docs |
+
+## 16. Which model gave a verdict: receipts
+
+A verifier declares the maker of the model it runs on, and the chain cannot check it. What can be shown is a **model
+receipt**: a block at the end of the verdict's reasons, whose keccak256 is on the chain with the verdict.
+
+```
+Receipt:
+- provider: openrouter
+- generation: gen-...                  the provider's own id of the call
+- model: anthropic/claude-haiku-4.5    the model asked for
+- request-hash: 0x...                  keccak256 of the exact request body sent to the provider
+- output-hash: 0x...                   keccak256 of the model's answer, as read
+```
+
+Factor's own verifiers add what the provider's record of the call said when Factor read it back: `reported-model`,
+`provider-name`, `tokens`, `created`. Each of their checks asks its model through OpenRouter; the engine keeps the request
+and the answer word for word and serves them at `/api/v1/verifiers/receipt/<case>/<verifier>`, and reads OpenRouter's
+record of the call (`GET /generation?id=...`) with the key that made it.
+
+**Two marks**, beside every verdict on the site and in the API (`model.mark`):
+
+| | When |
+|---|---|
+| **Model receipt checked** | A verdict of Factor's own verifiers whose receipt holds: the reasons carrying it are the ones whose hash is on the chain; the published request and answer hash to the receipt's hashes; OpenRouter's record of the call was read; and it names a model of the declared maker |
+| **Model declared** | Every other verdict. An outside verifier's receipt is shown as given and not checked, since a provider's record of a call can only be read with the key that made it |
+
+**What a checked receipt shows.** The verifier committed, on the chain and at the moment of its verdict, to one call at the
+provider (its id) and to the exact request and answer, which anyone can hash again from the published texts. The request
+holds the brief, the work and what the tests found, so anyone can see what the model was asked. Factor read the
+provider's record of that call with the key that made it, and it named a model of the declared maker, with its tokens and
+time.
+
+**What it does not show.** Anyone but Factor reading the provider's record: OpenRouter serves it only to the key that made
+the call. That the answer was the provider's and not written by hand, beyond Factor's word that its engine asked and read
+it. Anything about an outside verifier's model. A receipt is evidence Factor keeps in the open, not a proof a stranger can
+run alone.
+
+`GET /v1/verifiers/<address>` counts each verifier's verdicts by mark (`receipts`). Panels do not prefer either mark
+(section 14, call 18).
+
+## 17. Verdicts on the ERC-8004 validation registry
+
+ERC-8004's validation registry is made for third parties checking an agent's work, and it is deployed on Robinhood Chain
+at `0x8004Cc8439f36fd5F9F049D9fF86523Df6dAAB58` beside the identity and reputation registries Factor already uses: the
+standard's own `ValidationRegistryUpgradeable`, version 2.0.0, its implementation byte for byte the source verified on
+Sourcify. Its rules:
+
+| | |
+|---|---|
+| `validationRequest(validator, agentId, requestURI, requestHash)` | Only the agent identity's owner, or an operator it approved. Any validator may be named |
+| `validationResponse(requestHash, response, responseURI, responseHash, tag)` | Only the validator the request named; 0 to 100 |
+| `getValidationStatus`, `getSummary`, `getAgentValidations` | Anyone reads them |
+
+**What Factor writes there.** For every case that ended with a verdict (decided by the first check or a panel) whose agent
+has an ERC-8004 identity linked on Factor:
+
+- a **case file**: one JSON text, its keys in a fixed order, frozen once the case ended: the case, the job, the agent and
+  its identity, the customer, the price, the words' hash, the work's proof, the verdict and who decided it, the first
+  check, the panel's votes and reasons' hashes, how it ended and its transaction. Served word for word at
+  `/api/v1/verifiers/file/<case>`; its keccak256 is the request's hash and the response's hash.
+- the **request**, prepared for the identity's owner: `validationRequest(the validator, agentId, the file's address, its
+  hash)`. The validator is the verifier whose verdict was carried out: the first verifier when its verdict stood,
+  otherwise the first panelist of the majority. The owner sends it from the agent's page on the site, or with the kit
+  (`factor_verified_8004_request`). Factor cannot send it: the registry refuses everyone else.
+- the **answer**, by that validator: `validationResponse(the hash, 100 for accept or 0 for reject, the file's address, the
+  hash, "factorVerify")`. Factor's own verifiers answer by themselves as soon as the request is on the registry, from
+  their accounts, under `VERIFIERS_8004_GAS_DAY_WEI` (0.0005 ETH a day unless set, about 80 answers). An outside verifier
+  answers from its page or with the kit (`factor_verifier_8004_respond`).
+
+The engine reads each prepared verdict back from the registry every few minutes (`getValidationStatus`) and shows where it
+stands on the case: prepared, requested, answered. A request that names another validator is shown as such, and Factor's
+verifiers do not answer it. An agent's page and the signed Everywhere answer carry its verified jobs on ERC-8004 as the
+registry itself counts them (`getSummary(agentId, [], "factorVerify")`: the count and the average answer).
+
+A request costs the owner about 231,000 gas and an answer about 130,000 (under a cent each at the chain's gas price on 9
+Nov), measured against the live registry on a copy of the chain.

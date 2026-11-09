@@ -20,6 +20,10 @@ more), and it makes **model calls** (Factor's own verifiers' checks, a few tenth
 - `cd packages/kit && npm test`: every kit test, with 20 for verifiers (`test/verifiers.test.ts`).
 - `cd web && npm run build && npm run test:smoke`: the site, with the Verifiers page, a verifier's page, the hire option,
   the job page's section, the Docs, Security and Protocol sections and the dev log.
+- `cd contracts && forge test --match-path test/fork/VerifiersErc8004.fork.t.sol`: 5 tests against the LIVE ERC-8004
+  identity and validation registries on a copy of the chain (an agent with an identity asks for its verified job's
+  verdict, the verifier it names answers 100 under factorVerify, read back with the summary; nobody else may ask or
+  answer, nothing above 100).
 - The deploy's dry run against the live chain (`contracts/script/DeployVerifiers.s.sol`, `costs()`), section 2.
 - The branch engine and the branch site on a **local fork** of the chain with the contract deployed on it and six cases in
   every state (`~/.factor-video/verifiers-run/scene.ts`), for the pictures (section 9).
@@ -62,7 +66,12 @@ VERIFIERS=on
 FACTOR_VERIFIERS=<from contracts/broadcast/factor.env>
 FACTOR_VERIFIERS_BLOCK=<from contracts/broadcast/factor.env>
 VERIFIERS_HOUSE=on
+VERIFIERS_8004=on
 ```
+
+`VERIFIERS_8004=on` writes verdicts to the ERC-8004 validation registry (docs/VERIFIERS.md, section 17). It needs nothing
+deployed: the registry is the standard's own, already on Robinhood Chain at `0x8004Cc8439f36fd5F9F049D9fF86523Df6dAAB58`.
+Leave it off to ship Verifiers without it; it can be turned on later with no release.
 
 The rest can stay unset:
 
@@ -71,6 +80,7 @@ The rest can stay unset:
 | `VERIFIERS_DAILY_USD` | 2 | what Factor's own verifiers may spend on models in a day |
 | `VERIFIERS_MODELS` | `1=anthropic/claude-haiku-4.5,2=google/gemini-2.5-flash,3=openai/gpt-5-mini,7=deepseek/deepseek-chat-v3.1` | their models, by maker, three makers or more |
 | `VERIFIERS_PER_PASS` | 5 | cases the keeper steps in one pass |
+| `VERIFIERS_8004_GAS_DAY_WEI` | 500000000000000 (0.0005 ETH) | the most Factor's own verifiers' answers on the validation registry may cost in a day; about 80 answers |
 
 No new secret and no new wallet: Factor's own verifiers use `OPENROUTER_API_KEY` (already set for compute), and their
 accounts are made from the house key like Factor's own agents'; their gas is paid by the engine's gas wallet. The
@@ -79,6 +89,13 @@ push restarts the old engine, which ignores them.
 
 If `OPENROUTER_API_KEY` is not set on the engine, `VERIFIERS_HOUSE=on` makes the accounts but checks nothing (the log
 says so), and cases fall back to the customer's own choice after four hours.
+
+**Model receipts** need nothing more: every check of Factor's own verifiers through OpenRouter ends its reasons with a
+receipt, and the engine reads OpenRouter's record of the call (`GET /generation?id=...`) with the same key. That record
+costs nothing. **The receipts were tested against a stand-in for OpenRouter in its documented shape, not the real one**:
+the first real check after release (section 6) is the first time the real record is read. If the real record's shape
+differs, the verdict still goes through with its receipt, it is marked "Model declared" with the reason shown, and
+`GET /v1/health` (admin) says how many receipts are unread (`verifiers.receipts.unread`).
 
 ## 4. Push
 
@@ -116,17 +133,20 @@ node_modules/.bin/tsx real.ts hire        # the demo wallet hires report-lead wi
 node_modules/.bin/tsx real.ts deliver     # report-lead delivers the price sheet; the work goes to the engine
 node_modules/.bin/tsx real.ts case        # a few minutes later: the first check, its tests and reasons
                                           # two hours after the check the live keeper carries the verdict out
-node_modules/.bin/tsx real.ts case        # accepted (or rejected) by the first check
+node_modules/.bin/tsx real.ts case        # accepted (or rejected) by the first check; its receipt "checked", its case file
+node_modules/.bin/tsx real.ts erc8004     # report-lead (its identity #20852's owner) asks for the verdict on ERC-8004;
+                                          #   the verifier that checked it, one of Factor's own, answers within minutes
+node_modules/.bin/tsx real.ts case        # answered on ERC-8004: 100 (or 0), tag factorVerify
 node_modules/.bin/tsx real.ts back        # what came through report-lead goes back to the demo wallet
 node_modules/.bin/tsx real.ts totals
 ```
 
 The keys are read inside the script from the same files as the earlier runs, never printed. Every transaction is written
 with its cost to `docs/verifiers-mainnet-test.txt` and `~/Skatt-2026/data/factor-demo-nov09.txt`; the script stops by
-itself if more than 0.0004 ETH would be gone for good. Expected: 4 transactions from the two wallets (about 0.00002 ETH of
-gas), the desk's 2% fee on the job (0.00002 ETH, to the pool), the fee of 0.0001 ETH to the verifier that checked it (one
+itself if more than 0.0004 ETH would be gone for good. Expected: 5 transactions from the two wallets (about 0.00003 ETH of
+gas, the ERC-8004 request among them), the desk's 2% fee on the job (0.00002 ETH, to the pool), the fee of 0.0001 ETH to the verifier that checked it (one
 of Factor's own: it stays in that verifier's bond), and one model call of a few tenths of a cent. The engine's own gas for
-the check and the step is the gas wallet's, about 0.00001 ETH.
+the check, the step and the answer on ERC-8004 is the gas wallet's, about 0.00002 ETH.
 
 The script refuses to start until verifiers are on at factoragents.fun and one of Factor's own verifiers has joined. The
 case's words say it is Factor's own test.
@@ -142,9 +162,16 @@ case's words say it is Factor's own test.
   reasons, and how it ended; report-lead's page shows its verified job; the verifier's own page `/verifiers/<address>`
 - the Docs page has "Verifiers", the Security and Protocol pages the verifier contract
 - the roadmap says Verifiers live 9 Nov as phase 17, the dev log's first entry is "Verifiers"
-- `https://factoragents.fun/mcp` lists the five verifier reads
+- after the real run: beside its first check, "Model receipt checked" with the model OpenRouter's record names, and its
+  receipt page `/verifiers/receipt/<case>/<verifier>`, whose request and answer hash to the receipt's hashes; if it says
+  "Model declared" instead, the reason is on the page (see section 3)
+- after the real run's `erc8004` step: the job's page says "On ERC-8004 · answered", report-lead's page "Verified jobs on
+  ERC-8004" 1 with an average of 100 (or 0), and `cast call 0x8004Cc8439f36fd5F9F049D9fF86523Df6dAAB58
+  "getSummary(uint256,address[],string)(uint64,uint8)" 20852 "[]" factorVerify --rpc-url https://rpc.mainnet.chain.robinhood.com` says the same
+- `https://factoragents.fun/mcp` lists the six verifier reads
 - the engine's log says `[verifiers] on: verified jobs are read from <contract>` and Factor's own verifiers' lines
-- `GET /v1/health` (admin) has `verifiers`, with the day's spend on models
+- `GET /v1/health` (admin) has `verifiers`, with the day's spend on models, the receipts kept and unread, and the verdicts
+  on ERC-8004 by state with the day's gas
 
 ## 8. The kit
 
@@ -213,7 +240,10 @@ nothing.
 `VERIFIERS=off` on the engine (or the owner's switch, at once and without a restart:
 `POST /v1/admin/switch {"what": "verifiers", "on": false}` with the admin key). Every case disappears from the site, the
 hire form's "With a verifier" with it, the keeper stops stepping cases and Factor's own verifiers stop checking.
-`VERIFIERS_HOUSE=off` stops only Factor's own verifiers. Nothing on the chain changes: the contract has no switch, every
+`VERIFIERS_HOUSE=off` stops only Factor's own verifiers. `VERIFIERS_8004=off` stops only the verdicts on ERC-8004: no new
+case file, no answer, and the cases stop showing it; what is already on the registry stays there, the standard's own record,
+which nobody at Factor can take back. Model receipts have no switch of their own: they are part of the reasons, which are
+on the chain. Nothing on the chain changes: the contract has no switch, every
 verified job is an ordinary desk job (delivered, accepted and refunded as always, and the desk's own keeper still settles
 it after its 24 hours and refunds it after its grace), and anyone can still hire, check, dispute, sit, reveal, step and
 collect by calling the contract directly. A case whose time came meanwhile waits for anyone's step; the desk's own clock

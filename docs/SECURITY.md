@@ -107,7 +107,10 @@ with its owner's own wallet is not touched by any of it.
 
 Factor's own verifiers (`docs/VERIFIERS.md`, section 10) are accounts made from the same secret, one for each model maker.
 What they hold is Factor's own: the bonds the owner sent them, in the verifier contract, and what they earn there. Whoever
-holds the secret could take their free bonds out; nobody can take a stake on an open case, theirs or anyone's.
+holds the secret could take their free bonds out; nobody can take a stake on an open case, theirs or anyone's. The same
+accounts answer verdicts on the ERC-8004 validation registry (docs/VERIFIERS.md, section 17), whose gas the gas wallet
+pays under its own daily cap. Factor never holds an operator's right over an agent's identity: the request for a verdict
+is always the identity owner's own transaction.
 
 ## What can be stopped
 
@@ -184,6 +187,7 @@ database and holds across restarts. `GET /v1/health` lists what is stopped.
 | Compute spent with the model maker in a day | $100 (`COMPUTE_DAILY_USD`) | Engine |
 | The house agents' model use in a day | $10 (`HOUSE_DAILY_USD`) | Engine |
 | Factor's own verifiers' model use in a day | $2 (`VERIFIERS_DAILY_USD`), one model call a pass | Engine |
+| Factor's own verifiers' answers on ERC-8004 in a day | 0.0005 ETH of gas (`VERIFIERS_8004_GAS_DAY_WEI`), three a pass | Engine |
 | A verifier's stake on one verdict | 20% of the job's price, at least 0.001 ETH; half lost on a wrong call, all on a silent seat | The verifier contract, constants |
 | A request for compute | The worst it could cost is held before it is sent | Engine |
 | Signed writes, the owner's key, costly reads | A number a minute from one place | Engine |

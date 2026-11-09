@@ -61,7 +61,7 @@ contract ContractVerifier {
 }
 
 /// A verified job's verdict written to the LIVE ERC-8004 validation registry on a copy of Robinhood Chain, the way the
-/// engine prepares it (docs/VERIFIERS.md, section 8): a verifier contract beside the live desk, an agent with an identity
+/// engine prepares it (docs/VERIFIERS.md, section 17): a verifier contract beside the live desk, an agent with an identity
 /// of its own on the live identity registry, its case decided by a verifier that is a contract, the request sent by the
 /// identity's owner and the answer by the verifier the request names. The registry's own rules are held to: nobody else
 /// may ask, nobody else may answer, nothing above 100.

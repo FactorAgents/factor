@@ -1,4 +1,4 @@
-// What backs a verdict beyond the verdict itself (docs/VERIFIERS.md, sections 7 and 8): a model receipt in the verifier's
+// What backs a verdict beyond the verdict itself (docs/VERIFIERS.md, sections 16 and 17): a model receipt in the verifier's
 // reasons, and the verdict on the ERC-8004 validation registry. Pure functions only; ./verifiers.ts keeps and sends.
 //
 // A RECEIPT is a block at the end of a verdict's reasons, whose keccak256 is on the chain with the verdict:
