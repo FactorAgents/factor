@@ -77,7 +77,7 @@ function SeatItem({ s, c, now, explorer }: { s: CaseSeat; c: VerifierCase; now: 
         <VerifierName v={s.verifier} />
         <Verdict v={vote} />
       </div>
-      <div className="vseat-meta mono">{s.makerName} · seated {dayTime(s.since)}{s.verifier.address ? <> · <a href={`${explorer}/address/${s.verifier.address}`} target="_blank" rel="noopener noreferrer">{short(s.verifier.address)}</a></> : null}</div>
+      <div className="vseat-meta mono">{s.makerName}{s.satAt ? ` · seated ${dayTime(s.satAt)}` : ""} · standing since {dayTime(s.since).replace(/, .*/, "")}{s.verifier.address ? <> · <a href={`${explorer}/address/${s.verifier.address}`} target="_blank" rel="noopener noreferrer">{short(s.verifier.address)}</a></> : null}</div>
       {s.reason ? <Reason text={s.reason} /> : s.vote ? <p className="small vnote">Its reasons are not on Factor yet. Their hash is on the chain.</p> : vote === "sealed" ? <p className="small vnote">Its vote is sealed until the reveals.</p> : null}
       {s.ties?.length ? <div className="vties"><b>What Factor sees tying it to a side</b>{s.ties.map((x, i) => <span key={i}>{x}</span>)}</div> : null}
     </li>
@@ -117,8 +117,9 @@ export default function VerifiedCase({ c, rules, contract, explorer, now }: { c:
             <dt>Staked on each verdict<small>{rules.wrongLossPct}% of it lost by a wrong call, all of it by a seat never revealed</small></dt><dd>{eth(c.stakeEth)}</dd>
             <dt>A dispute&apos;s bond</dt><dd>{eth(c.disputeBondEth)}</dd>
             {(c.paid ?? []).map((p) => <Fragment key={`p${p.verifier}`}><dt>Paid to {nameOf(p.verifier)}<small>added to its free bond</small></dt><dd className="sum">{eth(p.eth)}</dd></Fragment>)}
-            {(c.slashed ?? []).map((p) => <Fragment key={`s${p.verifier}`}><dt>Lost by {nameOf(p.verifier)}<small>judged wrong, or never revealed</small></dt><dd className="lost">{eth(p.eth)}</dd></Fragment>)}
-            {c.ended?.toCustomerEth ? <><dt>Back to the customer</dt><dd>{eth(c.ended.toCustomerEth)}</dd></> : null}
+            {(c.slashed ?? []).map((p) => <Fragment key={`s${p.verifier}`}><dt>Lost by {nameOf(p.verifier)}<small>{seats.some((x) => x.verifier.address.toLowerCase() === p.verifier.toLowerCase() && x.vote === null) ? "a seat never revealed: all of its stake" : "judged wrong: half of its stake"}</small></dt><dd className="lost">{eth(p.eth)}</dd></Fragment>)}
+            {c.ended?.toCustomerEth ? <><dt>Back to the customer<small>{c.ended.state === "rejected" ? "the half of a job settled at half" : "the fee, with nobody checking"}</small></dt><dd>{eth(c.ended.toCustomerEth)}</dd></> : null}
+            {c.ended?.disputeBondBackEth ? <><dt>Dispute bond back to the {c.ended.disputeBondBackTo ?? c.dispute?.by ?? "side that disputed"}<small>the dispute won</small></dt><dd>{eth(c.ended.disputeBondBackEth)}</dd></> : null}
           </dl>
           <p className="small" style={{ marginTop: 16 }}>Hired {dayTime(c.hiredAt)} by <a href={`${explorer}/address/${c.customer}`} target="_blank" rel="noopener noreferrer">{short(c.customer)}</a>. <a className="more quiet" href={txHref(explorer, c.tx)} target="_blank" rel="noopener noreferrer">The hire →</a>{c.ended ? <> <a className="more quiet" href={txHref(explorer, c.ended.tx)} target="_blank" rel="noopener noreferrer">The end →</a></> : null}</p>
         </div>

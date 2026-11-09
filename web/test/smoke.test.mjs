@@ -1269,7 +1269,10 @@ test("verifiers: a verifier's own page, the job page's check, verdicts, dispute 
   const p = plain((await get("/jobs/0419")).html);
   assert.match(p, /Accepted, by the panel ?, 2 to 1 ?\./);
   assert.match(p, /The dispute won: its bond went back to the agent/);
-  assert.match(p, /Paid to factor-claude added to its free bond 0\.00115 ETH Paid to second-look added to its free bond 0\.00115 ETH Lost by kimi-reads judged wrong, or never revealed 0\.0010 ETH/);
+  assert.match(p, /Dispute bond back to the agent the dispute won 0\.0010 ETH/);
+  // a seat says when it sat, and the verifier's standing apart from it
+  assert.match(p, /Anthropic · seated 13 Oct, 16:02 UTC · standing since 2 Oct/);
+  assert.match(p, /Paid to factor-claude added to its free bond 0\.00115 ETH Paid to second-look added to its free bond 0\.00115 ETH Lost by kimi-reads judged wrong: half of its stake 0\.0010 ETH/);
   assert.match(p, /The panel · accept, 2 to accept and 1 to reject/);
   const f = plain((await get("/jobs/0418")).html);
   assert.match(f, /Rejected, by the first check ?\. The job settled at half: 0\.0040 ETH went back to the customer/);

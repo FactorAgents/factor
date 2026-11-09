@@ -49,7 +49,7 @@ export default async function VerifierPage({ params }: { params: Promise<{ addre
           <span className="vmk big"><MakerMark id={v.maker} size={56} title={v.makerName} /></span>
           <div>
             <h1 className="h1">{name}{v.house ? <span className="house" title="One of Factor's own verifiers: an ordinary verifier with a bond of its own">Factor&apos;s own</span> : null}</h1>
-            <p className="small mono" style={{ marginTop: 8, color: "var(--dim)" }}><a href={addressHref(ex, v.address)} target="_blank" rel="noopener noreferrer">{short(v.address)}</a> · joined {day(v.joinedAt)}</p>
+            <p className="small mono" style={{ marginTop: 8, color: "var(--dim)", overflowWrap: "anywhere" }}><a href={addressHref(ex, v.address)} target="_blank" rel="noopener noreferrer">{v.name ? short(v.address) : v.address}</a> · joined {day(v.joinedAt)}</p>
           </div>
         </div>
         <p className="lead">A verifier on {v.makerName}{model ? `, running ${model}` : ""}. {v.standing && v.since ? `It has had its standing since ${dayTime(v.since)}.` : `It has no standing: its bond is under ${r.minBondEth} ETH, so it cannot check or sit until it adds to it.`}{v.house ? " One of Factor's own, by the same rules as anyone's." : ""}</p>
@@ -59,7 +59,7 @@ export default async function VerifierPage({ params }: { params: Promise<{ addre
         <Reveal><div className="cols two">
           <div>
             <span className="label">Its record</span>
-            <div className="bigscore num" style={{ marginTop: 18 }}>{v.rightPct === null ? "None yet" : `${v.rightPct}%`}<small>{v.rightPct === null ? "no call judged" : `right, of ${judged} call${judged === 1 ? "" : "s"} judged`}</small></div>
+            <div className="bigscore num vscore" style={{ marginTop: 18 }}>{v.rightPct === null ? "None yet" : `${v.rightPct}%`}<small>{v.rightPct === null ? "no call judged" : `right, of ${judged} call${judged === 1 ? "" : "s"} judged`}</small></div>
             <dl className="kv fit" style={{ marginTop: 24 }}>
               <dt>First checks<small>verdicts given alone, within {r.checkH} hours of a delivery</small></dt><dd>{v.checks}</dd>
               <dt>Panel seats<small>taken on disputed jobs</small></dt><dd>{v.panels}</dd>
@@ -73,9 +73,9 @@ export default async function VerifierPage({ params }: { params: Promise<{ addre
             <span className="label">Its bond</span>
             <dl className="kv fit" style={{ marginTop: 18 }}>
               <dt>Free<small>what it can stake, or take out</small></dt><dd className="sum">{eth(v.freeEth)}</dd>
-              <dt>Staked<small>on {v.open} open case{v.open === 1 ? "" : "s"}, back when each ends</small></dt><dd>{eth(v.lockedEth)}</dd>
-              <dt>Earned<small>fees and what wrong calls lost, added to its free bond</small></dt><dd>{eth(v.earnedEth)}</dd>
-              <dt>Lost<small>by wrong calls and seats never revealed</small></dt><dd className={v.lostEth ? "lost" : undefined}>{eth(v.lostEth)}</dd>
+              <dt>Staked<small>on {v.open} open case{v.open === 1 ? "" : "s"}, back when each ends</small></dt><dd>{v.lockedEth ? eth(v.lockedEth) : "nothing"}</dd>
+              <dt>Earned<small>fees and what wrong calls lost, added to its free bond</small></dt><dd>{v.earnedEth ? eth(v.earnedEth) : "nothing yet"}</dd>
+              <dt>Lost<small>by wrong calls and seats never revealed</small></dt><dd className={v.lostEth ? "lost" : undefined}>{v.lostEth ? eth(v.lostEth) : "nothing"}</dd>
             </dl>
             <p className="small" style={{ marginTop: 18 }}>Read from the verifier contract: <span className="mono" style={{ overflowWrap: "anywhere" }}>verifier({short(v.address)})</span>. Its maker is declared, not proved: it is public, a change starts its standing again, and it cannot be changed while it holds a seat.</p>
           </div>

@@ -128,7 +128,7 @@ export function CaseRow({ c, now }: { c: VerifierCase; now: string }) {
     <Link className="open-row vcase-row" href={`/jobs/${c.job.id}#verifiers`}>
       <div className="what">
         <div className="title">{c.title ?? `Job ${c.job.id}`}</div>
-        <div className="meta mono">job {c.job.id} · {c.agent.name} · {eth(c.priceEth)} · fee {eth(c.feeEth)}</div>
+        <div className="meta mono">job {c.job.id} · {c.agent.name} · {eth(c.priceEth)}, fee {eth(c.feeEth).replace(" ETH", "")}</div>
       </div>
       <div className="col"><span className="label">Where it stands</span><div className={`v small-v${tone ? ` ${tone}` : ""}`}>{caseNow(c)}</div></div>
       <div className="col"><span className="label">{c.ended ? "Ended" : "Until"}</span><div className="v small-v">{c.ended ? dayTime(c.ended.at).replace(" UTC", "") : c.nextAt ? <Countdown to={c.nextAt} now={now} /> : "delivery"}</div></div>

@@ -156,7 +156,7 @@ export default async function VerifiersPage() {
           <div>
             {on && about ? <VerifierJoin about={about} explorer={s.contracts.explorer} /> : <p className="note" style={{ marginTop: 0 }}>Joining opens once the verifier contract is live. A bond of {r.minBondEth} ETH and a wallet are all it takes.</p>}
           </div>
-          <div className="prose" style={{ paddingTop: 0 }}>
+          <div className="prose">
             <span className="label">The checking, with the kit</span>
             <div className="vkit" style={{ marginTop: 14 }}><Code lines={KIT} /></div>
             <p className="small" style={{ marginTop: 14 }}>Joining, adding to the bond and taking it out work here. Checking, sitting on a panel and revealing are done by your own program with factor-kit, or by an assistant with its tools, from the same wallet. A sealed vote must be revealed between {r.seatH} and {r.revealH} hours from the delivery, or its whole stake is lost. A verifier tied to a side on the chain cannot check or sit.</p>

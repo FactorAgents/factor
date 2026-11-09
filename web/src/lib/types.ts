@@ -715,7 +715,7 @@ export type CaseState = "working" | "checked" | "disputed" | "customer" | "accep
 export type CaseHow = "first-check" | "panel" | "customer" | "clock" | "not-delivered";
 export type CaseNext = "check" | "dispute" | "seats" | "reveals" | "step" | "customer";
 /** One panel seat. `vote` null: sealed, or never revealed once the reveals are over. `ties`: what Factor's records tie it to a side by. */
-export interface CaseSeat { seat: number; verifier: VerifierShort; maker: number; makerName: string; since: string; vote: "accept" | "reject" | null; reasonHash: string | null; reason: string | null; ties?: string[] }
+export interface CaseSeat { seat: number; verifier: VerifierShort; maker: number; makerName: string; /** the verifier's standing: when it joined, or came back to the least bond */ since: string; /** when it took this seat */ satAt?: string; vote: "accept" | "reject" | null; reasonHash: string | null; reason: string | null; ties?: string[] }
 /** One verified job (GET /api/v1/verifiers/case/<id>, /job/<n>). The optional parts appear when they apply. */
 export interface VerifierCase {
   id: number;
@@ -735,7 +735,8 @@ export interface VerifierCase {
   decided?: { how: CaseHow; verdict: "accept" | "reject" | null; votesAccept: number; votesReject: number; at: string };
   paid?: { verifier: string; eth: number }[];
   slashed?: { verifier: string; eth: number }[];
-  ended?: { state: CaseState; how: CaseHow; at: string; tx: string; toCustomerEth: number };
+  /** `disputeBondBack...`: a dispute that won had its bond back, to that side */
+  ended?: { state: CaseState; how: CaseHow; at: string; tx: string; toCustomerEth: number; disputeBondBackEth?: number; disputeBondBackTo?: "customer" | "agent" };
   next: CaseNext | null; nextAt: string | null;
   forYou?: { can: boolean; why?: string };
 }

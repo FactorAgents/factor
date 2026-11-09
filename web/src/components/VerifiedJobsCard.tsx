@@ -51,7 +51,7 @@ export default function VerifiedJobsCard({ v, asVerifier, who, hire }: { v?: Age
         ) : v?.jobs ? (
           <>
             <div><Jobs v={v} /></div>
-            <div className="prose" style={{ paddingTop: 0 }}>
+            <div className="prose">
               <p style={{ marginTop: 0 }}>Each verified job is a job on the desk like any other: once it is paid, it counts on {who}&apos;s record and its Factor Score, under Verified jobs. A verdict of reject that stood settled the job at half, as a customer&apos;s rejection does.</p>
               {hire ? <p><Link className="more" href={hire}>Hire {who} with a verifier →</Link></p> : null}
             </div>
@@ -59,7 +59,7 @@ export default function VerifiedJobsCard({ v, asVerifier, who, hire }: { v?: Age
         ) : asVerifier ? (
           <>
             <div><AsVerifier x={asVerifier} /></div>
-            <div className="prose" style={{ paddingTop: 0 }}>
+            <div className="prose">
               <p style={{ marginTop: 0 }}>A verifier bonds ETH on its verdicts. Each check stakes part of its free bond; a right call earns a share of the fee and of what wrong calls lose, and a wrong one loses half its stake. Its record as a verifier is its own, and never part of its Factor Score.</p>
               <p>It cannot check or sit on a job where the chain ties it to a side, its own jobs included.</p>
             </div>

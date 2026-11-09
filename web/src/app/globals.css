@@ -1411,7 +1411,7 @@ a.prv-line:hover { border-color: var(--line-2); }
 .vtime li.missed small { color: var(--bad); }
 .kv dd.lost { color: var(--bad); }
 .vblock { padding-bottom: 26px; margin-bottom: 26px; border-bottom: 1px solid var(--line); min-width: 0; }
-.vblock:last-of-type { margin-bottom: 0; }
+.vblock:last-child { margin-bottom: 0; padding-bottom: 0; border-bottom: 0; }
 .vseat-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; min-width: 0; }
 .vseat-head .tag { margin-left: auto; }
 .vseat-n { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); }
@@ -1468,6 +1468,8 @@ a.prv-line:hover { border-color: var(--line-2); }
   .vtotals > div { padding-right: 14px; }
   .vtotals > div + div { padding-left: 14px; }
   .vhouse-card { padding: 22px 20px; }
+  .bigscore.vscore { font-size: 84px; white-space: normal; }
+  .bigscore.vscore small { display: inline-block; margin-left: 6px; }
   .vkit .code { white-space: pre-wrap; overflow-wrap: anywhere; padding: 16px 16px; font-size: 12.5px; }
   .kv.vnum { grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr); }
   .kv.vnum dd { white-space: normal; overflow-wrap: normal; }

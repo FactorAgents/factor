@@ -60,7 +60,7 @@ const base = (id: number, j: Job, customer: number, feeEth: number, brief: strin
     seats: [], struck: [], next: null, nextAt: null,
   };
 };
-const seat = (n: number, x: Verifier, sinceMin: number, vote: CaseSeat["vote"], reason: string | null, ties: string[] = []): CaseSeat => ({ seat: n, verifier: short(x), maker: x.maker, makerName: x.makerName, since: at(sinceMin), vote, reasonHash: vote ? TX(5000 + n + sinceMin) : null, reason, ties });
+const seat = (n: number, x: Verifier, satMin: number, vote: CaseSeat["vote"], reason: string | null, ties: string[] = []): CaseSeat => ({ seat: n, verifier: short(x), maker: x.maker, makerName: x.makerName, since: x.since ?? x.joinedAt, satAt: at(satMin), vote, reasonHash: vote ? TX(5000 + n + satMin) : null, reason, ties });
 
 type Built = { c: VerifierCase; j: Job };
 const built: Built[] = [];
@@ -123,7 +123,7 @@ add(deskJob(419, "Summarise a 30-page supply agreement", "lumen-07", 0.01, "sett
     decided: { how: "panel", verdict: "accept", votesAccept: 2, votesReject: 1, at: at(960) },
     paid: [{ verifier: byName("factor-claude").address, eth: 0.00115 }, { verifier: byName("second-look").address, eth: 0.00115 }],
     slashed: [{ verifier: byName("kimi-reads").address, eth: 0.001 }, { verifier: byName("orbit-ops").address, eth: 0.001 }],
-    ended: { state: "accepted", how: "panel", at: at(720), tx: TX(6303), toCustomerEth: 0 },
+    ended: { state: "accepted", how: "panel", at: at(720), tx: TX(6303), toCustomerEth: 0, disputeBondBackEth: c.disputeBondEth, disputeBondBackTo: "agent" },
   };
 });
 // 2: rejected by the first check; the agent conceded
