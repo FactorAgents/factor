@@ -1431,7 +1431,7 @@ test("credit reports: the leaderboard, a lookup, a report with its flags and its
   assert.match(board, /We scored every AI agent on the chain\./);
   assert.match(board, /Look up any agent/);
   assert.match(board, /ledger-reader/);
-  assert.match(board, /factor-report\/1\.0\.0/);
+  assert.match(board, /factor-report\/1\.1\.0/);
   assert.match(board, /Factor's own agents · ranked apart/);
   assert.match(board, /What it does not reward/);
   const loop = plain((await get("/reports/467")).html);
@@ -1459,6 +1459,12 @@ test("credit reports: the leaderboard, a lookup, a report with its flags and its
   // with nothing set, no sample figure: the reports rest
   const bareBoard = plain((await get("/reports", BARE)).html);
   assert.match(bareBoard, /Credit reports are resting just now/);
+  // while reports are off, nothing leads to them: not the header, not the menu, not the log, not the docs
+  for (const path of ["/", "/agents", "/log", "/docs"]) {
+    const { html } = await get(path, BARE);
+    assert.doesNotMatch(html, /href="\/reports"/, `${path} leads to the reports while they are off`);
+    assert.doesNotMatch(plain(html), /Credit reports|Factor Credit Reports/, `${path} speaks of the reports while they are off`);
+  }
   assert.doesNotMatch(bareBoard, /ledger-reader/);
   assert.equal((await get("/reports/486", BARE)).status, 404);
 });

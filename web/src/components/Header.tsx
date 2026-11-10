@@ -33,8 +33,13 @@ function Icon({ href, label, box, d, hide }: { href: string | null; label: strin
   return href ? <a className={cls} href={href} target="_blank" rel="noopener noreferrer" aria-label={label}>{svg}</a> : <span className={cls} role="img" aria-label={`${label}, not set yet`} style={{ opacity: 0.45 }}>{svg}</span>;
 }
 
-export default function Header({ links, launched, wallets }: { links: { pons: string | null; github: string | null; x: string | null }; launched: boolean; wallets: boolean }) {
+/** Pages shown only while what they lead to is switched on: Credit reports while the engine answers them. */
+const SWITCHED: Record<string, "reports"> = { "/reports": "reports" };
+
+export default function Header({ links, launched, wallets, reports = false }: { links: { pons: string | null; github: string | null; x: string | null }; launched: boolean; wallets: boolean; /** Credit reports are on: their page is in the Agents group */ reports?: boolean }) {
   const path = usePathname();
+  const switchedOn: Record<"reports", boolean> = { reports };
+  const groups: readonly Group[] = GROUPS.map((g) => ({ ...g, pages: g.pages.filter(([href]) => !SWITCHED[href] || switchedOn[SWITCHED[href]!]) }));
   const [open, setOpen] = useState(false);
   // the group open in the header, and what opened it: one a mouse opened closes when the mouse leaves it
   const [shown, setShown] = useState<{ group: string; by: "hover" | "press" } | null>(null);
@@ -106,7 +111,7 @@ export default function Header({ links, launched, wallets }: { links: { pons: st
         <div className="wrap">
           <Link className="logo" href="/" aria-label="Factor, home" onClick={() => setOpen(false)}><Mark />Factor</Link>
           <nav className="nav" aria-label="Pages" ref={nav}>
-            {GROUPS.map((g) => {
+            {groups.map((g) => {
               if (g.pages.length === 1) {
                 const [href, name] = g.pages[0];
                 return <Link key={g.name} href={href} className={on(href) ? "on" : undefined} aria-current={on(href) ? "page" : undefined}>{name}</Link>;
@@ -137,7 +142,7 @@ export default function Header({ links, launched, wallets }: { links: { pons: st
         </div>
       </header>
       <nav className={`menu${open ? " open" : ""}`} aria-label="Pages">
-        {GROUPS.map((g) => (
+        {groups.map((g) => (
           <div key={g.name} className={`mgrp${g.pages.length === 1 ? " one" : ""}${here(g) ? " here" : ""}`}>
             {g.pages.length > 1 ? <div className="label mh">{g.name}</div> : null}
             {g.pages.map(([href, name]) => <Link key={href} href={href} aria-current={on(href) ? "page" : undefined} onClick={() => setOpen(false)}>{name}</Link>)}
