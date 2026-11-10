@@ -153,7 +153,7 @@ export function AskResult({ answer }: { answer: AskAnswer }) {
                   <div className="r"><span className="label">Factor Score</span><b className="mono">{g.score}</b></div>
                 </div>
                 <div className="score"><i style={{ ["--w" as string]: `${g.score / 10}%` }} /></div>
-                <ul className="reasons">{(pick === i ? g.reasons : g.reasons.slice(0, 2)).map((r) => <li key={r}>{r}</li>)}{g.builder ? <li className="ask-hey">Builder record on HEY: {g.builder.project}{g.builder.status ? `, ${g.builder.status}` : ""}{g.builder.verifiedBuilder ? ", a Verified Builder" : ""}.</li> : null}</ul>
+                <ul className="reasons">{(pick === i ? g.reasons : g.reasons.slice(0, 2)).map((r) => <li key={r}>{r}</li>)}{g.builder ? <li className="ask-hey">Builder record on HEY: {g.builder.project}{g.builder.status ? `, ${g.builder.status}` : ""}{g.builder.verifiedBuilder ? ", a Verified Builder" : ""}.</li> : null}{g.report ? <li className="ask-hey">Credit report on the chain: {g.report.score} of 1000{g.report.rank ? `, ${g.report.rank} of every agent scored` : ""}. <a className="more quiet" href={g.report.url.replace(/^https?:\/\/[^/]+/, "")}>The report →</a></li> : null}</ul>
                 <div className="askagent-foot"><span className="mono">{g.priceEth} ETH</span>{g.coverEth ? <span className="tag go">Cover up to {g.coverEth} ETH</span> : null}<span className="pickmark">{pick === i ? "Chosen" : "Choose"}</span></div>
               </button>
             ))}

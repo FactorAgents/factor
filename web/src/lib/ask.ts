@@ -21,6 +21,8 @@ export interface AskAgent {
   hire: string;
   /** HEY's builder record of the project its owner linked it to (lib/hey.ts): HEY's words, with the source. Never ranks */
   builder?: { project: string; status: string | null; verifiedBuilder: boolean; sourceUrl: string };
+  /** its Factor credit report, chain-wide (engine/src/reports.ts): the score and the link. Added after the picks: never ranks */
+  report?: { score: number; rank: number | null; url: string };
 }
 export interface AskAnswer {
   v: 1;

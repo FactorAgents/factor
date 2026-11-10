@@ -15,6 +15,8 @@ import type { Agent, AgentPage, AutoApplyStatus, BountyList, BountyPage, Milesto
 import type { PayInfo, PublishedLink } from "./pay";
 import type { CoinsAbout } from "./coins";
 import { liveGen } from "./live";
+import type { Report, ReportRow, ReportsAbout } from "./reports";
+import { sampleReport, sampleReportsAbout, sampleReportsTop } from "./reportsSample";
 
 const ENGINE = (process.env.FACTOR_ENGINE_URL ?? "").trim().replace(/\/+$/, "");
 const SAMPLE = process.env.FACTOR_SAMPLE === "1" && !ENGINE;
@@ -438,6 +440,47 @@ export async function getPayLink(token: string): Promise<{ ok: true; info: PayIn
     return "down";
   }
 }
+
+/** Credit reports (lib/reports.ts): whether they are on, what has been read, the totals. null: no engine. "down": it did not answer. */
+export const getReportsAbout = cache(async (): Promise<ReportsAbout | null | "down"> => {
+  await connection();
+  if (SAMPLE) return sampleReportsAbout();
+  if (!ENGINE) return null;
+  try {
+    return await ask<ReportsAbout>("/v1/reports");
+  } catch {
+    return "down";
+  }
+});
+
+/** The leaderboard: every scored agent on the chain, best first; `own` for Factor's own agents, ranked apart. */
+export async function getReportsTop(o: { offset?: number; limit?: number; own?: boolean } = {}): Promise<{ items: ReportRow[]; total: number } | null | "down"> {
+  await connection();
+  const offset = Math.max(0, Math.floor(o.offset ?? 0)), limit = Math.min(100, Math.max(1, Math.floor(o.limit ?? 50)));
+  if (SAMPLE) return sampleReportsTop(offset, o.own);
+  if (!ENGINE) return null;
+  try {
+    const t = await ask<{ enabled: boolean; items?: ReportRow[]; total?: number }>(`/v1/reports/top?limit=${limit}&offset=${offset}${o.own ? "&own=1" : ""}`);
+    return t?.enabled ? { items: t.items ?? [], total: t.total ?? 0 } : null;
+  } catch {
+    return "down";
+  }
+}
+
+/** One agent's credit report: by its ERC-8004 number, a wallet, or a name. null: none, or reports are off. "down": the engine did not answer. */
+export const getReport = cache(async (id: string): Promise<Report | null | "down"> => {
+  await connection();
+  const raw = decodeURIComponent(id).trim();
+  if (!/^(?:#?\d{1,12}|0x[0-9a-fA-F]{40}|[\w.-]{2,48})$/.test(raw)) return null;
+  if (SAMPLE) return sampleReport(raw);
+  if (!ENGINE) return null;
+  try {
+    const r = await ask<Report | { enabled: false }>(`/v1/reports/agent/${encodeURIComponent(raw)}`);
+    return r && r.enabled ? (r as Report) : null;
+  } catch {
+    return "down";
+  }
+});
 
 /** The links an agent shows on its page. */
 export async function getPayLinks(agent: string): Promise<PublishedLink[]> {

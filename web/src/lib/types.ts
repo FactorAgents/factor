@@ -320,7 +320,7 @@ export interface LedgerEvent {
 export interface Burn { n: number; at: string; eth: number; tokens: number; tx: string }
 /** The burn pot, read from the chain: what it holds, when the next burn may go and what it would spend. */
 export interface BurnPot { potEth: number; nextEth: number; nextAt: string | null; ready: boolean; open: boolean; count: number; ethSpent: number; lastAt: string | null; everyMin: number; smallestEth: number; bonded?: boolean; lastFeesAt?: string | null }
-export interface LogEntry { date: string; area: string; title: string; text: string; /** shown only while this is switched on */ only?: "raeto" | "hey" }
+export interface LogEntry { date: string; area: string; title: string; text: string; /** shown only while this is switched on */ only?: "raeto" | "hey" | "reports" }
 
 export interface Params {
   advanceMaxPct: number;     // of the locked payment
@@ -410,6 +410,8 @@ export interface FactorState {
   reviews?: { enabled: boolean; mostChars: number; floorEth: number };
   /** HEY builder records (lib/hey.ts): whether they show, and Factor's own page and badge on HEY Research Lab */
   hey?: { enabled: boolean; project: string; badge: string };
+  /** Factor Credit Reports (engine/src/reports.ts): whether they show */
+  reports?: { enabled: boolean };
 }
 
 /** One of a firm's agents and its part of the firm's work: the lead's is the firm's jobs, a member's the sub-jobs it took under them. */

@@ -13,12 +13,12 @@ import { createServer } from "node:http";
 const PORT = Number(process.env.SMOKE_PORT) || 3611, BASE = `http://127.0.0.1:${PORT}`, BARE = `http://127.0.0.1:${PORT + 1}`;
 // the sample's verifiers (lib/verifiersSample.ts): factor-claude, one of Factor's own
 const CLAUDE = "0x5abe732d259d4a69189773efce14dea3dc976cbc";
-const PAGES = ["/bounties", "/bounties/1", "/bounties/2", "/bounties/3", "/bounties/4", "/", "/agents/orbit-ops", "/ledger", "/ledger?show=burned", "/agents", "/agents/lumen-07", "/jobs/0412", "/jobs/0406", "/jobs/0404", "/jobs/0403", "/hire", "/hire?agent=page-smith", "/hire?agent=lumen-07&cover=1", "/work", "/protocol", "/token", "/burn", "/docs", "/log", "/security", "/pay", "/firms/night-desk", "/hire?firm=night-desk", "/plans/0x5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a", "/open-jobs", "/open-jobs/0x0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b", "/coins", "/coins?sort=new", "/coins/page-smith", "/jobs/0416", "/jobs/0408", "/agents/page-smith", "/hire?stages=1", "/everywhere", "/hire?agent=lumen-07&price=0.01&title=Summarise+one+contract&due=48&early=1", "/ask", "/ask?q=A+landing+page+for+my+coin", "/hire?agent=page-smith&price=0.003&title=A+landing+page&due=38&via=ask", "/copilot", "/copilot?q=What+is+lumen-07%27s+score", "/verifiers", `/verifiers/${CLAUDE}`, "/jobs/0419", "/jobs/0421", "/jobs/0422", "/jobs/0424", "/hire?agent=price-desk&verifier=1"];
+const PAGES = ["/bounties", "/bounties/1", "/bounties/2", "/bounties/3", "/bounties/4", "/", "/agents/orbit-ops", "/ledger", "/ledger?show=burned", "/agents", "/agents/lumen-07", "/jobs/0412", "/jobs/0406", "/jobs/0404", "/jobs/0403", "/hire", "/hire?agent=page-smith", "/hire?agent=lumen-07&cover=1", "/work", "/protocol", "/token", "/burn", "/docs", "/log", "/security", "/pay", "/firms/night-desk", "/hire?firm=night-desk", "/plans/0x5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a", "/open-jobs", "/open-jobs/0x0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b", "/coins", "/coins?sort=new", "/coins/page-smith", "/jobs/0416", "/jobs/0408", "/agents/page-smith", "/hire?stages=1", "/everywhere", "/hire?agent=lumen-07&price=0.01&title=Summarise+one+contract&due=48&early=1", "/ask", "/ask?q=A+landing+page+for+my+coin", "/hire?agent=page-smith&price=0.003&title=A+landing+page&due=38&via=ask", "/copilot", "/copilot?q=What+is+lumen-07%27s+score", "/verifiers", `/verifiers/${CLAUDE}`, "/jobs/0419", "/jobs/0421", "/jobs/0422", "/jobs/0424", "/hire?agent=price-desk&verifier=1", "/reports", "/reports?page=1", "/reports/486", "/reports/467", "/reports/20852"];
 // The header's five groups and the pages in each, in order. A group of one page is a plain link.
-const GROUPS = { Hire: ["/ask", "/copilot", "/hire", "/open-jobs", "/bounties"], Agents: ["/agents", "/coins", "/work", "/verifiers"], Ledger: ["/ledger"], Protocol: ["/protocol", "/docs", "/everywhere", "/roadmap"], Token: ["/token", "/burn"] };
+const GROUPS = { Hire: ["/ask", "/copilot", "/hire", "/open-jobs", "/bounties"], Agents: ["/agents", "/reports", "/coins", "/work", "/verifiers"], Ledger: ["/ledger"], Protocol: ["/protocol", "/docs", "/everywhere", "/roadmap"], Token: ["/token", "/burn"] };
 const NAV = Object.values(GROUPS).flat();
 // the group each page is in, which the header marks as the current one (none for a page of no group)
-const CURRENT = { "/ask": "Hire", "/copilot": "Hire", "/bounties": "Hire", "/bounties/1": "Hire", "/hire": "Hire", "/open-jobs": "Hire", "/agents": "Agents", "/agents/lumen-07": "Agents", "/jobs/0412": "Agents", "/coins/page-smith": "Agents", "/work": "Agents", "/verifiers": "Agents", [`/verifiers/${CLAUDE}`]: "Agents", "/ledger": "Ledger", "/protocol": "Protocol", "/docs": "Protocol", "/everywhere": "Protocol", "/token": "Token", "/burn": "Token", "/": null, "/log": null, "/security": null, "/pay": null };
+const CURRENT = { "/ask": "Hire", "/copilot": "Hire", "/bounties": "Hire", "/bounties/1": "Hire", "/hire": "Hire", "/open-jobs": "Hire", "/agents": "Agents", "/agents/lumen-07": "Agents", "/jobs/0412": "Agents", "/coins/page-smith": "Agents", "/work": "Agents", "/verifiers": "Agents", [`/verifiers/${CLAUDE}`]: "Agents", "/reports": "Agents", "/reports/486": "Agents", "/ledger": "Ledger", "/protocol": "Protocol", "/docs": "Protocol", "/everywhere": "Protocol", "/token": "Token", "/burn": "Token", "/": null, "/log": null, "/security": null, "/pay": null };
 // Words the copy does not use: no long dash, no promise of gain. A list kept beside this file and out of the repo
 // (forbidden.local.json, pairs of pattern and flags) adds to them on the machine it is on.
 const LOCAL = new URL("./forbidden.local.json", import.meta.url);
@@ -972,7 +972,7 @@ test("Factor everywhere: its page under Protocol with a snippet for each case, t
   const init = await mcp({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "smoke", version: "1" } } });
   assert.equal(init.result.serverInfo.name, "factor");
   const tools = (await mcp({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} })).result.tools;
-  assert.deepEqual(tools.map((x) => x.name).sort(), ["factor_agent", "factor_agents", "factor_ask", "factor_builder_record", "factor_check_agent", "factor_copilot", "factor_erc8004", "factor_firm_record", "factor_guarantee", "factor_hire_link", "factor_line", "factor_open_jobs", "factor_overview", "factor_record", "factor_reviews", "factor_verified_erc8004", "factor_verifier", "factor_verifier_case", "factor_verifier_cases", "factor_verifiers", "factor_verifiers_about"]);
+  assert.deepEqual(tools.map((x) => x.name).sort(), ["factor_agent", "factor_agents", "factor_ask", "factor_builder_record", "factor_check_agent", "factor_copilot", "factor_credit_leaderboard", "factor_credit_report", "factor_erc8004", "factor_find_agent", "factor_firm_record", "factor_guarantee", "factor_hire_link", "factor_line", "factor_open_jobs", "factor_overview", "factor_record", "factor_reviews", "factor_verified_erc8004", "factor_verifier", "factor_verifier_case", "factor_verifier_cases", "factor_verifiers", "factor_verifiers_about"]);
   assert.ok(tools.every((x) => x.annotations.readOnlyHint === true));
   assert.equal((await fetch(`${BASE}/mcp`)).status, 405);
 
@@ -1424,4 +1424,41 @@ test("verifiers: model receipts beside every verdict, checked or declared, a rec
   // with no engine: no receipt and no ERC-8004 anywhere
   assert.equal((await get(`/verifiers/receipt/3/${CLAUDE}`, BARE)).status, 404);
   for (const path of ["/docs", "/security", "/protocol"]) assert.doesNotMatch(plain((await get(path, BARE)).html), /Model receipts\.|On ERC-8004\./, path);
+});
+
+test("credit reports: the leaderboard, a lookup, a report with its flags and its claim, its card and badge, and the log", async () => {
+  const board = plain((await get("/reports")).html);
+  assert.match(board, /We scored every AI agent on the chain\./);
+  assert.match(board, /Look up any agent/);
+  assert.match(board, /ledger-reader/);
+  assert.match(board, /factor-report\/1\.0\.0/);
+  assert.match(board, /Factor's own agents · ranked apart/);
+  assert.match(board, /What it does not reward/);
+  const loop = plain((await get("/reports/467")).html);
+  assert.match(loop, /Many small loans in a loop/);
+  assert.match(loop, /Borrowed and returned unused/);
+  assert.match(loop, /Effect: In each 30 days the biggest repayment counts in full/);
+  assert.match(loop, /Is this your agent ?\?/);
+  assert.match(loop, /Put it on the Factor desk/);
+  const desk = plain((await get("/reports/486")).html);
+  assert.match(desk, /1st of 416 agents scored on Robinhood Chain/);
+  assert.match(desk, /Points by source/);
+  assert.match(desk, /What others wrote of it on ERC-8004/);
+  assert.match(desk, /prepared, not written/);
+  assert.equal((await get("/reports/999999")).status, 404);
+  const card = await fetch(`${BASE}/api/v1/reports/486/card.png`);
+  assert.equal(card.status, 200);
+  assert.match(card.headers.get("content-type") ?? "", /image\/png/);
+  const badge = await fetch(`${BASE}/api/v1/reports/486/badge.svg`);
+  assert.match(await badge.text(), /Factor credit report: 538 of 1000/);
+  const found = await (await fetch(`${BASE}/api/v1/reports/find?q=ledger`)).json();
+  assert.equal(found.items[0].agentId, "486");
+  assert.equal((await fetch(`${BASE}/api/v1/reports/claim`, { method: "GET" })).status, 404);
+  assert.match(plain((await get("/log")).html), /Factor Credit Reports We scored every AI agent on the chain\./);
+  assert.match(plain((await get("/docs")).html), /A credit report for every agent on the chain\./);
+  // with nothing set, no sample figure: the reports rest
+  const bareBoard = plain((await get("/reports", BARE)).html);
+  assert.match(bareBoard, /Credit reports are resting just now/);
+  assert.doesNotMatch(bareBoard, /ledger-reader/);
+  assert.equal((await get("/reports/486", BARE)).status, 404);
 });
