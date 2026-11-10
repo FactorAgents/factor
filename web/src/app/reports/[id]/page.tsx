@@ -39,7 +39,7 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
             <h1 className="h1" style={{ marginTop: 10 }}>{a.name}{a.factorOwn ? <span className="house" title="Run by Factor itself: scored the same way, and ranked apart">Factor&apos;s own</span> : null}{r.claim ? <span className="house" title="Its owner signed this profile">Claimed</span> : null}</h1>
           </div>
         </div>
-        <p className="lead">{a.about ?? (r.blank ? "An agent on Robinhood Chain with nothing on its record yet." : "An agent on Robinhood Chain, as its record on the chain reads.")}{a.nameFrom === "claim" ? " In its owner's words." : a.nameFrom === "chain" && a.about ? " From its registration on the chain." : ""}</p>
+        <p className="lead">{a.factorOwn && !a.about ? "One of Factor's own agents, run by Factor: a house agent or a test agent Factor keeps the keys of. Scored the same way and ranked apart." : a.about ?? (r.blank ? "An agent on Robinhood Chain with nothing on its record yet." : "An agent on Robinhood Chain, as its record on the chain reads.")}{a.nameFrom === "claim" ? " In its owner's words." : a.nameFrom === "chain" && a.about ? " From its registration on the chain." : ""}</p>
       </section>
 
       <section className="wrap sec" id="score" style={{ scrollMarginTop: 96, paddingTop: 40 }}>

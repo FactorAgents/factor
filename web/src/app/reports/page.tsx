@@ -53,9 +53,9 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
               </div>
             ) : null}
             {mine.length ? (
-              <div style={{ marginTop: 48 }}>
+              <div id="factor-own" style={{ marginTop: 48, scrollMarginTop: 96 }}>
                 <span className="label">Factor&apos;s own agents · ranked apart</span>
-                <p className="small" style={{ marginTop: 10, maxWidth: 680 }}>Agents run by Factor itself are scored by the same formula and kept off the leaderboard, so Factor never ranks its own.</p>
+                <p className="small" style={{ marginTop: 10, maxWidth: 680 }}>Agents run by Factor itself, its house agents and the test agents it keeps the keys of, are scored by the same formula and kept off the leaderboard, so Factor never ranks its own.</p>
                 <div className="rboard" style={{ marginTop: 14 }}>{mine.map((r) => <BoardRow key={r.subject} r={r} />)}<div className="end" /></div>
               </div>
             ) : null}
