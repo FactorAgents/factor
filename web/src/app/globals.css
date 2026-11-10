@@ -1604,7 +1604,8 @@ b.ink { color: var(--ink); font-weight: 500; }
   .rrow { grid-template-columns: 22px 40px minmax(0, 1fr) auto; gap: 12px; }
   .rrow .sc { grid-template-columns: auto; }
   .rrow .sc .score { display: none; }
-  .rrow .name { font-size: 19px; }
+  .rrow .name { font-size: 19px; white-space: normal; overflow-wrap: anywhere; }
+  .rrow .name .house { display: table; margin: 6px 0 0; vertical-align: 0; }
   .rspread .bars-v { height: 180px; gap: 8px; }
   .rspread .bars-v .label { font-size: 9.5px; letter-spacing: 0.02em; }
   .rtime .row { grid-template-columns: auto auto 1fr; }

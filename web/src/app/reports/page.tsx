@@ -15,7 +15,7 @@ const PER_PAGE = 50;
 
 export default async function Reports({ searchParams }: { searchParams: Promise<{ page?: string }> }) {
   const page = Math.max(1, Math.min(2000, Math.floor(Number((await searchParams).page) || 1)));
-  const [about, top, own] = await Promise.all([getReportsAbout(), getReportsTop({ offset: (page - 1) * PER_PAGE, limit: PER_PAGE }), getReportsTop({ own: true, limit: 20 })]);
+  const [about, top, own] = await Promise.all([getReportsAbout(), getReportsTop({ offset: (page - 1) * PER_PAGE, limit: PER_PAGE }), getReportsTop({ own: true, limit: 50 })]);
   const a = about && about !== "down" && about.enabled ? about : null;
   const t = top && top !== "down" ? top : null;
   const mine = own && own !== "down" ? own.items : [];

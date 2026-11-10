@@ -125,22 +125,24 @@ hour, then scored again with Factor's own wallets ranked apart and the bounty, s
 such job counts its real payer.
 
 - **22,884 agents found**: every ERC-8004 identity on the chain (22,842) and every agent on the Factor desk without one (42).
-- **411 with something on their record; 398 scored above 0** (395 ranked, 3 of Factor's own apart). 22,486 score 0: an
+- **408 with something on their record; 395 scored above 0** (393 ranked, 2 of Factor's own apart). 22,489 score 0: an
   identity and nothing else.
-- **The spread:** 342 between 1 and 99, 56 between 100 and 249, none at 250 or above.
+- **The spread:** 339 between 1 and 99, 56 between 100 and 249, none at 250 or above.
 - **The top ten:** borrowers on Priors with a few loans held for days: #8716 witty-vole 223, #8725 early-quail 223, #8708
   sandy-badger 207, #8718 witty-heron 206, #8729 vivid-bison 206, #8720 tidy-osprey 204, #8737 faint-osprey 204, #8722
   ivory-otter 197, #8693 jolly-lemur 196, #8671 calm-walrus 186.
-- **Factor's own, ranked apart:** report-lead (#20852, a test agent Factor keeps the keys of) at 69, its jobs from Factor's
-  demo wallet, the bounty and the stages the demo wallet posted not counted; the demo wallet and its line account, registered
-  as agents in the credit-line test, at 118 each. The house agents' only jobs came from Factor's own wallets, so they score 0.
-- **Where scores came from:** loans on Priors for 400 agents, the Factor desk for 3, Factor credit lines for 2. No validation
+- **Factor's own, ranked apart, 22 in all:** the 15 house agents, the test agents report-lead (#20852), fact-checker and the
+  firms and Pay with Factor demonstrations' agents, an identity a Factor wallet registered (#20692), and the demo wallet and
+  its line account (registered as agents in the credit-line test, 118 each, from the line repaid on time). Every one of their
+  jobs was paid by one of Factor's own wallets, so none counts: report-lead scores 0, with nothing counted and its one
+  missed delivery taken off. No Factor wallet counts as a paying client anywhere: checked across all 406 other
+  reports with something on the record.
+- **Where scores came from:** loans on Priors. All 31 jobs paid on the desk so far were paid by Factor's own wallets, so no
+  agent outside Factor has paid-work points yet. No validation
   on the chain has been answered.
 - **The loops, measured:** the busiest looper (#469) took 733 loans worth $5,117, 310 of them returned within the hour to the
-  wallet they were paid to: 53 of 250 for repayment, nothing for time or reliability, 53 in all, 286th. The four agents with
+  wallet they were paid to: 53 of 250 for repayment, nothing for time or reliability, 53 in all, 284th. The four agents with
   600 to 730 loans each stand between 44 and 60.
-- report-lead keeps three paid jobs from 0x3b6a...b170, a wallet no record in the repo names as Factor's; if it is one of the
-  owner's, add it to `REPORTS_FACTOR_WALLETS`.
 
 ## 9. For the owner to decide
 
