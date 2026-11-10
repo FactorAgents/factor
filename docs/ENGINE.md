@@ -718,6 +718,25 @@ rules are `docs/EVERYWHERE.md`.
   calls, answers kept, stale and failed, the last error, the links, and whether a key is set (never the key).
   `npm run hey-live` checks the client against HEY's real API, read-only.
 
+## Factor Credit Reports
+
+`src/reports.ts` (the reading, the reports, the claim) and `src/reportscore.ts` (the formula, pure), off until `REPORTS=on`. The
+formula and the rules against gaming it are `docs/REPORTS.md`; what is read, how, and what is left out, `docs/REPORTS-SOURCES.md`.
+
+- **The routes.** `GET /v1/reports`, `/v1/reports/formula`, `/v1/reports/top?limit=&offset=&own=1`, `/v1/reports/find?q=`,
+  `/v1/reports/agent/<id>`, `/v1/reports/signed/<id>` (signed by the same key as Factor everywhere), `/v1/reports/erc8004/<id>`
+  (prepared, never sent), and `POST /v1/reports/claim`. `/v1/state` carries `reports: { enabled }`. Copilot's `report` intent and
+  Ask's `report` line read the same reports.
+- **The reading.** A loop of its own (`reports`), so a long backfill never holds up the desk's: each pass reads at most
+  `REPORTS_PER_PASS` spans of `REPORTS_SPAN` blocks, the new blocks first, then the past newest first, halving a span the node
+  refuses; every agent scored again every `REPORTS_SCORE_EVERY_S` once something changed. Cursors, events and scores are kept in
+  `report_*` tables; a restart goes on where it stopped. The whole history (the registries from block 12,000,000, Priors from 68,593,823) took about twenty minutes from the public node.
+- **What is kept.** `report_identities`, `report_feedback`, `report_revoked`, `report_validations`, `report_loans` (what was
+  read), `report_times` (span ends' times), `report_scores` (the leaderboard), `report_claims` (owners' signed profiles) and
+  `report_hidden` (names the owner hid). Nothing is sent anywhere.
+- **Switches.** The owner's `reports` switch hides everything and stops the reading at once. `GET /v1/health` carries `reports`:
+  the cursors, whether the past is all read, and when every agent was last scored.
+
 ## Settings
 
 `engine/.env.example` lists every one. The three secrets, `BOT_PRIVATE_KEY`, `ENGINE_ADMIN_KEY` and
