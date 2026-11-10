@@ -57,6 +57,7 @@ import { Ask, askModelOf, type AskModel } from "./ask.js";
 import { Copilot, COPILOT_WORST_IN, COPILOT_WORST_OUT } from "./copilot.js";
 import { Reviews } from "./reviews.js";
 import { Hey, type HeyFetch } from "./hey.js";
+import { Reports } from "./reports.js";
 import { TAG2 } from "./erc8004.js";
 import { DeskStore, STATE } from "./desk.js";
 import { scoreOf } from "./score.js";
@@ -164,6 +165,8 @@ export class Engine {
   reviews: Reviews | null = null;
   /** HEY builder records (./hey.ts): made once the database is open, whether or not HEY=on, so the agents' links are kept */
   hey: Hey | null = null;
+  /** Factor Credit Reports (./reports.ts): made once the chain is read, whether or not REPORTS=on, so what was read and claimed is kept */
+  reports: Reports | null = null;
   /** the splitter's admin, read at the boot check: Factor's own wallet, which sets the rules of Factor's own agents */
   private splitterAdmin: string | null = null;
   /** the key that signs agents' records for other apps (./record.ts), or null */
@@ -228,7 +231,7 @@ export class Engine {
     return {
       config: this.config, state: this.state, problems: this.problems, warnings: this.warnings, lastError: this.lastError, loops, ctx: this.ctx, rpc: this.chain?.health() ?? null, now: this.now,
       links: { pons: link(this.env.FACTOR_PONS_URL), github: link(this.env.FACTOR_GITHUB_URL), x: link(this.env.FACTOR_X_URL) }, dataDirSet: !!this.env.FACTOR_DATA_DIR?.trim(), profiles: this.profiles, gateway: this.gateway, accounts: this.accounts, house: this.house, demo: this.demo, pulse: this.pulse, deskMind: this.deskMind, launchList: this.launchList, activity: this.activity, matcher: this.matcher, pay: this.pay, subjobs: this.subjobs, recordSigner: this.recordSigner, firms: this.firms, plans: this.plans, erc8004: this.erc8004, openjobs: this.openjobs, autoapply: this.autoapply, verified: this.verified, coins: this.coins, lines: this.lines, guarantees: this.guarantees, bounties: this.bounties, milestones: this.milestones, verifiers: this.verifiers,
-      connect: this.connect, erc8004Scores: this.erc8004Scores, answerSigner: this.answerSigner, ask: this.ask, copilot: this.copilot, reviews: this.reviews, hey: this.hey,
+      connect: this.connect, erc8004Scores: this.erc8004Scores, answerSigner: this.answerSigner, ask: this.ask, copilot: this.copilot, reviews: this.reviews, hey: this.hey, reports: this.reports,
     };
   }
 
@@ -689,6 +692,24 @@ export class Engine {
       signed: async (address, message, signature) => this.profiles!.signed(address, message, signature),
       key: () => this.env.HEY_API_KEY, ...(this.opts.heyFetch ? { fetch: this.opts.heyFetch } : {}),
     });
+    // Factor Credit Reports: every agent on the chain, read from the ERC-8004 registries, Priors' loans and the desk
+    this.reports = new Reports(c.reports, {
+      db, chain: this.chain, chainId: c.chainId, explorer: c.explorer, now: this.now, nowS, log: this.log,
+      deskAgents: () => (db.q("SELECT address, registered_at FROM desk_agents").all() as { address: string; registered_at: number }[]).map((r) => ({ address: r.address, registeredAt: r.registered_at })),
+      deskJobs: (agent) => (db.q("SELECT j.*, (d.job_id IS NOT NULL) AS demo FROM desk_jobs j LEFT JOIN (SELECT DISTINCT job_id FROM demo_jobs WHERE job_id IS NOT NULL) d ON d.job_id = j.id WHERE j.agent = ?").all(agent) as (import("./desk.js").JobRow & { demo: number })[]).map((j) => ({
+        id: j.id, customer: j.customer, price: j.price, fee: j.fee, state: j.state, lockedAt: j.locked_at, closedAt: j.closed_at, deliveredAt: j.delivered_at, late: !!j.late, fromPool: j.from_pool, early: j.early, demo: !!j.demo,
+      })),
+      lineOf: (agent) => (this.lines?.reading() ? this.lines.lineMarks(agent) : null),
+      reviewsOf: (agent) => (this.reviews?.on() ? (db.q("SELECT job_id, reviewer, stars, at, self FROM reviews WHERE agent = ?").all(agent) as { job_id: number; reviewer: string; stars: number; at: number; self: string | null }[]).map((r) => ({ job: r.job_id, reviewer: r.reviewer, stars: r.stars, at: r.at, self: r.self })) : []),
+      linkOf: (agent) => { const l = this.erc8004?.store.link(agent); return l?.agent_id && !l.lost ? l.agent_id : null; },
+      sameHand: (a, b) => this.subjobs!.sameHand(a, b),
+      factorOwn,
+      nameOf: (a) => this.profiles?.all().get(a)?.name ?? null,
+      factorWriter: () => this.ctx?.facts.bot ?? null,
+      signed: async (address, message, signature) => this.profiles!.signed(address, message, signature),
+      signer: () => this.answerSigner,
+    });
+    if (c.reports.enabled) this.log(`[reports] on: every agent on the chain is read from the ERC-8004 registries${c.reports.priors ? ", Priors' loans" : ""} and the desk, ${c.reports.perPass} log queries a pass of ${c.reports.span.toLocaleString("en-US")} blocks, and scored by ${"factor-report/1.0.0"} every ${c.reports.scoreEveryS} s; it moves no money`);
     if (c.hey.enabled) this.log(`[hey] on: builder records are read from ${c.hey.base} with x-hey-integration: ${c.hey.integration}, kept ${Math.round(c.hey.freshMs / 1000)} s, ${c.hey.perMinute} calls a minute at most${this.env.HEY_API_KEY?.trim() ? ", with Factor's free key" : ""}; shown as HEY's, never in the Factor Score`);
     if (c.reviews.enabled) this.log(`[reviews] on: a job's customer reviews it once it is paid, within ${c.reviews.windowDays} days; changes for ${c.reviews.editDays} days; jobs from ${Number(c.reviews.floorWei / 10n ** 12n) / 1e6} ETH count toward the average. Factor pays no gas for reviews`);
     if (c.coins.enabled && c.coins.note) this.log(`[coins] NOT ON: ${c.coins.note}`);
@@ -741,7 +762,22 @@ export class Engine {
     this.every("watch", p.watchEveryMs, () => this.watchOnce().then(() => undefined));
     if (this.ctx.mode === "dry" || this.ctx.mode === "live") this.every("act", p.actEveryMs, () => this.actOnce().then(() => undefined), false);
     if (this.ctx.mode === "live" && this.config.house.enabled) this.every("house", 5000, () => this.houseOnce(), false);
+    // credit reports read on their own loop: a long backfill never holds up the desk's own reading
+    if (this.config.reports.enabled) this.every("reports", 3000, () => this.reportsOnce(), false);
   }
+
+  /** One pass of the credit reports' reading and scoring (./reports.ts): quick while there is a backfill to read. */
+  async reportsOnce(): Promise<void> {
+    const r = this.reports;
+    if (!r?.on()) return;
+    // once everything is read, a pass every REPORTS_EVERY_S; before that, one after another
+    if (r.caughtUp() && this.now() - this.reportsAt < this.config.reports.everyS * 1000) return;
+    this.reportsAt = this.now();
+    const said = await r.pass();
+    if (/scored/.test(said)) this.api.forget();
+    if (/read [1-9]|scored|batch/.test(said)) this.log(`[reports] ${said}`);
+  }
+  private reportsAt = 0;
 
   // Everything about the deployment that can be read back. Throws Wrong with the first thing that is not so.
   async check(): Promise<void> {

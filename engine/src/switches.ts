@@ -54,13 +54,16 @@
 //             What was stored is kept. Off unless REVIEWS=on: this switch only stops it.
 //   hey       HEY builder records (../hey.ts): HEY is asked nothing, and no record, badge or link shows anywhere. The
 //             agents' links are kept. Off unless HEY=on: this switch only stops it.
+//   reports   Factor Credit Reports (../reports.ts): every report, the leaderboard, the look-up and the signed answers
+//             hidden, no claim taken, and the chain not read for them. What was read and claimed is kept, and the reading
+//             goes on from where it stopped once it is turned back on. Off unless REPORTS=on: this switch only stops it.
 //
 // A switch is turned with POST /v1/admin/switch and the owner's key, or set at start with ENGINE_STOP (names with
 // commas between them). It is kept in the database, so it holds across a restart until it is turned back.
 
 import type { EngineDb } from "./chain/db.js";
 
-export const SWITCHES = ["keeper", "accounts", "compute", "house", "hiring", "erc8004", "autoapply", "bids", "verified", "coins", "lines", "guarantees", "bounties", "raeto", "milestones", "everywhere", "connect", "scores", "ask", "copilot", "reviews", "hey", "verifiers"] as const;
+export const SWITCHES = ["keeper", "accounts", "compute", "house", "hiring", "erc8004", "autoapply", "bids", "verified", "coins", "lines", "guarantees", "bounties", "raeto", "milestones", "everywhere", "connect", "scores", "ask", "copilot", "reviews", "hey", "verifiers", "reports"] as const;
 export type Switch = (typeof SWITCHES)[number];
 const key = (name: Switch) => `switch:${name}`;
 

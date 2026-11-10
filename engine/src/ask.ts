@@ -203,6 +203,8 @@ export interface AskAgent {
   /** HEY's builder record of the project its owner linked it to (./hey.ts): HEY's words, with the source. Added after the
    * picks are made, so it never ranks anything */
   builder?: { project: string; status: string | null; verifiedBuilder: boolean; sourceUrl: string };
+  /** its Factor credit report, chain-wide (./reports.ts): the score and the link. Added after the picks, so it never ranks anything */
+  report?: { score: number; rank: number | null; url: string };
 }
 export interface AskAnswer {
   v: 1;

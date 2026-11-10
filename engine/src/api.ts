@@ -58,6 +58,9 @@
 //   GET  /v1/hey/record?q=      a project's builder record on HEY Research Lab, by name, $TICKER, HEY page or 0x contract
 //   GET  /v1/hey/agent/<id>     the HEY project an agent's owner linked it to, and that project's builder record
 //   POST /v1/hey/link           an agent's owner links it to its maker's project on HEY, or unlinks it
+//   GET  /v1/reports            Factor Credit Reports (reports.ts): whether they are on, what has been read, the totals
+//   GET  /v1/reports/formula, /top?limit=&offset=&own=1, /find?q=, /agent/<id>, /signed/<id>, /erc8004/<id>
+//   POST /v1/reports/claim      an agent's owner signs to claim its credit report and add a profile
 //
 // Every GET is answered from the database (the last reading of the chain, the ledger, the engine's copy of each
 // job and agent), so a burst of visitors costs the node nothing. Before the contracts are given, and whenever the
@@ -110,6 +113,8 @@ import type { Ask, AskCandidate, AskData, SettledJob } from "./ask.js";
 import type { Copilot, CopilotAgent, CopilotData, CopilotJob } from "./copilot.js";
 import type { Reviews, ReviewSummary } from "./reviews.js";
 import type { Hey, HeyLookup } from "./hey.js";
+import { FORMULA } from "./reportscore.js";
+import type { Reports } from "./reports.js";
 
 export interface Answer {
   status: number;
@@ -186,6 +191,8 @@ export interface EngineView {
   reviews?: Reviews | null;
   /** HEY builder records (./hey.ts) */
   hey?: Hey | null;
+  /** Factor Credit Reports (./reports.ts) */
+  reports?: Reports | null;
 }
 
 /** Factor everywhere, as the site reads it: web/src/lib/types.ts keeps the same shape by hand. */
@@ -610,6 +617,11 @@ export class EngineApi {
       return this.heyGet(this.view(), path, query);
     }
     // Factor everywhere: one agent's (or a few agents') score, record, line and Guarantee in an answer Factor signs
+    // Factor Credit Reports (./reports.ts): every agent on the chain, answered from the database; a signed answer signs
+    if (path === "/v1/reports" || path.startsWith("/v1/reports/")) {
+      if (from && this.tooMany(from, "reports-get", 600)) return { status: 429, body: { error: "too many requests: try again in a minute" } };
+      return this.reportsGet(this.view(), path, query);
+    }
     if (path === "/v1/everywhere" || path.startsWith("/v1/everywhere/") || path.startsWith("/v1/connect/ticket/")) return this.everywhereGet(this.view(), path, query, from, connectKey);
     // the file a score entry on ERC-8004 points at (./erc8004score.ts)
     const sm = /^\/v1\/erc8004\/score\/(\d{1,9})$/.exec(path);
@@ -1349,6 +1361,15 @@ export class EngineApi {
         if (b?.record.found) a.builder = { project: b.record.project.name, status: b.record.facts.hey_status_label ?? b.record.facts.hey_status, verifiedBuilder: b.record.facts.verified_builder === true, sourceUrl: b.record.sourceUrl };
       }));
     }
+    // Factor Credit Reports (./reports.ts): each agent's chain-wide credit score beside its reasons, with the link. Added
+    // after the picks too: it never ranks anything Ask picked
+    if (this.reportsOn(v)) {
+      for (const a of r.answer.agents) {
+        if (a.kind !== "agent") continue;
+        const rep = v.reports!.report(a.address);
+        if (rep) a.report = { score: rep.score, rank: rep.rank, url: rep.links.page };
+      }
+    }
     return ok({ ...r.answer, ...(paused ? { notes: [...r.answer.notes, `New jobs are paused for now${paused.note ? `: ${paused.note}` : "."}`] } : {}) } as unknown as Record<string, unknown>);
   }
 
@@ -1437,6 +1458,42 @@ export class EngineApi {
     if (this.tooMany(from, "reviews", 6)) return { status: 429, body: { error: "too many requests: try again in a minute" } };
     const b = body as Record<string, unknown>;
     const a = path === "/v1/reviews" ? await v.reviews.write(b) : path === "/v1/reviews/reply" ? await v.reviews.reply(b) : await v.reviews.readBack(b);
+    if (a.status === 200) this.cache.clear();
+    return a;
+  }
+
+  // ---- Factor Credit Reports (./reports.ts) ----
+
+  private reportsOn(v: EngineView): boolean {
+    return !!v.reports?.on() && !!v.ctx;
+  }
+
+  private async reportsGet(v: EngineView, path: string, query: URLSearchParams): Promise<Answer | null> {
+    if (path === "/v1/reports/formula") return ok({ enabled: this.reportsOn(v), ...FORMULA } as unknown as Record<string, unknown>);
+    if (!this.reportsOn(v)) return path === "/v1/reports" ? ok({ enabled: false }) : ok({ enabled: false });
+    const r = v.reports!;
+    if (path === "/v1/reports") return ok(r.about());
+    if (path === "/v1/reports/top") {
+      const limit = Math.min(100, Math.max(1, Number(query.get("limit")) || 50));
+      const offset = Math.min(100_000, Math.max(0, Number(query.get("offset")) || 0));
+      return ok({ enabled: true, ...r.top(limit, offset, query.get("own") === "1") });
+    }
+    if (path === "/v1/reports/find") return ok({ enabled: true, items: r.find(query.get("q") ?? "") });
+    const m = /^\/v1\/reports\/(agent|signed|erc8004)\/([0-9a-zA-Z#%:._ -]{1,60}|0x[0-9a-fA-F]{40})$/.exec(path);
+    if (!m) return null;
+    const id = decodeURIComponent(m[2]!);
+    if (m[1] === "signed") return r.signed(id);
+    if (m[1] === "erc8004") { const p = r.erc8004Prepared(id); return p ? ok(p) : notFound("no agent with an ERC-8004 identity by that number, wallet or name"); }
+    const one = r.report(id);
+    return one ? ok(one as unknown as Record<string, unknown>) : notFound("no agent by that number, wallet or name");
+  }
+
+  private async reportsPost(body: unknown, from: string): Promise<Answer> {
+    const v = this.view();
+    if (!v.reports || !this.reportsOn(v)) return { status: 503, body: { error: "credit reports are switched off on Factor for now" } };
+    if (!body || typeof body !== "object" || Array.isArray(body)) return { status: 400, body: { error: "the body is not a JSON object" } };
+    if (this.tooMany(from, "reports-claim", 6)) return { status: 429, body: { error: "too many requests: try again in a minute" } };
+    const a = await v.reports.claim(body as Record<string, unknown>);
     if (a.status === 200) this.cache.clear();
     return a;
   }
@@ -1556,6 +1613,8 @@ export class EngineApi {
           return v.hey!.lookup(q);
         },
       } : {}),
+      // Factor Credit Reports (./reports.ts), while they are on: any agent on the chain, by number, wallet or name
+      ...(this.reportsOn(v) ? { report: (q: string) => { const address = v.profiles?.byName(q) ?? null; return v.reports!.report(address ?? q); } } : {}),
       // paid reviews (./reviews.ts), while they are on: what an agent's customers say, and who may review a job
       ...(this.reviewsOn(v) ? {
         reviews: (id: string) => {
@@ -1645,6 +1704,7 @@ export class EngineApi {
     if (path === "/v1/copilot") return this.copilotPost(body, from);
     if (path === "/v1/reviews" || path === "/v1/reviews/reply" || path === "/v1/reviews/erc8004") return this.reviewsPost(path, body, from);
     if (path === "/v1/hey/link") return this.heyPost(body, from);
+    if (path === "/v1/reports/claim") return this.reportsPost(body, from);
     if (path.startsWith("/v1/connect/")) return this.connectPost(path, body, from, connectKey);
     if (path === "/v1/admin/connect") return this.connectAdmin(body, from, adminKey);
     if (path === "/v1/pay/deal" || path === "/v1/pay/links") return this.payPost(path, body, from);
@@ -1688,7 +1748,7 @@ export class EngineApi {
       return ok({ ok: true, stopped: allStopped(v.ctx.db) });
     }
     if (path === "/v1/admin/hide") {
-      const done = b.what === "plan" && typeof b.key === "string" ? !!v.plans?.store.hide(b.key, b.hidden !== false) : b.what === "openjob" && typeof b.key === "string" ? !!v.openjobs?.store.hide(b.key, b.hidden !== false) : b.what === "bounty" && (typeof b.key === "string" || typeof b.key === "number") ? !!v.bounties?.hide(String(b.key), b.hidden !== false) : b.what === "plan-terms" && (typeof b.key === "string" || typeof b.key === "number") ? !!v.milestones?.hide(String(b.key), b.hidden !== false) : (b.what === "case-terms" || b.what === "reason") && (typeof b.key === "string" || typeof b.key === "number") ? !!v.verifiers?.hide(b.what, String(b.key), b.hidden !== false) : b.what === "firm" && typeof b.key === "string" ? !!v.firms?.store.hide(b.key, b.hidden !== false) : (b.what === "review" || b.what === "review-reply") && (typeof b.key === "string" || typeof b.key === "number") && /^\d{1,9}$/.test(String(b.key)) ? !!v.reviews?.hide(Number(b.key), b.what, b.hidden !== false) : (b.what === "agent" || b.what === "job") && (typeof b.key === "string" || typeof b.key === "number") ? v.profiles.hide(b.what, String(b.key), b.hidden !== false) : false;
+      const done = b.what === "plan" && typeof b.key === "string" ? !!v.plans?.store.hide(b.key, b.hidden !== false) : b.what === "openjob" && typeof b.key === "string" ? !!v.openjobs?.store.hide(b.key, b.hidden !== false) : b.what === "bounty" && (typeof b.key === "string" || typeof b.key === "number") ? !!v.bounties?.hide(String(b.key), b.hidden !== false) : b.what === "plan-terms" && (typeof b.key === "string" || typeof b.key === "number") ? !!v.milestones?.hide(String(b.key), b.hidden !== false) : (b.what === "case-terms" || b.what === "reason") && (typeof b.key === "string" || typeof b.key === "number") ? !!v.verifiers?.hide(b.what, String(b.key), b.hidden !== false) : b.what === "firm" && typeof b.key === "string" ? !!v.firms?.store.hide(b.key, b.hidden !== false) : (b.what === "review" || b.what === "review-reply") && (typeof b.key === "string" || typeof b.key === "number") && /^\d{1,9}$/.test(String(b.key)) ? !!v.reviews?.hide(Number(b.key), b.what, b.hidden !== false) : (b.what === "agent" || b.what === "job") && (typeof b.key === "string" || typeof b.key === "number") ? v.profiles.hide(b.what, String(b.key), b.hidden !== false) : b.what === "report-name" && (typeof b.key === "string" || typeof b.key === "number") ? !!v.reports?.hide(String(b.key), b.hidden !== false) : false;
       this.cache.clear();
       return done ? ok({ ok: true }) : notFound("nothing by that key");
     }
@@ -2219,7 +2279,9 @@ export class EngineApi {
     const reviews = { enabled: !!r && this.reviewsOn(v), mostChars: 500, floorEth: Number(c.reviews.floorWei / 10n ** 12n) / 1e6 };
     // HEY builder records (./hey.ts): whether they show, and Factor's own page and badge on HEY for the footer
     const hey = { enabled: this.heyOn(v), project: "https://heyresearch.xyz/project/factor", badge: "https://heyresearch.xyz/api/badge/factor" };
-    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused, roster: this.rosterJson(v), hosted, pulse: pulseJson(v, 8), desk: this.deskJson(v), signups, activity, pay, subjobs, firms, plans, erc8004, openJobs, autoApply, verified, coins, lines, guarantees, bounties, milestones, everywhere, ask, copilot, reviews, hey };
+    // Factor Credit Reports (./reports.ts): whether they show, for the dev log and the pages that link to them
+    const reports = { enabled: this.reportsOn(v) };
+    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused, roster: this.rosterJson(v), hosted, pulse: pulseJson(v, 8), desk: this.deskJson(v), signups, activity, pay, subjobs, firms, plans, erc8004, openJobs, autoApply, verified, coins, lines, guarantees, bounties, milestones, everywhere, ask, copilot, reviews, hey, reports };
     if (!r) {
       return { ...base, launched: false, stats: { advancedEth: 0, settledJobs: 0, jobs: 0, poolEth: 0, reserveEth: 0, outEth: 0, heldEth: 0, burnedTokens: 0, supplyLeft: SUPPLY, agents: 0, demoJobs: 0, lostEth: 0, poolFromTradingEth: 0 }, burn: null, agents: [], jobs: [], events: [], burns: [] };
     }
@@ -2326,6 +2388,7 @@ export class EngineApi {
       copilot: v.copilot ? v.copilot.health() : null,
       reviews: v.reviews ? v.reviews.health() : null,
       hey: v.hey ? v.hey.health() : null,
+      reports: v.reports ? v.reports.health() : null,
       erc8004: v.erc8004 ? { ...v.erc8004.about(), spentTodayWei: v.erc8004.spentToday().toString(), gasDayWei: c.erc8004.gasDayWei.toString(), scan: ctx.db.getJson("erc8004:scan") } : null,
       events: ctx.db.count("chain_events"),
       ledger: ctx.db.count("ledger"),

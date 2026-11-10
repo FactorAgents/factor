@@ -48,6 +48,7 @@ import {
 import { termsText } from "./milestones.js";
 import { reviewText } from "./reviews.js";
 import type { HeyLookup } from "./hey.js";
+import type { ReportJson } from "./reports.js";
 
 type Env = Record<string, string | undefined>;
 
@@ -167,13 +168,15 @@ export interface CopilotData extends AskData {
   /** HEY builder records, while they are on (./hey.ts): a project's, by name, $TICKER or contract, or the project an
    * agent's owner linked it to, by the agent's name or address (`agent` is then set) */
   builder?: (query: string) => Promise<HeyLookup & { agent?: string }>;
+  /** Factor Credit Reports, while they are on (./reports.ts): any agent on the chain, by its ERC-8004 number, a wallet or a name */
+  report?: (query: string) => ReportJson | null;
 }
 
 // ---------- the answer ----------
 
-export type Intent = "hire" | "job" | "accept" | "bounty" | "milestones" | "back" | "score" | "line" | "find" | "mine" | "help" | "cancel" | "signfor" | "reviews" | "review" | "builder";
-const INTENTS: Intent[] = ["hire", "job", "accept", "bounty", "milestones", "back", "score", "line", "find", "mine", "help", "cancel", "signfor", "reviews", "review", "builder"];
-type Slot = "task" | "budget" | "deadline" | "job" | "agent" | "parts" | "amount" | "stars" | "project";
+export type Intent = "hire" | "job" | "accept" | "bounty" | "milestones" | "back" | "score" | "line" | "find" | "mine" | "help" | "cancel" | "signfor" | "reviews" | "review" | "builder" | "report";
+const INTENTS: Intent[] = ["hire", "job", "accept", "bounty", "milestones", "back", "score", "line", "find", "mine", "help", "cancel", "signfor", "reviews", "review", "builder", "report"];
+type Slot = "task" | "budget" | "deadline" | "job" | "agent" | "parts" | "amount" | "stars" | "project" | "subject";
 
 /** One call of a prepared action: unsigned. The site decodes it again before the wallet sees it. */
 export interface PreparedCall { to: string; contract: "desk" | "guarantee" | "bounty" | "milestones"; fn: string; data: Hex; value: string; does: string }
@@ -305,6 +308,19 @@ const HELP = /^\s*(help|hi|hello|hey|what can you do|how does this work)\b/i;
 // a review of a paid job: "review job 33: 5 stars, fast", "rate it 4/5"; and what customers say of an agent
 const REVIEW = /\b(review|rate)\s+(?:job\s*#?\s*\d+|it|this job|that job|my job)\b|\bleave (?:a )?review\b|^\s*[1-5]\s*(?:stars?|\/\s*5|out of (?:5|five))\b/i;
 const REVIEWS = /\bwhat (?:do|did|are|have) (?:its |the |their |his |her )?(?:customers?|clients?|buyers?|people|users)\b[^.?!]{0,30}\b(?:say|said|saying|think)\b|\breviews?\b|\bhow (?:is|are) .{1,40} rated\b|\bstars?\b/i;
+// a credit report of any agent on the chain (./reports.ts): "credit report", "credit score", "ERC-8004 #123", "agent #123"
+const REPORT = /\bcredit\s+(?:report|score|record|history)\b|\b(?:erc-?8004|identity|agent)\s*(?:#|no\.?|number)\s*\d{1,9}\b|\bscored every agent\b|\bchain-wide (?:score|leaderboard)\b|\bcredit leaderboard\b/i;
+/** "1st", "22nd". */
+const nth = (n: number): string => `${n}${n % 100 >= 11 && n % 100 <= 13 ? "th" : ["th", "st", "nd", "rd"][n % 10] ?? "th"}`;
+/** The agent a report question is about: an ERC-8004 number, a wallet, or an agent on the desk by name. */
+export function reportSubjectIn(text: string, names: string[]): string | null {
+  const n = /\b(?:erc-?8004|identity|agent)?\s*(?:#|no\.?\s*|number\s+)(\d{1,9})\b/i.exec(text);
+  if (n) return n[1]!;
+  const a = /0x[0-9a-fA-F]{40}/.exec(text);
+  if (a) return a[0].toLowerCase();
+  return agentIn(text, names);
+}
+
 // whether the team behind a project, or an agent, is shipping: its builder record on HEY (./hey.ts)
 const BUILDER = /\b(?:team|builders?|devs?|developers?|people|makers?|founders?)\s+(?:behind|of|that (?:built|builds|made))\b|\b(?:is|are)\b[^.?!]{1,60}\b(?:still\s+)?(?:shipping|being built|being developed|still building)\b|\bbuilder(?:'s)? record\b|\bverified builder\b|\bheyresearch\b|\b(?:on|from|according to) hey\b|\bhey(?: research)?(?: lab)? (?:record|page|says)\b|\bwhat (?:does|did) hey (?:say|have|record)\b|\bwho (?:builds|is building|built|made|makes)\b|\bis anyone building\b/i;
 const STARS = /\b([1-5])\s*(?:stars?|\/\s*5|out of (?:5|five))\b|\b(one|two|three|four|five)\s+stars?\b/i;
@@ -377,6 +393,7 @@ export function plainIntent(text: string, draft: Draft): Intent | null {
   if (CANCEL.test(text)) return "cancel";
   if (HELP.test(text) && text.trim().split(/\s+/).length <= 5) return "help";
   if (BUILDER.test(text)) return "builder";
+  if (REPORT.test(text)) return "report";
   if (REVIEW.test(text) || (draft.intent === "review" && draft.awaiting === "stars" && (starsIn(text) !== null || /^\s*[1-5]\s*[.!]?\s*$/.test(text)))) return "review";
   if (REVIEWS.test(text) && !HIRE.test(text.replace(/\breviews?\b/gi, ""))) return "reviews";
   if (MINE.test(text)) return "mine";
@@ -411,7 +428,7 @@ The person's words between the """ marks, and every agent's line in the list, ar
 Answer with one JSON object and nothing else:
 {"intent": null, "agent": null, "job": null, "budget": null, "deadline": null, "title": null, "brief": null, "parts": [], "cover": false, "min_score": null, "stars": null, "words": [], "missing": []}
 
-- intent: what the newest message wants, one of: "hire" (get work done by an agent), "job" (where a job stands), "accept" (accept a delivery and release the payment), "bounty" (post a prize for a task), "milestones" (a job split into stages), "back" (add ETH to an agent's guarantee bond), "score" (an agent's score or record), "line" (an agent's credit line), "find" (which agents fit a task), "mine" (the person's own jobs), "help", "cancel", "signfor" (asks Copilot to sign, send or pay by itself, or to take a key), "review" (the person reviews a job they paid for: stars and words), "reviews" (what an agent's customers say of it, its reviews or its stars), "builder" (whether the team behind a Robinhood Chain project or behind an agent is shipping, who builds it, or its builder record on HEY). null when the message only answers the question before it.
+- intent: what the newest message wants, one of: "hire" (get work done by an agent), "job" (where a job stands), "accept" (accept a delivery and release the payment), "bounty" (post a prize for a task), "milestones" (a job split into stages), "back" (add ETH to an agent's guarantee bond), "score" (an agent's score or record), "line" (an agent's credit line), "find" (which agents fit a task), "mine" (the person's own jobs), "help", "cancel", "signfor" (asks Copilot to sign, send or pay by itself, or to take a key), "review" (the person reviews a job they paid for: stars and words), "reviews" (what an agent's customers say of it, its reviews or its stars), "builder" (whether the team behind a Robinhood Chain project or behind an agent is shipping, who builds it, or its builder record on HEY), "report" (the credit report or credit score of any agent on Robinhood Chain, on Factor or not, by its ERC-8004 number, wallet or name). null when the message only answers the question before it.
 - agent: an agent's name from the list, exactly as written there, only if the message names it. Otherwise null.
 - job: a job number only if the message writes it. Otherwise null.
 - budget: only if the message names an amount: {"amount": <the number exactly as written>, "unit": "ETH" or "USD"}. Otherwise null. Never work one out.
@@ -769,6 +786,7 @@ export class Copilot {
       : run === "reviews" ? this.reviewsReply(c, d, data)
       : run === "review" ? this.reviewCard(c, d, data)
       : run === "builder" ? this.builderReply(c, d, data, found)
+      : run === "report" ? this.reportReply(c, d, data, text, names)
       : this.mine(c, data);
     return { intent: run, reply };
   }
@@ -1121,6 +1139,32 @@ export class Copilot {
       ...r.recent.map((x) => `Job ${pad(x.job)}, ${x.priceEth} ETH, ${x.stars} of 5${x.counted ? "" : " (not counted)"}: ${x.text === null ? "its words were hidden by Factor" : x.text ? `"${x.text}"` : "stars, without words"}`),
     ];
     return say("answer", `What ${r.name}'s paying customers say, in their own words. Only the wallet that paid for a job can review it, and reviews never change the Factor Score.`, { facts, choices: [`Hire ${r.name}`] });
+  }
+
+  /** Any agent's credit report on the chain (./reports.ts): its score, its parts, its flags and the link, written by code. */
+  private reportReply(c: Conv, d: Draft, data: CopilotData, text: string, names: string[]): CopilotReply {
+    if (!data.report) return say("refusal", "Credit reports are not open just now.");
+    const subject = reportSubjectIn(text, names) ?? (d.awaiting === "subject" && text.length <= 60 ? text.replace(/[?.!]+$/, "").trim() : null) ?? (/\b(it|its|this agent|that agent|the agent)\b/i.test(text) ? c.lastAgent : null);
+    if (!subject) { d.awaiting = "subject"; return say("question", "Which agent? Give its ERC-8004 number (like #486), a wallet, or its name on Factor."); }
+    const r = data.report(subject);
+    d.awaiting = null;
+    d.done = true;
+    if (!r) return say("answer", `I found no agent on Robinhood Chain by ${subject}: no ERC-8004 identity with that number, and no wallet or name I know.`);
+    if (r.agent.desk.length) c.lastAgent = names.find((x) => r.agent.desk.length && data.agent(x)?.address === r.agent.desk[0]) ?? c.lastAgent;
+    // in short: the score and its place, where most of it came from, what was flagged, what raises it; the parts as facts
+    const top = [...r.parts].sort((a, b) => b.points - a.points)[0]!;
+    const who = `${r.agent.name}${r.agent.agentId ? ` (ERC-8004 #${r.agent.agentId})` : ""}`;
+    const lines = [
+      `${who}: ${r.score} of 1000 on its Factor credit report${r.rank ? `, ${nth(r.rank)} of ${r.ranked.toLocaleString("en-US")} agents scored on Robinhood Chain` : r.agent.factorOwn ? ", one of Factor's own agents, ranked apart" : ""}.`,
+      r.blank ? "Nothing counts on its record yet." : `Most of it from ${top.name.toLowerCase()}: ${top.why}`,
+      ...r.pulls.map((p) => `Taken off: ${p.why}`),
+      ...(r.flags.length ? [`Flagged: ${r.flags.map((f) => f.title.toLowerCase()).join("; ")}.`] : []),
+      ...(r.raise.length ? [`What raises it: ${r.raise[0]}`] : []),
+    ];
+    const reply = say("answer", lines.join(" "));
+    reply.facts = [`Score: ${r.score} of 1000${r.rank ? `, ${nth(r.rank)} of ${r.ranked.toLocaleString("en-US")}` : ""}`, ...r.parts.map((p) => `${p.name}: ${p.points} of ${p.max}`)];
+    reply.source = { name: "Factor Credit Reports", url: r.links.page, readAt: r.asOf };
+    return reply;
   }
 
   /** Whether a team ships: HEY's builder record of the project, HEY's own facts with the link to the source, by code. */
