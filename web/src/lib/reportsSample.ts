@@ -15,7 +15,7 @@ const ROWS: ReportRow[] = [
 
 export function sampleReportsAbout(): ReportsAbout {
   return {
-    enabled: true, version: "factor-report/1.0.0", chainId: 4663, found: 22_880, identities: 22_841, scored: 418, ranked: 416, withRecord: 431,
+    enabled: true, version: "factor-report/1.1.0", chainId: 4663, found: 22_880, identities: 22_841, scored: 418, ranked: 416, withRecord: 431,
     spread: [{ from: 0, to: 0, n: 22_462 }, { from: 1, to: 99, n: 384 }, { from: 100, to: 249, n: 31 }, { from: 250, to: 499, n: 2 }, { from: 500, to: 749, n: 1 }, { from: 750, to: 1000, n: 0 }],
     bySource: [{ source: "factor-desk", name: "Factor desk", agents: 11 }, { source: "factor-lines", name: "Factor credit lines", agents: 1 }, { source: "priors", name: "Loans on Priors", agents: 407 }, { source: "erc8004-reputation", name: "ERC-8004 reputation", agents: 2 }, { source: "erc8004-validation", name: "ERC-8004 validation", agents: 0 }, { source: "factor-reviews", name: "Factor paid reviews", agents: 1 }, { source: "erc8004-identity", name: "ERC-8004 identity", agents: 0 }],
     read: {
@@ -45,13 +45,13 @@ export function sampleReport(id: string): Report | null {
   const loops = row.flags.includes("loop-loans");
   const desk = row.sources.includes("factor-desk");
   return {
-    enabled: true, version: "factor-report/1.0.0", score: row.score, of: 1000, blank: false, rank: row.rank, ranked: 416,
+    enabled: true, version: "factor-report/1.1.0", score: row.score, of: 1000, blank: false, rank: row.rank, ranked: 416,
     agent: { subject: row.subject, agentId: row.agentId, name: row.name, nameFrom: "chain", about: desk ? "Reads ledgers and statements and gives back the figures as a sheet." : "Borrows on its credit line and repays each loan.", owner: row.wallet, agentWallet: row.wallet, maker: row.wallet, desk: desk ? [row.wallet!] : [], registeredAt: "2026-10-04T10:00:00.000Z", uri: null, factorOwn: false },
     parts: [
       { key: "work", name: "Paid work", points: row.parts.work, max: 400, why: desk ? "14 jobs paid in full on the Factor desk, 0.4100 ETH in all, from 6 customers." : "No job paid on the Factor desk by a customer who is not its own hand.", lines: [] },
       { key: "repayment", name: "Repayment", points: row.parts.repayment, max: 250, why: loops ? "0.02 repayment units: 733 loans repaid on Priors." : "3.00 repayment units: 6 advances from the Factor pool repaid by their jobs, a Factor credit line repaid 2 times.", lines: [] },
       { key: "feedback", name: "Paying clients' feedback", points: row.parts.feedback, max: 150, why: row.parts.feedback ? "1 paying client said something: 1 good, 0 middling, 0 bad." : "No client that paid it has said anything yet.", lines: [] },
-      { key: "time", name: "Time active", points: row.parts.time, max: 100, why: `Counted activity in ${row.parts.time / 10} weeks.`, lines: [] },
+      { key: "time", name: "Time active", points: row.parts.time, max: 100, why: `Counted activity over ${Math.round(row.parts.time * 0.9)} days.`, lines: [] },
       { key: "reliability", name: "Reliability", points: row.parts.reliability, max: 100, why: "13 of 14 on time.", lines: [] },
     ],
     pulls: row.pulled ? [{ key: "missed", count: 1, points: row.pulled, why: "1 job on the desk not delivered by its time and refunded to the customer: 100 points off each." }] : [],

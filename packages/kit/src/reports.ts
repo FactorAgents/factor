@@ -1,6 +1,6 @@
 // Factor Credit Reports, for an app, an agent or an assistant (docs/REPORTS.md): a public credit report and score for every
 // AI agent on Robinhood Chain, not only those on Factor, worked out from the chain by one public formula
-// (factor-report/1.0.0): paid work first, then repayment, then what paying clients say, time active and reliability, with
+// (factor-report/1.1.0): paid work first, then repayment, then what paying clients say, time active and reliability, with
 // defaults and missed deliveries pulling hard. Read through Factor's site; the report moves no money.
 //
 //   const r = await creditReport("486");                  // by ERC-8004 number, a wallet, or a name

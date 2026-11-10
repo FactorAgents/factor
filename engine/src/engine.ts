@@ -58,6 +58,7 @@ import { Copilot, COPILOT_WORST_IN, COPILOT_WORST_OUT } from "./copilot.js";
 import { Reviews } from "./reviews.js";
 import { Hey, type HeyFetch } from "./hey.js";
 import { Reports } from "./reports.js";
+import { REPORT_VERSION } from "./reportscore.js";
 import { TAG2 } from "./erc8004.js";
 import { DeskStore, STATE } from "./desk.js";
 import { scoreOf } from "./score.js";
@@ -709,7 +710,7 @@ export class Engine {
       signed: async (address, message, signature) => this.profiles!.signed(address, message, signature),
       signer: () => this.answerSigner,
     });
-    if (c.reports.enabled) this.log(`[reports] on: every agent on the chain is read from the ERC-8004 registries${c.reports.priors ? ", Priors' loans" : ""} and the desk, ${c.reports.perPass} log queries a pass of ${c.reports.span.toLocaleString("en-US")} blocks, and scored by ${"factor-report/1.0.0"} every ${c.reports.scoreEveryS} s; it moves no money`);
+    if (c.reports.enabled) this.log(`[reports] on: every agent on the chain is read from the ERC-8004 registries${c.reports.priors ? ", Priors' loans" : ""} and the desk, ${c.reports.perPass} log queries a pass of ${c.reports.span.toLocaleString("en-US")} blocks, and scored by ${REPORT_VERSION} every ${c.reports.scoreEveryS} s; it moves no money`);
     if (c.hey.enabled) this.log(`[hey] on: builder records are read from ${c.hey.base} with x-hey-integration: ${c.hey.integration}, kept ${Math.round(c.hey.freshMs / 1000)} s, ${c.hey.perMinute} calls a minute at most${this.env.HEY_API_KEY?.trim() ? ", with Factor's free key" : ""}; shown as HEY's, never in the Factor Score`);
     if (c.reviews.enabled) this.log(`[reviews] on: a job's customer reviews it once it is paid, within ${c.reviews.windowDays} days; changes for ${c.reviews.editDays} days; jobs from ${Number(c.reviews.floorWei / 10n ** 12n) / 1e6} ETH count toward the average. Factor pays no gas for reviews`);
     if (c.coins.enabled && c.coins.note) this.log(`[coins] NOT ON: ${c.coins.note}`);

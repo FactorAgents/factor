@@ -1,10 +1,14 @@
-// Factor Credit Reports: the score. One public, versioned formula, factor-report/1.0.0, that turns what the chain shows
+// Factor Credit Reports: the score. One public, versioned formula, factor-report/1.1.0, that turns what the chain shows
 // of an agent into a number from 0 to 1000, with every point explained (docs/REPORTS.md has it in words).
 //
 // This file is pure: it is handed what was read (./reports.ts reads it) and gives back the score, its parts, its pulls,
 // its flags, the points each source brought and what would raise it. The same inputs always give the same answer, and
-// it only uses arithmetic whose result is exact everywhere (sums, products, divisions and square roots), rounded down at
-// the end of each part.
+// it uses plain arithmetic, square roots and one base-2 logarithm, rounded down at the end of each part.
+//
+// 1.1.0 (10 Nov 2026) is 1.0.0 calibrated to what this young chain shows: paid work full at 0.05 ETH paid on a log scale,
+// a customer from 0.003 ETH of work, a repayment unit of $10 held 7 days, time active as the span of counted activity up to
+// 90 days, a paying client's word 50. The rules against gaming it and every pull are as strict as before, and a loan now
+// counts toward reliability only when it would count toward a week (docs/REPORTS.md, section 11).
 //
 // The weights, in order of what matters most:
 //
@@ -21,7 +25,7 @@
 // The report moves no money. The desk's limits are the desk's (its bond plus the fees its jobs paid), the contracts have
 // no owner, and nothing here is read by any of them.
 
-export const REPORT_VERSION = "factor-report/1.0.0";
+export const REPORT_VERSION = "factor-report/1.1.0";
 
 const DAY = 86_400;
 const WEEK = 7 * DAY;
@@ -33,26 +37,27 @@ export const FORMULA = {
   max: 1000,
   parts: { work: 400, repayment: 250, feedback: 150, time: 100, reliability: 100 },
   work: {
-    /** the value of the jobs paid, on a square root: 200 points at 1 ETH, 100 at 0.25 ETH, 20 at 0.01 ETH */
-    valueMax: 200, valueFullEth: 1,
-    /** a customer counts once the jobs it paid in full have paid 0.001 ETH in fees (about 0.05 ETH of work): the desk's own rule */
-    customerFeesMinWei: "1000000000000000", perCustomer: 30, customersMax: 150,
+    /** the value of the jobs paid, on a log scale from the smallest job (0.001 ETH): 200 × log2(1 + paid ÷ 0.001) ÷ log2(51), all of it at 0.05 ETH */
+    valueMax: 200, valueFullEth: 0.05, valueStepEth: 0.001,
+    /** a customer counts once the jobs it paid in full come to 0.003 ETH of work, three of the smallest */
+    customerPaidMinWei: "3000000000000000", perCustomer: 30, customersMax: 150,
     perJob: 5, jobsMax: 50,
   },
   repayment: {
-    /** the room fills on a square root of the units repaid: 72 points for 1 unit, 125 for 3, 250 for 12 */
-    unitsForMax: 12,
-    /** a loan is one whole unit at $25 or more held 7 days or more; smaller or shorter, its share of that */
-    loanFullUsd: 25, loanFullDays: 7,
-    /** a Factor pool advance is half a unit at 0.01 ETH or more: the job's locked payment already covered it */
-    advanceFullEth: 0.01, advanceWeight: 0.5,
+    /** the room fills on a square root of the units repaid: 102 points for 1 unit, 176 for 3, 250 for 6 */
+    unitsForMax: 6,
+    /** a loan is one whole unit at $10 or more held 7 days or more; smaller or shorter, its share of that */
+    loanFullUsd: 10, loanFullDays: 7,
+    /** a Factor pool advance is half a unit at 0.002 ETH or more: the job's locked payment already covered it */
+    advanceFullEth: 0.002, advanceWeight: 0.5,
     lineOnTime: 1, lineLate: 0.25,
     /** in each 30 days the biggest repayment counts in full, the second half, the third a third, and so on */
     windowDays: 30,
   },
-  feedback: { positive: 30, neutral: 10, negative: -30, max: 150, positiveFrom: 70, neutralFrom: 40 },
-  time: { perWeek: 10, max: 100, realLoanUsd: 20, realLoanDays: 1 },
-  reliability: { onTimeMax: 80, fullAtCount: 10, loansPerWindow: 4, perValidator: 10, validationsMax: 20, validationPass: 50 },
+  feedback: { positive: 50, neutral: 15, negative: -50, max: 150, positiveFrom: 70, neutralFrom: 40 },
+  /** the days from the first counted activity to the latest, all of it at 90; a loan counts as activity from $10 held a day */
+  time: { fullDays: 90, max: 100, realLoanUsd: 10, realLoanDays: 1 },
+  reliability: { onTimeMax: 80, fullAtCount: 5, loansPerWindow: 4, perValidator: 10, validationsMax: 20, validationPass: 50 },
   pulls: { default: 300, missed: 100, half: 25, lineLate: 50 },
   flags: { freshDays: 14, quickMinutes: 60, loopLoans: 10, massMaker: 25 },
 } as const;
@@ -227,6 +232,9 @@ export function windowed<T>(items: T[], at: (x: T) => number, weight: (x: T) => 
   return { total, raw, windows };
 }
 
+/** Points that fill on a log scale counted in `step`s: `max` once `x` reaches `full`. */
+const logged = (x: number, step: number, full: number, max: number): number => (x <= 0 ? 0 : down(max * Math.min(1, Math.log2(1 + x / step) / Math.log2(1 + full / step))));
+
 /** Points that fill on a square root: `max` once `x` reaches `full`. */
 const rooted = (x: number, full: number, max: number): number => down(max * Math.min(1, Math.sqrt(Math.max(0, x) / full)));
 
@@ -270,11 +278,11 @@ export function scoreReport(x: ReportInput): ScoreResult {
   const full = counted.filter((j) => j.state === 4);
   const half = counted.filter((j) => j.state === 5);
   const value = full.reduce((a, j) => a + big(j.price), 0n) + half.reduce((a, j) => a + big(j.price) / 2n, 0n);
-  const feesBy = new Map<string, bigint>();
-  for (const j of full) feesBy.set(j.customer, (feesBy.get(j.customer) ?? 0n) + big(j.fee));
+  const paidBy = new Map<string, bigint>();
+  for (const j of full) paidBy.set(j.customer, (paidBy.get(j.customer) ?? 0n) + big(j.price));
   const customersAll = new Set(counted.map((j) => j.customer)).size;
-  const customers = [...feesBy.values()].filter((f) => f >= BigInt(F.work.customerFeesMinWei)).length;
-  const valuePts = rooted(ethOf(value), F.work.valueFullEth, F.work.valueMax);
+  const customers = [...paidBy.values()].filter((f) => f >= BigInt(F.work.customerPaidMinWei)).length;
+  const valuePts = logged(ethOf(value), F.work.valueStepEth, F.work.valueFullEth, F.work.valueMax);
   const custPts = Math.min(F.work.customersMax, customers * F.work.perCustomer);
   const jobPts = Math.min(F.work.jobsMax, full.length * F.work.perJob);
   const workPts = Math.min(F.parts.work, valuePts + custPts + jobPts);
@@ -369,6 +377,8 @@ export function scoreReport(x: ReportInput): ScoreResult {
     for (const l of repaid) {
       const isLate = l.repaidAt! > l.dueAt;
       if (isLate) loansLate++;
+      // a loan shows reliability only when it was a real one: $10 or more, held a day or more (as for a week of activity)
+      if (l.principalMicro < F.time.realLoanUsd * 1e6 || l.repaidAt! - l.borrowedAt < F.time.realLoanDays * DAY) continue;
       const w = Math.floor((l.repaidAt! - start) / (FORMULA.repayment.windowDays * DAY));
       const k = per.get(w) ?? 0;
       if (k >= F.reliability.loansPerWindow) continue;
@@ -386,7 +396,9 @@ export function scoreReport(x: ReportInput): ScoreResult {
   for (const l of repaid) if (l.principalMicro >= F.time.realLoanUsd * 1e6 && l.repaidAt! - l.borrowedAt >= F.time.realLoanDays * DAY && (loanW.get(`${l.pool}:${l.id}`) ?? 0) > 0) activity.push({ at: l.repaidAt!, source: "priors" });
   const weeks = new Map<number, SourceKey>();
   for (const a of [...activity].sort((p, q) => p.at - q.at)) if (a.at > 0 && !weeks.has(Math.floor(a.at / WEEK))) weeks.set(Math.floor(a.at / WEEK), a.source);
-  const timePts = Math.min(F.time.max, weeks.size * F.time.perWeek);
+  const times = activity.map((a) => a.at).filter((t) => t > 0);
+  const spanDays = times.length ? (Math.max(...times) - Math.min(...times)) / DAY : 0;
+  const timePts = down(F.time.max * Math.min(1, spanDays / F.time.fullDays));
 
   // ---- pulls ----
   const pulls: ReportPull[] = [];
@@ -420,8 +432,8 @@ export function scoreReport(x: ReportInput): ScoreResult {
       key: "work", name: "Paid work", points: workPts, max: F.parts.work,
       why: counted.length ? `${n(full.length, "job")} paid in full${half.length ? ` and ${half.length} at half` : ""} on the Factor desk, ${ethText(value)} in all, from ${n(customersAll, "customer")}.` : "No job paid on the Factor desk by a customer who is not its own hand.",
       lines: [
-        `Value: ${valuePts} of ${F.work.valueMax}. ${ethText(value)} paid; 200 points at ${F.work.valueFullEth} ETH, on a square root.`,
-        `Customers: ${custPts} of ${F.work.customersMax}. ${n(customers, "customer")} whose jobs paid 0.001 ETH or more in fees (about 0.05 ETH of work), ${F.work.perCustomer} each.${customersAll > customers ? ` ${customersAll - customers} more paid it less than that.` : ""}`,
+        `Value: ${valuePts} of ${F.work.valueMax}. ${ethText(value)} paid; all 200 points at ${F.work.valueFullEth} ETH, on a log scale from the smallest job.`,
+        `Customers: ${custPts} of ${F.work.customersMax}. ${n(customers, "customer")} whose jobs paid in full came to 0.003 ETH or more, ${F.work.perCustomer} each.${customersAll > customers ? ` ${customersAll - customers} more paid it less than that.` : ""}`,
         `Jobs: ${jobPts} of ${F.work.jobsMax}. ${n(full.length, "job")} paid in full, ${F.work.perJob} each.`,
       ],
     },
@@ -444,14 +456,14 @@ export function scoreReport(x: ReportInput): ScoreResult {
     },
     {
       key: "time", name: "Time active", points: timePts, max: F.parts.time,
-      why: weeks.size ? `Counted activity in ${n(weeks.size, "week")}.` : "No week with counted activity yet.",
-      lines: [`${F.time.perWeek} points for each week with a paid job, a repayment that counts, or a paying client's word, up to ${F.time.max / F.time.perWeek} weeks. A loan counts toward a week from $${F.time.realLoanUsd} held a day.`],
+      why: weeks.size ? `Counted activity over ${n(Math.floor(spanDays), "day")}, in ${n(weeks.size, "week")}.` : "No counted activity yet.",
+      lines: [`The days from its first counted activity to its latest, all ${F.time.max} points at ${F.time.fullDays} days: a paid job, a repayment that counts, a paying client's word. A loan counts from $${F.time.realLoanUsd} held a day.`],
     },
     {
       key: "reliability", name: "Reliability", points: relPts, max: F.parts.reliability,
       why: seen ? `${onTime} of ${seen} on time${validators.size ? `, and work checked by ${n(validators.size, "validator")}` : ""}.` : validators.size ? `Work checked by ${n(validators.size, "validator")}.` : "Nothing delivered or repaid yet to be on time with.",
       lines: [
-        `On time: ${onTimePts} of ${F.reliability.onTimeMax}. Jobs delivered by their due time, credit line and loan repayments by theirs; the share on time, in full from ${F.reliability.fullAtCount} of them. Up to ${F.reliability.loansPerWindow} loans in each 30 days count.`,
+        `On time: ${onTimePts} of ${F.reliability.onTimeMax}. Jobs delivered by their due time, credit line and loan repayments by theirs; the share on time, in full from ${F.reliability.fullAtCount} of them. A loan counts from $${F.time.realLoanUsd} held a day, up to ${F.reliability.loansPerWindow} in each 30 days.`,
         `Checked work: ${valPts} of ${F.reliability.validationsMax}. ${F.reliability.perValidator} for each validator that passed its work on ERC-8004 (${F.reliability.validationPass} or more of 100).`,
       ],
     },
@@ -478,12 +490,12 @@ export function scoreReport(x: ReportInput): ScoreResult {
   if (defaults) raise.push(`Nothing makes up for a default quickly: each costs ${F.pulls.default} points, more than most records earn in a month.`);
   if (workPts < F.parts.work) {
     if (!counted.length) raise.push("Take paid work on the Factor desk. A job paid by a customer is what counts most: up to 400 points.");
-    else if (custPts < F.work.customersMax) raise.push(`More customers: each new customer whose jobs pay about 0.05 ETH of work adds ${F.work.perCustomer} points, up to ${F.work.customersMax}.`);
+    else if (custPts < F.work.customersMax) raise.push(`More customers: each new customer whose jobs come to 0.003 ETH of work adds ${F.work.perCustomer} points, up to ${F.work.customersMax}.`);
     else if (valuePts < F.work.valueMax) raise.push(`More paid work: the value part reaches ${F.work.valueMax} at ${F.work.valueFullEth} ETH paid.`);
   }
   if (repayPts < F.parts.repayment) raise.push(totalUnits > 0 ? `Fewer, larger, longer repayments: a loan of $${F.repayment.loanFullUsd} held ${F.repayment.loanFullDays} days counts as much as hundreds of $5 loans returned in an hour.` : "Draw an advance on a paid job, or open a Factor credit line, and repay it: repayment is the second largest part.");
-  if (fbPts < F.feedback.max) raise.push(paying.size ? "Ask the customers who paid for a review: only paying clients' words count." : "Feedback counts once clients pay for work: a review from a paying customer adds up to 30.");
-  if (timePts < F.time.max) raise.push(`Keep working: each week with paid work or a repayment that counts adds ${F.time.perWeek}, up to ${F.time.max}.`);
+  if (fbPts < F.feedback.max) raise.push(paying.size ? "Ask the customers who paid for a review: only paying clients' words count." : `Feedback counts once clients pay for work: a review from a paying customer adds up to ${F.feedback.positive}.`);
+  if (timePts < F.time.max) raise.push(`Keep working: time active fills as its record runs longer, all of it at ${F.time.fullDays} days from its first counted activity.`);
   if (onTimePts < F.reliability.onTimeMax && seen) raise.push("Deliver and repay by the due time: reliability is the share on time.");
   if (selfJobs.length || selfOpinions) raise.push("Stop paying or reviewing itself: none of it counts.");
 

@@ -42,7 +42,7 @@ const flag = (r: ReturnType<typeof scoreReport>, k: string) => r.flags.find((f) 
 
 describe("the formula's frame", () => {
   it("is versioned, sums to 1000, and an agent with nothing counted scores 0 and says so", () => {
-    expect(REPORT_VERSION).toBe("factor-report/1.0.0");
+    expect(REPORT_VERSION).toBe("factor-report/1.1.0");
     expect(Object.values(FORMULA.parts).reduce((a, b) => a + b, 0)).toBe(1000);
     const r = scoreReport(input());
     expect(r).toMatchObject({ score: 0, of: 1000, blank: true, version: REPORT_VERSION, pulls: [] });
@@ -69,13 +69,15 @@ describe("the formula's frame", () => {
 });
 
 describe("paid work", () => {
-  it("counts value on a square root, customers from 0.001 ETH in fees, and jobs, up to 400", () => {
-    // one customer, one job of 0.05 ETH: fees 0.001 ETH, the desk's own bar for a customer
+  it("counts value on a log scale, full at 0.05 ETH, customers from 0.003 ETH of work, and jobs, up to 400", () => {
+    // one customer, one job of 0.05 ETH: the value part is full, and the customer counts
     const one = scoreReport(input({ desk: [job({ customer: cust(1), priceEth: 0.05 })] }));
-    expect(part(one, "work")).toBe(Math.floor(200 * Math.sqrt(0.05)) + 30 + 5);
+    expect(part(one, "work")).toBe(200 + 30 + 5);
+    const small = scoreReport(input({ desk: [job({ customer: cust(1), priceEth: 0.004 })] }));
+    expect(part(small, "work")).toBe(Math.floor(200 * Math.log2(1 + 0.004 / 0.001) / Math.log2(51)) + 30 + 5);
     // a customer under the bar is not counted as one, but its money is
-    const dust = scoreReport(input({ desk: [job({ customer: cust(1), priceEth: 0.01 })] }));
-    expect(part(dust, "work")).toBe(Math.floor(200 * Math.sqrt(0.01)) + 0 + 5);
+    const dust = scoreReport(input({ desk: [job({ customer: cust(1), priceEth: 0.002 })] }));
+    expect(part(dust, "work")).toBe(Math.floor(200 * Math.log2(1 + 0.002 / 0.001) / Math.log2(51)) + 0 + 5);
     expect(dust.counts).toMatchObject({ deskCustomers: 0, deskCustomersAll: 1 });
     const lots = scoreReport(input({ desk: Array.from({ length: 30 }, (_, i) => job({ customer: cust(i), priceEth: 0.1 })) }));
     expect(part(lots, "work")).toBe(400);
@@ -99,12 +101,12 @@ describe("paid work", () => {
 });
 
 describe("repayment and the loan tricks", () => {
-  it("weighs a loan by size and time held, up to one unit at $25 for 7 days", () => {
-    expect(loanWeight({ principalMicro: 25e6, borrowedAt: 0, repaidAt: 7 * DAY })).toBe(1);
-    expect(loanWeight({ principalMicro: 5e6, borrowedAt: 0, repaidAt: 3600 })).toBeCloseTo(0.2 / 168, 8);
+  it("weighs a loan by size and time held, up to one unit at $10 for 7 days", () => {
+    expect(loanWeight({ principalMicro: 10e6, borrowedAt: 0, repaidAt: 7 * DAY })).toBe(1);
+    expect(loanWeight({ principalMicro: 5e6, borrowedAt: 0, repaidAt: 3600 })).toBeCloseTo(0.5 / 168, 8);
     expect(loanWeight({ principalMicro: 500e6, borrowedAt: 0, repaidAt: 30 * DAY })).toBe(1);
     const r = scoreReport(input({ loans: [loan()] }));
-    expect(part(r, "repayment")).toBe(Math.floor(250 * Math.sqrt(1 / 12)));
+    expect(part(r, "repayment")).toBe(Math.floor(250 * Math.sqrt(1 / 6)));
   });
 
   it("looping hundreds of $7 loans returned within the hour is worth less than one real loan", () => {
@@ -140,9 +142,9 @@ describe("repayment and the loan tricks", () => {
   it("counts a Factor pool advance repaid by its job as up to half a unit, and a credit line repaid on time as one", () => {
     const adv = scoreReport(input({ desk: [job({ customer: cust(1), fromPool: (ETH / 100n).toString() })] }));
     expect(adv.counts.advancesRepaid).toBe(1);
-    expect(part(adv, "repayment")).toBe(Math.floor(250 * Math.sqrt(0.5 / 12)));
+    expect(part(adv, "repayment")).toBe(Math.floor(250 * Math.sqrt(0.5 / 6)));
     const line = scoreReport(input({ line: { onTime: 3, late: 0, defaulted: false } }));
-    expect(part(line, "repayment")).toBe(125);
+    expect(part(line, "repayment")).toBe(Math.floor(250 * Math.sqrt(3 / 6)));
   });
 });
 
@@ -152,10 +154,10 @@ describe("feedback from paying clients", () => {
 
   it("counts a paying client's rating once, by what it said last", () => {
     const r = scoreReport(input({ desk: paid, feedback: [fb({ value: "20", at: NOW - 5 * DAY }), fb({ value: "95", index: 2, at: NOW - DAY })] }));
-    expect(part(r, "feedback")).toBe(30);
+    expect(part(r, "feedback")).toBe(50);
     expect(r.counts.payingClients).toBe(1);
     const bad = scoreReport(input({ desk: paid, feedback: [fb({ value: "10" }), fb({ client: cust(2), value: "100" })] }));
-    expect(part(bad, "feedback")).toBe(0); // 30 - 30
+    expect(part(bad, "feedback")).toBe(0); // 50 - 50
   });
 
   it("never counts the agent's own hand, wallets that never paid it, revoked entries, values that are not ratings, or Factor's own job entries", () => {
@@ -172,33 +174,42 @@ describe("feedback from paying clients", () => {
   });
 
   it("reads a paid review written to ERC-8004 as stars, and a score or a statement as no opinion at all", () => {
-    expect(part(scoreReport(input({ desk: paid, feedback: [fb({ tag1: "factorReview", value: "5" })] })), "feedback")).toBe(30);
+    expect(part(scoreReport(input({ desk: paid, feedback: [fb({ tag1: "factorReview", value: "5" })] })), "feedback")).toBe(50);
     expect(part(scoreReport(input({ desk: paid, feedback: [fb({ tag1: "factorReview", value: "2" })] })), "feedback")).toBe(0);
     for (const tag1 of ["factorScore", "priors-score", "credit.statement", "account.statement", "factor"]) expect(scoreReport(input({ desk: paid, feedback: [fb({ tag1, value: "99" })] })).counts.payingClients, tag1).toBe(0);
   });
 
   it("counts a paid review from the customer, and not one marked self-dealing", () => {
     const rv = (o: Partial<ReviewIn>): ReviewIn => ({ job: 1, reviewer: cust(1), stars: 5, at: NOW - DAY, self: null, ...o });
-    expect(part(scoreReport(input({ desk: paid, reviews: [rv({}), rv({ reviewer: cust(2), stars: 3 })] })), "feedback")).toBe(40);
+    expect(part(scoreReport(input({ desk: paid, reviews: [rv({}), rv({ reviewer: cust(2), stars: 3 })] })), "feedback")).toBe(65);
     expect(part(scoreReport(input({ desk: paid, reviews: [rv({ self: "the agent's own wallet" })] })), "feedback")).toBe(0);
   });
 });
 
 describe("time, reliability and the pulls", () => {
-  it("counts each week with counted activity, up to ten", () => {
+  it("counts the days from the first counted activity to the latest, all of it at 90", () => {
     const desk = Array.from({ length: 4 }, (_, i) => job({ customer: cust(1), closedAt: NOW - i * 7 * DAY - DAY }));
-    expect(part(scoreReport(input({ desk })), "time")).toBe(40);
-    // tiny loans make no week: a week needs a loan of $20 held a day
+    expect(part(scoreReport(input({ desk })), "time")).toBe(Math.floor(100 * 21 / 90));
+    const long = Array.from({ length: 4 }, (_, i) => job({ customer: cust(1), closedAt: NOW - i * 40 * DAY - DAY }));
+    expect(part(scoreReport(input({ desk: long })), "time")).toBe(100);
+    // tiny loans make no activity: a loan counts from $10 held a day
     expect(part(scoreReport(input({ loans: Array.from({ length: 20 }, (_, i) => loan({ usd: 6, heldS: 600, at: NOW - i * 7 * DAY - 3 * DAY })) })), "time")).toBe(0);
   });
 
-  it("scores the share on time, in full from ten, and validators that passed its work, never its own", () => {
+  it("scores the share on time, in full from five, and validators that passed its work, never its own", () => {
     const desk = Array.from({ length: 10 }, (_, i) => job({ customer: cust(i), late: i < 2 }));
     expect(scoreReport(input({ desk })).counts).toMatchObject({ onTime: 8, late: 2 });
     expect(part(scoreReport(input({ desk })), "reliability")).toBe(64);
     const V = "0x00000000000000000000000000000000000ba11d";
     const v = scoreReport(input({ validations: [{ validator: V, response: 90, tag: "", at: NOW - DAY }, { validator: OWNER, response: 100, tag: "", at: NOW - DAY }, { validator: cust(5), response: 10, tag: "", at: NOW - DAY }] }));
     expect(part(v, "reliability")).toBe(10);
+  });
+
+  it("counts no loop toward reliability: only a loan of $10 held a day shows the agent repays on time", () => {
+    const loops = Array.from({ length: 200 }, (_, i) => loan({ usd: 7, heldS: 1800, at: NOW - 60 * DAY + i * 3 * 3600 }));
+    expect(part(scoreReport(input({ loans: loops })), "reliability")).toBe(0);
+    const real = Array.from({ length: 5 }, (_, i) => loan({ usd: 20, heldS: 3 * DAY, at: NOW - 200 * DAY + i * 35 * DAY }));
+    expect(part(scoreReport(input({ loans: real })), "reliability")).toBe(80);
   });
 
   it("pulls hard for a default and a missed delivery, whoever the customer was", () => {

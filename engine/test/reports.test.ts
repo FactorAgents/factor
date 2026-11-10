@@ -233,7 +233,8 @@ describe("the reports", () => {
     // each loan was returned 20 minutes after it was taken; times are placed between a span's two ends, so a few may read longer
     expect(looper.flags.find((f: Body) => f.key === "quick-loans").count).toBeGreaterThanOrEqual(30);
     expect(looper.flags.find((f: Body) => f.key === "loop-loans")).toBeTruthy();
-    expect(looper.parts.find((p: Body) => p.key === "repayment").points).toBeLessThan(20);
+    expect(looper.parts.find((p: Body) => p.key === "repayment").points).toBeLessThan(40);
+    expect(looper.parts.find((p: Body) => p.key === "reliability").points).toBe(0);
     const bad = await get(r, `/v1/reports/agent/${ids.defaulter}`);
     expect(bad).toMatchObject({ score: 0, rank: null });
     expect(bad.pulls[0]).toMatchObject({ key: "default", points: -300 });

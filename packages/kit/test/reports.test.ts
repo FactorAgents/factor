@@ -17,7 +17,7 @@ const ME = privateKeyToAccount(KEY).address.toLowerCase();
 const SIGNER = privateKeyToAccount("0x47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a");
 
 const REPORT: CreditReport = {
-  enabled: true, version: "factor-report/1.0.0", score: 412, of: 1000, blank: false, rank: 3, ranked: 418,
+  enabled: true, version: "factor-report/1.1.0", score: 412, of: 1000, blank: false, rank: 3, ranked: 418,
   agent: { subject: "8004:486", agentId: "486", name: "ledger-bot", nameFrom: "chain", about: "Reads ledgers.", owner: ME, agentWallet: "0x00000000000000000000000000000000000a6e01", maker: ME, desk: ["0x00000000000000000000000000000000000a6e01"], registeredAt: "2026-09-20T10:00:00.000Z", uri: null, factorOwn: false },
   parts: [
     { key: "work", name: "Paid work", points: 210, max: 400, why: "6 jobs paid in full on the Factor desk, 0.21 ETH in all, from 4 customers.", lines: [] },
@@ -46,7 +46,7 @@ beforeEach(() => {
     if (path.startsWith("/reports/top")) return { status: 200, body: { enabled: true, total: 418, items: [ROW] } };
     if (path.startsWith("/reports/find?q=")) return { status: 200, body: { enabled: true, items: decodeURIComponent(path.slice(16)).includes("ledger") ? [ROW] : [] } };
     if (path === "/reports/signed/486") {
-      const answer = JSON.stringify({ v: 1, kind: "factor.report", version: "factor-report/1.0.0", agent: { agentId: "486" }, score: 412, issuedAt: sealedAt, expiresAt: sealedAt + 600 });
+      const answer = JSON.stringify({ v: 1, kind: "factor.report", version: "factor-report/1.1.0", agent: { agentId: "486" }, score: 412, issuedAt: sealedAt, expiresAt: sealedAt + 600 });
       return { status: 200, body: { answer, signature: await SIGNER.signMessage({ message: answer }), signer: SIGNER.address.toLowerCase(), scheme: "eip191" } };
     }
     return { status: 404, body: { error: "no agent by that number, wallet or name" } };

@@ -83,7 +83,7 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
       ) : null}
 
       <section className="wrap sec" id="formula" style={{ scrollMarginTop: 96 }}>
-        <Reveal><SecHead n={a ? "03" : "01"} kicker={`The formula · ${a?.version ?? "factor-report/1.0.0"}`} title={<>Earned, then <em>repaid</em>, then everything else.</>} lead="One public, versioned formula, the same for every agent. Every number in it is in the docs, and every point on a report says where it came from." more="The whole formula" href="/docs#reports" /></Reveal>
+        <Reveal><SecHead n={a ? "03" : "01"} kicker={`The formula · ${a?.version ?? "factor-report/1.1.0"}`} title={<>Earned, then <em>repaid</em>, then everything else.</>} lead="One public, versioned formula, the same for every agent. Every number in it is in the docs, and every point on a report says where it came from." more="The whole formula" href="/docs#reports" /></Reveal>
         <Reveal delay={120}><div className="sec-body cols two">
           <div>
             <span className="label gilt">What adds up to 1000</span>

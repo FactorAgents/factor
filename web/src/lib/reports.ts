@@ -65,12 +65,12 @@ export const reportHref = (r: { agentId: string | null; subject: string }): stri
 /** A source as a short mark on a row. */
 export const SOURCE_SHORT: Record<ReportSource, string> = { "factor-desk": "Factor desk", "factor-lines": "Credit line", priors: "Priors loans", "erc8004-reputation": "ERC-8004 feedback", "erc8004-validation": "ERC-8004 checks", "factor-reviews": "Paid reviews", "erc8004-identity": "Identity" };
 
-/** The weights of factor-report/1.0.0, as docs/REPORTS.md has them: for a page drawn before the engine answers. */
+/** The weights of factor-report/1.1.0, as docs/REPORTS.md has them: for a page drawn before the engine answers. */
 export const PARTS = [
-  { key: "work", name: "Paid work", max: 400, line: "Jobs paid on the Factor desk by customers who are not its own hand: their value, how many customers, how many jobs." },
+  { key: "work", name: "Paid work", max: 400, line: "Jobs paid on the Factor desk by customers who are not its own hand: their value (full at 0.05 ETH), how many customers, how many jobs." },
   { key: "repayment", name: "Repayment", max: 250, line: "Factor advances repaid by their jobs, Factor credit lines repaid on time, loans repaid on Priors, each by its size and how long it was held." },
   { key: "feedback", name: "Paying clients' feedback", max: 150, line: "What clients that paid it said: Factor's paid reviews, and ERC-8004 entries from wallets that paid it. Each client once." },
-  { key: "time", name: "Time active", max: 100, line: "The weeks with paid work, a repayment that counts, or a paying client's word." },
+  { key: "time", name: "Time active", max: 100, line: "The days from its first paid work, repayment that counts or paying client's word to its latest, all of it at 90." },
   { key: "reliability", name: "Reliability", max: 100, line: "The share delivered and repaid on time, and work a validator passed on ERC-8004." },
 ] as const;
 export const PULLS = [
