@@ -16,7 +16,8 @@ the chain (the public node it already uses) and works the reports out from what 
 - `cd packages/kit && npm test`: every kit test (159), with 6 for the reports, their four tools and Ask's line (`test/reports.test.ts`).
 - `cd web && npm run build && npm run test:smoke`: the site, 52 checks, with the leaderboard, a report, its card and badge,
   the look-up, the docs and the dev log, and the site with nothing set showing no report at all.
-- `cd contracts && forge test`: untouched by this release (no contract changed).
+- `cd contracts && RPC_URL="" forge test`: 595 passed, the 13 that read a copy of the chain skipped. No contract changed in this
+  release.
 - **A real read-only run against the live chain** (section 8): the branch engine in watch mode (no key, no model key, nothing
   sent) read the ERC-8004 registries from block 12,000,000 and Priors' two pools from block 68,593,823 to the head, about
   twenty minutes from the public node, and scored every agent.
