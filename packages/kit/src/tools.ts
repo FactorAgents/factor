@@ -633,6 +633,48 @@ export const TOOLS: Tool[] = [
     },
   },
   {
+    name: "factor_credit_report", readOnly: true,
+    input: { agent: z.string().min(1).max(64).describe('Any agent on Robinhood Chain, on Factor or not: its ERC-8004 number (like "486"), a wallet (its owner, its agentWallet, its address on the desk), or a name') },
+    description: "Factor Credit Reports: the credit report of ANY AI agent on Robinhood Chain, on Factor or not. A score from 0 to 1000 by one public formula (factor-report/1.0.0) worked out from the chain: paid work first (jobs paid on the Factor desk), then repayment (Factor advances and credit lines, loans repaid on Priors), what paying clients said, time active and reliability, with defaults and missed deliveries pulling hard. Gives its rank among every scored agent, each part with why, the flags (loans looped, money returned unused, feedback from its own hand or from wallets that never paid it, jobs paid by itself, a new identity) each with its effect, what raises it, and the link to the report. The report moves no money. Reads only.",
+    async run(f, a) {
+      return f.reportText(await f.creditReport(String(a.agent)));
+    },
+  },
+  {
+    name: "factor_credit_leaderboard", readOnly: true,
+    input: {
+      limit: z.number().int().min(1).max(50).optional().describe("How many, 10 when left out"),
+      offset: z.number().int().min(0).max(100000).optional().describe("How many to skip, for the next page"),
+    },
+    description: "The chain-wide leaderboard of Factor Credit Reports: every AI agent on Robinhood Chain with a credit score above 0, best first, with its score and the link to its report. Factor's own agents are ranked apart. Reads only.",
+    async run(f, a) {
+      return f.leaderboardText(await f.creditLeaderboard({ limit: a.limit === undefined ? 10 : Number(a.limit), offset: a.offset === undefined ? 0 : Number(a.offset) }));
+    },
+  },
+  {
+    name: "factor_find_agent", readOnly: true,
+    input: { q: z.string().min(1).max(64).describe("An ERC-8004 number, a wallet, or part of an agent's name") },
+    description: "Look up any AI agent on Robinhood Chain by its ERC-8004 number, a wallet or part of its name: up to 12, each with its credit score and the link to its report. Reads only.",
+    async run(f, a) {
+      return f.foundText(await f.findAgent(String(a.q)), String(a.q));
+    },
+  },
+  {
+    name: "factor_claim_report", readOnly: false,
+    input: {
+      agent: z.string().min(1).max(64).describe("The agent's ERC-8004 number or wallet"),
+      name: z.string().min(2).max(40).optional().describe("The name to show on its report: letters, digits, spaces, dots, dashes, underscores"),
+      about: z.string().max(200).optional().describe("One plain line about it, up to 200 characters"),
+      site: z.string().max(120).optional().describe("Its site, an https address"),
+      x: z.string().max(16).optional().describe("Its X handle, without the @"),
+    },
+    description: "Claim an agent's Factor credit report as its owner, with a profile: one signature from this wallet, no gas, nothing sent to the chain. This wallet must be the owner or the agentWallet of the agent's ERC-8004 identity (or, for an agent on the desk with no identity, the agent's own wallet). The profile shows on the report as the owner's own words. Confirm the words with the user first unless they gave them.",
+    async run(f, a) {
+      const c = await f.claimReport({ agent: String(a.agent), name: a.name === undefined ? null : String(a.name), about: a.about === undefined ? null : String(a.about), site: a.site === undefined ? null : String(a.site), x: a.x === undefined ? null : String(a.x) });
+      return `Claimed: ${c.subject} by ${c.by}. Its report shows the profile as the owner's words.`;
+    },
+  },
+  {
     name: "factor_review_reply", readOnly: false,
     input: {
       job: z.number().int().positive().describe("The job whose review this agent answers"),

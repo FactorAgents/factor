@@ -48,6 +48,7 @@ import { ask, type Asked } from "./ask.js";
 import { copilot, copilotText, type Copiloted } from "./copilot.js";
 import { reviewOf, reviews, reviewsText, reviewText, reviewTyped, replyTyped, sendReview, type AgentReviews, type JobReview, type Review } from "./reviews.js";
 import { agentBuilder, builderRecord, builderRecordText, heyLinkMessage, sendHeyLink, type AgentBuilder, type HeyLookup } from "./hey.js";
+import { claimMessage, creditLeaderboard, creditReport, findAgent, foundText, leaderboardText, reportText, reportsAbout, sendClaim, signedReport, type CreditReport, type ReportRow, type SignedReport } from "./reports.js";
 
 import { encodePayLink, LINK_BRIEF_MOST, readPayLink, tokenOf, verifyRecord, x402PaymentHeader, X402_NETWORK, X402_SCHEME, type AgentRecord, type PayLink, type X402Requirements, payLinkMessage } from "./pay.js";
 
@@ -78,6 +79,8 @@ export type { Copiloted, CopilotAction, CopilotCall, CopilotReply } from "./copi
 export { REVIEW_MOST_CHARS, REVIEW_TAG, REVIEW_TYPES, replyTyped, reviewOf, reviews, reviewsText, reviewText, reviewTyped } from "./reviews.js";
 export type { AgentReviews, JobReview, Review, ReviewStanding } from "./reviews.js";
 export { agentBuilder, builderRecord, builderRecordText, heyLinkMessage } from "./hey.js";
+export { claimMessage, creditLeaderboard, creditReport, findAgent, foundText, leaderboardText, reportText, reportsAbout, signedReport } from "./reports.js";
+export type { CreditReport, ReportRow, ReportSource, SignedReport } from "./reports.js";
 export type { AgentBuilder, BuilderRecord, HeyFacts, HeyLookup, NotOnHey } from "./hey.js";
 export type { Asked, AskAgent, AskStage } from "./ask.js";
 export type { AgentAnswer, AnswerEnvelope, CheckedAgent, CheckedAgents, ConnectHire, ConnectTicket, EmbedPart, HireLinkOptions, SealedAnswer } from "./everywhere.js";
@@ -786,6 +789,62 @@ export class Factor {
     const at = await this.clock();
     const signature = await this.sign(heyLinkMessage({ agent, project: given, at }));
     return sendHeyLink({ agent, by, project: given, at, signature }, { api: this.api });
+  }
+
+  // ---------- Factor Credit Reports (docs/REPORTS.md) ----------
+
+  /**
+   * Any agent's credit report on Robinhood Chain, on Factor or not: by its ERC-8004 number, a wallet, or a name. The score
+   * from 0 to 1000 by one public formula, its parts, what pulled it down, its flags with their effect, the points each
+   * source brought, a timeline and what raises it. Reads only; the report moves no money.
+   */
+  creditReport(agent: string | number): Promise<CreditReport> {
+    return creditReport(agent, { api: this.api });
+  }
+
+  /** Every scored agent on the chain, best first; `own: true` for Factor's own agents, which are ranked apart. */
+  creditLeaderboard(o: { limit?: number; offset?: number; own?: boolean } = {}): Promise<{ items: ReportRow[]; total: number }> {
+    return creditLeaderboard({ ...o, api: this.api });
+  }
+
+  /** Look up any agent: up to 12 for a number, a wallet or part of a name. */
+  findAgent(q: string): Promise<ReportRow[]> {
+    return findAgent(q, { api: this.api });
+  }
+
+  /** The report in short, signed by Factor and checked here against `signer` (or the signer Factor publishes). */
+  signedReport(agent: string | number, o: { signer?: string } = {}): Promise<{ data: Record<string, unknown>; sealed: SignedReport }> {
+    return signedReport(agent, { api: this.api, ...o });
+  }
+
+  /** A report in words, with its link. */
+  reportText(r: CreditReport): string {
+    return reportText(r);
+  }
+
+  /** Agents found by a look-up, in words, with their links. */
+  foundText(rows: ReportRow[], q: string): string {
+    return foundText(rows, q, { api: this.api });
+  }
+
+  /** The leaderboard in words. */
+  leaderboardText(t: { items: ReportRow[]; total: number }): string {
+    return leaderboardText(t, { api: this.api });
+  }
+
+  /**
+   * Claim an agent's credit report, as its owner: one signature, no gas. This wallet must be the agent's ERC-8004
+   * identity's owner or its agentWallet (or, for an agent on the desk with no identity, the agent's own wallet). The
+   * profile (a name, a line about it, a site, an X handle without the @) shows on its report as the owner's own words.
+   */
+  async claimReport(o: { agent: string | number; name?: string | null; about?: string | null; site?: string | null; x?: string | null }): Promise<{ ok: true; subject: string; by: string }> {
+    const by = this.mine();
+    const r = await creditReport(o.agent, { api: this.api });
+    const subject = r.agent.subject;
+    const fields = { name: o.name?.trim() || null, about: o.about?.replace(/\s+/g, " ").trim() || null, site: o.site?.trim() || null, x: o.x?.trim().replace(/^@/, "") || null };
+    const at = await this.clock();
+    const signature = await this.sign(claimMessage({ subject, by, ...fields, at }));
+    return sendClaim({ agent: subject.replace(/^8004:/, ""), by, ...fields, at, signature }, { api: this.api });
   }
 
   /** The key that signs a review or a reply: the wallet's own. Through a Factor account, the site's job page signs instead. */
