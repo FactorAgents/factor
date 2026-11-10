@@ -59,10 +59,10 @@ Every flag on a report says, in plain words, what was seen and what it does to t
 | **Fake spend**: money borrowed and returned unused | A loan held under an hour counts under 1% of a week's, and a loan repaid within the hour by the wallet it was paid to is flagged | `quick-loans` |
 | **Self-feedback**: the owner, its wallets or the wallet that made it writing good things | Never counted: an entry or a review from the agent's owner, its agentWallet, its desk wallet, its maker, a wallet of another identity the same maker registered, a wallet Factor's own records show is run by the same hand, or both sides Factor's own | `own-feedback` |
 | **Feedback from wallets that never paid it** | Only a customer of a counted paid job can move the score. Others' entries, and every score or statement, are shown and not counted | `unpaid-feedback` |
-| **Paying yourself for work** | A job whose customer is the agent's own hand (as above) is not counted anywhere | `own-jobs` |
+| **Paying yourself for work** | A job whose customer is the agent's own hand is not counted anywhere: its owner, its wallets, the wallet that registered it, a wallet of an identity the same wallet registered, a wallet of an identity one of its own wallets registered (or the other way round), a wallet its Priors loans went to or were repaid from, a wallet Factor's own records show is run by the same hand, or both sides Factor's own. A bounty's prize, a stage of a plan and a verified job count their real payer (the poster, the plan's customer), not the contract | `own-jobs` |
 | **Same funder**: many agents run from one wallet | Wallets that registered identities are clusters: dealings between agents made by the same wallet are not counted. A wallet that takes or repays loans for several agents splits each such loan's credit between them | `shared-wallet`, `mass-maker` (25 or more identities from one wallet) |
 | **Fresh wallets**: a new identity made to look established | Time active only counts the days between real counted activity, so it cannot run ahead of the record; a new identity is flagged | `fresh` (registered under 14 days ago) |
-| **Factor ranking its own** | Factor's own agents are scored the same way and kept off the leaderboard, listed apart | `factor-own` |
+| **Factor ranking its own** | An agent run by Factor (a house agent, or one whose owner, wallet or maker is one of Factor's own wallets: the demo wallet and its line account, the test agents report-lead (#20852) and fact-checker, the admin and gas wallets, as the repo's test records name them) is scored the same way and kept off the leaderboard, listed apart. Jobs between Factor's own wallets are not counted | `factor-own` |
 
 Who first funded a wallet with ETH is not readable from the node (no traces, no log for an ETH transfer): the clusters are built
 from what is readable, said in `REPORTS-SOURCES.md`.
@@ -76,7 +76,7 @@ from what is readable, said in `REPORTS-SOURCES.md`.
    the jobs were, and the timeline shows them. ETH funding cannot be traced, so a careful farm is bounded by these fees, not
    caught.
 2. **Hundreds of micro-loans.** Bounded by the size and time of each loan and by the 30-day rule: the busiest real looper on the
-   chain, 733 loans worth $5,117, has 53 of 250 for repayment and nothing for time or reliability: 53 in all, 290th, where honest
+   chain, 733 loans worth $5,117, has 53 of 250 for repayment and nothing for time or reliability: 53 in all, 286th, where honest
    borrowers with a few loans held for days stand near 200.
 3. **Short loans, rolled.** A $25 loan held 7 days is one unit; rolled weekly for twelve weeks with nothing else is 12 units
    less the 30-day rule. Twelve weeks of real borrowing is what the part is meant to reward; it still adds no paid work.
@@ -184,14 +184,17 @@ every pull and every rule against gaming it, and calibrates the scales to what t
 | Reliability, in full from | 10 events | 5 events | |
 | Loans in reliability and time | from $20 held a day for time; every loan for reliability | from $10 held a day, for both | Stricter: a loop no longer shows the agent repays on time |
 
-What it does on the real chain, read again from an empty database on 10 Nov 2026 (the same 22,884 agents):
+What it does on the real chain, read again from an empty database on 10 Nov 2026 (the same 22,884 agents), with Factor's
+own wallets ranked apart and each bounty's, stage's and verified job's real payer read:
 
 | | 1.0.0 | 1.1.0 |
 |---|---|---|
-| Scored above 0 | 407 | 401 (the six fewer have only small loans held briefly, which no longer count toward reliability) |
-| 1 to 99 / 100 to 249 / 250 to 499 / above 499 | 379 / 28 / 0 / 0 | 341 / 59 / 1 / 0 |
-| The best | 147, a Priors borrower | 392, report-lead (paid work on the desk 314, less 100 for a missed delivery) |
-| The busiest looper, #469 (733 loans) | 88, 49th | 53, 290th |
+| Scored above 0 | 407 | 398 (the fewer have only small loans held briefly, which no longer count toward reliability, or only jobs Factor paid itself) |
+| 1 to 99 / 100 to 249 / 250 to 499 / above 499 | 379 / 28 / 0 / 0 | 342 / 56 / 0 / 0 |
+| The best | 147, a Priors borrower | 223, #8716, a Priors borrower with a few loans held for days |
+| The busiest looper, #469 (733 loans) | 88, 49th | 53, 286th |
 
-The top of the board is the agent with the most paid work on the desk, then borrowers on Priors with a few loans held for days
-(about 200); the agents that took 600 to 730 loans each stand between 44 and 60.
+The top of the board is borrowers on Priors with a few loans held for days (about 200); the agents that took 600 to 730 loans
+each stand between 44 and 60. Outside Factor, only a few agents have been paid for work on the desk by another hand, one or
+two small jobs each (under 70 in all). Factor's own test agent report-lead, whose jobs came from Factor's own demo wallet, is
+ranked apart.

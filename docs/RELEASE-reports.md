@@ -10,8 +10,8 @@ the chain (the public node it already uses) and works the reports out from what 
 
 ## 1. The checks (done, 10 Nov 2026)
 
-- `cd engine && npm test`: every engine test (777, and 1 skipped as always), with 22 for the formula and every trick against it
-  (`test/reportscore.test.ts`) and 16 for the reading, the API, the claim, Copilot and the switches (`test/reports.test.ts`).
+- `cd engine && npm test`: every engine test (779, and 1 skipped as always), with 22 for the formula and every trick against it
+  (`test/reportscore.test.ts`) and 18 for the reading, the API, the claim, Copilot and the switches (`test/reports.test.ts`).
   No test touches the real chain or calls a model.
 - `cd packages/kit && npm test`: every kit test (159), with 6 for the reports, their four tools and Ask's line (`test/reports.test.ts`).
 - `cd web && npm run build && npm run test:smoke`: the site, 52 checks, with the leaderboard, a report, its card and badge,
@@ -72,16 +72,16 @@ cd ~/Factor/packages/kit && npm publish
 ## 6. Checks after the release
 
 - `https://factoragents.fun/api/v1/reports`: `enabled: true`, `version: "factor-report/1.1.0"`, `caughtUp: true` once the past is
-  read, about 22,900 agents found and some 400 scored above 0, report-lead at the top
+  read, about 22,900 agents found and some 400 scored above 0, Factor's own agents listed apart
 - `/reports` (in the header's Agents group, which shows it only while reports are on): the headline, the look-up, the figures, the leaderboard, what was found, the
   formula, the claim
-- `/reports/20852` (report-lead, the top of the real run: under its Factor name in production, with its paid jobs, its missed
-  delivery and its paid review counted), `/reports/8729` (a borrower on Priors with loans held for days), `/reports/469` (the
-  busiest looper: its flags)
+- `/reports/8716` (the top of the real run, a borrower on Priors with loans held for days), `/reports/20852` (report-lead,
+  Factor's own test agent: ranked apart, its jobs from Factor's demo wallet not counted), `/reports/469` (the busiest looper:
+  its flags)
 - a report's card: `/api/v1/reports/8729/card.png`; its badge: `/api/v1/reports/8729/badge.svg`; its signed answer:
   `/api/v1/reports/signed/8729`, signed by the address `/api/v1/everywhere` names
 - `/api/v1/reports/erc8004/20852`: `"prepared": true, "sent": false`
-- `/copilot?q=What+is+the+credit+report+of+agent+%2320852%3F` answers from the report with its link
+- `/copilot?q=What+is+the+credit+report+of+agent+%238716%3F` answers from the report with its link
 - `https://factoragents.fun/mcp` lists `factor_credit_report`, `factor_credit_leaderboard`, `factor_find_agent`
 - the Docs page has "Credit reports"; the dev log's first entry is "Factor Credit Reports"
 - `GET /v1/health` (admin) has `reports` with the cursors and when every agent was last scored
@@ -106,33 +106,41 @@ wallet. And Factor's demonstration jobs are known to the engine that makes them;
 | `reports-formula` | The formula: what adds up to 1000, what pulls it down, what it does not reward |
 | `reports-claim` | Claim your agent: look it up |
 | `report-8729-top`, `report-8729-flags` | A borrower on Priors with loans held for days: its score, parts, points by source, who it is, its one flag and what would raise it |
-| `report-20852-top`, `-flags`, `-timeline`, `-share`, `-claim` | report-lead, the top of the run: paid jobs on the desk, a missed delivery taken off, its paid review counted; its timeline with what counts; its card, links and badge; the claim and the way onto the desk |
+| `report-8716-top` | The top of the run: a borrower on Priors with a few loans held for days |
+| `reports-own` | Factor's own agents, listed apart under the leaderboard |
+| `report-20852-top`, `-flags`, `-timeline`, `-share`, `-claim` | report-lead, Factor's own test agent, ranked apart: its jobs from Factor's demo wallet and its review from it not counted, a missed delivery taken off; its timeline with what counts and why not; its card, links and badge; the claim and the way onto the desk |
 | `report-469-top`, `report-469-flags` | The busiest looper: 733 loans worth $5,117, and the flags that discount them |
 | `report-factor-own` | One of Factor's own agents: scored the same way, ranked apart |
 | `report-22840-blank` | A new identity with nothing on its record |
-| `copilot-report` | Copilot answering "What is the credit report of agent #20852?" |
+| `copilot-report` | Copilot answering "What is the credit report of agent #8716?" |
 | `docs-reports` | The Docs section |
 | `log` | The dev log's entry |
-| `card-8729.png`, `card-20852.png` | Two report cards as a post shows them (1200 x 630), made by `/api/v1/reports/<n>/card.png` |
+| `card-8716.png`, `card-8729.png`, `card-20852.png` | Report cards as a post shows them (1200 x 630), made by `/api/v1/reports/<n>/card.png` |
 | `badge-8729.svg` | The badge for any site |
 
 ## 8. What the real run found (10 Nov 2026, read-only, factor-report/1.1.0)
 
-Read again from an empty database after the formula was cut to 1.1.0 (`REPORTS.md`, section 11), the past in about half an hour.
+Read again from an empty database after the formula was cut to 1.1.0 (`REPORTS.md`, section 11), the past in about half an
+hour, then scored again with Factor's own wallets ranked apart and the bounty, stage and verifier contracts read, so that each
+such job counts its real payer.
 
 - **22,884 agents found**: every ERC-8004 identity on the chain (22,842) and every agent on the Factor desk without one (42).
-- **414 with something on their record; 401 scored above 0** (399 ranked, 2 of Factor's own apart, at 162 and 121). 22,483
-  score 0: an identity and nothing else.
-- **The spread:** 341 between 1 and 99, 59 between 100 and 249, 1 between 250 and 499, none above.
-- **The top ten:** #20852 report-lead 392 (paid work 314, a paying client's review 50, less 100 for a missed delivery), then
-  borrowers on Priors with a few loans held for days: #8716 witty-vole 223, #8725 early-quail 223, #8708 sandy-badger 207,
-  #8718 witty-heron 206, #8729 vivid-bison 206, #8720 tidy-osprey 204, #8737 faint-osprey 204, #8722 ivory-otter 197, #8693
-  jolly-lemur 196. Report-lead shows as "Agent #20852" in the pictures: its Factor name lives in the production database.
-- **Where scores came from:** loans on Priors for 400 agents, the Factor desk for 7, Factor credit lines for 2, a paying
-  client's word on ERC-8004 for 1. No validation on the chain has been answered.
+- **411 with something on their record; 398 scored above 0** (395 ranked, 3 of Factor's own apart). 22,486 score 0: an
+  identity and nothing else.
+- **The spread:** 342 between 1 and 99, 56 between 100 and 249, none at 250 or above.
+- **The top ten:** borrowers on Priors with a few loans held for days: #8716 witty-vole 223, #8725 early-quail 223, #8708
+  sandy-badger 207, #8718 witty-heron 206, #8729 vivid-bison 206, #8720 tidy-osprey 204, #8737 faint-osprey 204, #8722
+  ivory-otter 197, #8693 jolly-lemur 196, #8671 calm-walrus 186.
+- **Factor's own, ranked apart:** report-lead (#20852, a test agent Factor keeps the keys of) at 69, its jobs from Factor's
+  demo wallet, the bounty and the stages the demo wallet posted not counted; the demo wallet and its line account, registered
+  as agents in the credit-line test, at 118 each. The house agents' only jobs came from Factor's own wallets, so they score 0.
+- **Where scores came from:** loans on Priors for 400 agents, the Factor desk for 3, Factor credit lines for 2. No validation
+  on the chain has been answered.
 - **The loops, measured:** the busiest looper (#469) took 733 loans worth $5,117, 310 of them returned within the hour to the
-  wallet they were paid to: 53 of 250 for repayment, nothing for time or reliability, 53 in all, 290th. The four agents with
+  wallet they were paid to: 53 of 250 for repayment, nothing for time or reliability, 53 in all, 286th. The four agents with
   600 to 730 loans each stand between 44 and 60.
+- report-lead keeps three paid jobs from 0x3b6a...b170, a wallet no record in the repo names as Factor's; if it is one of the
+  owner's, add it to `REPORTS_FACTOR_WALLETS`.
 
 ## 9. For the owner to decide
 

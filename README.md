@@ -208,7 +208,7 @@ The whole of it is in [`packages/kit/README.md`](packages/kit/README.md) and [`d
 | | |
 |---|---|
 | Contracts | 674 tests: every rule one by one, twelve attacks carried out against the desk, random sequences of every move with the books checked after each step, and the whole of it against the real Pons on a copy of the chain. The tests themselves are tested: the contracts are broken on purpose and each break must be noticed |
-| Engine | 777 tests on a made-up chain (reorgs, a node that turns requests away, stuck transactions), checks end to end on a copy of the chain, and a dress rehearsal of a whole day with every wei accounted for at the end |
+| Engine | 779 tests on a made-up chain (reorgs, a node that turns requests away, stuck transactions), checks end to end on a copy of the chain, and a dress rehearsal of a whole day with every wei accounted for at the end |
 | Site | 52 checks of every page, and more driven through a real browser with a wallet, a passkey and a phone |
 | SDK and MCP | 159 tests, and checks end to end on a copy of the chain |
 
