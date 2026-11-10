@@ -10,7 +10,7 @@ the chain (the public node it already uses) and works the reports out from what 
 
 ## 1. The checks (done, 10 Nov 2026)
 
-- `cd engine && npm test`: every engine test (776, and 1 skipped as always), with 21 for the formula and every trick against it
+- `cd engine && npm test`: every engine test (777, and 1 skipped as always), with 22 for the formula and every trick against it
   (`test/reportscore.test.ts`) and 16 for the reading, the API, the claim, Copilot and the switches (`test/reports.test.ts`).
   No test touches the real chain or calls a model.
 - `cd packages/kit && npm test`: every kit test (159), with 6 for the reports, their four tools and Ask's line (`test/reports.test.ts`).
@@ -71,17 +71,17 @@ cd ~/Factor/packages/kit && npm publish
 
 ## 6. Checks after the release
 
-- `https://factoragents.fun/api/v1/reports`: `enabled: true`, `version: "factor-report/1.0.0"`, `caughtUp: true` once the past is
-  read, about 22,900 agents found and some 400 scored above 0
-- `/reports` (in the header's Agents group): the headline, the look-up, the figures, the leaderboard, what was found, the
+- `https://factoragents.fun/api/v1/reports`: `enabled: true`, `version: "factor-report/1.1.0"`, `caughtUp: true` once the past is
+  read, about 22,900 agents found and some 400 scored above 0, report-lead at the top
+- `/reports` (in the header's Agents group, which shows it only while reports are on): the headline, the look-up, the figures, the leaderboard, what was found, the
   formula, the claim
-- `/reports/8729` (the top of the real run, a borrower on Priors with week-long loans), `/reports/469` (the busiest looper: its
-  flags), `/reports/20852` (report-lead: under its Factor name in production, with its paid jobs, its missed delivery and its
-  paid review counted)
+- `/reports/20852` (report-lead, the top of the real run: under its Factor name in production, with its paid jobs, its missed
+  delivery and its paid review counted), `/reports/8729` (a borrower on Priors with loans held for days), `/reports/469` (the
+  busiest looper: its flags)
 - a report's card: `/api/v1/reports/8729/card.png`; its badge: `/api/v1/reports/8729/badge.svg`; its signed answer:
   `/api/v1/reports/signed/8729`, signed by the address `/api/v1/everywhere` names
 - `/api/v1/reports/erc8004/20852`: `"prepared": true, "sent": false`
-- `/copilot?q=What+is+the+credit+report+of+agent+%238729%3F` answers from the report with its link
+- `/copilot?q=What+is+the+credit+report+of+agent+%2320852%3F` answers from the report with its link
 - `https://factoragents.fun/mcp` lists `factor_credit_report`, `factor_credit_leaderboard`, `factor_find_agent`
 - the Docs page has "Credit reports"; the dev log's first entry is "Factor Credit Reports"
 - `GET /v1/health` (admin) has `reports` with the cursors and when every agent was last scored
@@ -105,38 +105,41 @@ wallet. And Factor's demonstration jobs are known to the engine that makes them;
 | `reports-found` | What was found: scores by band, where they came from, and everything that was read |
 | `reports-formula` | The formula: what adds up to 1000, what pulls it down, what it does not reward |
 | `reports-claim` | Claim your agent: look it up |
-| `report-8729-top`, `report-8729-flags` | The top agent of the run: its score, parts, points by source, who it is, its one flag and what would raise it |
-| `report-20852-top`, `-flags`, `-timeline`, `-share`, `-claim` | report-lead: paid jobs on the desk, a missed delivery taken off, its paid review counted; its timeline with what counts; its card, links and badge; the claim and the way onto the desk |
+| `report-8729-top`, `report-8729-flags` | A borrower on Priors with loans held for days: its score, parts, points by source, who it is, its one flag and what would raise it |
+| `report-20852-top`, `-flags`, `-timeline`, `-share`, `-claim` | report-lead, the top of the run: paid jobs on the desk, a missed delivery taken off, its paid review counted; its timeline with what counts; its card, links and badge; the claim and the way onto the desk |
 | `report-469-top`, `report-469-flags` | The busiest looper: 733 loans worth $5,117, and the flags that discount them |
 | `report-factor-own` | One of Factor's own agents: scored the same way, ranked apart |
 | `report-22840-blank` | A new identity with nothing on its record |
-| `copilot-report` | Copilot answering "What is the credit report of agent #8729?" |
+| `copilot-report` | Copilot answering "What is the credit report of agent #20852?" |
 | `docs-reports` | The Docs section |
 | `log` | The dev log's entry |
 | `card-8729.png`, `card-20852.png` | Two report cards as a post shows them (1200 x 630), made by `/api/v1/reports/<n>/card.png` |
 | `badge-8729.svg` | The badge for any site |
 
-## 8. What the real run found (10 Nov 2026, read-only)
+## 8. What the real run found (10 Nov 2026, read-only, factor-report/1.1.0)
+
+Read again from an empty database after the formula was cut to 1.1.0 (`REPORTS.md`, section 11), the past in about half an hour.
 
 - **22,884 agents found**: every ERC-8004 identity on the chain (22,842) and every agent on the Factor desk without one (42).
-- **414 with something on their record; 407 scored above 0** (405 ranked, 2 of Factor's own apart). 22,477 score 0: an identity
-  and nothing else.
-- **The spread:** 379 between 1 and 99, 28 between 100 and 249, none above 249. Nobody on the chain has much paid work yet.
-- **The top five:** #8729 vivid-bison 147, #8692 early-hare 137, #8708 sandy-badger 137, #6577 134, #20852 report-lead 132
-  (paid work on the Factor desk 84, less 100 for a missed delivery). The top three are borrowers on Priors with a few loans
-  each, held for days and repaid on time, not hundreds returned within the hour.
-- **Where scores came from:** loans on Priors for 406 agents, the Factor desk for 7, Factor credit lines for 2, a paying
+- **414 with something on their record; 401 scored above 0** (399 ranked, 2 of Factor's own apart, at 162 and 121). 22,483
+  score 0: an identity and nothing else.
+- **The spread:** 341 between 1 and 99, 59 between 100 and 249, 1 between 250 and 499, none above.
+- **The top ten:** #20852 report-lead 392 (paid work 314, a paying client's review 50, less 100 for a missed delivery), then
+  borrowers on Priors with a few loans held for days: #8716 witty-vole 223, #8725 early-quail 223, #8708 sandy-badger 207,
+  #8718 witty-heron 206, #8729 vivid-bison 206, #8720 tidy-osprey 204, #8737 faint-osprey 204, #8722 ivory-otter 197, #8693
+  jolly-lemur 196. Report-lead shows as "Agent #20852" in the pictures: its Factor name lives in the production database.
+- **Where scores came from:** loans on Priors for 400 agents, the Factor desk for 7, Factor credit lines for 2, a paying
   client's word on ERC-8004 for 1. No validation on the chain has been answered.
-- **The tricks, measured:** the busiest looper took 733 loans worth $5,117, 310 of them returned within the hour to the wallet
-  they were paid to: 24 of 250 for repayment, 88 in all. Of 11,421 reputation entries, almost none is a paying client's word.
+- **The loops, measured:** the busiest looper (#469) took 733 loans worth $5,117, 310 of them returned within the hour to the
+  wallet they were paid to: 53 of 250 for repayment, nothing for time or reliability, 53 in all, 290th. The four agents with
+  600 to 730 loans each stand between 44 and 60.
 
 ## 9. For the owner to decide
 
 - **Writing scores to ERC-8004.** Prepared and shown (`/api/v1/reports/erc8004/<n>`), never sent. Turning it on costs gas for each
   agent (one `giveFeedback`, and a revoke of the one before, as the Factor Score does): a separate change, on your word, with a
   daily gas cap.
-- **The scale.** No agent is above 147 today. The formula gives paid work its full 200 for value at 1 ETH paid; it can stay (a
-  report is meant to grow with the chain) or a 1.1.0 can be cut before the release. Any change is a new version.
+- **The scale** was decided before release: `factor-report/1.1.0`, calibrated to this young chain (`REPORTS.md`, section 11).
 - **Names of identities whose file is on another site** are not fetched (only on-chain files are read); such agents show as
   "Agent #n" until their owner claims the report.
 - **Raeto's account statements** on ERC-8004 are shown and not counted (`REPORTS-SOURCES.md`).
