@@ -282,8 +282,17 @@ describe("Factor's own, and one operator on both sides", () => {
     expect(rep.counts.deskJobsPaid).toBe(2); // cust(1)'s job is Factor paying Factor; the owner's own job never counted
     expect((await get(r, "/v1/reports/top")).items.some((x: Body) => x.agentId === String(ids.agent))).toBe(false);
     expect((await get(r, "/v1/reports/top?own=1")).items.some((x: Body) => x.agentId === String(ids.agent))).toBe(true);
+    // a Factor wallet hiring someone else's agent is not a paying client either
+    const other = await reading(chain, { REPORTS_FACTOR_WALLETS: cust(2) });
+    await catchUp(other);
+    const o = await get(other, `/v1/reports/agent/${ids.agent}`);
+    expect(o.agent.factorOwn).toBe(false);
+    expect(o.counts.deskJobsPaid).toBe(2);
+    expect(o.timeline.find((t: Body) => t.kind === "paid" && t.why?.includes("Factor's own test wallets"))).toBeTruthy();
     // the demo wallet and report-lead the repo names are Factor's own without being told
-    expect(readReports({}).factorWallets).toEqual(expect.arrayContaining(["0x50a9bf50c3337d5db03efdf89deb0f5a0b908f17", "0x74325c9644973d9c7a293bdfc970a573a38419e1"]));
+    expect(readReports({}).factorWallets).toEqual(expect.arrayContaining(["0x50a9bf50c3337d5db03efdf89deb0f5a0b908f17", "0x74325c9644973d9c7a293bdfc970a573a38419e1", "0x3b6a28461a953647af240a6bed96eb42b046b170"]));
+    // anvil's public test key is never one of Factor's: anyone can sign with it
+    expect(readReports({}).factorWallets).not.toContain("0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266");
   });
 
   it("does not count a job from a wallet the agent's own wallet registered an identity for, or from a wallet that funds its loans", async () => {

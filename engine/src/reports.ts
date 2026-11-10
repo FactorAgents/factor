@@ -52,18 +52,41 @@ export const PRIORS_POOLS: { address: string; version: 1 | 2; from: number }[] =
 /** Priors' contracts that repay a loan out of the agent's own money (autopay, the income router, the keeper's helper). */
 export const PRIORS_HELPERS = ["0x72b510af4e66e5960ab9b975e0bdcf80239e83a0", "0x496744225ed59a5215dd4d1a551a6b6350f58ace", "0x3ba233d2ac1c6233c5fa954c2daad83fccfe5372"];
 /**
- * Factor's own wallets that are not house agents, as the repo's own records name them (docs/*-mainnet-test.txt,
- * contracts/broadcast): the demo wallet that hires in Factor's real test runs, its credit line account, the test agents
- * report-lead (ERC-8004 #20852) and fact-checker that Factor keeps the keys of, the admin wallet and the gas wallet. An
- * agent run from any of them is Factor's own: scored the same way and ranked apart. REPORTS_FACTOR_WALLETS adds more.
+ * Factor's own wallets that are not house agents: the wallets of Factor's own test runs and demonstrations, as the repo's test
+ * records name them (docs/*-mainnet-test.txt, contracts/broadcast) and as the keys of Factor's demo runs hold them (the
+ * demo folders' keys/*.json and the customer wallets of the firms and sub-jobs demonstrations). An agent run from any of them
+ * is Factor's own: scored the same way and ranked apart, and none of them is ever a paying client of another. Anvil's public
+ * test key, which some fork runs used, is left out: anyone can sign with it. REPORTS_FACTOR_WALLETS adds more.
  */
 export const FACTOR_WALLETS = [
+  // the live test runs
   "0x50a9bf50c3337d5db03efdf89deb0f5a0b908f17", // the demo wallet
   "0x4af5cbd7baad4ae2f09d45fd9b55bd49214b2c5f", // the demo wallet's line account
-  "0x74325c9644973d9c7a293bdfc970a573a38419e1", // report-lead, a test agent
-  "0x81027d545af18b118da212221e76eb9925bbfb39", // fact-checker, a test agent
+  "0x74325c9644973d9c7a293bdfc970a573a38419e1", // report-lead, a test agent (the sub-jobs demonstration's lead)
+  "0x81027d545af18b118da212221e76eb9925bbfb39", // fact-checker, a test agent (the sub-jobs demonstration's helper)
+  "0x3b6a28461a953647af240a6bed96eb42b046b170", // the firms and sub-jobs demonstrations' customer
+  "0xa733ee43ea13fd8e8777a003f49df37ff07a2d0f", // charts, the firms demonstration's member
+  "0x363fce131ebeca451f2c0da118eb50f6ee2e83f3", // the Pay with Factor demonstration's agent (a passkey account)
+  "0xf68614c35672e3265558f514bb818d5eef4e9ad9", // the Pay with Factor demonstration's buyer (a passkey account)
   "0xafa96b2f796968da543b77e9d1a04f80321acd04", // the admin wallet
   "0xe4314ba4dae5f31582ec23812d5f40287f1efde0", // the gas wallet
+  // the demonstrations' other keys
+  "0xd6cc5411b79f7f784668b76fef16380bbfe28457", // ERC-8004 demonstration, agent
+  "0xf1a0acefeb7d000b76c6d050c23bc22869254c1f", // ERC-8004 demonstration, customer
+  "0xf041bdd73d9587ec661997438452e90f59598a1e", // auto-apply demonstration, customer
+  "0xcbb95864e57fe5915da83e40955762cd33f98d4d", // auto-apply demonstration, earlier customer
+  "0xaec822869e4afca6929f70d19542375215dcb90b", // bids demonstration, crumb
+  "0xb2d54e78300a7213d897f777c6370a71ebd31c92", // bids demonstration, customer
+  "0x8a1dedb2c17b12e6885af43fc6f7231fa37906b6", // bids demonstration, earlier customer
+  "0xc3a2875b8f52f3913e267d30374879c21927de41", // bids demonstration, proof
+  "0x400e0af71e304ecfdca85ef878ce0d71b03a9a25", // open jobs demonstration, customer
+  "0x49e73f2f56227e8cfe47f96583c451e9daa5313d", // open jobs demonstration, page-smith
+  "0x25eb219ca1fa4219dea81f4afe23b06228831169", // open jobs demonstration, plain-reader
+  "0xfa1ebd0b478e674b6813d7c1dac643bcfdcdf77d", // open jobs demonstration, red-pen
+  "0x0d771ba1458ea283bd27d09624e11e011cabc42f", // verified owners demonstration, customer
+  "0x29933fa3b3652c30a73e6b610e1e04b77b9d7ddf", // verified owners demonstration, earlier customer
+  "0xc965bcf580d87be5c75fa3a8a94d52e231996b40", // verified owners demonstration, loaf
+  "0xa67a5d42f2765bee03607557645a47b261535c56", // verified owners demonstration, quick
 ];
 
 /** The first block with a log of the ERC-8004 registries on Robinhood Chain (found by reading back: nothing before it). */
@@ -696,7 +719,8 @@ export class Reports {
       // the wallet its loans went to or were repaid from: whoever funds it
       if (funding?.has(a)) return "a wallet that took or repaid its loans";
       for (const dsk of desk) if (this.d.sameHand(dsk, a)) return "run by the same hand, as Factor's own records show";
-      if (factorOwn && factorWallet(a)) return "both are Factor's own";
+      // Factor's own wallets pay in Factor's own tests and demonstrations: never a paying client of anyone
+      if (factorWallet(a)) return factorOwn ? "another of Factor's own wallets" : "one of Factor's own test wallets";
       return null;
     };
     const db = this.d.db;
@@ -818,8 +842,10 @@ export class Reports {
   /** The leaderboard: every scored agent, best first. Factor's own agents are listed apart (own=1), never ranked. */
   top(limit: number, offset: number, own = false): { items: ReportRow[]; total: number } {
     const db = this.d.db;
-    const total = (db.q("SELECT COUNT(*) AS n FROM report_scores WHERE factor_own = ? AND score > 0").get(own ? 1 : 0) as { n: number }).n;
-    const rows = db.q("SELECT * FROM report_scores WHERE factor_own = ? AND score > 0 ORDER BY score DESC, subject LIMIT ? OFFSET ?").all(own ? 1 : 0, limit, offset) as ScoreRow[];
+    // Factor's own are listed whole, a score of 0 among them: every agent Factor runs, apart from everyone else's
+    const where = own ? "factor_own = 1" : "factor_own = 0 AND score > 0";
+    const total = (db.q(`SELECT COUNT(*) AS n FROM report_scores WHERE ${where}`).get() as { n: number }).n;
+    const rows = db.q(`SELECT * FROM report_scores WHERE ${where} ORDER BY score DESC, subject LIMIT ? OFFSET ?`).all(limit, offset) as ScoreRow[];
     return { total, items: rows.map((r, i) => this.row(r, own ? null : offset + i + 1)) };
   }
 
