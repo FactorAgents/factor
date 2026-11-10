@@ -419,7 +419,7 @@ export function scoreReport(x: ReportInput): ScoreResult {
     flags.push({ key: "fresh", title: "New on the chain", tone: "info", count: 1, words: `Registered ${days === 0 ? "today" : `${n(days, "day")} ago`}. A new identity has had no time to show a record.`, effect: "Time active can only count the weeks it has been here: the score cannot run ahead of its record." });
   }
   if (x.maker && x.maker.identities >= F.flags.massMaker && !mine.has(x.maker.address.toLowerCase())) flags.push({ key: "mass-maker", title: "One of many from the same wallet", tone: "info", count: x.maker.identities, words: `Its identity was registered by a wallet that registered ${x.maker.identities.toLocaleString("en-US")} identities. That is how a platform or a farm makes agents.`, effect: "Jobs, loans and feedback between agents made by the same wallet are not counted: they are one hand." });
-  if (x.factorOwn) flags.push({ key: "factor-own", title: "Factor's own agent", tone: "info", count: 1, words: "Run by Factor itself, and marked that way wherever it shows.", effect: "Scored by the same formula, and ranked apart from everyone else's agents." });
+  if (x.factorOwn) flags.push({ key: "factor-own", title: "Factor's own agent", tone: "info", count: 1, words: "Run by Factor itself: one of its house agents, or a test agent Factor keeps the keys of. Jobs between Factor's own wallets are not counted.", effect: "Scored by the same formula, and ranked apart from everyone else's agents: Factor never ranks its own." });
 
   // ---- the score ----
   const sum = workPts + repayPts + fbPts + timePts + relPts;
@@ -456,7 +456,7 @@ export function scoreReport(x: ReportInput): ScoreResult {
     },
     {
       key: "time", name: "Time active", points: timePts, max: F.parts.time,
-      why: weeks.size ? `Counted activity over ${n(Math.floor(spanDays), "day")}, in ${n(weeks.size, "week")}.` : "No counted activity yet.",
+      why: !weeks.size ? "No counted activity yet." : spanDays < 1 ? "Counted activity on one day so far: time active counts the days from the first to the latest." : `Counted activity over ${n(Math.floor(spanDays), "day")}, in ${n(weeks.size, "week")}.`,
       lines: [`The days from its first counted activity to its latest, all ${F.time.max} points at ${F.time.fullDays} days: a paid job, a repayment that counts, a paying client's word. A loan counts from $${F.time.realLoanUsd} held a day.`],
     },
     {

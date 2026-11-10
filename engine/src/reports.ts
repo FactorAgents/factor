@@ -51,6 +51,21 @@ export const PRIORS_POOLS: { address: string; version: 1 | 2; from: number }[] =
 ];
 /** Priors' contracts that repay a loan out of the agent's own money (autopay, the income router, the keeper's helper). */
 export const PRIORS_HELPERS = ["0x72b510af4e66e5960ab9b975e0bdcf80239e83a0", "0x496744225ed59a5215dd4d1a551a6b6350f58ace", "0x3ba233d2ac1c6233c5fa954c2daad83fccfe5372"];
+/**
+ * Factor's own wallets that are not house agents, as the repo's own records name them (docs/*-mainnet-test.txt,
+ * contracts/broadcast): the demo wallet that hires in Factor's real test runs, its credit line account, the test agents
+ * report-lead (ERC-8004 #20852) and fact-checker that Factor keeps the keys of, the admin wallet and the gas wallet. An
+ * agent run from any of them is Factor's own: scored the same way and ranked apart. REPORTS_FACTOR_WALLETS adds more.
+ */
+export const FACTOR_WALLETS = [
+  "0x50a9bf50c3337d5db03efdf89deb0f5a0b908f17", // the demo wallet
+  "0x4af5cbd7baad4ae2f09d45fd9b55bd49214b2c5f", // the demo wallet's line account
+  "0x74325c9644973d9c7a293bdfc970a573a38419e1", // report-lead, a test agent
+  "0x81027d545af18b118da212221e76eb9925bbfb39", // fact-checker, a test agent
+  "0xafa96b2f796968da543b77e9d1a04f80321acd04", // the admin wallet
+  "0xe4314ba4dae5f31582ec23812d5f40287f1efde0", // the gas wallet
+];
+
 /** The first block with a log of the ERC-8004 registries on Robinhood Chain (found by reading back: nothing before it). */
 export const ERC8004_FROM = 12_000_000;
 /** The tag an ERC-8004 entry of a report would carry, were one ever written (it is not: see erc8004Prepared). */
@@ -89,6 +104,8 @@ export interface ReportsConfig {
   priors: boolean;
   pools: { address: string; version: 1 | 2; from: number }[];
   helpers: string[];
+  /** Factor's own wallets that are not house agents (FACTOR_WALLETS, and REPORTS_FACTOR_WALLETS) */
+  factorWallets: string[];
   /** REPORTS_SPAN: blocks in one log query (100,000: the node's reliable size) */
   span: number;
   /** REPORTS_PER_PASS: log queries in one pass at most */
@@ -123,12 +140,18 @@ export function readReports(env: Env, problems: string[] = []): ReportsConfig {
     if (got.every((m) => m)) pools = got.map((m) => ({ version: Number(m![1]) as 1 | 2, address: m![2]!.toLowerCase(), from: Number(m![3]) }));
     else problems.push(`REPORTS_PRIORS_POOLS must be version:address@block with commas between, like 2:0x2812...@71702460: it is "${rawPools}"`);
   }
+  const factorWallets = [...FACTOR_WALLETS];
+  for (const raw of (env.REPORTS_FACTOR_WALLETS ?? "").split(",").map((x) => x.trim()).filter(Boolean)) {
+    const a = normalizeAddress(raw);
+    if (a) factorWallets.push(a);
+    else problems.push(`REPORTS_FACTOR_WALLETS holds something that is not an address: "${raw}"`);
+  }
   return {
     enabled: sw("REPORTS", false),
     identity: IDENTITY_REGISTRY, reputation: REPUTATION_REGISTRY, validation: VALIDATION_REGISTRY,
     fromBlock: whole("REPORTS_FROM_BLOCK", ERC8004_FROM, 0, 10_000_000_000),
     priors: sw("REPORTS_PRIORS", true),
-    pools, helpers: PRIORS_HELPERS,
+    pools, helpers: PRIORS_HELPERS, factorWallets,
     span: whole("REPORTS_SPAN", 100_000, 10, 1_000_000),
     perPass: whole("REPORTS_PER_PASS", 40, 1, 2000),
     everyS: whole("REPORTS_EVERY_S", 60, 5, 86_400),
@@ -300,7 +323,7 @@ export interface ReportsDeps {
   signer: () => AnswerSigner | null;
 }
 
-interface Shared { makers: Map<string, number>; walletMakers: Map<string, Set<string>>; recipients: Map<string, number>; payers: Map<string, number>; deskReg: Map<string, number> }
+interface Shared { makers: Map<string, number>; walletMakers: Map<string, Set<string>>; recipients: Map<string, number>; payers: Map<string, number>; deskReg: Map<string, number>; loanWallets: Map<number, Set<string>> }
 interface Cursor { start: number; down: number | null; up: number | null; top: number | null }
 
 const iso = (s: number | null | undefined): string | null => (s ? new Date(s * 1000).toISOString() : null);
@@ -635,7 +658,15 @@ export class Reports {
     const recipients = new Map<string, number>(), payers = new Map<string, number>();
     for (const r of db.q("SELECT recipient AS w, COUNT(DISTINCT agent_id) AS n FROM report_loans WHERE recipient IS NOT NULL GROUP BY recipient").all() as { w: string; n: number }[]) recipients.set(r.w, r.n);
     for (const r of db.q("SELECT payer AS w, COUNT(DISTINCT agent_id) AS n FROM report_loans WHERE payer IS NOT NULL GROUP BY payer").all() as { w: string; n: number }[]) payers.set(r.w, r.n);
-    const v = { makers, walletMakers, recipients, payers, deskReg };
+    // the wallets each identity's loans went to and were repaid from: who funds it, where the chain shows it
+    const loanWallets = new Map<number, Set<string>>();
+    for (const r of db.q("SELECT DISTINCT agent_id, recipient AS w FROM report_loans WHERE recipient IS NOT NULL UNION SELECT DISTINCT agent_id, payer AS w FROM report_loans WHERE payer IS NOT NULL").all() as { agent_id: number; w: string }[]) {
+      if (this.cfg.helpers.includes(r.w)) continue;
+      const s = loanWallets.get(r.agent_id) ?? new Set<string>();
+      s.add(r.w);
+      loanWallets.set(r.agent_id, s);
+    }
+    const v = { makers, walletMakers, recipients, payers, deskReg, loanWallets };
     this.sharedKept = { at: this.d.now(), v };
     return v;
   }
@@ -647,7 +678,10 @@ export class Reports {
     const ident = id !== null ? this.identity(id) : null;
     const wallets = [...new Set([ident?.owner, ident?.wallet, ...desk].filter((x): x is string => !!x))];
     const maker = ident?.maker ?? null;
-    const factorOwn = desk.some((a) => this.d.factorOwn(a));
+    // Factor's own: a house agent, or an agent run from one of Factor's own wallets (its owner, its wallet, its maker)
+    const factorWallet = (a: string): boolean => this.d.factorOwn(a) || this.cfg.factorWallets.includes(a) || a === this.d.factorWriter();
+    const factorOwn = [...desk, ident?.owner, ident?.wallet, maker].some((a) => !!a && factorWallet(a));
+    const funding = id !== null ? sh.loanWallets.get(id) : undefined;
     const own = (address: string): string | null => {
       const a = address.toLowerCase();
       if (ident?.owner === a) return "its owner";
@@ -655,9 +689,14 @@ export class Reports {
       if (desk.includes(a)) return "its own wallet on the desk";
       if (maker && a === maker) return "the wallet that registered it";
       if (maker && sh.walletMakers.get(a)?.has(maker)) return "a wallet of another agent registered by the same wallet";
+      // the same operator, either way round: a wallet of an identity one of its wallets registered, or the wallet that registered one of its wallets' identities
+      for (const w of wallets) if (sh.walletMakers.get(a)?.has(w)) return "a wallet of an identity this agent's own wallet registered";
+      for (const w of wallets) if (sh.walletMakers.get(w)?.has(a)) return "the wallet that registered an identity of this agent's wallets";
       for (const w of wallets) if (sh.walletMakers.get(a) && sh.walletMakers.get(w) && [...sh.walletMakers.get(a)!].some((m) => sh.walletMakers.get(w)!.has(m))) return "a wallet of another agent made by the same wallet";
+      // the wallet its loans went to or were repaid from: whoever funds it
+      if (funding?.has(a)) return "a wallet that took or repaid its loans";
       for (const dsk of desk) if (this.d.sameHand(dsk, a)) return "run by the same hand, as Factor's own records show";
-      if (factorOwn && this.d.factorOwn(a)) return "both are Factor's own";
+      if (factorOwn && factorWallet(a)) return "both are Factor's own";
       return null;
     };
     const db = this.d.db;

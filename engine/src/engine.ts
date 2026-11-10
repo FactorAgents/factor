@@ -694,11 +694,20 @@ export class Engine {
       key: () => this.env.HEY_API_KEY, ...(this.opts.heyFetch ? { fetch: this.opts.heyFetch } : {}),
     });
     // Factor Credit Reports: every agent on the chain, read from the ERC-8004 registries, Priors' loans and the desk
+    const payerOf = (j: { id: number; customer: string }): string => {
+      const b = this.bounties?.reading() ? this.bounties.ofJob(j.id) : null;
+      if (b) return b.poster;
+      const m = this.milestones?.reading() ? this.milestones.ofJob(j.id) : null;
+      if (m) return m.plan.customer;
+      const vc = this.verifiers?.reading() ? this.verifiers.ofJob(j.id) : null;
+      return vc ? vc.customer : j.customer;
+    };
     this.reports = new Reports(c.reports, {
       db, chain: this.chain, chainId: c.chainId, explorer: c.explorer, now: this.now, nowS, log: this.log,
       deskAgents: () => (db.q("SELECT address, registered_at FROM desk_agents").all() as { address: string; registered_at: number }[]).map((r) => ({ address: r.address, registeredAt: r.registered_at })),
       deskJobs: (agent) => (db.q("SELECT j.*, (d.job_id IS NOT NULL) AS demo FROM desk_jobs j LEFT JOIN (SELECT DISTINCT job_id FROM demo_jobs WHERE job_id IS NOT NULL) d ON d.job_id = j.id WHERE j.agent = ?").all(agent) as (import("./desk.js").JobRow & { demo: number })[]).map((j) => ({
-        id: j.id, customer: j.customer, price: j.price, fee: j.fee, state: j.state, lockedAt: j.locked_at, closedAt: j.closed_at, deliveredAt: j.delivered_at, late: !!j.late, fromPool: j.from_pool, early: j.early, demo: !!j.demo,
+        // the wallet that really paid: a bounty's poster, a plan's customer, a verified job's customer, as reviews read them
+        id: j.id, customer: payerOf(j), price: j.price, fee: j.fee, state: j.state, lockedAt: j.locked_at, closedAt: j.closed_at, deliveredAt: j.delivered_at, late: !!j.late, fromPool: j.from_pool, early: j.early, demo: !!j.demo,
       })),
       lineOf: (agent) => (this.lines?.reading() ? this.lines.lineMarks(agent) : null),
       reviewsOf: (agent) => (this.reviews?.on() ? (db.q("SELECT job_id, reviewer, stars, at, self FROM reviews WHERE agent = ?").all(agent) as { job_id: number; reviewer: string; stars: number; at: number; self: string | null }[]).map((r) => ({ job: r.job_id, reviewer: r.reviewer, stars: r.stars, at: r.at, self: r.self })) : []),

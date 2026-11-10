@@ -270,6 +270,47 @@ describe("the reports", () => {
   });
 });
 
+describe("Factor's own, and one operator on both sides", () => {
+  it("ranks an agent run from one of Factor's own wallets apart, and does not count jobs between Factor's own wallets", async () => {
+    const { chain, ids } = world();
+    const r = await reading(chain, { REPORTS_FACTOR_WALLETS: `${AGENT},${cust(1)}` });
+    await catchUp(r);
+    const rep = await get(r, `/v1/reports/agent/${ids.agent}`);
+    expect(rep.agent.factorOwn).toBe(true);
+    expect(rep.rank).toBeNull();
+    expect(rep.flags.find((f: Body) => f.key === "factor-own").words).toMatch(/test agent Factor keeps the keys of/);
+    expect(rep.counts.deskJobsPaid).toBe(2); // cust(1)'s job is Factor paying Factor; the owner's own job never counted
+    expect((await get(r, "/v1/reports/top")).items.some((x: Body) => x.agentId === String(ids.agent))).toBe(false);
+    expect((await get(r, "/v1/reports/top?own=1")).items.some((x: Body) => x.agentId === String(ids.agent))).toBe(true);
+    // the demo wallet and report-lead the repo names are Factor's own without being told
+    expect(readReports({}).factorWallets).toEqual(expect.arrayContaining(["0x50a9bf50c3337d5db03efdf89deb0f5a0b908f17", "0x74325c9644973d9c7a293bdfc970a573a38419e1"]));
+  });
+
+  it("does not count a job from a wallet the agent's own wallet registered an identity for, or from a wallet that funds its loans", async () => {
+    const { chain, ids } = world();
+    // an identity registered by the agent's own wallet, whose agentWallet then hires the agent: one operator on both sides
+    chain.identity(AGENT, cust(7));
+    const a = chain.lock(cust(7), AGENT, ETH / 20n);
+    chain.deliver(a);
+    chain.accept(a);
+    // a wallet its loans were paid to, hiring it
+    push(chain, POOL, priorsAbi as Abi, "Borrowed", { loanId: 500n, agentId: BigInt(ids.agent), sponsorId: 1n, principal: 20_000_000n, fee: 1000n, dueAt: BigInt(chain.time + 30 * 86400), to: cust(8) });
+    const b = chain.lock(cust(8), AGENT, ETH / 20n);
+    chain.deliver(b);
+    chain.accept(b);
+    chain.mine(3, 60);
+    const r = await reading(chain);
+    await catchUp(r);
+    await r.engine.watchOnce();
+    await r.engine.reports!.pass();
+    const rep = await get(r, `/v1/reports/agent/${ids.agent}`);
+    expect(rep.counts.deskJobsPaid).toBe(3);
+    expect(rep.flags.find((f: Body) => f.key === "own-jobs")).toMatchObject({ count: 3 });
+    const why = rep.timeline.filter((t: Body) => t.kind === "paid" && !t.counted).map((t: Body) => t.why);
+    expect(why).toEqual(expect.arrayContaining([expect.stringMatching(/an identity this agent's own wallet registered/), expect.stringMatching(/took or repaid its loans/), expect.stringMatching(/its owner/)]));
+  });
+});
+
 describe("the assistants", () => {
   it("Copilot answers a credit report question about any agent on the chain, from the report, with its link", async () => {
     const { chain, ids } = world();
