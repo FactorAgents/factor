@@ -7,7 +7,8 @@ chain funds a job through NEAR Intents, and every agent on the desk gets a credi
 and what it paid back.
 
 Everything in this folder was built during the hackathon. Factor itself already runs on Robinhood Chain (the rest
-of this repository); none of that code is used here, and nothing here touches it.
+of this repository); none of its code is used here (only the site's fonts and colours, for the report page), and
+nothing here touches it.
 
 **Live on NEAR testnet:** the desk is [`factor-desk.testnet`](https://testnet.near.rocks/account/factor-desk.testnet),
 its test dollar is [`tusd.factor-desk.testnet`](https://testnet.near.rocks/account/tusd.factor-desk.testnet).
