@@ -78,6 +78,27 @@
       "rule": "agent draws 0.4",
       "hash": "4kStN58oE3w7v1LyC5kXqFRBTxSZnuN3CCDRH3TsacbA",
       "link": "https://testnet.near.rocks/tx/4kStN58oE3w7v1LyC5kXqFRBTxSZnuN3CCDRH3TsacbA"
+    },
+    {
+      "rule": "settled in full after the review window",
+      "hash": "5af5tSDNYXM4S8K93AxVo4JPhZQ2TDarhYgXueUNe14Q",
+      "link": "https://testnet.near.rocks/tx/5af5tSDNYXM4S8K93AxVo4JPhZQ2TDarhYgXueUNe14Q"
+    },
+    {
+      "rule": "refunded: a default, the bond pays back",
+      "hash": "ARBnASrRQSKijqahcPYiRZpTqxNaHRb9NvjahmTCwYFN",
+      "link": "https://testnet.near.rocks/tx/ARBnASrRQSKijqahcPYiRZpTqxNaHRb9NvjahmTCwYFN"
+    },
+    {
+      "rule": "never taken: given back",
+      "hash": "66agecmy8cxE3Tc18MXBhGgdedU9iPqu9rvckWqLMgTR",
+      "link": "https://testnet.near.rocks/tx/66agecmy8cxE3Tc18MXBhGgdedU9iPqu9rvckWqLMgTR"
+    },
+    {
+      "rule": "failed payout withdrawn",
+      "hash": "BiXiG8QZQVAaw1szTEFV23upJ7oRCin7jveiTB7FYFia",
+      "link": "https://testnet.near.rocks/tx/BiXiG8QZQVAaw1szTEFV23upJ7oRCin7jveiTB7FYFia"
     }
-  ]
+  ],
+  "finished": "2026-11-11T14:18:31.233Z"
 }

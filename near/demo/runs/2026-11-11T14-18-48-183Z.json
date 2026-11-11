@@ -1,0 +1,99 @@
+{
+  "network": "testnet",
+  "desk": "factor-desk.testnet",
+  "customer": "factor-client.testnet",
+  "agent": "factor-scout.testnet",
+  "checker": "factor-checker.testnet",
+  "compute": "compute.factor-desk.testnet",
+  "started": "2026-11-11T14:18:48.183Z",
+  "steps": [
+    {
+      "name": "customer locks job",
+      "hash": "8iEk6jAy2g8LAJFLoQ8iN6sKUAk5SQQWxtJ9qFDVrn8Q",
+      "link": "https://testnet.near.rocks/tx/8iEk6jAy2g8LAJFLoQ8iN6sKUAk5SQQWxtJ9qFDVrn8Q",
+      "job": "12"
+    },
+    {
+      "name": "agent takes job",
+      "hash": "3AYWAGossP8gJoaY7k9QSWQsThjb25cBPd25nVPGL9gK",
+      "link": "https://testnet.near.rocks/tx/3AYWAGossP8gJoaY7k9QSWQsThjb25cBPd25nVPGL9gK"
+    },
+    {
+      "name": "agent draws advance",
+      "hash": "ActHJCo11FrE1W95eU8wsstubuCttTnP39qnyAscT6cD",
+      "link": "https://testnet.near.rocks/tx/ActHJCo11FrE1W95eU8wsstubuCttTnP39qnyAscT6cD",
+      "amount": "300000000000000000000000"
+    },
+    {
+      "name": "agent pays for compute",
+      "hash": "9Tg9QjL2SKMrdRceVENoXkHdvR5yP99JQUfiKB4EqNBv",
+      "link": "https://testnet.near.rocks/tx/9Tg9QjL2SKMrdRceVENoXkHdvR5yP99JQUfiKB4EqNBv",
+      "amount": "300000000000000000000000"
+    },
+    {
+      "name": "agent hires checker",
+      "hash": "4CiKGE9iURvtS5SoxswQdkMkFoZmAmowzuNy1DaK28Ao",
+      "link": "https://testnet.near.rocks/tx/4CiKGE9iURvtS5SoxswQdkMkFoZmAmowzuNy1DaK28Ao",
+      "job": "13",
+      "amount": "400000000000000000000000"
+    },
+    {
+      "name": "checker takes sub-job",
+      "hash": "35w8mJB9xkJKtL4jmMs5GJtNb3WQaGG1uqhQHeEy3S7j",
+      "link": "https://testnet.near.rocks/tx/35w8mJB9xkJKtL4jmMs5GJtNb3WQaGG1uqhQHeEy3S7j"
+    },
+    {
+      "name": "checker delivers",
+      "hash": "7yxzu2izzZ9uGMURdnpiXa3t46d7JyGtDPXYg3cxDdsF",
+      "link": "https://testnet.near.rocks/tx/7yxzu2izzZ9uGMURdnpiXa3t46d7JyGtDPXYg3cxDdsF"
+    },
+    {
+      "name": "agent pays checker",
+      "hash": "CmZceub26QD8HfZfH3uH8CGDutxKw18gwfVr4sqrwGKT",
+      "link": "https://testnet.near.rocks/tx/CmZceub26QD8HfZfH3uH8CGDutxKw18gwfVr4sqrwGKT"
+    },
+    {
+      "name": "agent delivers",
+      "hash": "3jmiw2pc7sTc4z3iHngeikqdRuhjUaKv5heJaHgFCNXM",
+      "link": "https://testnet.near.rocks/tx/3jmiw2pc7sTc4z3iHngeikqdRuhjUaKv5heJaHgFCNXM"
+    },
+    {
+      "name": "customer accepts",
+      "hash": "BUNAdHXnzUe893fMd3RXwhhBZYCt1bo6UapYfTUCHwxC",
+      "link": "https://testnet.near.rocks/tx/BUNAdHXnzUe893fMd3RXwhhBZYCt1bo6UapYfTUCHwxC",
+      "settlement": {
+        "id": "12",
+        "agent": "factor-scout.testnet",
+        "gross": "2000000000000000000000000",
+        "advance_settled": "300000000000000000000000",
+        "sub_jobs": "400000000000000000000000",
+        "fee": "40000000000000000000000",
+        "to_agent": "1260000000000000000000000",
+        "returned": "0"
+      }
+    }
+  ],
+  "negotiation": {
+    "ask": "500000000000000000000000",
+    "counter": "400000000000000000000000",
+    "why": "the job can spend 1 NEAR before delivery; 0.3 went to compute and 0.3 stays for a second pass, so the check is worth 0.4",
+    "accepted": true
+  },
+  "receipts": [
+    {
+      "what": "compute for the draft",
+      "from": "compute.factor-desk.testnet",
+      "price": "0.3",
+      "check": "draft returned",
+      "tx": "9Tg9QjL2SKMrdRceVENoXkHdvR5yP99JQUfiKB4EqNBv"
+    },
+    {
+      "what": "claim check (sub-job)",
+      "from": "factor-checker.testnet",
+      "price": "0.4",
+      "check": "matches fingerprint, all sourced",
+      "tx": "CmZceub26QD8HfZfH3uH8CGDutxKw18gwfVr4sqrwGKT"
+    }
+  ],
+  "finished": "2026-11-11T14:19:19.186Z"
+}

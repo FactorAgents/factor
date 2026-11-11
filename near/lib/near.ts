@@ -12,9 +12,10 @@ import { Account, JsonRpcProvider } from "near-api-js";
 
 export const NETWORK = (process.env.NEAR_NETWORK || "testnet") as "testnet" | "mainnet";
 
+// FastNear's free RPC answers a sent transaction in about two seconds; NEAR's own is the fallback for reads.
 const RPCS: Record<string, string[]> = {
-  testnet: ["https://rpc.testnet.near.org", "https://test.rpc.fastnear.com"],
-  mainnet: ["https://rpc.mainnet.near.org", "https://free.rpc.fastnear.com"],
+  testnet: ["https://test.rpc.fastnear.com", "https://rpc.testnet.near.org"],
+  mainnet: ["https://free.rpc.fastnear.com", "https://rpc.mainnet.near.org"],
 };
 export const RPC_URLS = process.env.NEAR_RPC ? [process.env.NEAR_RPC] : RPCS[NETWORK];
 // NEAR Rocks (by FastNear) opens for people and for scripts alike; NearBlocks shows the same transactions.
@@ -89,7 +90,8 @@ export async function rpc<T = any>(method: string, params: unknown): Promise<T> 
 export async function view<T = any>(contract: string, method: string, args: object = {}): Promise<T> {
   const r = await rpc<{ result?: number[]; error?: string }>("query", {
     request_type: "call_function",
-    finality: "final",
+    // optimistic: a read right after a transaction sees it (final lags two or three blocks)
+    finality: "optimistic",
     account_id: contract,
     method_name: method,
     args_base64: Buffer.from(JSON.stringify(args)).toString("base64"),

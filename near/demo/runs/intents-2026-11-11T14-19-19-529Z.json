@@ -1,0 +1,126 @@
+{
+  "network": "testnet",
+  "desk": "factor-desk.testnet",
+  "started": "2026-11-11T14:19:19.529Z",
+  "quote": {
+    "request": {
+      "dry": true,
+      "swapType": "EXACT_OUTPUT",
+      "slippageTolerance": 100,
+      "originAsset": "nep141:base-0x833589fcd6edb6e08f4c7c32d4f71b54bda02913.omft.near",
+      "depositType": "ORIGIN_CHAIN",
+      "destinationAsset": "nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
+      "amount": "25000000",
+      "refundTo": "0x2527D02599Ba641c19FEa793cD0F167589a0f10D",
+      "refundType": "ORIGIN_CHAIN",
+      "recipient": "wrap.near",
+      "recipientType": "DESTINATION_CHAIN",
+      "deadline": "2026-11-11T14:49:20.634Z",
+      "customRecipientMsg": "{\"customer\":\"factor-client.testnet\",\"agent\":\"factor-scout.testnet\",\"due_ms\":\"1794410359531\",\"allow_advance\":true,\"brief\":\"137fe5ba54daea884f8ee40339cfa429fb5a9da5a7cfd494165b1f8c1333d947\",\"note\":\"intents:44c4501f4c2aaefe\"}"
+    },
+    "response": {
+      "quote": {
+        "amountIn": "25254542",
+        "amountInFormatted": "25.254542",
+        "amountInUsd": "25.243682546940",
+        "minAmountIn": "25001996",
+        "amountOut": "25000000",
+        "amountOutFormatted": "25.0",
+        "amountOutUsd": "24.989250000000",
+        "minAmountOut": "25000000",
+        "timeEstimate": 35,
+        "refundFee": "2400",
+        "withdrawFee": "0"
+      },
+      "quoteRequest": {
+        "dry": true,
+        "depositMode": "SIMPLE",
+        "swapType": "EXACT_OUTPUT",
+        "slippageTolerance": 100,
+        "originAsset": "nep141:base-0x833589fcd6edb6e08f4c7c32d4f71b54bda02913.omft.near",
+        "depositType": "ORIGIN_CHAIN",
+        "destinationAsset": "nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
+        "amount": "25000000",
+        "refundTo": "0x2527D02599Ba641c19FEa793cD0F167589a0f10D",
+        "refundType": "ORIGIN_CHAIN",
+        "recipient": "wrap.near",
+        "customRecipientMsg": "{\"customer\":\"factor-client.testnet\",\"agent\":\"factor-scout.testnet\",\"due_ms\":\"1794410359531\",\"allow_advance\":true,\"brief\":\"137fe5ba54daea884f8ee40339cfa429fb5a9da5a7cfd494165b1f8c1333d947\",\"note\":\"intents:44c4501f4c2aaefe\"}",
+        "recipientType": "DESTINATION_CHAIN",
+        "deadline": "2026-11-11T14:49:20.634Z",
+        "confidentiality": "public",
+        "quoteWaitingTimeMs": 0,
+        "insured": false,
+        "appFees": [
+          {
+            "recipient": "5880ad2b362620fadf759cbceb1cd5737ce8c6ed7fb8e9942881e6731f9247dd",
+            "fee": 1
+          }
+        ]
+      },
+      "signature": "ed25519:38x3eLhSRohVsgpKgpDGCFMcPoDVmzy5HeDcx5UKAwdgLc7udChgZEfAmberpy1QEoLmnwFx45YGfv65VGk6r3rK",
+      "timestamp": "2026-11-11T14:19:20.744Z",
+      "correlationId": "0cd4f82f-c0e6-48fc-b260-ff8ee9582d64"
+    }
+  },
+  "mint": "EVEyd9MzsR1dXLFtpRWJFP9qKiMginXpVmrmKSSqGvTq",
+  "delivery": {
+    "hash": "9e5N9Bis9AeUwDsEt1qBKCru74LvkTo8zz1DBiFA79hw",
+    "link": "https://testnet.near.rocks/tx/9e5N9Bis9AeUwDsEt1qBKCru74LvkTo8zz1DBiFA79hw"
+  },
+  "job": {
+    "id": 14,
+    "customer": "factor-client.testnet",
+    "payer": "intents-standin.factor-desk.testnet",
+    "agent": "factor-scout.testnet",
+    "token": "tusd.factor-desk.testnet",
+    "price": "25000000",
+    "advanced": "0",
+    "reserved": "0",
+    "allow_advance": true,
+    "parent": null,
+    "depth": 0,
+    "children": [],
+    "brief": "137fe5ba54daea884f8ee40339cfa429fb5a9da5a7cfd494165b1f8c1333d947",
+    "proof": null,
+    "note": "intents:44c4501f4c2aaefe",
+    "status": "Open",
+    "created_ms": "1794406766595",
+    "due_ms": "1794410359531",
+    "accepted_ms": null,
+    "delivered_ms": null,
+    "closed_ms": null,
+    "paid_agent": "0",
+    "fee": "0",
+    "returned": "0",
+    "slashed": "0"
+  },
+  "job_txs": [
+    {
+      "hash": "7UrXdHYAQ6qYAQ2JDxLi2PVnioZJ5pi1HErs93DZ7pGw",
+      "link": "https://testnet.near.rocks/tx/7UrXdHYAQ6qYAQ2JDxLi2PVnioZJ5pi1HErs93DZ7pGw"
+    },
+    {
+      "hash": "2TyDxa8oU76WGHWDVBwJqb5ZQGJwwiKutD6Wutvr8jq2",
+      "link": "https://testnet.near.rocks/tx/2TyDxa8oU76WGHWDVBwJqb5ZQGJwwiKutD6Wutvr8jq2"
+    },
+    {
+      "hash": "9gGprYj71StnahwrCzeWYB2R4t7ipGeTkS5z8NRJMvz2",
+      "link": "https://testnet.near.rocks/tx/9gGprYj71StnahwrCzeWYB2R4t7ipGeTkS5z8NRJMvz2"
+    },
+    {
+      "hash": "3W4BnFg6D9Y4heXyJSz2Fudwzuphm9piirk7yCK5Z8Ry",
+      "link": "https://testnet.near.rocks/tx/3W4BnFg6D9Y4heXyJSz2Fudwzuphm9piirk7yCK5Z8Ry"
+    }
+  ],
+  "settlement": {
+    "id": "14",
+    "agent": "factor-scout.testnet",
+    "gross": "25000000",
+    "advance_settled": "5000000",
+    "sub_jobs": "0",
+    "fee": "500000",
+    "to_agent": "19500000",
+    "returned": "0"
+  },
+  "finished": "2026-11-11T14:19:38.725Z"
+}

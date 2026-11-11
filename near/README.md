@@ -11,6 +11,11 @@ of this repository); none of that code is used here, and nothing here touches it
 
 **Live on NEAR testnet:** the desk is [`factor-desk.testnet`](https://testnet.near.rocks/account/factor-desk.testnet),
 its test dollar is [`tusd.factor-desk.testnet`](https://testnet.near.rocks/account/tusd.factor-desk.testnet).
+The desk's code hash on testnet is `4oooeUUv1ZvVk1YX2L1Mi1UVyt12LdZqMK2vPnca6EDC`, the `cargo near build
+non-reproducible-wasm` of this folder with Rust 1.95.0 and cargo-near 0.23.0 (a non-reproducible build can differ
+from one machine to another).
+
+A 90-second demo video of a real run (terminal, explorer, credit report) goes with the X post for the hackathon.
 
 ## The problem
 
@@ -151,7 +156,7 @@ that leaves room for the swap, the brief, the accounts), so a delivery cannot bo
 | `POST /v0/quote` with `dry: true`, EXACT_OUTPUT, `customRecipientMsg` | Live, read-only: 1Click accepted the request and priced it. The desk is not on mainnet, so the dry quote names an existing mainnet account as recipient in its place (`wrap.near`); a dry quote has no deposit address, so nothing can be sent. Recorded in `intents/fixtures/quote-dry-live.json` |
 | `GET /v0/status` | Live, read-only, for an address 1Click does not know (404) |
 | A real quote with a deposit address, the deposit, and the statuses PENDING_DEPOSIT, PROCESSING, SUCCESS, REFUNDED, INCOMPLETE_DEPOSIT | Not run. Tested against answers written from 1Click's OpenAPI schema (`intents/fixtures/status-*.json`, each marked as such) |
-| The delivery on NEAR: `ft_transfer_call` to the desk with the lock message | Run on testnet: `intents-standin.factor-desk.testnet` makes the call 1Click's withdrawal makes, with the test dollar in place of USDC, and the desk locks the job in the same transfer ([tx](https://testnet.near.rocks/tx/C9BU51Rz7YFLQhvVM8KApF7z1fYDo2YitjNrfJziqMko)). The agent then did the job and was paid in the token |
+| The delivery on NEAR: `ft_transfer_call` to the desk with the lock message | Run on testnet: `intents-standin.factor-desk.testnet` makes the call 1Click's withdrawal makes, with the test dollar in place of USDC, and the desk locks the job in the same transfer ([tx](https://testnet.near.rocks/tx/9e5N9Bis9AeUwDsEt1qBKCru74LvkTo8zz1DBiFA79hw)). The agent then did the job and was paid in the token |
 
 On mainnet the steps are the same with USDC on NEAR and the real deposit; that has not been run.
 
@@ -183,27 +188,36 @@ Factor to show the flow; their scores show how the formula works, not real agent
 
 ## Testnet transactions
 
-The demo run of `npm run agent` ([`demo/runs/2026-11-11T13-26-56-224Z.json`](demo/runs/2026-11-11T13-26-56-224Z.json)):
+The run of `npm run agent` shown in the demo video ([`demo/runs/2026-11-11T14-18-48-183Z.json`](demo/runs/2026-11-11T14-18-48-183Z.json); every
+other run is in [`demo/runs`](demo/runs)):
 
 | Step | Transaction |
 |---|---|
-| The customer locks 2 NEAR, open to any agent | [GLXQNy…](https://testnet.near.rocks/tx/GLXQNyNKTnKenZfWFhPPbEKbgAXpZPvfSo7pqwBAPGj) |
-| `factor-scout` takes it | [8sAbAw…](https://testnet.near.rocks/tx/8sAbAwo4riHjZJThj5kByrsuUx4hFjnJSk4UPo5mtPg8) |
-| It draws a 0.3 NEAR advance | [HkXyL3…](https://testnet.near.rocks/tx/HkXyL3buBkK2YsAC8QD1cXnsswD5H5vYXkM9Y7k7tfRb) |
-| It pays 0.3 NEAR for compute | [NwDUxt…](https://testnet.near.rocks/tx/NwDUxtU5qCSoKKascDVB2HNLcqVwdeEfT8LeJx7CSVQ) |
-| It hires `factor-checker` for 0.4 NEAR after one counter-offer | [4N57zA…](https://testnet.near.rocks/tx/4N57zAQgH6F14Q9TQEs17jitzJwPsN1LB3wDDNpwZKi2) |
-| The checker delivers its check | [ExRu2Y…](https://testnet.near.rocks/tx/ExRu2YLQaBahh55YeV57bMxmTzFubUehtq68AEsiFKFw) |
-| The agent accepts it: the checker is paid | [4oC1ir…](https://testnet.near.rocks/tx/4oC1irj79Y5VSkU7sosCEiQiURpXTFedwxAp4eeVw6qE) |
-| The agent delivers | [CfgCTb…](https://testnet.near.rocks/tx/CfgCTbVBBdymzuQzsvxqcHMYQ6eY2QFtLig7NRMpyLsK) |
-| The customer accepts: 1.26 NEAR to the agent, the advance and the sub-job settled out of 2 | [Fwzpf…](https://testnet.near.rocks/tx/FwzpfVXZ4M1T6FnMYTF3WuPPo8SppjThW1x9S1R4QuLU) |
+| The customer locks 2 NEAR, open to any agent (job #12) | [8iEk6j…](https://testnet.near.rocks/tx/8iEk6jAy2g8LAJFLoQ8iN6sKUAk5SQQWxtJ9qFDVrn8Q) |
+| `factor-scout` takes it | [3AYWAG…](https://testnet.near.rocks/tx/3AYWAGossP8gJoaY7k9QSWQsThjb25cBPd25nVPGL9gK) |
+| It draws a 0.3 NEAR advance | [ActHJC…](https://testnet.near.rocks/tx/ActHJCo11FrE1W95eU8wsstubuCttTnP39qnyAscT6cD) |
+| It pays 0.3 NEAR for compute | [9Tg9Qj…](https://testnet.near.rocks/tx/9Tg9QjL2SKMrdRceVENoXkHdvR5yP99JQUfiKB4EqNBv) |
+| It hires `factor-checker` for 0.4 NEAR after one counter-offer (sub-job #13) | [4CiKGE…](https://testnet.near.rocks/tx/4CiKGE9iURvtS5SoxswQdkMkFoZmAmowzuNy1DaK28Ao) |
+| The checker takes the sub-job | [35w8mJ…](https://testnet.near.rocks/tx/35w8mJB9xkJKtL4jmMs5GJtNb3WQaGG1uqhQHeEy3S7j) |
+| The checker delivers its check | [7yxzu2…](https://testnet.near.rocks/tx/7yxzu2izzZ9uGMURdnpiXa3t46d7JyGtDPXYg3cxDdsF) |
+| The agent accepts it: the checker is paid 0.4 NEAR | [CmZceu…](https://testnet.near.rocks/tx/CmZceub26QD8HfZfH3uH8CGDutxKw18gwfVr4sqrwGKT) |
+| The agent delivers | [3jmiw2…](https://testnet.near.rocks/tx/3jmiw2pc7sTc4z3iHngeikqdRuhjUaKv5heJaHgFCNXM) |
+| The customer accepts: 1.26 NEAR to the agent, the advance and the sub-job settled out of 2 | [BUNAdH…](https://testnet.near.rocks/tx/BUNAdHXnzUe893fMd3RXwhhBZYCt1bo6UapYfTUCHwxC) |
 
-The other rules ([`demo/runs/rules-state.json`](demo/runs/rules-state.json)):
+A job locked by the NEAR Intents delivery, in the same transfer (`npm run intents -- demo`, job #14):
+[9e5N9B…](https://testnet.near.rocks/tx/9e5N9Bis9AeUwDsEt1qBKCru74LvkTo8zz1DBiFA79hw).
+
+The other rules (`node scripts/rules.ts a`, then `b` after the windows; [`demo/runs/rules-state.json`](demo/runs/rules-state.json)):
 
 | Rule | Transaction |
 |---|---|
-| A token payout fails (no storage on the token) and the desk keeps it | [7BhirX…](https://testnet.near.rocks/tx/7BhirXKaM4qj5mgvo3tisprME897mhgzYKpuzRN5Tt6K) |
+| A token payout fails (the agent has no storage on the token) and the desk keeps it | [7BhirX…](https://testnet.near.rocks/tx/7BhirXKaM4qj5mgvo3tisprME897mhgzYKpuzRN5Tt6K) |
+| The agent registers on the token and withdraws it | [BiXiG8…](https://testnet.near.rocks/tx/BiXiG8QZQVAaw1szTEFV23upJ7oRCin7jveiTB7FYFia) |
 | A rejection settles at half | [21Z2uj…](https://testnet.near.rocks/tx/21Z2ujzqaYgXbu1srMmPBPr6ghiBx5ncNXMRkwvkToCN) |
-| An agent bonds, draws and does not deliver | [4kStN5…](https://testnet.near.rocks/tx/4kStN58oE3w7v1LyC5kXqFRBTxSZnuN3CCDRH3TsacbA) |
+| A silent customer: anyone settles in full after the review window | [5af5tS…](https://testnet.near.rocks/tx/5af5tSDNYXM4S8K93AxVo4JPhZQ2TDarhYgXueUNe14Q) |
+| An agent bonds 0.3, draws 0.4 of a 1 NEAR job and does not deliver | [4kStN5…](https://testnet.near.rocks/tx/4kStN58oE3w7v1LyC5kXqFRBTxSZnuN3CCDRH3TsacbA) |
+| Anyone refunds it: 0.6 still locked plus 0.3 from the bond back to the customer, a default on the agent's record | [ARBnAS…](https://testnet.near.rocks/tx/ARBnASrRQSKijqahcPYiRZpTqxNaHRb9NvjahmTCwYFN) |
+| A job nobody took is given back after its time | [66agec…](https://testnet.near.rocks/tx/66agecmy8cxE3Tc18MXBhGgdedU9iPqu9rvckWqLMgTR) |
 
 ## Honest limits
 
