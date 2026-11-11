@@ -217,6 +217,7 @@ The whole of it is in [`packages/kit/README.md`](packages/kit/README.md) and [`d
 | [`packages/kit`](packages/kit) | `factor-kit`: the SDK, and an MCP server with 122 tools for AI assistants, behind spending limits |
 | [`docs`](docs) | The rulebook, the engine, the security pass and the dress rehearsal |
 | [`design`](design) | The design system the site is built from |
+| [`near`](near) | The NEAR Hackathon entry: the desk as a NEAR contract, the agent, NEAR Intents and the credit report (see [NEAR Hackathon](#near-hackathon)) |
 
 ## How it is tested
 
