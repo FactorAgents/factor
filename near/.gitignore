@@ -3,3 +3,5 @@ node_modules/
 .env
 *.local.json
 out/
+.cache/
+.env.testnet

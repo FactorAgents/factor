@@ -917,7 +917,13 @@ fn a_token_payment_locks_a_job_and_pays_out_in_the_token() {
     let mut e = Env::new();
     let mut d = desk();
     let due = e.now + 2 * HOUR;
-    let r = ft_lock(&mut e, &mut d, &alice(), 100 * DOLLAR, json!({ "agent": "bob.testnet", "due_ms": due.to_string(), "allow_advance": true, "brief": BRIEF }));
+    let r = ft_lock(
+        &mut e,
+        &mut d,
+        &alice(),
+        100 * DOLLAR,
+        json!({ "agent": "bob.testnet", "due_ms": due.to_string(), "allow_advance": true, "brief": BRIEF }),
+    );
     assert!(matches!(r, PromiseOrValue::Value(U128(0))), "the whole amount is used");
     let j = d.get_job(U64(0)).unwrap();
     assert_eq!((j.token.clone(), j.price.0, j.customer.clone()), (Some(tusd()), 100 * DOLLAR, alice()));

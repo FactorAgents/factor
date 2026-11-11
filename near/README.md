@@ -129,6 +129,10 @@ npm run report -- yourname-scout.testnet       # see that job left out of the re
 npm run intents -- demo              # see a job funded the way NEAR Intents delivers it
 ```
 
+The setup was checked from scratch with `PREFIX=fnear-check`: a second desk, `fnear-check-desk.testnet`, made, deployed
+and run through the agent, the NEAR Intents demo, the wash job and the report
+([`demo/runs/setup-check`](demo/runs/setup-check)).
+
 ## Paying through NEAR Intents
 
 A customer on another chain asks 1Click for an `EXACT_OUTPUT` quote: exactly the job's price in a token the desk

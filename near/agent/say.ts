@@ -32,8 +32,9 @@ export function pause(): Promise<void> {
 export function receiptsTable(rows: { what: string; from: string; price: string; check: string; tx: string }[]): void {
   console.log("");
   console.log(gilt("receipts"));
+  const w = Math.max(...rows.map((r) => r.from.length)) + 2;
   for (const r of rows) {
-    console.log(`  ${ink(r.what.padEnd(26))}${r.from.padEnd(30)}${(r.price + " NEAR").padEnd(12)}${r.check}`);
+    console.log(`  ${ink(r.what.padEnd(26))}${r.from.padEnd(w)}${(r.price + " NEAR").padEnd(12)}${r.check}`);
     console.log(`  ${dim("tx " + r.tx)}`);
   }
   console.log("");

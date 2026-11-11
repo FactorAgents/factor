@@ -3,6 +3,7 @@
 // price of NEAR from the 1Click token list. Nothing needs a key. A source that does not answer is said in the report,
 // never guessed.
 
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { DESK, NETWORK, TEST_DOLLAR, accessKeys, view } from "../lib/near.ts";
 import type { DeskJob, SameHand } from "./score.ts";
 
@@ -59,14 +60,38 @@ async function nearblocks(path: string): Promise<any | null> {
   return null;
 }
 
+// Who created an account, and when, never changes: what was read is kept in .cache/ so a second report is quick.
+const CACHE = new URL(`../.cache/creation-${NETWORK}.json`, import.meta.url);
+let cache: Record<string, { createdMs?: number; creator?: string; read: boolean }> | null = null;
+function cached() {
+  if (!cache) {
+    try {
+      cache = JSON.parse(readFileSync(CACHE, "utf8"));
+    } catch {
+      cache = {};
+    }
+  }
+  return cache!;
+}
+
 /** When, and by which account, an account was created. */
 export async function creation(account: string): Promise<{ createdMs?: number; creator?: string; read: boolean }> {
+  const c = cached();
+  if (c[account]?.read) return c[account];
   const a = await nearblocks(`/v3/accounts/${account}`);
   const hash = a?.data?.created?.transaction_hash;
   const ts = a?.data?.created?.block_timestamp;
   if (!hash) return { read: false };
   const t = await nearblocks(`/v3/txns/${hash}`);
-  return { createdMs: ts ? Number(BigInt(ts) / 1_000_000n) : undefined, creator: t?.data?.signer_account_id, read: !!t?.data };
+  const out = { createdMs: ts ? Number(BigInt(ts) / 1_000_000n) : undefined, creator: t?.data?.signer_account_id, read: !!t?.data };
+  if (out.read) {
+    c[account] = out;
+    try {
+      mkdirSync(new URL("../.cache/", import.meta.url), { recursive: true });
+      writeFileSync(CACHE, JSON.stringify(c, null, 1));
+    } catch {}
+  }
+  return out;
 }
 
 export async function nearPrice(): Promise<number | null> {

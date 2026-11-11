@@ -12,13 +12,14 @@
 //! keeps a failed payout as a balance its owner can withdraw, so a failed transfer never loses money and never
 //! blocks a job.
 
+#![allow(clippy::too_many_arguments)] // the contract's own methods take each field of a job by name
+
 use near_sdk::json_types::{U128, U64};
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::serde_json::{self, json};
 use near_sdk::store::LookupMap;
 use near_sdk::{
-    env, ext_contract, near, require, AccountId, BorshStorageKey, Gas, NearToken, PanicOnDefault, Promise,
-    PromiseError, PromiseOrValue,
+    env, ext_contract, near, require, AccountId, BorshStorageKey, Gas, NearToken, PanicOnDefault, Promise, PromiseError, PromiseOrValue,
 };
 
 #[cfg(test)]
@@ -213,10 +214,7 @@ fn owed_key(who: &AccountId, token: &Option<AccountId>) -> String {
 }
 
 fn event(name: &str, data: serde_json::Value) {
-    env::log_str(&format!(
-        "EVENT_JSON:{}",
-        json!({ "standard": EVENT_STANDARD, "version": EVENT_VERSION, "event": name, "data": [data] })
-    ));
+    env::log_str(&format!("EVENT_JSON:{}", json!({ "standard": EVENT_STANDARD, "version": EVENT_VERSION, "event": name, "data": [data] })));
 }
 
 #[near]
@@ -371,7 +369,18 @@ impl FactorDesk {
         let child = self.next_id;
         p.children.push(child);
         self.jobs.insert(p.id, p.clone());
-        let id = self.create_job(who.clone(), who.clone(), Some(agent), p.token.clone(), amount.0, due_ms.0, allow_advance, brief, None, Some(&p));
+        let id = self.create_job(
+            who.clone(),
+            who.clone(),
+            Some(agent),
+            p.token.clone(),
+            amount.0,
+            due_ms.0,
+            allow_advance,
+            brief,
+            None,
+            Some(&p),
+        );
         let r = self.record_mut(&who);
         r.hired += 1;
         if first {
@@ -796,9 +805,8 @@ impl FactorDesk {
         if amount == 0 {
             return;
         }
-        let callback = ext_self::ext(env::current_account_id())
-            .with_static_gas(GAS_ON_PAYOUT)
-            .on_payout(to.clone(), token.clone(), U128(amount));
+        let callback =
+            ext_self::ext(env::current_account_id()).with_static_gas(GAS_ON_PAYOUT).on_payout(to.clone(), token.clone(), U128(amount));
         match token {
             None => Promise::new(to.clone()).transfer(NearToken::from_yoctonear(amount)).then(callback).detach(),
             Some(t) => ext_ft::ext(t.clone())
