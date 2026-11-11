@@ -16,7 +16,7 @@ The desk's code hash on testnet is `4oooeUUv1ZvVk1YX2L1Mi1UVyt12LdZqMK2vPnca6EDC
 non-reproducible-wasm` of this folder with Rust 1.95.0 and cargo-near 0.23.0 (a non-reproducible build can differ
 from one machine to another).
 
-A 90-second demo video of a real run (terminal, explorer, credit report) goes with the X post for the hackathon.
+An 80-second demo film of the real testnet run (the job from lock to payment, NEAR Intents, the credit report) goes with the X post for the hackathon.
 
 ## The problem
 
