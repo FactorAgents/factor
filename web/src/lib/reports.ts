@@ -33,7 +33,15 @@ export interface Report {
   erc8004: { client: string; tag1: string; tag2: string; value: string; at: string; counted: boolean; why: string }[];
   claim: { by: string; name: string | null; about: string | null; site: string | null; x: string | null; signedAt: string } | null;
   links: { page: string; card: string; badge: string; signed: string; erc8004: string | null; desk: string | null };
+  /** its score on the ERC-8004 reputation registry, written by Factor (engine/src/reportserc8004.ts); null with no identity */
+  onChain?: ReportOnChain | null;
 }
+
+/** A report's place on ERC-8004: written (since when, the transaction, its file), or prepared and not yet written. */
+export interface ReportOnChain { written: boolean; since: string | null; score: number | null; version: string | null; tx: string | null; txUrl: string | null; index: number | null; at: string | null; uri: string | null; entries: number; reviewer: string | null; registry: string; tag1: string; read: string; prepared: string | null }
+
+/** How many reports Factor has written to ERC-8004, as /v1/reports says. */
+export interface ReportsOnErc8004 { enabled: boolean; reports: number; entries: number; tag1: string; tag2: string; reviewer: string | null; everyH: number; since: string | null; firstTx: string | null; lastTx: string | null; lastTxUrl: string | null; lastAt: string | null; read: string }
 
 export interface ReportRow { subject: string; agentId: string | null; wallet: string | null; name: string; score: number; parts: Record<string, number>; pulled: number; flags: string[]; sources: string[]; factorOwn: boolean; rank: number | null; lastAt: string | null }
 
@@ -57,6 +65,8 @@ export interface ReportsAbout {
   scoredAt?: string | null;
   registries?: { identity: string; reputation: string; validation: string };
   signer?: string | null;
+  /** the reports written to ERC-8004 */
+  onErc8004?: ReportsOnErc8004 | null;
 }
 
 /** Where a report lives: an identity by its number, a desk agent with none by its wallet. */

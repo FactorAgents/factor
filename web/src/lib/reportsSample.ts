@@ -4,6 +4,8 @@
 import type { Report, ReportRow, ReportsAbout } from "./reports";
 
 const SITE = "https://factoragents.fun";
+/** a made-up transaction hash, for the sample only */
+const SAMPLE_TX = (n: number) => `0x${n.toString(16).padStart(4, "0")}${"5e".repeat(30)}`;
 const wallet = (n: number) => `0x${n.toString(16).padStart(4, "0")}${"5a".repeat(18)}`;
 
 const ROWS: ReportRow[] = [
@@ -26,6 +28,7 @@ export function sampleReportsAbout(): ReportsAbout {
     caughtUp: true, scoredAt: "2026-11-10T09:00:00.000Z",
     registries: { identity: "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432", reputation: "0x8004BAa17C55a88189AE136b182e5fdA19dE9b63", validation: "0x8004Cc8439f36fd5F9F049D9fF86523Df6dAAB58" },
     signer: null,
+    onErc8004: { enabled: true, reports: 416, entries: 416, tag1: "factorReport", tag2: "1.1.0", reviewer: "0xe4314Ba4DAe5f31582ec23812d5f40287f1eFdE0", everyH: 168, since: "2026-11-11T18:00:00.000Z", firstTx: SAMPLE_TX(1), lastTx: SAMPLE_TX(416), lastTxUrl: `https://robinhoodchain.blockscout.com/tx/${SAMPLE_TX(416)}`, lastAt: "2026-11-11T18:40:00.000Z", read: 'getSummary(agentId, [0xe4314Ba4DAe5f31582ec23812d5f40287f1eFdE0], "factorReport", "") on 0x8004BAa17C55a88189AE136b182e5fdA19dE9b63' },
   };
 }
 
@@ -69,6 +72,7 @@ export function sampleReport(id: string): Report | null {
     ],
     erc8004: [{ client: "0x03af41aeb1eea4da0572bbb6ab1b4c5331f17ac7", tag1: "credit.statement", tag2: "unsecured", value: "10", at: "2026-11-02T11:00:00.000Z", counted: false, why: "this wallet never paid the agent for a job on the chain" }],
     claim: null,
+    onChain: { written: true, since: "2026-11-11T18:00:00.000Z", score: row.score, version: "factor-report/1.1.0", tx: SAMPLE_TX(Number(row.agentId)), txUrl: `https://robinhoodchain.blockscout.com/tx/${SAMPLE_TX(Number(row.agentId))}`, index: 1, at: "2026-11-11T18:00:00.000Z", uri: `${SITE}/api/v1/erc8004/report/${ROWS.indexOf(row) + 1}`, entries: 1, reviewer: "0xe4314Ba4DAe5f31582ec23812d5f40287f1eFdE0", registry: "0x8004BAa17C55a88189AE136b182e5fdA19dE9b63", tag1: "factorReport", read: `getSummary(${row.agentId}, [0xe4314Ba4DAe5f31582ec23812d5f40287f1eFdE0], "factorReport", "") on 0x8004BAa17C55a88189AE136b182e5fdA19dE9b63`, prepared: null },
     links: { page: `${SITE}/reports/${row.agentId}`, card: `${SITE}/api/v1/reports/${row.agentId}/card.png`, badge: `${SITE}/api/v1/reports/${row.agentId}/badge.svg`, signed: `${SITE}/api/v1/reports/signed/${row.agentId}`, erc8004: null, desk: desk ? `${SITE}/agents/${row.name}` : null },
   };
 }

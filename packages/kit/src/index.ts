@@ -80,7 +80,7 @@ export { REVIEW_MOST_CHARS, REVIEW_TAG, REVIEW_TYPES, replyTyped, reviewOf, revi
 export type { AgentReviews, JobReview, Review, ReviewStanding } from "./reviews.js";
 export { agentBuilder, builderRecord, builderRecordText, heyLinkMessage } from "./hey.js";
 export { claimMessage, creditLeaderboard, creditReport, findAgent, foundText, leaderboardText, reportText, reportsAbout, signedReport } from "./reports.js";
-export type { CreditReport, ReportRow, ReportSource, SignedReport } from "./reports.js";
+export type { CreditReport, ReportOnChain, ReportRow, ReportSource, SignedReport } from "./reports.js";
 export type { AgentBuilder, BuilderRecord, HeyFacts, HeyLookup, NotOnHey } from "./hey.js";
 export type { Asked, AskAgent, AskStage } from "./ask.js";
 export type { AgentAnswer, AnswerEnvelope, CheckedAgent, CheckedAgents, ConnectHire, ConnectTicket, EmbedPart, HireLinkOptions, SealedAnswer } from "./everywhere.js";

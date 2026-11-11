@@ -431,7 +431,7 @@ describe("the owner's health answer", () => {
     const h = await health(r.engine);
     expect(h).toMatchObject({ mode: "dry", state: "running", launched: true, gateway: A.gateway, contracts: { desk: A.desk, splitter: A.splitter, burnPot: A.burnPot } });
     expect(h.desk).toMatchObject({ pool: ETH.toString(), jobCount: 2, agents: 1, jobsKnown: 2, waitingToBeRead: 0, dueToSettle: 1, dueToRefund: 1 });
-    expect(Object.keys(h.actions).sort()).toEqual(["bounty", "burn", "claim_token", "coin_sweep", "collect", "erc8004", "erc8004_score", "guarantee", "line", "milestone", "refund_job", "relay", "retry_split", "return_compute", "settle_job", "skim", "sweep", "verifier"]);
+    expect(Object.keys(h.actions).sort()).toEqual(["bounty", "burn", "claim_token", "coin_sweep", "collect", "erc8004", "erc8004_report", "erc8004_score", "guarantee", "line", "milestone", "refund_job", "relay", "retry_split", "return_compute", "settle_job", "skim", "sweep", "verifier"]);
     expect(h.watchers.map((w: { watcher: string }) => w.watcher)).toEqual(["burnPot", "desk", "splitter", "token"]);
     const text = JSON.stringify(h) + JSON.stringify(await state(r.engine));
     expect(text).not.toContain(key);

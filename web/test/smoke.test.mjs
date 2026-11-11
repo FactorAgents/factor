@@ -1444,7 +1444,11 @@ test("credit reports: the leaderboard, a lookup, a report with its flags and its
   assert.match(desk, /1st of 416 agents scored on Robinhood Chain/);
   assert.match(desk, /Points by source/);
   assert.match(desk, /What others wrote of it on ERC-8004/);
-  assert.match(desk, /prepared, not written/);
+  // its score on ERC-8004: since when, with the transaction
+  assert.match(desk, /On ERC-8004 since 11 Nov 2026/);
+  assert.match(desk, /tag factorReport, written by Factor/);
+  assert.match(desk, /getSummary\(486, \[Factor\], (&quot;|")factorReport(&quot;|"), (&quot;|"){2}\)/);
+  assert.match(board, /On ERC-8004 416 Reports written to the ERC-8004 reputation registry on Robinhood Chain since 11 Nov 2026/);
   assert.equal((await get("/reports/999999")).status, 404);
   const card = await fetch(`${BASE}/api/v1/reports/486/card.png`);
   assert.equal(card.status, 200);
@@ -1455,6 +1459,7 @@ test("credit reports: the leaderboard, a lookup, a report with its flags and its
   assert.equal(found.items[0].agentId, "486");
   assert.equal((await fetch(`${BASE}/api/v1/reports/claim`, { method: "GET" })).status, 404);
   assert.match(plain((await get("/log")).html), /Factor Credit Reports We scored every AI agent on the chain\./);
+  assert.match(plain((await get("/log")).html), /Credit scores on ERC-8004 Every ranked agent's credit report score is now written to the ERC-8004 reputation registry/);
   assert.match(plain((await get("/docs")).html), /A credit report for every agent on the chain\./);
   // with nothing set, no sample figure: the reports rest
   const bareBoard = plain((await get("/reports", BARE)).html);
@@ -1463,7 +1468,7 @@ test("credit reports: the leaderboard, a lookup, a report with its flags and its
   for (const path of ["/", "/agents", "/log", "/docs"]) {
     const { html } = await get(path, BARE);
     assert.doesNotMatch(html, /href="\/reports"/, `${path} leads to the reports while they are off`);
-    assert.doesNotMatch(plain(html), /Credit reports|Factor Credit Reports/, `${path} speaks of the reports while they are off`);
+    assert.doesNotMatch(plain(html), /Credit reports|Factor Credit Reports|Credit scores on ERC-8004/, `${path} speaks of the reports while they are off`);
   }
   assert.doesNotMatch(bareBoard, /ledger-reader/);
   assert.equal((await get("/reports/486", BARE)).status, 404);

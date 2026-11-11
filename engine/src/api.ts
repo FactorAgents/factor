@@ -44,6 +44,7 @@
 //   GET  /v1/everywhere         Factor everywhere (everywhere.ts): whether it is on, the signer, how to check an answer
 //   GET  /v1/everywhere/agent/<id>   one agent's score, record, line and Guarantee, signed; /v1/everywhere/agents?ids=
 //   GET  /v1/erc8004/score/<n>  the file a score entry on ERC-8004 points at, word for word (erc8004score.ts)
+//   GET  /v1/erc8004/report/<n> the file a credit report entry on ERC-8004 points at, word for word (reportserc8004.ts)
 //   POST /v1/connect/register|rotate|hook|hire|me|ping   Factor Connect for a marketplace, with its key
 //   GET  /v1/connect/ticket/<id>, POST /v1/connect/claim   a marketplace's hire link, and the job locked on it
 //   GET  /v1/ask                whether Ask Factor is on (ask.ts), how long a sentence may be, and what reads it
@@ -115,6 +116,7 @@ import type { Reviews, ReviewSummary } from "./reviews.js";
 import type { Hey, HeyLookup } from "./hey.js";
 import { FORMULA } from "./reportscore.js";
 import type { Reports } from "./reports.js";
+import type { ReportsErc8004 } from "./reportserc8004.js";
 
 export interface Answer {
   status: number;
@@ -193,6 +195,8 @@ export interface EngineView {
   hey?: Hey | null;
   /** Factor Credit Reports (./reports.ts) */
   reports?: Reports | null;
+  /** credit report scores written to ERC-8004 (./reportserc8004.ts) */
+  reportsErc8004?: ReportsErc8004 | null;
 }
 
 /** Factor everywhere, as the site reads it: web/src/lib/types.ts keeps the same shape by hand. */
@@ -626,6 +630,9 @@ export class EngineApi {
     // the file a score entry on ERC-8004 points at (./erc8004score.ts)
     const sm = /^\/v1\/erc8004\/score\/(\d{1,9})$/.exec(path);
     if (sm) { const body = this.view().erc8004Scores?.file(Number(sm[1])) ?? null; return body ? ok(JSON.parse(body) as Record<string, unknown>) : notFound("no score entry by that number"); }
+    // the file a credit report entry on ERC-8004 points at (./reportserc8004.ts)
+    const rm = /^\/v1\/erc8004\/report\/(\d{1,9})$/.exec(path);
+    if (rm) { const body = this.view().reportsErc8004?.file(Number(rm[1])) ?? null; return body ? ok(JSON.parse(body) as Record<string, unknown>) : notFound("no report entry by that number"); }
     // accounts are asked about as they change (an order on its way): never answered from the cache
     if (path.startsWith("/v1/accounts/")) {
       // what an account holds is asked of the chain: one caller gets a few a second, not as many as it likes
@@ -1472,7 +1479,7 @@ export class EngineApi {
     if (path === "/v1/reports/formula") return ok({ enabled: this.reportsOn(v), ...FORMULA } as unknown as Record<string, unknown>);
     if (!this.reportsOn(v)) return path === "/v1/reports" ? ok({ enabled: false }) : ok({ enabled: false });
     const r = v.reports!;
-    if (path === "/v1/reports") return ok(r.about());
+    if (path === "/v1/reports") return ok({ ...r.about(), onErc8004: v.reportsErc8004?.about() ?? null });
     if (path === "/v1/reports/top") {
       const limit = Math.min(100, Math.max(1, Number(query.get("limit")) || 50));
       const offset = Math.min(100_000, Math.max(0, Number(query.get("offset")) || 0));
@@ -2280,7 +2287,7 @@ export class EngineApi {
     // HEY builder records (./hey.ts): whether they show, and Factor's own page and badge on HEY for the footer
     const hey = { enabled: this.heyOn(v), project: "https://heyresearch.xyz/project/factor", badge: "https://heyresearch.xyz/api/badge/factor" };
     // Factor Credit Reports (./reports.ts): whether they show, for the dev log and the pages that link to them
-    const reports = { enabled: this.reportsOn(v) };
+    const reports = { enabled: this.reportsOn(v), onErc8004: this.reportsOn(v) && !!v.reportsErc8004?.on() };
     const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused, roster: this.rosterJson(v), hosted, pulse: pulseJson(v, 8), desk: this.deskJson(v), signups, activity, pay, subjobs, firms, plans, erc8004, openJobs, autoApply, verified, coins, lines, guarantees, bounties, milestones, everywhere, ask, copilot, reviews, hey, reports };
     if (!r) {
       return { ...base, launched: false, stats: { advancedEth: 0, settledJobs: 0, jobs: 0, poolEth: 0, reserveEth: 0, outEth: 0, heldEth: 0, burnedTokens: 0, supplyLeft: SUPPLY, agents: 0, demoJobs: 0, lostEth: 0, poolFromTradingEth: 0 }, burn: null, agents: [], jobs: [], events: [], burns: [] };
@@ -2389,6 +2396,7 @@ export class EngineApi {
       reviews: v.reviews ? v.reviews.health() : null,
       hey: v.hey ? v.hey.health() : null,
       reports: v.reports ? v.reports.health() : null,
+      reportsErc8004: v.reportsErc8004 ? v.reportsErc8004.health() : null,
       erc8004: v.erc8004 ? { ...v.erc8004.about(), spentTodayWei: v.erc8004.spentToday().toString(), gasDayWei: c.erc8004.gasDayWei.toString(), scan: ctx.db.getJson("erc8004:scan") } : null,
       events: ctx.db.count("chain_events"),
       ledger: ctx.db.count("ledger"),

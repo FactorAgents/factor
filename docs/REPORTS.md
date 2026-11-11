@@ -126,12 +126,13 @@ counts most.
 | `GET /api/v1/reports/find?q=` | Look up any agent: a number, a wallet, part of a name |
 | `GET /api/v1/reports/agent/<id>` | One report, whole |
 | `GET /api/v1/reports/signed/<id>` | The report in short as a text Factor signs (EIP-191, the same signer as Factor everywhere), good for ten minutes |
-| `GET /api/v1/reports/erc8004/<id>` | The ERC-8004 entry its score would be, prepared, never sent (section 9) |
+| `GET /api/v1/reports/erc8004/<id>` | Its entry on ERC-8004: the transaction, since when and how to read it, or the entry prepared before it is written (section 9) |
+| `GET /api/v1/erc8004/report/<n>` | The file entry `n` points at, word for word: its keccak256 is the entry's hash |
 | `GET /api/v1/reports/<id>/card.png` | Its card for a post (1200 × 630), made again at most every five minutes |
 | `GET /api/v1/reports/<id>/badge.svg` | A badge for any site |
 
-`factor-kit` 0.22.0: `creditReport()`, `creditLeaderboard()`, `findAgent()`, `signedReport()` (checked against the signer),
-`reportText()`, and `factor.claimReport()`. Tools: `factor_credit_report`, `factor_credit_leaderboard`, `factor_find_agent`
+`factor-kit` 0.23.0: `creditReport()`, `creditLeaderboard()`, `findAgent()`, `signedReport()` (checked against the signer),
+`reportText()` (with since when its score is on ERC-8004, and the transaction), and `factor.claimReport()`. Tools: `factor_credit_report`, `factor_credit_leaderboard`, `factor_find_agent`
 (also on `factoragents.fun/mcp`), and `factor_claim_report` (with a key). Factor Copilot answers "what is the credit report of
 agent #486?" from the report, and Ask Factor shows each agent's chain-wide score beside its reasons without changing the order.
 
@@ -143,26 +144,58 @@ on, the reading goes on from its cursors. The rest: `REPORTS_SPAN` (100,000), `R
 `REPORTS_SCORE_EVERY_S` (300), `REPORTS_CONFIRMATIONS` (20), `REPORTS_FROM_BLOCK` (12,000,000), `REPORTS_PRIORS_POOLS` (for a copy
 of the chain or a test).
 
-## 9. Writing scores to ERC-8004: prepared, not sent
+## 9. Credit scores on ERC-8004
 
-A score could go on the ERC-8004 reputation registry for the agent's identity, so that any app reading the standard sees it:
+Since 11 Nov 2026 every ranked agent's score is on the ERC-8004 reputation registry for its identity
+(`0x8004BAa17C55a88189AE136b182e5fdA19dE9b63` on Robinhood Chain), so any app that reads the standard sees it without asking
+Factor. `engine/src/reportserc8004.ts` writes it from Factor's gas wallet (`0xe4314Ba4DAe5f31582ec23812d5f40287f1eFdE0`):
 
 ```
-giveFeedback(agentId, score, 0, "factorReport", "1.1.0", "", <site>/api/v1/reports/erc8004/<agentId>, keccak256(<the file>))
+giveFeedback(agentId, score, 0, "factorReport", "1.1.0", "", <site>/api/v1/erc8004/report/<n>, keccak256(<the file>))
 ```
 
-from Factor's gas wallet, the file holding the score, its parts, the version and the block. `GET /v1/reports/erc8004/<id>`
-builds exactly that call, its data and its file, and says `"sent": false`. **No code in the engine sends it.** Writing costs gas
-for every agent (one `giveFeedback` each, for the some hundreds of agents with a score above 0), the registry refuses an entry from the
-identity's own owner, and a new score would revoke the one before it, as `engine/src/erc8004score.ts` already does for the
-Factor Score. Turning it on is a separate change, made only on the owner's word, with a daily gas cap like the other writers.
+- **The value** is the report's score, 0 to 1000, with no decimals. The first tag keeps it apart from Factor's job entries
+  (`factor`) and Factor Scores (`factorScore`); the second is the formula's version.
+- **The file** (`/api/v1/erc8004/report/<n>`, open to every origin) holds the standard's fields and Factor's: the identity, the
+  score, its five parts, the score before, the block the chain was read to and the report's page. It is fixed once written and
+  served word for word, so its keccak256 is the hash on the chain.
+- **Who.** Every ranked agent with an identity: a score above 0, not Factor's own (those are ranked apart and never written), and
+  never one whose identity the gas wallet owns (the registry refuses an owner's own entry). The first run writes the best first.
+- **When it changes.** Once written, an agent is followed. When its score or the formula's version changes, the new entry is
+  written no sooner than `REPORTS_ERC8004_EVERY_H` (168, a week) after the last, at once for a fall to 0; once it is mined the
+  entry before it is revoked, so exactly one report entry from Factor stands for each agent:
+
+```
+getSummary(agentId, [0xe4314Ba4DAe5f31582ec23812d5f40287f1eFdE0], "factorReport", "")  ->  (1, 223, 0)   = a score of 223
+readAllFeedback(agentId, [that wallet], "factorReport", "", true)                        the history, revoked ones included
+```
+
+- **Never twice, never over the cap.** Each entry is written down before it is sent, and a restart finds it and its
+  transaction. Before every entry the registry's own count of the gas wallet's entries for that identity (`getLastIndex`) is
+  read against every entry Factor's notes hold for it: more on the chain and nothing more is written to it. Entries and revokes
+  never cost more than `REPORTS_ERC8004_GAS_DAY_WEI` in 24 hours (0.004 ETH: a report entry costs about 200,000 gas, at
+  0.0202 gwei on 11 Nov 2026 the 405 first entries come to about 0.0016 ETH, and twice the most they could cost fits the
+  cap), `REPORTS_ERC8004_PER_PASS` (10) in each pass of the keeper, every 30 seconds.
+- **Where it shows.** A report page says "On ERC-8004 since <date>" with the transaction, and its JSON carries `onChain`
+  (`written`, `since`, `score`, `tx`, `txUrl`, `index`, `uri`, `entries`, `read`); `/api/v1/reports/erc8004/<id>` gives the
+  written entry, or the entry prepared for one not written yet; `/reports` and `/api/v1/reports` (`onErc8004`) count how many
+  reports are on the registry; the signed answer carries `erc8004`; the kit's `reportText()` and the tool
+  `factor_credit_report` say since when, with the transaction.
+- **Switches.** `REPORTS_ERC8004=on` writes (off unless it is said; it needs `REPORTS=on`). The owner's `reports8004` switch
+  (`POST /v1/admin/switch {"what": "reports8004", "on": false}`) stops it at once without a restart; the `reports` switch stops
+  it with the reports. What was written stays on the chain; a report that changed meanwhile is written once it is back on.
 
 ## 10. Tests
 
 `engine/test/reportscore.test.ts`: every part, every pull, each trick above carried out and shown not to pay, the same score
 for the same input in any order. `engine/test/reports.test.ts`: the reading on the made-up chain (newest first, halving, a
-restart going on, every log once), every agent scored, every route, the signed answer checked, the ERC-8004 entry prepared and
-nothing sent, the claim and its refusals, Copilot's answer, the switches. `packages/kit/test/reports.test.ts`: the kit and its
+restart going on, every log once), every agent scored, every route, the signed answer checked, the ERC-8004 entry prepared,
+the claim and its refusals, Copilot's answer, the switches. `engine/test/reportserc8004.test.ts`: the writing (every ranked agent
+once, best first, read back from the registry, the file hashing to the entry; nothing for Factor's own or a score of 0; nothing
+again while a score stands; a change written after its week and the entry before revoked; a fall to 0 at once), the day's cap,
+a restart in the middle of a run with a transaction on its way, an entry the notes do not know of, dry mode and the switches.
+`engine/scripts/reports-erc8004-fork.ts`: the same writer on a fork of the live chain (section 9 and
+`docs/RELEASE-reports-erc8004.md`). `packages/kit/test/reports.test.ts`: the kit and its
 tools. The site's smoke test: both pages, the card, the badge, the look-up, the log and the docs.
 
 ## 11. Versions

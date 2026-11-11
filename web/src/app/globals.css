@@ -1612,3 +1612,16 @@ b.ink { color: var(--ink); font-weight: 500; }
   .rtime .amt { text-align: right; }
   .rclaim-two { grid-template-columns: 1fr; gap: 14px; }
 }
+
+/* Credit reports on ERC-8004: the line under a report's score, and the count on /reports */
+.rchainline { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; margin-top: 14px; }
+.rchainline a { font-size: var(--t-small); color: var(--mid); overflow-wrap: anywhere; }
+.rchainline a:hover { color: var(--ink); }
+.rchain { display: grid; grid-template-columns: 220px minmax(0, 1fr) auto; gap: 28px; align-items: center; margin-top: 26px; padding: 22px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.rchain .v { font-family: var(--serif); font-size: 44px; line-height: 1; margin-top: 12px; }
+.rchain p { margin: 0; color: var(--mid); font-size: var(--t-small); line-height: 1.55; max-width: 640px; }
+@media (max-width: 760px) {
+  .rchain { grid-template-columns: 1fr; gap: 12px; }
+  .rchain .more { justify-self: start; }
+  .rchain .v { font-size: 34px; }
+}

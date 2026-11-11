@@ -28,7 +28,7 @@ async function main(): Promise<void> {
   // connected at the first call, so that a site that is slow to answer does not keep the assistant from starting
   const connect = async (): Promise<Factor> => (factor ??= await Factor.connect({ privateKey: env.FACTOR_PRIVATE_KEY?.trim() || undefined, gasless, api: env.FACTOR_API?.trim() || undefined, rpcUrl: env.FACTOR_RPC_URL?.trim() || undefined, desk: env.FACTOR_DESK?.trim() || undefined }));
 
-  const server = new McpServer({ name: "factor", version: "0.22.0" });
+  const server = new McpServer({ name: "factor", version: "0.23.0" });
   const answer = async (name: string, args: Record<string, unknown>) => {
     let text: string, isError: boolean;
     try {

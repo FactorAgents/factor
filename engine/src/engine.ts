@@ -58,6 +58,7 @@ import { Copilot, COPILOT_WORST_IN, COPILOT_WORST_OUT } from "./copilot.js";
 import { Reviews } from "./reviews.js";
 import { Hey, type HeyFetch } from "./hey.js";
 import { Reports } from "./reports.js";
+import { ReportsErc8004 } from "./reportserc8004.js";
 import { REPORT_VERSION } from "./reportscore.js";
 import { TAG2 } from "./erc8004.js";
 import { DeskStore, STATE } from "./desk.js";
@@ -168,6 +169,8 @@ export class Engine {
   hey: Hey | null = null;
   /** Factor Credit Reports (./reports.ts): made once the chain is read, whether or not REPORTS=on, so what was read and claimed is kept */
   reports: Reports | null = null;
+  /** credit report scores written to ERC-8004 (./reportserc8004.ts): made whether or not it is on, so what was written still shows */
+  reportsErc8004: ReportsErc8004 | null = null;
   /** the splitter's admin, read at the boot check: Factor's own wallet, which sets the rules of Factor's own agents */
   private splitterAdmin: string | null = null;
   /** the key that signs agents' records for other apps (./record.ts), or null */
@@ -232,7 +235,7 @@ export class Engine {
     return {
       config: this.config, state: this.state, problems: this.problems, warnings: this.warnings, lastError: this.lastError, loops, ctx: this.ctx, rpc: this.chain?.health() ?? null, now: this.now,
       links: { pons: link(this.env.FACTOR_PONS_URL), github: link(this.env.FACTOR_GITHUB_URL), x: link(this.env.FACTOR_X_URL) }, dataDirSet: !!this.env.FACTOR_DATA_DIR?.trim(), profiles: this.profiles, gateway: this.gateway, accounts: this.accounts, house: this.house, demo: this.demo, pulse: this.pulse, deskMind: this.deskMind, launchList: this.launchList, activity: this.activity, matcher: this.matcher, pay: this.pay, subjobs: this.subjobs, recordSigner: this.recordSigner, firms: this.firms, plans: this.plans, erc8004: this.erc8004, openjobs: this.openjobs, autoapply: this.autoapply, verified: this.verified, coins: this.coins, lines: this.lines, guarantees: this.guarantees, bounties: this.bounties, milestones: this.milestones, verifiers: this.verifiers,
-      connect: this.connect, erc8004Scores: this.erc8004Scores, answerSigner: this.answerSigner, ask: this.ask, copilot: this.copilot, reviews: this.reviews, hey: this.hey, reports: this.reports,
+      connect: this.connect, erc8004Scores: this.erc8004Scores, answerSigner: this.answerSigner, ask: this.ask, copilot: this.copilot, reviews: this.reviews, hey: this.hey, reports: this.reports, reportsErc8004: this.reportsErc8004,
     };
   }
 
@@ -718,7 +721,13 @@ export class Engine {
       factorWriter: () => this.ctx?.facts.bot ?? null,
       signed: async (address, message, signature) => this.profiles!.signed(address, message, signature),
       signer: () => this.answerSigner,
+      onChain: (agentId) => this.reportsErc8004?.ofAgent(agentId) ?? null,
     });
+    // credit reports on ERC-8004: made whether or not it is on, so what was written still shows after it is switched off
+    this.reportsErc8004 = new ReportsErc8004(c.reportsErc8004, { db, reports: () => this.reports, chain: this.chain, chainId: c.chainId, explorer: c.explorer, now: this.now, nowS, writer: () => this.ctx?.facts.bot ?? null, log: this.log });
+    this.ctx.reportsErc8004 = this.reportsErc8004;
+    if (c.reportsErc8004.enabled && !c.reports.enabled) this.log("[reports8004] NOT ON: REPORTS_ERC8004 needs REPORTS=on, which scores the agents");
+    else if (c.reportsErc8004.enabled) this.log(`[reports8004] on: every ranked agent's credit report score is written to its ERC-8004 reputation, again when it changes (at most every ${c.reportsErc8004.everyH} h), ${c.reportsErc8004.perPass} a pass, up to ${Number(c.reportsErc8004.gasDayWei / 10n ** 12n) / 1e6} ETH of gas a day`);
     if (c.reports.enabled) this.log(`[reports] on: every agent on the chain is read from the ERC-8004 registries${c.reports.priors ? ", Priors' loans" : ""} and the desk, ${c.reports.perPass} log queries a pass of ${c.reports.span.toLocaleString("en-US")} blocks, and scored by ${REPORT_VERSION} every ${c.reports.scoreEveryS} s; it moves no money`);
     if (c.hey.enabled) this.log(`[hey] on: builder records are read from ${c.hey.base} with x-hey-integration: ${c.hey.integration}, kept ${Math.round(c.hey.freshMs / 1000)} s, ${c.hey.perMinute} calls a minute at most${this.env.HEY_API_KEY?.trim() ? ", with Factor's free key" : ""}; shown as HEY's, never in the Factor Score`);
     if (c.reviews.enabled) this.log(`[reviews] on: a job's customer reviews it once it is paid, within ${c.reviews.windowDays} days; changes for ${c.reviews.editDays} days; jobs from ${Number(c.reviews.floorWei / 10n ** 12n) / 1e6} ETH count toward the average. Factor pays no gas for reviews`);

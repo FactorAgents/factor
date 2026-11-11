@@ -725,7 +725,9 @@ formula and the rules against gaming it are `docs/REPORTS.md`; what is read, how
 
 - **The routes.** `GET /v1/reports`, `/v1/reports/formula`, `/v1/reports/top?limit=&offset=&own=1`, `/v1/reports/find?q=`,
   `/v1/reports/agent/<id>`, `/v1/reports/signed/<id>` (signed by the same key as Factor everywhere), `/v1/reports/erc8004/<id>`
-  (prepared, never sent), and `POST /v1/reports/claim`. `/v1/state` carries `reports: { enabled }`. Copilot's `report` intent and
+  (its entry on ERC-8004 once written, or the entry prepared), `/v1/erc8004/report/<n>` (an entry's file, word for word), and
+  `POST /v1/reports/claim`. `/v1/state` carries `reports: { enabled, onErc8004 }`; `/v1/reports` carries `onErc8004` (how many
+  reports are on the registry, the first and last transaction); a report carries `onChain`, the signed answer `erc8004`. Copilot's `report` intent and
   Ask's `report` line read the same reports.
 - **The reading.** A loop of its own (`reports`), so a long backfill never holds up the desk's: each pass reads at most
   `REPORTS_PER_PASS` spans of `REPORTS_SPAN` blocks, the new blocks first, then the past newest first, halving a span the node
@@ -734,8 +736,20 @@ formula and the rules against gaming it are `docs/REPORTS.md`; what is read, how
 - **What is kept.** `report_identities`, `report_feedback`, `report_revoked`, `report_validations`, `report_loans` (what was
   read), `report_times` (span ends' times), `report_scores` (the leaderboard), `report_claims` (owners' signed profiles) and
   `report_hidden` (names the owner hid). Nothing is sent anywhere.
-- **Switches.** The owner's `reports` switch hides everything and stops the reading at once. `GET /v1/health` carries `reports`:
-  the cursors, whether the past is all read, and when every agent was last scored.
+- **On ERC-8004** (action `erc8004_report`, last in every pass, `src/reportserc8004.ts`), off until `REPORTS_ERC8004=on`. Once the
+  past is all read: revokes first (a mined entry with a newer one beside it), then every ranked agent with an identity not yet
+  written, best first, then every one whose score or formula changed after `REPORTS_ERC8004_EVERY_H` (168) hours, at once for a
+  fall to 0: `giveFeedback(agentId, score, 0, "factorReport", "1.1.0", "", <site>/api/v1/erc8004/report/<n>, keccak256(file))`
+  from the gas wallet. Factor's own and a score of 0 are never written first. The file is written down in `report_erc8004`
+  before anything is sent; before each entry the registry's `getLastIndex` for the gas wallet is read against every entry
+  Factor's notes hold for that identity (job entries, scores and reports, `entriesKnown` in `src/erc8004.ts`, which the job
+  entries' guard uses too): more on the chain and nothing more is written to it. `REPORTS_ERC8004_GAS_DAY_WEI` (0.004 ETH)
+  caps entries and revokes together in 24 hours, counted at the most each could cost; `REPORTS_ERC8004_PER_PASS` (10); gas cap
+  400,000 a call. A transaction on its way at a restart is looked up by `settle()` like every other.
+- **Switches.** The owner's `reports` switch hides everything and stops the reading (and the writing) at once; `reports8004`
+  stops the writing alone. `GET /v1/health` carries `reports` (the cursors, whether the past is all read, when every agent was
+  last scored) and `reportsErc8004` (the entries by state, revokes, transactions and gas, the day's spend against its cap, the
+  first and last transaction).
 
 ## Settings
 

@@ -62,6 +62,13 @@ describe("reading", () => {
     expect(t).toContain("ledger-bot (ERC-8004 #486): 412 of 1000 on its Factor credit report, 3rd of 418 agents scored on Robinhood Chain");
     expect(t).toContain("It moves no money.");
     expect(t).not.toContain(String.fromCharCode(0x2014));
+    // written to ERC-8004: since when and the transaction, in the same words as the engine
+    const tx = `0x${"ab".repeat(32)}`;
+    const on = { ...REPORT, onChain: { written: true, since: "2026-11-11T18:02:11.000Z", score: 412, version: "factor-report/1.1.0", tx, txUrl: `https://robinhoodchain.blockscout.com/tx/${tx}`, index: 1, at: "2026-11-11T18:02:11.000Z", uri: "https://factoragents.fun/api/v1/erc8004/report/1", entries: 1, reviewer: null, registry: "0x8004BAa17C55a88189AE136b182e5fdA19dE9b63", tag1: "factorReport", read: "", prepared: null } };
+    const w = reportText(on);
+    expect(w).toBe(engineReportText(on as unknown as ReportJson));
+    expect(w).toContain(`On ERC-8004 since 2026-11-11: any app reads this score from the reputation registry (tag factorReport). https://robinhoodchain.blockscout.com/tx/${tx}`);
+    expect(reportText({ ...on, onChain: { ...on.onChain, written: false, since: null } })).not.toContain("On ERC-8004 since");
   });
 
   it("the leaderboard and the look-up; a bad id is refused before anything is asked", async () => {

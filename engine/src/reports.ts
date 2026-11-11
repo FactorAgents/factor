@@ -7,7 +7,7 @@
 //   GET  /v1/reports/find?q=          look up any agent: its ERC-8004 number, a wallet, or a name
 //   GET  /v1/reports/agent/<id>       one agent's credit report: score, parts, pulls, flags, sources, timeline, what raises it
 //   GET  /v1/reports/signed/<id>      the same in short, as a text Factor signs (EIP-191), like Factor everywhere's answers
-//   GET  /v1/reports/erc8004/<id>     the ERC-8004 entry the score WOULD be, prepared and never sent (docs/REPORTS.md, section 9)
+//   GET  /v1/reports/erc8004/<id>     its entry on ERC-8004: written (./reportserc8004.ts), or the entry prepared and not yet sent
 //   POST /v1/reports/claim            the agent's owner signs to claim its report and add a profile
 //
 // An agent is its ERC-8004 identity (its number in the identity registry, with its owner and its agentWallet), and an
@@ -30,7 +30,7 @@
 // Switches: REPORTS=on (off unless it is said) reads and answers; the owner's "reports" switch (./switches.ts) hides every
 // report at once and stops the reading, without a restart. Turned back on, the reading goes on from its cursors.
 
-import { decodeEventLog, decodeFunctionResult, encodeFunctionData, getAddress, keccak256, parseAbi, toHex, type Abi, type Hex } from "viem";
+import { decodeEventLog, decodeFunctionResult, encodeFunctionData, getAddress, parseAbi, type Abi, type Hex } from "viem";
 import { erc8004IdentityAbi, erc8004ReputationAbi, erc8004ValidationAbi, multicall3Abi } from "./abi/index.js";
 import { normalizeAddress, shortAddress } from "./chain/address.js";
 import { tooMany, type Chain, type ChainLog } from "./chain/chain.js";
@@ -38,6 +38,7 @@ import type { EngineDb } from "./chain/db.js";
 import { IDENTITY_REGISTRY, MULTICALL3, REPUTATION_REGISTRY, VALIDATION_REGISTRY } from "./erc8004.js";
 import { seal, type AnswerSigner, type Sealed } from "./everywhere.js";
 import { FORMULA, NOT_AN_OPINION, REPORT_VERSION, REVIEW_TAG, SOURCE_NAME, onHundred, scoreReport, starsOf, type DeskJobIn, type FeedbackIn, type LoanIn, type ReportInput, type ReviewIn, type ScoreResult, type SourceKey, type ValidationIn } from "./reportscore.js";
+import { REPORT_ERC8004_SCHEMA, REPORT_TAG1, reportFile, type ReportOnChain } from "./reportserc8004.js";
 import { stopped } from "./switches.js";
 
 type Env = Record<string, string | undefined>;
@@ -91,8 +92,8 @@ export const FACTOR_WALLETS = [
 
 /** The first block with a log of the ERC-8004 registries on Robinhood Chain (found by reading back: nothing before it). */
 export const ERC8004_FROM = 12_000_000;
-/** The tag an ERC-8004 entry of a report would carry, were one ever written (it is not: see erc8004Prepared). */
-export const REPORT_TAG1 = "factorReport";
+/** The tag of a report's ERC-8004 entry (./reportserc8004.ts writes them). */
+export { REPORT_TAG1 } from "./reportserc8004.js";
 
 const priorsV2Abi = parseAbi([
   "event Borrowed(uint256 indexed loanId, uint256 indexed agentId, uint256 indexed sponsorId, uint256 principal, uint256 fee, uint64 dueAt, address to)",
@@ -308,6 +309,8 @@ export interface ReportJson extends Omit<ScoreResult, "firstAt" | "lastAt"> {
   erc8004: { client: string; tag1: string; tag2: string; value: string; at: string; counted: boolean; why: string }[];
   claim: { by: string; name: string | null; about: string | null; site: string | null; x: string | null; signedAt: string } | null;
   links: { page: string; card: string; badge: string; signed: string; erc8004: string | null; desk: string | null };
+  /** its score on the ERC-8004 reputation registry, written by Factor (./reportserc8004.ts); null for an agent with no identity */
+  onChain: ReportOnChain | null;
 }
 
 export interface ReportRow { subject: string; agentId: string | null; wallet: string | null; name: string; score: number; parts: Record<string, number>; pulled: number; flags: string[]; sources: string[]; factorOwn: boolean; rank: number | null; lastAt: string | null }
@@ -344,6 +347,8 @@ export interface ReportsDeps {
   signed: (address: string, message: string, signature: unknown) => Promise<boolean>;
   /** the key that signs answers (./everywhere.ts) */
   signer: () => AnswerSigner | null;
+  /** a report's place on ERC-8004 (./reportserc8004.ts), by its identity's number */
+  onChain?: (agentId: string) => ReportOnChain | null;
 }
 
 interface Shared { makers: Map<string, number>; walletMakers: Map<string, Set<string>>; recipients: Map<string, number>; payers: Map<string, number>; deskReg: Map<string, number>; loanWallets: Map<number, Set<string>> }
@@ -387,6 +392,7 @@ export class Reports {
 
   constructor(readonly cfg: ReportsConfig, private d: ReportsDeps) {
     d.db.db.exec(SCHEMA);
+    d.db.db.exec(REPORT_ERC8004_SCHEMA);
   }
 
   on(): boolean {
@@ -902,6 +908,7 @@ export class Reports {
       firstAt: iso(r.firstAt), lastAt: iso(r.lastAt), asOf: new Date(input.nowS * 1000).toISOString(), block: this.cursor("8004", this.cfg.fromBlock).up,
       timeline: this.timeline(input, who, r),
       erc8004,
+      onChain: who.agentId ? this.d.onChain?.(who.agentId) ?? null : null,
       claim: claim ? { by: claim.by, name: claim.name, about: claim.about, site: claim.site, x: claim.x, signedAt: new Date(claim.signed_at * 1000).toISOString() } : null,
       links: {
         page, card: `${this.cfg.site}/api/v1/reports/${who.agentId ?? subject}/card.png`, badge: `${this.cfg.site}/api/v1/reports/${who.agentId ?? subject}/badge.svg`, signed: `${this.cfg.site}/api/v1/reports/signed/${who.agentId ?? subject}`,
@@ -977,35 +984,53 @@ export class Reports {
       agent: { subject: r.agent.subject, agentId: r.agent.agentId, name: r.agent.name, owner: r.agent.owner, agentWallet: r.agent.agentWallet, desk: r.agent.desk },
       score: r.score, of: 1000, rank: r.rank, parts: Object.fromEntries(r.parts.map((p) => [p.key, p.points])), pulled: r.pulls.reduce((a, p) => a + p.points, 0),
       flags: r.flags.map((f) => f.key), sources: r.sources.map((s) => ({ source: s.source, points: s.points })), page: r.links.page,
+      erc8004: r.onChain?.written ? { score: r.onChain.score, version: r.onChain.version, tx: r.onChain.tx, index: r.onChain.index, since: r.onChain.since, registry: r.onChain.registry, tag1: r.onChain.tag1 } : null,
     };
     const s: Sealed = await seal(signer, data);
     return { status: 200, body: s as unknown as Record<string, unknown> };
   }
 
   /**
-   * The ERC-8004 entry a report's score WOULD be, prepared and never sent: no code here sends it. Writing it costs gas
-   * for every agent and needs the owner's word first (docs/REPORTS.md, section 9).
+   * A report's entry on ERC-8004. Once Factor has written it (./reportserc8004.ts): where it stands, its transaction and
+   * its file. Before: the entry prepared, exactly the call that would be sent, its data and its file, not sent.
    */
   erc8004Prepared(raw: string): Record<string, unknown> | null {
     const r = this.report(raw);
     if (!r || !r.agent.agentId) return null;
+    const on = r.onChain;
+    if (on?.written) return { ...on, written: true, sent: true };
     const writer = this.d.factorWriter();
-    const file = {
-      agentRegistry: `eip155:${this.d.chainId}:${getAddress(this.cfg.identity)}`, agentId: Number(r.agent.agentId), clientAddress: writer ? `eip155:${this.d.chainId}:${getAddress(writer)}` : null,
-      createdAt: r.asOf, value: r.score, valueDecimals: 0, tag1: REPORT_TAG1, tag2: REPORT_VERSION.split("/")[1],
-      factor: { report: r.links.page, version: r.version, score: r.score, of: 1000, parts: Object.fromEntries(r.parts.map((p) => [p.key, p.points])), block: r.block },
-    };
-    const body = JSON.stringify(file);
-    const hash = keccak256(toHex(body));
+    const parts = Object.fromEntries(r.parts.map((p) => [p.key, p.points]));
+    const made = reportFile({ chainId: this.d.chainId, identity: this.cfg.identity, agentId: r.agent.agentId, writer, site: this.cfg.site, score: r.score, parts, block: r.block, atS: Math.floor(Date.parse(r.asOf) / 1000) });
     const uri = `${this.cfg.site}/api/v1/reports/erc8004/${r.agent.agentId}`;
-    const args = [BigInt(r.agent.agentId), BigInt(r.score), 0, REPORT_TAG1, file.tag2!, "", uri, hash] as const;
+    const args = [BigInt(r.agent.agentId), BigInt(r.score), made.file.valueDecimals, REPORT_TAG1, made.file.tag2, "", uri, made.hash] as const;
+    const ranked = r.score > 0 && !r.agent.factorOwn;
     return {
-      prepared: true, sent: false, why: "Not sent: writing a score to ERC-8004 costs gas for each agent and is done only on the owner's word. Nothing in the engine sends it.",
+      written: false, prepared: true, sent: false,
+      why: r.agent.factorOwn ? "Not written: Factor's own agents are ranked apart, and their reports are not written to ERC-8004."
+        : !ranked ? "Not written: a score of 0 is not ranked, and only ranked agents' reports are written to ERC-8004."
+        : "Not written yet: Factor writes every ranked agent's report to ERC-8004 a few at a time, within a gas cap a day. The entry it writes has its own address for its file, /api/v1/erc8004/report/<n>.",
       to: getAddress(this.cfg.reputation), function: "giveFeedback(uint256,int128,uint8,string,string,string,string,bytes32)",
       args: args.map((a) => (typeof a === "bigint" ? a.toString() : a)), data: encodeFunctionData({ abi: erc8004ReputationAbi, functionName: "giveFeedback", args }),
-      file, body, hash, writer: writer ? getAddress(writer) : null,
+      file: made.file, body: made.body, hash: made.hash, writer: writer ? getAddress(writer) : null,
       selfFeedback: writer && (r.agent.owner === writer) ? "the writer owns this identity: the registry would refuse it" : null,
     };
+  }
+
+  /**
+   * The agents a report entry can be written for: every scored agent with an ERC-8004 identity that is ranked, or whose
+   * report Factor wrote before (so a fall to 0 is written too). With its parts, whether it is Factor's own, and its
+   * identity's owner and agentWallet as last read.
+   */
+  writable(): { agentId: string; score: number; parts: Record<string, number>; factorOwn: boolean; owner: string | null; wallet: string | null }[] {
+    const rows = this.d.db.q(`SELECT s.agent_id, s.score, s.work, s.repayment, s.feedback, s.time, s.reliability, s.factor_own, i.owner, i.wallet FROM report_scores s LEFT JOIN report_identities i ON i.agent_id = s.agent_id
+      WHERE s.agent_id IS NOT NULL AND ((s.score > 0 AND s.factor_own = 0) OR EXISTS (SELECT 1 FROM report_erc8004 e WHERE e.agent_id = CAST(s.agent_id AS TEXT) AND e.status = 'done'))`).all() as { agent_id: number; score: number; work: number; repayment: number; feedback: number; time: number; reliability: number; factor_own: number; owner: string | null; wallet: string | null }[];
+    return rows.map((r) => ({ agentId: String(r.agent_id), score: r.score, parts: { work: r.work, repayment: r.repayment, feedback: r.feedback, time: r.time, reliability: r.reliability }, factorOwn: !!r.factor_own, owner: r.owner, wallet: r.wallet }));
+  }
+
+  /** The block the ERC-8004 registries are read to. */
+  readTo(): number | null {
+    return this.cursor("8004", this.cfg.fromBlock).up;
   }
 
   // ---------- claiming a report ----------
@@ -1076,7 +1101,7 @@ export class Reports {
 }
 
 /** A report in plain words, for a person or an assistant. The same to the letter in the kit (packages/kit/src/reports.ts). */
-export function reportText(r: Pick<ReportJson, "agent" | "score" | "rank" | "ranked" | "version" | "parts" | "pulls" | "flags" | "raise" | "links" | "blank">): string {
+export function reportText(r: Pick<ReportJson, "agent" | "score" | "rank" | "ranked" | "version" | "parts" | "pulls" | "flags" | "raise" | "links" | "blank"> & { onChain?: Pick<ReportOnChain, "written" | "since" | "tx" | "txUrl"> | null }): string {
   const who = `${r.agent.name}${r.agent.agentId ? ` (ERC-8004 #${r.agent.agentId})` : ""}`;
   const lines = [`${who}: ${r.score} of 1000 on its Factor credit report${r.rank ? `, ${ordinal(r.rank)} of ${r.ranked.toLocaleString("en-US")} agents scored on Robinhood Chain` : r.agent.factorOwn ? ", one of Factor's own agents, ranked apart" : ""} (${r.version}).`];
   if (r.blank) lines.push("Nothing counts on its record yet: no paid job, no repayment, no paying client's word.");
@@ -1085,6 +1110,7 @@ export function reportText(r: Pick<ReportJson, "agent" | "score" | "rank" | "ran
   for (const p of r.pulls) lines.push(`Pulled: ${p.why}`);
   for (const f of r.flags) lines.push(`${f.title}: ${f.words} ${f.effect}`);
   if (r.raise.length) lines.push(`What raises it: ${r.raise[0]}`);
+  if (r.onChain?.written && r.onChain.since) lines.push(`On ERC-8004 since ${r.onChain.since.slice(0, 10)}: any app reads this score from the reputation registry (tag factorReport). ${r.onChain.txUrl ?? r.onChain.tx ?? ""}`.trim());
   lines.push(`The report: ${r.links.page}`);
   lines.push("Worked out from the chain by one public formula. It moves no money.");
   return lines.join("\n");

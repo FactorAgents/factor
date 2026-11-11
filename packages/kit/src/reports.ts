@@ -40,6 +40,31 @@ export interface CreditReport {
   erc8004: { client: string; tag1: string; tag2: string; value: string; at: string; counted: boolean; why: string }[];
   claim: { by: string; name: string | null; about: string | null; site: string | null; x: string | null; signedAt: string } | null;
   links: { page: string; card: string; badge: string; signed: string; erc8004: string | null; desk: string | null };
+  /** its score on the ERC-8004 reputation registry, written by Factor: since when, the transaction, how to read it. Null for an agent with no identity */
+  onChain?: ReportOnChain | null;
+}
+
+/** A report's place on ERC-8004, written by Factor's gas wallet with tag1 "factorReport", or prepared and not yet written. */
+export interface ReportOnChain {
+  written: boolean;
+  /** when its first entry was mined */
+  since: string | null;
+  score: number | null;
+  version: string | null;
+  tx: string | null;
+  txUrl: string | null;
+  /** its number in the registry, for the writer */
+  index: number | null;
+  at: string | null;
+  /** its file, word for word; its keccak256 is the entry's hash */
+  uri: string | null;
+  entries: number;
+  reviewer: string | null;
+  registry: string;
+  tag1: string;
+  /** how anyone reads it from the registry itself */
+  read: string;
+  prepared: string | null;
 }
 
 export interface ReportRow { subject: string; agentId: string | null; wallet: string | null; name: string; score: number; parts: Record<string, number>; pulled: number; flags: string[]; sources: string[]; factorOwn: boolean; rank: number | null; lastAt: string | null }
@@ -118,7 +143,7 @@ export async function signedReport(agent: string | number, o: { api?: string; si
 const ordinal = (n: number): string => `${n}${n % 100 >= 11 && n % 100 <= 13 ? "th" : ["th", "st", "nd", "rd"][n % 10] ?? "th"}`;
 
 /** A report in plain words, for a person or an assistant. The same to the letter as the engine's (engine/src/reports.ts). */
-export function reportText(r: Pick<CreditReport, "agent" | "score" | "rank" | "ranked" | "version" | "parts" | "pulls" | "flags" | "raise" | "links" | "blank">): string {
+export function reportText(r: Pick<CreditReport, "agent" | "score" | "rank" | "ranked" | "version" | "parts" | "pulls" | "flags" | "raise" | "links" | "blank"> & { onChain?: Pick<ReportOnChain, "written" | "since" | "tx" | "txUrl"> | null }): string {
   const who = `${r.agent.name}${r.agent.agentId ? ` (ERC-8004 #${r.agent.agentId})` : ""}`;
   const lines = [`${who}: ${r.score} of 1000 on its Factor credit report${r.rank ? `, ${ordinal(r.rank)} of ${r.ranked.toLocaleString("en-US")} agents scored on Robinhood Chain` : r.agent.factorOwn ? ", one of Factor's own agents, ranked apart" : ""} (${r.version}).`];
   if (r.blank) lines.push("Nothing counts on its record yet: no paid job, no repayment, no paying client's word.");
@@ -127,6 +152,7 @@ export function reportText(r: Pick<CreditReport, "agent" | "score" | "rank" | "r
   for (const p of r.pulls) lines.push(`Pulled: ${p.why}`);
   for (const f of r.flags) lines.push(`${f.title}: ${f.words} ${f.effect}`);
   if (r.raise.length) lines.push(`What raises it: ${r.raise[0]}`);
+  if (r.onChain?.written && r.onChain.since) lines.push(`On ERC-8004 since ${r.onChain.since.slice(0, 10)}: any app reads this score from the reputation registry (tag factorReport). ${r.onChain.txUrl ?? r.onChain.tx ?? ""}`.trim());
   lines.push(`The report: ${r.links.page}`);
   lines.push("Worked out from the chain by one public formula. It moves no money.");
   return lines.join("\n");

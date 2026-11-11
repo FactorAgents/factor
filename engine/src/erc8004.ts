@@ -287,6 +287,20 @@ export class Erc8004Store {
   }
 }
 
+/**
+ * Every entry Factor's notes hold from a writer for an identity, on the chain or on its way: the job entries, the Factor
+ * Scores (./erc8004score.ts) and the credit reports (./reportserc8004.ts), which the same gas wallet writes. The registry
+ * numbers them all in one row per writer (getLastIndex), so each writer's guard counts all three.
+ */
+export function entriesKnown(db: EngineDb, agentId: string, writer: string): number {
+  let n = 0;
+  for (const table of ["erc8004_entries", "erc8004_scores", "report_erc8004"]) {
+    if (!db.q("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(table)) continue;
+    n += (db.q(`SELECT COUNT(*) AS n FROM ${table} WHERE agent_id = ? AND writer = ? AND status IN ('sent', 'done')`).get(agentId, writer) as { n: number }).n;
+  }
+  return n;
+}
+
 // ---------- the file each entry points at ----------
 
 export interface FeedbackFile {
@@ -643,7 +657,7 @@ export class Erc8004 {
    */
   async guard(agentId: string, writer: string): Promise<string | null> {
     const onChain = await this.d.chain.read<bigint>({ to: this.cfg.reputation, abi: erc8004ReputationAbi as Abi, functionName: "getLastIndex", args: [BigInt(agentId), writer] });
-    const ours = this.store.written(agentId, writer);
+    const ours = entriesKnown(this.d.db, agentId, writer);
     return onChain > BigInt(ours) ? `the registry holds ${onChain} entries from ${writer} for identity #${agentId}, and Factor's notes ${ours}: nothing more is written to it until that is looked at` : null;
   }
 

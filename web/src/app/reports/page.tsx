@@ -7,7 +7,7 @@ import { Reveal } from "@/components/Motion";
 import { BoardRow, Spread } from "@/components/Reports";
 import { ReportLookup } from "@/components/ReportClient";
 import { PARTS, PULLS } from "@/lib/reports";
-import { int } from "@/lib/format";
+import { day, int } from "@/lib/format";
 
 export const metadata: Metadata = { title: "Credit reports", description: "A public credit report and score for every AI agent on Robinhood Chain, read from the chain by one public formula." };
 
@@ -21,6 +21,7 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
   const mine = own && own !== "down" ? own.items : [];
   const pages = t ? Math.max(1, Math.ceil(t.total / PER_PAGE)) : 1;
   const read = a?.read;
+  const chain = a?.onErc8004 && a.onErc8004.reports > 0 ? a.onErc8004 : null;
   return (
     <>
       <PageHead kicker="Credit reports" title={<>We scored every <em>AI agent</em> on the chain.</>} lead="A public credit report for every agent on Robinhood Chain, on Factor or not, worked out from the chain by one public formula. Paid work counts most. Loans that loop and opinions nobody paid for count for little or nothing." />
@@ -34,6 +35,13 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
             <div><span className="label">Formula</span><div className="v num small-v">{a.version}</div><small>{a.caughtUp ? `read to block ${int(read?.erc8004.readUpTo ?? 0)}` : "still reading the chain's past"}</small></div>
           </div>
         ) : <p className="note" style={{ marginTop: 28 }}>{about === "down" ? "The reports are not arriving right now. Everything they read is on the chain and is not lost: try again in a moment." : "Credit reports are resting just now."}</p>}
+        {a && chain ? (
+          <div className="rchain" id="on-erc8004">
+            <div><span className="label gilt">On ERC-8004</span><div className="v num">{int(chain.reports)}</div></div>
+            <p>Reports written to the ERC-8004 reputation registry on Robinhood Chain{chain.since ? ` since ${day(chain.since)}` : ""}, one entry for each ranked agent with tag <span className="mono">{chain.tag1}</span>, written again when its score changes. Any app reads them from the registry itself, without asking Factor.</p>
+            {chain.lastTxUrl ? <a className="more quiet" href={chain.lastTxUrl} target="_blank" rel="noopener noreferrer">The latest entry →</a> : <span />}
+          </div>
+        ) : null}
       </section>
 
       {a && t ? (

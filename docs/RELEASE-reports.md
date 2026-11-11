@@ -148,7 +148,7 @@ such job counts its real payer.
 
 - **Writing scores to ERC-8004.** Prepared and shown (`/api/v1/reports/erc8004/<n>`), never sent. Turning it on costs gas for each
   agent (one `giveFeedback`, and a revoke of the one before, as the Factor Score does): a separate change, on your word, with a
-  daily gas cap.
+  daily gas cap. Done on 11 Nov 2026: `docs/RELEASE-reports-erc8004.md`.
 - **The scale** was decided before release: `factor-report/1.1.0`, calibrated to this young chain (`REPORTS.md`, section 11).
 - **Names of identities whose file is on another site** are not fetched (only on-chain files are read); such agents show as
   "Agent #n" until their owner claims the report.

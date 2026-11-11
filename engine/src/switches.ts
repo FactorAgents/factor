@@ -57,13 +57,16 @@
 //   reports   Factor Credit Reports (../reports.ts): every report, the leaderboard, the look-up and the signed answers
 //             hidden, no claim taken, and the chain not read for them. What was read and claimed is kept, and the reading
 //             goes on from where it stopped once it is turned back on. Off unless REPORTS=on: this switch only stops it.
+//   reports8004 writing credit report scores to ERC-8004 (../reportserc8004.ts). What was written stays on the chain; a
+//             report that changed meanwhile is written once it is turned back on. Off unless REPORTS_ERC8004=on: this
+//             switch only stops it. The "reports" switch stops it too, with the reports.
 //
 // A switch is turned with POST /v1/admin/switch and the owner's key, or set at start with ENGINE_STOP (names with
 // commas between them). It is kept in the database, so it holds across a restart until it is turned back.
 
 import type { EngineDb } from "./chain/db.js";
 
-export const SWITCHES = ["keeper", "accounts", "compute", "house", "hiring", "erc8004", "autoapply", "bids", "verified", "coins", "lines", "guarantees", "bounties", "raeto", "milestones", "everywhere", "connect", "scores", "ask", "copilot", "reviews", "hey", "verifiers", "reports"] as const;
+export const SWITCHES = ["keeper", "accounts", "compute", "house", "hiring", "erc8004", "autoapply", "bids", "verified", "coins", "lines", "guarantees", "bounties", "raeto", "milestones", "everywhere", "connect", "scores", "ask", "copilot", "reviews", "hey", "verifiers", "reports", "reports8004"] as const;
 export type Switch = (typeof SWITCHES)[number];
 const key = (name: Switch) => `switch:${name}`;
 

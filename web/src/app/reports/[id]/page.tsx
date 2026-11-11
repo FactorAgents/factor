@@ -28,6 +28,9 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
   const site = "https://factoragents.fun";
   const id = a.agentId ?? a.subject;
   const counted = r.timeline.filter((t) => t.counted).length;
+  // its score on the ERC-8004 reputation registry: written by Factor (since when, the transaction), or prepared
+  const on = a.agentId ? r.onChain ?? null : null;
+  const fileOf = on?.uri ? on.uri.replace(/^https?:\/\/[^/]+/, "") : null;
   return (
     <>
       <section className="wrap page-head">
@@ -48,6 +51,9 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
             <span className="label gilt">Credit score · {r.version}</span>
             <div className="bigscore num" style={{ marginTop: 18 }}><Count to={r.score} /><small>of {r.of}</small></div>
             <p className="fs-summary">{r.rank ? <>{ordinal(r.rank)} of {r.ranked.toLocaleString("en-US")} agents scored on Robinhood Chain.</> : a.factorOwn ? "One of Factor's own agents: scored the same way, and ranked apart." : r.blank ? "Nothing counts on its record yet: no paid job, no repayment, no paying client's word." : "Not ranked: a score of 0."}</p>
+            {on?.written && on.since ? (
+              <p className="rchainline"><span className="label gilt">On ERC-8004 since {day(on.since)}</span>{on.txUrl ? <a className="mono" href={on.txUrl} target="_blank" rel="noopener noreferrer">{short(on.tx!)}</a> : null}</p>
+            ) : null}
             <PartBars r={r} />
           </div>
           <div>
@@ -61,6 +67,7 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
               {a.maker && a.maker !== a.owner ? <><dt>Registered by</dt><dd className="mono"><a href={`${explorer}/address/${a.maker}`} target="_blank" rel="noopener noreferrer">{short(a.maker)}</a></dd></> : null}
               <dt>On the Factor desk</dt><dd>{a.desk.length ? (r.links.desk ? <a href={r.links.desk.replace(/^https?:\/\/[^/]+/, "")}>{short(a.desk[0]!)}</a> : short(a.desk[0]!)) : "not yet"}</dd>
               {a.registeredAt ? <><dt>Registered</dt><dd>{day(a.registeredAt)}</dd></> : null}
+              {on ? <><dt>Its score on ERC-8004<small>{on.written ? `tag ${on.tag1}, written by Factor` : r.rank ? "prepared, not yet written" : "written for ranked agents only"}</small></dt><dd>{on.written && on.txUrl ? <a href={on.txUrl} target="_blank" rel="noopener noreferrer">{on.score} since {day(on.since!)}</a> : <a href={`/api/v1/reports/erc8004/${id}`}>the entry</a>}</dd></> : null}
             </dl>
           </div>
         </div></Reveal>
@@ -96,9 +103,9 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
             <dl className="kv" style={{ marginTop: 16 }}>
               <dt>The report<small>JSON, every figure: /api/v1/reports/agent/{id}</small></dt><dd><a href={`/api/v1/reports/agent/${id}`}>open</a></dd>
               <dt>Signed by Factor<small>EIP-191, good for ten minutes: /api/v1/reports/signed/{id}</small></dt><dd><a href={`/api/v1/reports/signed/${id}`}>open</a></dd>
-              {a.agentId ? <><dt>On ERC-8004<small>prepared, not written: /api/v1/reports/erc8004/{id}</small></dt><dd><a href={`/api/v1/reports/erc8004/${id}`}>open</a></dd></> : null}
+              {on?.written && fileOf ? <><dt>On ERC-8004<small>the entry&apos;s file, its keccak256 the hash on the chain: {fileOf}</small></dt><dd><a href={fileOf}>open</a></dd></> : on ? <><dt>On ERC-8004<small>prepared, not yet written: /api/v1/reports/erc8004/{id}</small></dt><dd><a href={`/api/v1/reports/erc8004/${id}`}>open</a></dd></> : null}
             </dl>
-            <p className="small" style={{ marginTop: 16 }}>{a.agentId ? "The score could be written to the ERC-8004 reputation registry for its identity. The entry is prepared and shown above; it is not sent, since writing costs gas for every agent. " : ""}Assistants read it with <span className="mono">factor_credit_report</span> at factoragents.fun/mcp. <Link className="more quiet" href="/docs#reports">How it works →</Link></p>
+            <p className="small" style={{ marginTop: 16 }}>{on?.written ? <>Its score is on the ERC-8004 reputation registry for its identity, so any app reads it from the registry itself: <span className="mono">{`getSummary(${a.agentId}, [Factor], "${on.tag1}", "")`}</span>. </> : on && r.rank ? "Factor writes every ranked agent's score to the ERC-8004 reputation registry. This one's entry is prepared and not written yet. " : on ? "Factor writes ranked agents' scores to the ERC-8004 reputation registry; this one is not ranked, so its entry is only prepared. " : ""}Assistants read it with <span className="mono">factor_credit_report</span> at factoragents.fun/mcp. <Link className="more quiet" href="/docs#reports">How it works →</Link></p>
           </div>
         </div></Reveal>
       </section>
