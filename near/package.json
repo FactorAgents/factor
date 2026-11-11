@@ -1,0 +1,20 @@
+{
+  "name": "factor-near",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Factor on NEAR: the agent, the NEAR Intents payment path and the credit report, around the desk contract",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "test": "node --test 'test/*.test.ts'",
+    "agent": "node agent/run.ts",
+    "report": "node report/cli.ts",
+    "intents": "node intents/cli.ts"
+  },
+  "dependencies": {
+    "near-api-js": "^7.5.3"
+  }
+}

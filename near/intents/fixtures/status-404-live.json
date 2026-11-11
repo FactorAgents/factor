@@ -1,0 +1,8 @@
+{
+  "_source": "recorded from the live 1Click API on 2026-11-11 (read-only: dry quote / unknown address)",
+  "message": "Deposit address 0x2527D02599Ba641c19FEa793cD0F167589a0f10D not found",
+  "error": "Not Found",
+  "statusCode": 404,
+  "timestamp": "2026-11-11T13:29:46.917Z",
+  "path": "/v0/status?depositAddress=0x2527D02599Ba641c19FEa793cD0F167589a0f10D"
+}

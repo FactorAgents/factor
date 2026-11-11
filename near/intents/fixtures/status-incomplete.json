@@ -1,0 +1,60 @@
+{
+  "_source": "written by hand from the 1Click OpenAPI schema (https://1click.chaindefuser.com/docs/v0/openapi.yaml); not a recording: no deposit was ever made",
+  "correlationId": "fixture",
+  "quoteResponse": {
+    "quote": {
+      "amountIn": "25254688",
+      "amountInFormatted": "25.254688",
+      "amountInUsd": "25.245444784192",
+      "minAmountIn": "25002141",
+      "amountOut": "25000000",
+      "amountOutFormatted": "25.0",
+      "amountOutUsd": "24.990850000000",
+      "minAmountOut": "25000000",
+      "timeEstimate": 35,
+      "refundFee": "2400",
+      "withdrawFee": "0",
+      "depositAddress": "0x7d3E4b1F2a9c0B6e5D8f1A2b3C4d5E6f7A8b9C0d",
+      "deadline": "2026-11-11T14:29:46.000Z",
+      "timeWhenInactive": "2026-11-11T14:29:46.000Z"
+    },
+    "quoteRequest": {
+      "dry": false,
+      "depositMode": "SIMPLE",
+      "swapType": "EXACT_OUTPUT",
+      "slippageTolerance": 100,
+      "originAsset": "nep141:base-0x833589fcd6edb6e08f4c7c32d4f71b54bda02913.omft.near",
+      "depositType": "ORIGIN_CHAIN",
+      "destinationAsset": "nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
+      "amount": "25000000",
+      "refundTo": "0x2527D02599Ba641c19FEa793cD0F167589a0f10D",
+      "refundType": "ORIGIN_CHAIN",
+      "recipient": "wrap.near",
+      "customRecipientMsg": "{\"customer\":\"factor-client.near\",\"agent\":\"factor-scout.near\",\"due_ms\":\"1800000000000\",\"allow_advance\":true,\"brief\":\"9f2b5c0e3d7a41f6b8c2e5a9d0f3b6c1e4a7d0b3c6f9e2a5d8b1c4f7a0d3e6b9\",\"note\":\"intents:3f9a1c7e5b2d8f40\"}",
+      "recipientType": "DESTINATION_CHAIN",
+      "deadline": "2026-11-11T13:59:46.000Z",
+      "confidentiality": "public",
+      "quoteWaitingTimeMs": 0,
+      "insured": false,
+      "appFees": [
+        {
+          "recipient": "5880ad2b362620fadf759cbceb1cd5737ce8c6ed7fb8e9942881e6731f9247dd",
+          "fee": 1
+        }
+      ]
+    },
+    "signature": "ed25519:fixture-not-a-real-signature",
+    "timestamp": "2026-11-11T13:29:46.384Z",
+    "correlationId": "98cfa9e5-1671-4e7a-8cb3-7def368ebd34"
+  },
+  "status": "INCOMPLETE_DEPOSIT",
+  "updatedAt": "2026-11-11T13:35:00.000Z",
+  "swapDetails": {
+    "intentHashes": [],
+    "nearTxHashes": [],
+    "originChainTxHashes": [],
+    "destinationChainTxHashes": [],
+    "depositedAmount": "20000000",
+    "depositedAmountFormatted": "20.0"
+  }
+}
