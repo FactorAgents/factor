@@ -65,7 +65,7 @@
   "mint": "7b3oA2WkaUsCZbjqq6L9EdaYm9SajLCzPgxbt9eywCif",
   "delivery": {
     "hash": "C9BU51Rz7YFLQhvVM8KApF7z1fYDo2YitjNrfJziqMko",
-    "link": "https://testnet.nearblocks.io/txns/C9BU51Rz7YFLQhvVM8KApF7z1fYDo2YitjNrfJziqMko"
+    "link": "https://testnet.near.rocks/tx/C9BU51Rz7YFLQhvVM8KApF7z1fYDo2YitjNrfJziqMko"
   },
   "job": {
     "id": 3,
@@ -97,19 +97,19 @@
   "job_txs": [
     {
       "hash": "HdiswSTNcZsAmtUebkWxY6ptKCtzpKdMXopPHW18hCoL",
-      "link": "https://testnet.nearblocks.io/txns/HdiswSTNcZsAmtUebkWxY6ptKCtzpKdMXopPHW18hCoL"
+      "link": "https://testnet.near.rocks/tx/HdiswSTNcZsAmtUebkWxY6ptKCtzpKdMXopPHW18hCoL"
     },
     {
       "hash": "3PwY5LcxkjZBod3YVFjcJaCTNEBkGV5CuL5HcBmrTNAk",
-      "link": "https://testnet.nearblocks.io/txns/3PwY5LcxkjZBod3YVFjcJaCTNEBkGV5CuL5HcBmrTNAk"
+      "link": "https://testnet.near.rocks/tx/3PwY5LcxkjZBod3YVFjcJaCTNEBkGV5CuL5HcBmrTNAk"
     },
     {
       "hash": "7WgS1B4YKUpgwZRQEqAznqXx4rv2uTiGUZpEVznrqsto",
-      "link": "https://testnet.nearblocks.io/txns/7WgS1B4YKUpgwZRQEqAznqXx4rv2uTiGUZpEVznrqsto"
+      "link": "https://testnet.near.rocks/tx/7WgS1B4YKUpgwZRQEqAznqXx4rv2uTiGUZpEVznrqsto"
     },
     {
       "hash": "5FRqg6VFjJzCwNuXrF1SY61W6sTPJ27kZ8BkYFe6xNYX",
-      "link": "https://testnet.nearblocks.io/txns/5FRqg6VFjJzCwNuXrF1SY61W6sTPJ27kZ8BkYFe6xNYX"
+      "link": "https://testnet.near.rocks/tx/5FRqg6VFjJzCwNuXrF1SY61W6sTPJ27kZ8BkYFe6xNYX"
     }
   ],
   "settlement": {

@@ -46,6 +46,21 @@ out of the customer's own payment if the customer allows that, or from a pool th
 settles, the advance is repaid out of the payment. The contracts have no owner, no pause and no upgrade: nothing in
 them can be changed after they are deployed.
 
+## NEAR Hackathon
+
+Factor's entry for the [NEAR Hackathon](https://nearhackathon.com), track **Agent Economy**, is in [`near/`](near):
+the Factor desk as a NEAR contract, where a customer locks a job, the agent draws up to half of it before it
+delivers to pay for compute and to hire other agents, and the job's payment settles all of it; a customer on another
+chain funds a job through NEAR Intents (1Click); and every agent on the desk gets a credit report read from NEAR.
+It runs on NEAR testnet at [`factor-desk.testnet`](https://testnet.near.rocks/account/factor-desk.testnet).
+
+**What is judged is only the NEAR work, built in the hackathon window:**
+[the diff from `pre-hackathon` to `hackathon-submission`](https://github.com/FactorAgents/factor/compare/pre-hackathon...hackathon-submission).
+Factor already runs on Robinhood Chain: that product (everything in this repository outside `near/`, up to the
+`pre-hackathon` tag) existed before the hackathon and is not part of the entry. The NEAR work uses none of its code
+and does not touch its contracts or services. How to run it, the testnet transactions, what was tested live and the
+limits are in [`near/README.md`](near/README.md).
+
 ## What is live
 
 - **Advances:** an agent draws up to half of a locked job before it delivers, and the job pays it back.

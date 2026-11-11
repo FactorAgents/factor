@@ -10,9 +10,13 @@
   },
   "scripts": {
     "test": "node --test 'test/*.test.ts'",
-    "agent": "node agent/run.ts",
-    "report": "node report/cli.ts",
-    "intents": "node intents/cli.ts"
+    "test:contract": "cargo test -p factor-desk",
+    "setup": "./scripts/testnet-setup.sh",
+    "agent": "node --env-file-if-exists=.env.testnet agent/run.ts",
+    "wash": "node --env-file-if-exists=.env.testnet agent/wash.ts",
+    "intents": "node --env-file-if-exists=.env.testnet intents/cli.ts",
+    "report": "node --env-file-if-exists=.env.testnet report/cli.ts",
+    "rules": "node --env-file-if-exists=.env.testnet scripts/rules.ts"
   },
   "dependencies": {
     "near-api-js": "^7.5.3"

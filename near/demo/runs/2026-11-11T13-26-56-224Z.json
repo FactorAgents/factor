@@ -10,57 +10,57 @@
     {
       "name": "customer locks job",
       "hash": "GLXQNyNKTnKenZfWFhPPbEKbgAXpZPvfSo7pqwBAPGj",
-      "link": "https://testnet.nearblocks.io/txns/GLXQNyNKTnKenZfWFhPPbEKbgAXpZPvfSo7pqwBAPGj",
+      "link": "https://testnet.near.rocks/tx/GLXQNyNKTnKenZfWFhPPbEKbgAXpZPvfSo7pqwBAPGj",
       "job": "1"
     },
     {
       "name": "agent takes job",
       "hash": "8sAbAwo4riHjZJThj5kByrsuUx4hFjnJSk4UPo5mtPg8",
-      "link": "https://testnet.nearblocks.io/txns/8sAbAwo4riHjZJThj5kByrsuUx4hFjnJSk4UPo5mtPg8"
+      "link": "https://testnet.near.rocks/tx/8sAbAwo4riHjZJThj5kByrsuUx4hFjnJSk4UPo5mtPg8"
     },
     {
       "name": "agent draws advance",
       "hash": "HkXyL3buBkK2YsAC8QD1cXnsswD5H5vYXkM9Y7k7tfRb",
-      "link": "https://testnet.nearblocks.io/txns/HkXyL3buBkK2YsAC8QD1cXnsswD5H5vYXkM9Y7k7tfRb",
+      "link": "https://testnet.near.rocks/tx/HkXyL3buBkK2YsAC8QD1cXnsswD5H5vYXkM9Y7k7tfRb",
       "amount": "300000000000000000000000"
     },
     {
       "name": "agent pays for compute",
       "hash": "NwDUxtU5qCSoKKascDVB2HNLcqVwdeEfT8LeJx7CSVQ",
-      "link": "https://testnet.nearblocks.io/txns/NwDUxtU5qCSoKKascDVB2HNLcqVwdeEfT8LeJx7CSVQ",
+      "link": "https://testnet.near.rocks/tx/NwDUxtU5qCSoKKascDVB2HNLcqVwdeEfT8LeJx7CSVQ",
       "amount": "300000000000000000000000"
     },
     {
       "name": "agent hires checker",
       "hash": "4N57zAQgH6F14Q9TQEs17jitzJwPsN1LB3wDDNpwZKi2",
-      "link": "https://testnet.nearblocks.io/txns/4N57zAQgH6F14Q9TQEs17jitzJwPsN1LB3wDDNpwZKi2",
+      "link": "https://testnet.near.rocks/tx/4N57zAQgH6F14Q9TQEs17jitzJwPsN1LB3wDDNpwZKi2",
       "job": "2",
       "amount": "400000000000000000000000"
     },
     {
       "name": "checker takes sub-job",
       "hash": "EtSiU9kPd9nSbyWSNKpDfxvPDoetgouCKPvnR6RFY6yZ",
-      "link": "https://testnet.nearblocks.io/txns/EtSiU9kPd9nSbyWSNKpDfxvPDoetgouCKPvnR6RFY6yZ"
+      "link": "https://testnet.near.rocks/tx/EtSiU9kPd9nSbyWSNKpDfxvPDoetgouCKPvnR6RFY6yZ"
     },
     {
       "name": "checker delivers",
       "hash": "ExRu2YLQaBahh55YeV57bMxmTzFubUehtq68AEsiFKFw",
-      "link": "https://testnet.nearblocks.io/txns/ExRu2YLQaBahh55YeV57bMxmTzFubUehtq68AEsiFKFw"
+      "link": "https://testnet.near.rocks/tx/ExRu2YLQaBahh55YeV57bMxmTzFubUehtq68AEsiFKFw"
     },
     {
       "name": "agent pays checker",
       "hash": "4oC1irj79Y5VSkU7sosCEiQiURpXTFedwxAp4eeVw6qE",
-      "link": "https://testnet.nearblocks.io/txns/4oC1irj79Y5VSkU7sosCEiQiURpXTFedwxAp4eeVw6qE"
+      "link": "https://testnet.near.rocks/tx/4oC1irj79Y5VSkU7sosCEiQiURpXTFedwxAp4eeVw6qE"
     },
     {
       "name": "agent delivers",
       "hash": "CfgCTbVBBdymzuQzsvxqcHMYQ6eY2QFtLig7NRMpyLsK",
-      "link": "https://testnet.nearblocks.io/txns/CfgCTbVBBdymzuQzsvxqcHMYQ6eY2QFtLig7NRMpyLsK"
+      "link": "https://testnet.near.rocks/tx/CfgCTbVBBdymzuQzsvxqcHMYQ6eY2QFtLig7NRMpyLsK"
     },
     {
       "name": "customer accepts",
       "hash": "FwzpfVXZ4M1T6FnMYTF3WuPPo8SppjThW1x9S1R4QuLU",
-      "link": "https://testnet.nearblocks.io/txns/FwzpfVXZ4M1T6FnMYTF3WuPPo8SppjThW1x9S1R4QuLU",
+      "link": "https://testnet.near.rocks/tx/FwzpfVXZ4M1T6FnMYTF3WuPPo8SppjThW1x9S1R4QuLU",
       "settlement": {
         "id": "1",
         "agent": "factor-scout.testnet",

@@ -1,0 +1,83 @@
+{
+  "started": "2026-11-11T13:43:26.011Z",
+  "ftJob": "5",
+  "silentJob": "7",
+  "defaultJob": "8",
+  "log": [
+    {
+      "rule": "token job locked",
+      "hash": "CDWA5Yyh7oUt8qC6a9ryqmdezrekPemYtnFu5vaeuj6D",
+      "link": "https://testnet.near.rocks/tx/CDWA5Yyh7oUt8qC6a9ryqmdezrekPemYtnFu5vaeuj6D"
+    },
+    {
+      "rule": "agent takes it",
+      "hash": "4C1864KzuwX6asKz4KkQaHA63iWa8Pw9TkBWzc7UCaHd",
+      "link": "https://testnet.near.rocks/tx/4C1864KzuwX6asKz4KkQaHA63iWa8Pw9TkBWzc7UCaHd"
+    },
+    {
+      "rule": "agent delivers",
+      "hash": "C3dVHkR5fFGYB2o3t7Ef6avuYU7Se7fwzcWBiPFqmYAq",
+      "link": "https://testnet.near.rocks/tx/C3dVHkR5fFGYB2o3t7Ef6avuYU7Se7fwzcWBiPFqmYAq"
+    },
+    {
+      "rule": "customer accepts: the payout fails, the desk keeps it",
+      "hash": "7BhirXKaM4qj5mgvo3tisprME897mhgzYKpuzRN5Tt6K",
+      "link": "https://testnet.near.rocks/tx/7BhirXKaM4qj5mgvo3tisprME897mhgzYKpuzRN5Tt6K"
+    },
+    {
+      "rule": "job locked",
+      "hash": "FYx84MhxveThyPrJDCkxhnbKdXrDxWBEtFvBBS9TxUYQ",
+      "link": "https://testnet.near.rocks/tx/FYx84MhxveThyPrJDCkxhnbKdXrDxWBEtFvBBS9TxUYQ"
+    },
+    {
+      "rule": "agent takes it",
+      "hash": "FLq5gNtK537hEbrwLCpEg9Uum9XyNs99ZNvVCQc8kQnw",
+      "link": "https://testnet.near.rocks/tx/FLq5gNtK537hEbrwLCpEg9Uum9XyNs99ZNvVCQc8kQnw"
+    },
+    {
+      "rule": "agent delivers",
+      "hash": "F2fXpqbWTPY9P4CtxU3K3CRgZQCv9qFaDyBc6fK5GjuY",
+      "link": "https://testnet.near.rocks/tx/F2fXpqbWTPY9P4CtxU3K3CRgZQCv9qFaDyBc6fK5GjuY"
+    },
+    {
+      "rule": "customer rejects: settled at half",
+      "hash": "21Z2ujzqaYgXbu1srMmPBPr6ghiBx5ncNXMRkwvkToCN",
+      "link": "https://testnet.near.rocks/tx/21Z2ujzqaYgXbu1srMmPBPr6ghiBx5ncNXMRkwvkToCN"
+    },
+    {
+      "rule": "job locked",
+      "hash": "CKhwDfed9o1J12UqNeQk2w1URunHPhKD2YEvVuoRmifo",
+      "link": "https://testnet.near.rocks/tx/CKhwDfed9o1J12UqNeQk2w1URunHPhKD2YEvVuoRmifo"
+    },
+    {
+      "rule": "agent takes it",
+      "hash": "BpXjFkUTU3osuUBUNr14mCjPzXEy93eZg8Fchn97NsvP",
+      "link": "https://testnet.near.rocks/tx/BpXjFkUTU3osuUBUNr14mCjPzXEy93eZg8Fchn97NsvP"
+    },
+    {
+      "rule": "agent delivers",
+      "hash": "D7j3FabLXURhN4VWA4z4VhiuMPqYDx2XJxePDtZK8BuZ",
+      "link": "https://testnet.near.rocks/tx/D7j3FabLXURhN4VWA4z4VhiuMPqYDx2XJxePDtZK8BuZ"
+    },
+    {
+      "rule": "agent bonds",
+      "hash": "FvLM7wzz1NPiPVd2EuWydFMTRhfwaQYWtmUyDBcV6BJ7",
+      "link": "https://testnet.near.rocks/tx/FvLM7wzz1NPiPVd2EuWydFMTRhfwaQYWtmUyDBcV6BJ7"
+    },
+    {
+      "rule": "job locked",
+      "hash": "GPcKx4mAgv7RG7kKQX5hc4wfc2nU8QzNpd5fgfCNA6Zz",
+      "link": "https://testnet.near.rocks/tx/GPcKx4mAgv7RG7kKQX5hc4wfc2nU8QzNpd5fgfCNA6Zz"
+    },
+    {
+      "rule": "agent takes it",
+      "hash": "BWmpvAjZoxDT6g1fHJwKayjsoiLrMNjkDxRx5HhgRpXQ",
+      "link": "https://testnet.near.rocks/tx/BWmpvAjZoxDT6g1fHJwKayjsoiLrMNjkDxRx5HhgRpXQ"
+    },
+    {
+      "rule": "agent draws 0.4",
+      "hash": "4kStN58oE3w7v1LyC5kXqFRBTxSZnuN3CCDRH3TsacbA",
+      "link": "https://testnet.near.rocks/tx/4kStN58oE3w7v1LyC5kXqFRBTxSZnuN3CCDRH3TsacbA"
+    }
+  ]
+}
