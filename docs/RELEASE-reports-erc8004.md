@@ -75,4 +75,18 @@ run takes about 20 minutes. A weekly rewrite of every agent (an entry and a revo
 
 ## 6. The live run
 
-(filled in after the release)
+Released 11 Nov 2026 (main `c86b7bc`): `REPORTS_ERC8004=on` set on the engine, the default cap. The engine started at
+16:27:13 UTC and wrote the first entry at 16:27:46.
+
+- **Entries:** 406, one for each of the 406 ranked agents with an identity, best first, about ten a pass. None failed, none
+  refused, none written twice, no revoke (nothing had changed yet). First 16:27 UTC, last 17:03 UTC.
+- **Gas:** 79,864,453 in all, 196,710 an entry on average (195,479 to 212,603, the L1 part included), at 0.0201 to 0.0203 gwei:
+  **0.001603913375542 ETH** from the gas wallet `0xe4314Ba4DAe5f31582ec23812d5f40287f1eFdE0`, under half the day's cap.
+- **First:** #8716 witty-vole, 223, `0xd6cdce449e18ae90509cd65b9ff288800cce9d16b516738feea929a26cf20871` (block 111,839,267);
+  its file `/api/v1/erc8004/report/1` hashes to the entry's `0xf3a7ac91…ab646f`.
+- **Last:** #20750 Research Test Agent, 1, `0xefceb2e74ef7235f626e80c2e2f839dcddeccab1c72b11b0cd9e28da19f0b7b1` (block 111,860,052).
+- **Read back from the public node:** `getSummary(id, [gas wallet], "factorReport", "")` gave `(1, 223, 0)` for #8716 and #8725,
+  `(1, 207, 0)` for #8700, `(1, 85, 0)` for #8710 and `(1, 1, 0)` for #20072 and #20750; `readFeedback(8716, gas wallet, 1)` gave
+  223, 0 decimals, `factorReport`, `1.1.0`, not revoked.
+- **The site:** `/api/v1/reports` says `onErc8004.reports: 406`; `/reports` shows the count; the report pages say "On ERC-8004
+  since 11 Nov 2026" with the transaction.

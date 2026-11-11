@@ -146,7 +146,7 @@ of the chain or a test).
 
 ## 9. Credit scores on ERC-8004
 
-Since 11 Nov 2026 every ranked agent's score is on the ERC-8004 reputation registry for its identity
+Since 11 Nov 2026 every ranked agent's score is on the ERC-8004 reputation registry (406 entries in the first run, 0.0016 ETH of gas) for its identity
 (`0x8004BAa17C55a88189AE136b182e5fdA19dE9b63` on Robinhood Chain), so any app that reads the standard sees it without asking
 Factor. `engine/src/reportserc8004.ts` writes it from Factor's gas wallet (`0xe4314Ba4DAe5f31582ec23812d5f40287f1eFdE0`):
 
