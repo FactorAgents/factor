@@ -12,8 +12,9 @@ import { answerBody, answerHeaders, sharedRead } from "@/lib/shared";
 import { sampleAsk } from "@/lib/askSample";
 import { sampleReport, sampleReportsAbout, sampleReportsFind, sampleReportsTop } from "@/lib/reportsSample";
 import { sampleCopilot } from "@/lib/copilotSample";
+import { sampleAgentVouching, sampleCoverVouches, sampleVouch, sampleVouchingAbout, sampleVouchList, sampleVoucher, withCoverVouches, withVouching, withVouchingState } from "@/lib/vouchingSample";
 
-const READS = /^(state|ask|copilot|copilot\/c\/[0-9a-f]{32}|pulse|desk|agents|agents\/made\/0x[0-9a-fA-F]{40}|agents\/[0-9a-zA-Z-]{3,42}|jobs|jobs\/\d{1,9}|jobs\/\d{1,9}\/tree|ledger|burns|accounts\/0x[0-9a-fA-F]{40}|accounts\/relay\/0x[0-9a-f]{64}|accounts\/by-credential\/0x[0-9a-f]{2,2046}|pay\/link\/[A-Za-z0-9_-]{20,6000}\.[A-Za-z0-9_-]{80,3000}|pay\/links\/0x[0-9a-fA-F]{40}|firms|firms\/[a-z0-9-]{3,32}|plans|plans\/0x[0-9a-f]{64}|erc8004|erc8004\/[0-9a-zA-Z-]{3,42}|openjobs|openjobs\/0x[0-9a-f]{64}|autoapply\/[0-9a-zA-Z-]{3,42}|verified|verified\/[0-9a-zA-Z-]{3,42}|coins|coins\/about|coins\/[0-9a-zA-Z-]{3,42}|lines|lines\/about|lines\/[0-9a-zA-Z-]{3,42}|guarantees|guarantees\/about|guarantees\/agent\/[0-9a-zA-Z-]{3,42}|guarantees\/(job|cover)\/\d{1,9}|guarantees\/customer\/0x[0-9a-fA-F]{40}|bounties|bounties\/about|bounties\/\d{1,9}|bounties\/\d{1,9}\/entries\/0x[0-9a-fA-F]{40}|bounties\/\d{1,9}\/mine\/0x[0-9a-fA-F]{40}|bounties\/agent\/[0-9a-zA-Z-]{3,42}|bounties\/poster\/0x[0-9a-fA-F]{40}|milestones|milestones\/about|milestones\/\d{1,9}|milestones\/job\/\d{1,9}|milestones\/agent\/[0-9a-zA-Z-]{3,42}|milestones\/customer\/0x[0-9a-fA-F]{40}|reviews|reviews\/agent\/[0-9a-zA-Z-]{3,42}|reviews\/job\/\d{1,9}|reviews\/job\/\d{1,9}\/erc8004|reviews\/file\/\d{1,9}\/\d{1,2}|hey|hey\/record|hey\/agent\/[0-9a-zA-Z-]{3,42}|verifiers|verifiers\/about|verifiers\/cases|verifiers\/case\/\d{1,9}|verifiers\/job\/\d{1,9}|verifiers\/0x[0-9a-fA-F]{40}|verifiers\/erc8004\/\d{1,9}|verifiers\/file\/\d{1,9}|verifiers\/receipt\/\d{1,9}\/0x[0-9a-fA-F]{40}|reports|reports\/formula|reports\/top|reports\/find|reports\/(agent|signed|erc8004)\/(\d{1,12}|0x[0-9a-fA-F]{40}|[\w.-]{2,48}))$/;
+const READS = /^(state|ask|copilot|copilot\/c\/[0-9a-f]{32}|pulse|desk|agents|agents\/made\/0x[0-9a-fA-F]{40}|agents\/[0-9a-zA-Z-]{3,42}|jobs|jobs\/\d{1,9}|jobs\/\d{1,9}\/tree|ledger|burns|accounts\/0x[0-9a-fA-F]{40}|accounts\/relay\/0x[0-9a-f]{64}|accounts\/by-credential\/0x[0-9a-f]{2,2046}|pay\/link\/[A-Za-z0-9_-]{20,6000}\.[A-Za-z0-9_-]{80,3000}|pay\/links\/0x[0-9a-fA-F]{40}|firms|firms\/[a-z0-9-]{3,32}|plans|plans\/0x[0-9a-f]{64}|erc8004|erc8004\/[0-9a-zA-Z-]{3,42}|openjobs|openjobs\/0x[0-9a-f]{64}|autoapply\/[0-9a-zA-Z-]{3,42}|verified|verified\/[0-9a-zA-Z-]{3,42}|coins|coins\/about|coins\/[0-9a-zA-Z-]{3,42}|lines|lines\/about|lines\/[0-9a-zA-Z-]{3,42}|guarantees|guarantees\/about|guarantees\/agent\/[0-9a-zA-Z-]{3,42}|guarantees\/(job|cover)\/\d{1,9}|guarantees\/customer\/0x[0-9a-fA-F]{40}|bounties|bounties\/about|bounties\/\d{1,9}|bounties\/\d{1,9}\/entries\/0x[0-9a-fA-F]{40}|bounties\/\d{1,9}\/mine\/0x[0-9a-fA-F]{40}|bounties\/agent\/[0-9a-zA-Z-]{3,42}|bounties\/poster\/0x[0-9a-fA-F]{40}|milestones|milestones\/about|milestones\/\d{1,9}|milestones\/job\/\d{1,9}|milestones\/agent\/[0-9a-zA-Z-]{3,42}|milestones\/customer\/0x[0-9a-fA-F]{40}|reviews|reviews\/agent\/[0-9a-zA-Z-]{3,42}|reviews\/job\/\d{1,9}|reviews\/job\/\d{1,9}\/erc8004|reviews\/file\/\d{1,9}\/\d{1,2}|hey|hey\/record|hey\/agent\/[0-9a-zA-Z-]{3,42}|verifiers|verifiers\/about|verifiers\/cases|verifiers\/case\/\d{1,9}|verifiers\/job\/\d{1,9}|verifiers\/0x[0-9a-fA-F]{40}|verifiers\/erc8004\/\d{1,9}|verifiers\/file\/\d{1,9}|verifiers\/receipt\/\d{1,9}\/0x[0-9a-fA-F]{40}|reports|reports\/formula|reports\/top|reports\/find|reports\/(agent|signed|erc8004)\/(\d{1,12}|0x[0-9a-fA-F]{40}|[\w.-]{2,48})|vouches|vouches\/about|vouches\/\d{1,9}|vouches\/(agent|voucher)\/[0-9a-zA-Z-]{3,42}|vouches\/line\/0x[0-9a-fA-F]{40}|vouches\/cover\/\d{1,9})$/;
 // two things a wallet signs, what an account without a wallet asks of the engine (lib/passkey.ts), a job paid
 // through a Pay with Factor link (lib/pay.ts), an agent hiring another for part of its job (lib/subjobs.ts), and a
 // firm formed, joined, left or hired (lib/firms.ts), and a monthly plan signed, a month of it linked, or a plan stopped
@@ -28,7 +29,7 @@ const READS = /^(state|ask|copilot|copilot\/c\/[0-9a-f]{32}|pulse|desk|agents|ag
 // only when it hashes to what the verifier contract holds (lib/verifiers.ts), and an owner's claim of its agent's credit
 // report (lib/reports.ts)
 const WRITES = /^(match|ask|copilot|reviews|reviews\/reply|reviews\/erc8004|agents\/profile|agents\/make|agents\/pause|jobs\/title|jobs\/brief|jobs\/delivery|accounts|accounts\/check|accounts\/call|accounts\/relay|pay\/deal|pay\/links|subjobs\/plan|subjobs\/link|firms\/form|firms\/join|firms\/leave|firms\/hire|plans\/create|plans\/month|plans\/stop|erc8004\/link|openjobs\/post|openjobs\/apply|openjobs\/hire|openjobs\/close|openjobs\/withdraw|autoapply\/rules|verified\/check|coins\/permission|bounties\/task|bounties\/entry|bounties\/read|milestones\/terms|hey\/link|verifiers\/terms|verifiers\/reason|reports\/claim)$/;
-const QUERY = ["limit", "before", "show", "agent", "customer", "firm", "verified", "sort", "poster", "q", "maker", "verifier", "offset", "own"];
+const QUERY = ["limit", "before", "show", "agent", "customer", "firm", "verified", "sort", "poster", "q", "maker", "verifier", "offset", "own", "state", "voucher"];
 const BODY_MOST = 4096;
 // an order of an account carries its calls and a passkey's answer
 const ORDER_MOST = 32_768;
@@ -37,7 +38,14 @@ const json = (body: unknown, status = 200) => NextResponse.json(body, { status, 
 
 // With the sample on there is no engine: the same reads are answered from the sample, so every page works alone.
 function fromSample(path: string, q: URLSearchParams): unknown {
-  if (path === "state") return sampleState();
+  if (path === "state") return withVouchingState(sampleState());
+  if (path === "vouches/about") return sampleVouchingAbout();
+  if (path === "vouches") return sampleVouchList({ state: q.get("state") ?? undefined });
+  if (/^vouches\/\d+$/.test(path)) return ((v) => (v ? { vouch: v } : null))(sampleVouch(Number(path.slice(8))));
+  if (path.startsWith("vouches/agent/")) return ((a) => { const x = a ? sampleAgentVouching(a.agent.address) : null; return x ? { agent: x } : null; })(sampleAgent(path.slice(14)));
+  if (path.startsWith("vouches/voucher/")) return ((v) => (v ? { voucher: v } : null))(sampleVoucher(sampleAgent(path.slice(16))?.agent.address ?? path.slice(16)));
+  if (path.startsWith("vouches/line/")) return { items: sampleVouchList().items.filter((v) => v.kind === "line" && v.line?.account === path.slice(13).toLowerCase()) };
+  if (path.startsWith("vouches/cover/")) return { items: sampleCoverVouches(Number(path.slice(14))) };
   if (path === "ask") return { enabled: true, mostChars: 500, perMinute: 4, perDay: 40, reads: "plain" };
   if (path === "copilot") return { enabled: true, mostChars: 500, mostEth: "0.1", perMinute: 8, perDay: 150, reads: "plain" };
   if (path === "pulse") return { items: [] };
@@ -47,8 +55,8 @@ function fromSample(path: string, q: URLSearchParams): unknown {
   if (path === "jobs") return sampleJobs({ agent: q.get("agent") ?? undefined, customer: q.get("customer") ?? undefined });
   if (path === "ledger") return sampleLedger(Number(q.get("limit")) || 50, Number(q.get("before")) || undefined);
   if (path === "burns") return { total: sampleState().burns.length, more: false, items: sampleState().burns };
-  if (path.startsWith("agents/")) return withVerifiers(sampleAgent(path.slice(7)));
-  if (path.startsWith("jobs/")) return sampleJobPage(Number(path.slice(5)));
+  if (path.startsWith("agents/")) return withVouching(withVerifiers(sampleAgent(path.slice(7))));
+  if (path.startsWith("jobs/")) return withCoverVouches(sampleJobPage(Number(path.slice(5))));
   if (path === "verifiers/about") return sampleVerifiersAbout();
   if (path === "verifiers") return sampleVerifierList(Number(q.get("maker")) || undefined);
   if (path === "verifiers/cases") return sampleVerifierCases((["check", "seats", "reveal", "open", "all"] as const).find((x) => x === q.get("show")) ?? "check");

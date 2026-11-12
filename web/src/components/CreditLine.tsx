@@ -5,7 +5,8 @@ import { Reveal } from "./Motion";
 import { SecHead } from "./Bits";
 import { LineActions, LineOpen } from "./LineActions";
 import { addressHref, day, dayTime, eth, short, txHref, usd } from "@/lib/format";
-import type { CreditLine, LinesAbout } from "@/lib/types";
+import type { CreditLine, LinesAbout, Vouch } from "@/lib/types";
+import { CoSigners } from "./Vouching";
 
 const MOVE: Record<string, string> = { open: "Opened", draw: "Drawn", repay: "Repaid", default: "Not repaid: barred for good", seed: "Into the pool" };
 
@@ -16,7 +17,7 @@ function titleOf(l: CreditLine, name: string) {
   return <>Credit for {name} when it <em>needs</em> it.</>;
 }
 
-export default function CreditLineCard({ line: l, about, name, explorer, compute, side }: { line: CreditLine; about: LinesAbout; name: string; explorer: string; compute: boolean; side: "key" | "account" }) {
+export default function CreditLineCard({ line: l, about, name, explorer, compute, side, vouches }: { line: CreditLine; about: LinesAbout; name: string; explorer: string; compute: boolean; side: "key" | "account"; /** the vouches on it, while vouching is on */ vouches?: Vouch[] }) {
   const moves = (l.moves ?? []).filter((m) => m.kind !== "seed").slice(0, 8);
   return (
     <section className="wrap sec" id="line" style={{ scrollMarginTop: 96 }}>
@@ -33,6 +34,7 @@ export default function CreditLineCard({ line: l, about, name, explorer, compute
             {l.computeUsd.grantedUsd > 0 ? <><dt>Drawn as compute<small>credit for models through Factor, never sent to a wallet</small></dt><dd>{usd(l.computeUsd.grantedUsd)}</dd></> : null}
           </dl>
           {l.barred && !l.defaulted ? <p className="note" style={{ marginTop: 22 }}>{name} is barred on the desk, so its line lends nothing. What it owes is still repaid from its income.</p> : null}
+          {vouches ? <CoSigners vouches={vouches} kind="line" explorer={explorer} /> : null}
         </div>
         <div>
           {about.contract ? <LineActions line={l} about={about} explorer={explorer} compute={compute} /> : null}

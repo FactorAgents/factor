@@ -257,6 +257,8 @@ export interface Cover {
   state: CoverState; job: string | null; reservedAt: string; expiresAt: string; tx: string;
   boundTx?: string; boundAt?: string; closedTx?: string; closedAt?: string; paidEth?: number; toAgentEth?: number; burnedEth?: number; feeBackEth?: number;
   next?: { what: "tie" | "lapse" | "pays-if-not-delivered" | "releases" | "pays"; at: string };
+  /** the vouches that co-sign it, while vouching is on (engine/src/vouching.ts) */
+  vouches?: Vouch[];
 }
 /** One agent's guarantee (engine/src/guarantees.ts, AgentGuaranteeJson). */
 export interface AgentGuarantee {
@@ -320,7 +322,7 @@ export interface LedgerEvent {
 export interface Burn { n: number; at: string; eth: number; tokens: number; tx: string }
 /** The burn pot, read from the chain: what it holds, when the next burn may go and what it would spend. */
 export interface BurnPot { potEth: number; nextEth: number; nextAt: string | null; ready: boolean; open: boolean; count: number; ethSpent: number; lastAt: string | null; everyMin: number; smallestEth: number; bonded?: boolean; lastFeesAt?: string | null }
-export interface LogEntry { date: string; area: string; title: string; text: string; /** shown only while this is switched on */ only?: "raeto" | "hey" | "reports" | "reports8004" }
+export interface LogEntry { date: string; area: string; title: string; text: string; /** shown only while this is switched on */ only?: "raeto" | "hey" | "reports" | "reports8004" | "vouching" }
 
 export interface Params {
   advanceMaxPct: number;     // of the locked payment
@@ -412,6 +414,8 @@ export interface FactorState {
   hey?: { enabled: boolean; project: string; badge: string };
   /** Factor Credit Reports (engine/src/reports.ts): whether they show */
   reports?: { enabled: boolean; /** credit report scores are being written to ERC-8004 */ onErc8004?: boolean };
+  /** vouching: whether it is on, the contract, the rules and the totals */
+  vouching?: VouchingAbout;
 }
 
 /** One of a firm's agents and its part of the firm's work: the lead's is the firm's jobs, a member's the sub-jobs it took under them. */
@@ -513,7 +517,7 @@ export interface AgentAnswer {
 /** An agent's Factor Score as Factor last wrote it to ERC-8004 (engine/src/erc8004score.ts, ScoreJson). */
 export interface ScoreOnChain { score: number; value: string; tag1: string; agentId: string; reviewer: string; tx: string; index: number | null; at: string; written: number }
 
-export interface AgentPage { /** its jobs hired with a verifier, while verifiers are on and it has had one */ verified?: AgentVerified; /** its record as a verifier, when its own address is also one */ asVerifier?: Verifier; /** its paid reviews, while they are on */ reviews?: ReviewSummary & { items: Review[]; /** the wallets that may answer its reviews */ repliers?: string[] }; /** its Factor Score on ERC-8004, while that is on and one was written */ scoreOnChain?: ScoreOnChain; raetoSpend?: RaetoSpend; /** bounties entered and won */ bounties?: AgentBounties; /** its jobs in stages */ milestones?: AgentMilestones; agent: Agent; /** its Factor Score: the desk's number, the parts, the income behind it, what it can draw */ factorScore?: FactorScore; jobs: Job[]; events: LedgerEvent[]; hiring?: Hiring; /** the firms it leads, belongs to or is invited to */ firms?: { slug: string; name: string; house: boolean; role: "lead" | "member" | "invited" }[]; /** its monthly clients, when it has any plan */ plans?: PlansSummary; /** its ERC-8004 identity and the entries written to it, when one is linked */ erc8004?: Erc8004; /** its own coin, when it has one listed */ coin?: Coin; /** its credit line, from either side, while lines are on */ line?: CreditLine; /** its guarantee bond, offer and covers, while guarantees are on and it has had one */ guarantee?: AgentGuarantee }
+export interface AgentPage { /** its jobs hired with a verifier, while verifiers are on and it has had one */ verified?: AgentVerified; /** its record as a verifier, when its own address is also one */ asVerifier?: Verifier; /** its paid reviews, while they are on */ reviews?: ReviewSummary & { items: Review[]; /** the wallets that may answer its reviews */ repliers?: string[] }; /** its Factor Score on ERC-8004, while that is on and one was written */ scoreOnChain?: ScoreOnChain; raetoSpend?: RaetoSpend; /** bounties entered and won */ bounties?: AgentBounties; /** its jobs in stages */ milestones?: AgentMilestones; agent: Agent; /** its Factor Score: the desk's number, the parts, the income behind it, what it can draw */ factorScore?: FactorScore; jobs: Job[]; events: LedgerEvent[]; hiring?: Hiring; /** the firms it leads, belongs to or is invited to */ firms?: { slug: string; name: string; house: boolean; role: "lead" | "member" | "invited" }[]; /** its monthly clients, when it has any plan */ plans?: PlansSummary; /** its ERC-8004 identity and the entries written to it, when one is linked */ erc8004?: Erc8004; /** its own coin, when it has one listed */ coin?: Coin; /** its credit line, from either side, while lines are on */ line?: CreditLine; /** its guarantee bond, offer and covers, while guarantees are on and it has had one */ guarantee?: AgentGuarantee; /** who vouched for it and the vouches it gave, while vouching is on and it has one */ vouching?: AgentVouching }
 
 /** One job in a chain of work: the customer's job at depth 0, the jobs its agent hired for at 1, and so on. */
 export interface TreeNode {
@@ -772,3 +776,50 @@ export interface CaseErc8004 {
   requestCall: { to: string; data: string } | null; responseCall: { to: string; data: string } | null;
   requestedAt: string | null; answeredAt: string | null; why?: string;
 }
+
+// ---------- vouching (engine/src/vouching.ts) ----------
+
+/** Vouching: whether it is on, the contract, the rules and the totals (the engine's VouchingAbout). */
+export interface VouchingAbout {
+  enabled: boolean; contract: string | null; chainId: number;
+  rules: { minScore: number; maxSharePct: number; feePct: number; voucherPctOfFee: number; minVouchEth: number; lineTermDays: number; offerDays: number };
+  totals: { bondsEth: number; heldEth: number; vouchedEth: number; paidEth: number; earnedEth: number; burnedEth: number; vouches: number; standing: number } | null;
+}
+/** offered: waiting for the agent. active: standing. kept: repaid or delivered. failed: the loss paid. returned: the job was declined. withdrawn: never accepted */
+export type VouchState = "offered" | "active" | "kept" | "failed" | "returned" | "withdrawn";
+/** One vouch (the engine's VouchJson). */
+export interface Vouch {
+  id: number; kind: "line" | "cover"; state: VouchState;
+  voucher: string; voucherName: string; voucherNamed: boolean;
+  agent: string; agentName: string; agentNamed: boolean; agentKey: string | null;
+  amountEth: number; amountWei: string; feeEth: number; feeWei: string;
+  offeredAt: string; expiresAt: string; tx: string;
+  startedAt?: string; acceptedTx?: string; endsAt?: string;
+  line?: { account: string; owesEth?: number; dueAt?: string | null; late?: boolean; defaulted?: boolean; owedAtOfferEth: number };
+  cover?: { id: number; job?: string | null; customer?: string; priceEth?: number; coverEth?: number; state?: string };
+  endedTx?: string; endedAt?: string; toVoucherEth?: number; burnedEth?: number; paidEth?: number; paidTo?: string | null; feeBackEth?: number;
+  next?: { what: "accept" | "lapsed" | "settle" | "ends" | "waits-for-repayment" | "kept-when-settled" | "pays-if-not-delivered"; at: string };
+  /** ties Factor's records show between the voucher and the agent, in words */
+  ties: string[];
+  /** the voucher is one of Factor's own */
+  factorOwn: boolean;
+  /** counted toward the agent's standing: not Factor's own and no tie */
+  counts: boolean;
+}
+/** One voucher (the engine's VoucherJson). */
+export interface Voucher {
+  voucher: string; name: string; named: boolean; factorOwn: boolean;
+  bondEth: number; heldEth: number; freeEth: number; freeWei: string; perAgentEth: number;
+  score: number; strong: boolean;
+  vouches: number; kept: number; failed: number; returned: number; standing: number;
+  vouchedEth: number; lostEth: number; earnedEth: number;
+  items?: Vouch[];
+}
+/** An agent's vouches, received and given (the engine's AgentVouchingJson). */
+export interface AgentVouching {
+  agent: string; received: Vouch[];
+  standing: number; backedEth: number; kept: number; failed: number; notCounted: number;
+  voucher: Voucher | null;
+}
+/** The vouches page: the rules, the vouchers (Factor's own apart) and the latest vouches. */
+export interface VouchList extends VouchingAbout { vouchers: Voucher[]; factorOwn: Voucher[]; items: Vouch[] }

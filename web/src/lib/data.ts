@@ -11,12 +11,13 @@ import { cache } from "react";
 import { connection } from "next/server";
 import { sampleAgent, sampleAutoApply, sampleBounties, sampleBounty, sampleMilestoneOfJob, sampleCoin, sampleCoins, sampleFirm, sampleJobs, sampleLedger, sampleOpenJob, sampleOpenJobs, samplePlan, sampleState } from "./sample";
 import { sampleCase, sampleCaseOfJob, sampleJobPage, sampleReceipt, sampleVerifierCases, sampleVerifierList, sampleVerifierPage, sampleVerifiersAbout, withVerifiers } from "./verifiersSample";
-import type { Agent, AgentPage, AutoApplyStatus, BountyList, BountyPage, MilestonePlan, Coin, FactorState, FirmPage, HeyAgent, Job, JobPage, LedgerEvent, OpenJobList, OpenJobPage, Page, Params, PlanPage, ReceiptPage, VerifiedStatus, VerifierCase, VerifierList, VerifierPage, VerifiersAbout } from "./types";
+import type { Agent, AgentPage, AutoApplyStatus, BountyList, BountyPage, MilestonePlan, Coin, FactorState, FirmPage, HeyAgent, Job, JobPage, LedgerEvent, OpenJobList, OpenJobPage, Page, Params, PlanPage, ReceiptPage, VerifiedStatus, VerifierCase, VerifierList, VerifierPage, VerifiersAbout, VouchList } from "./types";
 import type { PayInfo, PublishedLink } from "./pay";
 import type { CoinsAbout } from "./coins";
 import { liveGen } from "./live";
 import type { Report, ReportRow, ReportsAbout } from "./reports";
 import { sampleReport, sampleReportsAbout, sampleReportsTop } from "./reportsSample";
+import { sampleVouchList, withCoverVouches, withVouching, withVouchingState } from "./vouchingSample";
 
 const ENGINE = (process.env.FACTOR_ENGINE_URL ?? "").trim().replace(/\/+$/, "");
 const SAMPLE = process.env.FACTOR_SAMPLE === "1" && !ENGINE;
@@ -84,7 +85,7 @@ async function readState(): Promise<FactorState> {
 
 export const getState = cache(async (): Promise<FactorState> => {
   await connection(); // read when the page is asked for, never baked in when the site is built
-  if (SAMPLE) return sampleState();
+  if (SAMPLE) return withVouchingState(sampleState());
   if (!ENGINE) return empty("none", true);
   const now = Date.now();
   const gen = liveGen();
@@ -98,7 +99,7 @@ const AGENT_ID = /^[0-9a-zA-Z-]{3,42}$/;
 export const getAgent = cache(async (id: string): Promise<AgentPage | null | "down"> => {
   await connection();
   if (!AGENT_ID.test(id)) return null;
-  if (SAMPLE) return withVerifiers(sampleAgent(id));
+  if (SAMPLE) return withVouching(withVerifiers(sampleAgent(id)));
   if (!ENGINE) return null;
   try {
     return await ask<AgentPage>(`/v1/agents/${id}`);
@@ -111,7 +112,7 @@ export const getAgent = cache(async (id: string): Promise<AgentPage | null | "do
 export const getJob = cache(async (id: string): Promise<JobPage | null | "down"> => {
   await connection();
   if (!/^\d{1,9}$/.test(id)) return null;
-  if (SAMPLE) return sampleJobPage(Number(id));
+  if (SAMPLE) return withCoverVouches(sampleJobPage(Number(id)));
   if (!ENGINE) return null;
   try {
     return await ask<JobPage>(`/v1/jobs/${Number(id)}`);
@@ -490,5 +491,17 @@ export async function getPayLinks(agent: string): Promise<PublishedLink[]> {
     return (await ask<{ items: PublishedLink[] }>(`/v1/pay/links/${agent}`))?.items ?? [];
   } catch {
     return [];
+  }
+}
+
+/** The vouches: the rules, the totals, the vouchers (Factor's own apart) and the latest. null: no engine. "down": it did not answer. */
+export async function getVouches(o: { state?: string } = {}): Promise<VouchList | null | "down"> {
+  await connection();
+  if (SAMPLE) return sampleVouchList(o);
+  if (!ENGINE) return null;
+  try {
+    return await ask<VouchList>(`/v1/vouches${o.state ? `?state=${encodeURIComponent(o.state)}` : ""}`);
+  } catch {
+    return "down";
   }
 }

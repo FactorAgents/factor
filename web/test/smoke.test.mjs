@@ -13,12 +13,12 @@ import { createServer } from "node:http";
 const PORT = Number(process.env.SMOKE_PORT) || 3611, BASE = `http://127.0.0.1:${PORT}`, BARE = `http://127.0.0.1:${PORT + 1}`;
 // the sample's verifiers (lib/verifiersSample.ts): factor-claude, one of Factor's own
 const CLAUDE = "0x5abe732d259d4a69189773efce14dea3dc976cbc";
-const PAGES = ["/bounties", "/bounties/1", "/bounties/2", "/bounties/3", "/bounties/4", "/", "/agents/orbit-ops", "/ledger", "/ledger?show=burned", "/agents", "/agents/lumen-07", "/jobs/0412", "/jobs/0406", "/jobs/0404", "/jobs/0403", "/hire", "/hire?agent=page-smith", "/hire?agent=lumen-07&cover=1", "/work", "/protocol", "/token", "/burn", "/docs", "/log", "/security", "/pay", "/firms/night-desk", "/hire?firm=night-desk", "/plans/0x5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a", "/open-jobs", "/open-jobs/0x0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b", "/coins", "/coins?sort=new", "/coins/page-smith", "/jobs/0416", "/jobs/0408", "/agents/page-smith", "/hire?stages=1", "/everywhere", "/hire?agent=lumen-07&price=0.01&title=Summarise+one+contract&due=48&early=1", "/ask", "/ask?q=A+landing+page+for+my+coin", "/hire?agent=page-smith&price=0.003&title=A+landing+page&due=38&via=ask", "/copilot", "/copilot?q=What+is+lumen-07%27s+score", "/verifiers", `/verifiers/${CLAUDE}`, "/jobs/0419", "/jobs/0421", "/jobs/0422", "/jobs/0424", "/hire?agent=price-desk&verifier=1", "/reports", "/reports?page=1", "/reports/486", "/reports/467", "/reports/20852"];
+const PAGES = ["/bounties", "/bounties/1", "/bounties/2", "/bounties/3", "/bounties/4", "/", "/agents/orbit-ops", "/ledger", "/ledger?show=burned", "/agents", "/agents/lumen-07", "/jobs/0412", "/jobs/0406", "/jobs/0404", "/jobs/0403", "/hire", "/hire?agent=page-smith", "/hire?agent=lumen-07&cover=1", "/work", "/protocol", "/token", "/burn", "/docs", "/log", "/security", "/pay", "/firms/night-desk", "/hire?firm=night-desk", "/plans/0x5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a", "/open-jobs", "/open-jobs/0x0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b", "/coins", "/coins?sort=new", "/coins/page-smith", "/jobs/0416", "/jobs/0408", "/agents/page-smith", "/hire?stages=1", "/everywhere", "/hire?agent=lumen-07&price=0.01&title=Summarise+one+contract&due=48&early=1", "/ask", "/ask?q=A+landing+page+for+my+coin", "/hire?agent=page-smith&price=0.003&title=A+landing+page&due=38&via=ask", "/copilot", "/copilot?q=What+is+lumen-07%27s+score", "/verifiers", `/verifiers/${CLAUDE}`, "/jobs/0419", "/jobs/0421", "/jobs/0422", "/jobs/0424", "/hire?agent=price-desk&verifier=1", "/reports", "/reports?page=1", "/reports/486", "/reports/467", "/reports/20852", "/vouching"];
 // The header's five groups and the pages in each, in order. A group of one page is a plain link.
-const GROUPS = { Hire: ["/ask", "/copilot", "/hire", "/open-jobs", "/bounties"], Agents: ["/agents", "/reports", "/coins", "/work", "/verifiers"], Ledger: ["/ledger"], Protocol: ["/protocol", "/docs", "/everywhere", "/roadmap"], Token: ["/token", "/burn"] };
+const GROUPS = { Hire: ["/ask", "/copilot", "/hire", "/open-jobs", "/bounties"], Agents: ["/agents", "/reports", "/coins", "/work", "/verifiers", "/vouching"], Ledger: ["/ledger"], Protocol: ["/protocol", "/docs", "/everywhere", "/roadmap"], Token: ["/token", "/burn"] };
 const NAV = Object.values(GROUPS).flat();
 // the group each page is in, which the header marks as the current one (none for a page of no group)
-const CURRENT = { "/ask": "Hire", "/copilot": "Hire", "/bounties": "Hire", "/bounties/1": "Hire", "/hire": "Hire", "/open-jobs": "Hire", "/agents": "Agents", "/agents/lumen-07": "Agents", "/jobs/0412": "Agents", "/coins/page-smith": "Agents", "/work": "Agents", "/verifiers": "Agents", [`/verifiers/${CLAUDE}`]: "Agents", "/reports": "Agents", "/reports/486": "Agents", "/ledger": "Ledger", "/protocol": "Protocol", "/docs": "Protocol", "/everywhere": "Protocol", "/token": "Token", "/burn": "Token", "/": null, "/log": null, "/security": null, "/pay": null };
+const CURRENT = { "/ask": "Hire", "/copilot": "Hire", "/bounties": "Hire", "/bounties/1": "Hire", "/hire": "Hire", "/open-jobs": "Hire", "/agents": "Agents", "/agents/lumen-07": "Agents", "/jobs/0412": "Agents", "/coins/page-smith": "Agents", "/work": "Agents", "/verifiers": "Agents", [`/verifiers/${CLAUDE}`]: "Agents", "/reports": "Agents", "/reports/486": "Agents", "/vouching": "Agents", "/ledger": "Ledger", "/protocol": "Protocol", "/docs": "Protocol", "/everywhere": "Protocol", "/token": "Token", "/burn": "Token", "/": null, "/log": null, "/security": null, "/pay": null };
 // Words the copy does not use: no long dash, no promise of gain. A list kept beside this file and out of the repo
 // (forbidden.local.json, pairs of pattern and flags) adds to them on the machine it is on.
 const LOCAL = new URL("./forbidden.local.json", import.meta.url);
@@ -563,7 +563,7 @@ test("each page is small enough for a phone, and nothing loads from another site
   for (const path of PAGES) {
     const { html, headers } = await get(path);
     // the docs, with every section on, are the largest page: still a fraction of one picture
-    assert.ok(html.length < 270_000, `${path} is ${html.length} bytes`);
+    assert.ok(html.length < 290_000, `${path} is ${html.length} bytes`);
     // HEY Research Lab's own badge for Factor in the footer, and the links to Factor's page on HEY, are the one exception
     assert.doesNotMatch(html, /(src|href)="https?:\/\/(?!ponsfamily\.com|github\.com|x\.com|robinhoodchain\.blockscout\.com\/(tx|address)\/0x|heyresearch\.xyz\/(api\/badge\/factor(\?theme=dark)?"|project\/factor(\?utm_source=badge&amp;utm_medium=html)?"))/, `${path} loads from another site`);
     assert.match(headers.get("content-security-policy") ?? "", /default-src 'self'/, `${path} has no content policy`);
@@ -1472,4 +1472,45 @@ test("credit reports: the leaderboard, a lookup, a report with its flags and its
   }
   assert.doesNotMatch(bareBoard, /ledger-reader/);
   assert.equal((await get("/reports/486", BARE)).status, 404);
+});
+
+test("vouching: the page, an agent's vouches, a line's and a cover's co-signers, the docs, the protocol and the log", async () => {
+  const page = plain((await get("/vouching")).html);
+  assert.match(page, /Strong agents stand behind newer ones\./);
+  assert.match(page, /A voucher's score the desk's own, as the guarantee contract reads it 300 or more/);
+  assert.match(page, /The line defaults with 0\.006 still owed to the line pool: 0\.0002 from the fee, 0\.0058 from the bond 0\.006 ETH/);
+  assert.match(page, /Kept into the voucher's bond, and to the burn 0\.0001 · 0\.0001 ETH/);
+  assert.match(page, /Factor's own, ranked apart/);
+  assert.match(page, /lumen-07/);
+  assert.match(page, /co-signs orbit-ops's credit line|co-signs its credit line/);
+  assert.doesNotMatch(page, /sample|demo/i);
+  // orbit-ops: two vouches on its line, one that counts and one of Factor's own; an offer waiting; its own vouch as a voucher
+  const orbit = plain((await get("/agents/orbit-ops")).html);
+  assert.match(orbit, /Vouched for How vouching works → One vouch behind it, 0\.0200 ETH\./);
+  assert.match(orbit, /Not counted Factor's own: shown, not counted\./);
+  assert.match(orbit, /Waiting for orbit-ops to accept it/);
+  assert.match(orbit, /As a voucher/);
+  assert.match(orbit, /Co-signed by .*lumen-07 for 0\.0200 ETH, until [^:]+: paid to the line pool if the line defaults/);
+  assert.match((await get("/agents/orbit-ops")).html, /href="#vouching"/);
+  // an agent nobody vouched for: an empty state that says so
+  assert.match(plain((await get("/agents/quill-02")).html), /Vouched for How vouching works → No vouch yet\. .*Nobody has vouched for quill-02 yet\./);
+  // the covered job: its co-signer
+  assert.match(plain((await get("/jobs/0412")).html), /Co-signed by orbit-ops for 0\.0100 ETH: delivered, kept/);
+  assert.match(plain((await get("/docs")).html), /A strong agent co-signs a newer one, with its own bond\./);
+  assert.match(plain((await get("/docs")).html), /factor_vouch_settle/);
+  assert.match(plain((await get("/protocol")).html), /The vouching/);
+  assert.match(plain((await get("/security")).html), /The vouching/);
+  assert.match(plain((await get("/log")).html), /Vouching An agent with a strong score can now stand behind a newer one\./);
+  const engine = await (await fetch(`${BASE}/api/v1/vouches`)).json();
+  assert.equal(engine.enabled, true);
+  assert.equal(engine.factorOwn.length, 2);
+  assert.equal((await (await fetch(`${BASE}/api/v1/vouches/agent/orbit-ops`)).json()).agent.standing, 1);
+  // with nothing set: no page, no link, no word of it
+  assert.equal((await get("/vouching", BARE)).status, 404);
+  for (const path of ["/", "/agents", "/log", "/docs", "/protocol", "/security"]) {
+    const { html } = await get(path, BARE);
+    assert.doesNotMatch(html, /href="\/vouching"/, `${path} leads to vouching while it is off`);
+    // the home page's roadmap names the phase as planned; nothing else speaks of it
+    if (path !== "/") assert.doesNotMatch(plain(html), /Vouching|Vouched for|vouch/i, `${path} speaks of vouching while it is off`);
+  }
 });

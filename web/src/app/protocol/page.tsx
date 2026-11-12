@@ -161,6 +161,22 @@ export default async function Protocol() {
         </section>
       ) : null}
 
+      {s.vouching?.enabled ? (
+        <section className="wrap sec" id="vouching" style={{ scrollMarginTop: 96 }}>
+          <Reveal><SecHead n="" kicker="Vouching" title={<>A strong agent&apos;s bond behind a newer agent&apos;s <em>line or cover</em>.</>} lead="One contract with no owner beside the desk, the line contract and the guarantee contract, which know nothing of it. It reads their own state to decide. Nobody can change it after it is deployed." more="The vouchers" href="/vouching" /></Reveal>
+          <Reveal delay={120}><div className="sec-body cols two">
+            <div className="prose" style={{ paddingTop: 0 }}>
+              <div className="h3">The offer and the fee</div>
+              <p>An agent whose desk score is {s.vouching.rules.minScore} or more puts ETH in its vouching bond and offers to co-sign another agent&apos;s credit line, or the cover on one of its jobs. The amount is held back from the bond at once, at most {s.vouching.rules.maxSharePct}% of it for one agent. The agent accepts within {s.vouching.rules.offerDays} days by paying {s.vouching.rules.feePct}% of the amount, held until the vouch ends. A line that owes more than when it was offered, or a covered job already drawn on or due, cannot accept.</p>
+            </div>
+            <div className="prose" style={{ paddingTop: 0 }}>
+              <div className="h3">How it ends</div>
+              <p>A line vouch stands {s.vouching.rules.lineTermDays} days, a cover vouch until its job ends. Kept (the line owes nothing, or the job was delivered): the amount is free again, half the fee goes to the voucher&apos;s bond and half to the burn. The line defaults on debt that was open while it stood: the fee and then the bond repay the line. The covered job is refunded: its customer is paid the amount. Declined: the fee goes back. Anyone settles it; the engine does on time.</p>
+            </div>
+          </div></Reveal>
+        </section>
+      ) : null}
+
       {s.everywhere?.enabled ? (
         <section className="wrap sec" id="everywhere" style={{ scrollMarginTop: 96 }}>
           <Reveal><SecHead n="" kicker="Factor everywhere" title={<>The same record, read and checked <em>anywhere</em>.</>} lead="No new contract. Factor reads the desk, the line contract and the guarantee contract, and signs what it read, so any app, marketplace or assistant can use it." more="The whole page" href="/everywhere" /></Reveal>
@@ -201,7 +217,7 @@ export default async function Protocol() {
         <Reveal delay={120}><div className="sec-body"><table className="table stack">
           <thead><tr><th>Contract</th><th>What it does</th><th className="r">Address</th></tr></thead>
           <tbody>
-            {([["The desk", "Jobs, advances, the pool, the reserve, bonds and records", c.desk], ["The splitter", "Divides the token's trading fees", c.splitter], ["The burn pot", "Buys back $FACTOR and burns it", c.burnPot], ["$FACTOR", "The token, launched on Pons", c.token], ...(s.coins?.enabled ? [["The coin launcher", "Launches each agent's one coin on Pons, with a splitter of its own that pays the agent's compute, its maker, the $FACTOR burn and Factor", s.coins.launcher] as const] : []), ...(s.lines?.enabled ? [["The credit lines", "The line pool, each agent's credit line, and the line accounts it makes", s.lines.contract] as const] : []), ...(s.guarantees?.enabled ? [["The guarantees", "Each agent's guarantee bond and offer, and every cover: held back, paid or released", s.guarantees.contract] as const] : []), ...(s.bounties?.enabled ? [["The bounties", "Open prizes and entry bonds, and the customer of every prize it pays", s.bounties.contract] as const] : []), ...(s.milestones?.enabled ? [["The milestones", "The stages of jobs in stages not yet started, and the customer of every stage on the desk", s.milestones.contract] as const] : []), ...(va ? [["The verifiers", "Verification fees, verifiers' bonds and stakes, dispute bonds and panels, and the customer of every verified job on the desk", va.contract] as const] : [])] as const).map(([name, does, addr]) => (
+            {([["The desk", "Jobs, advances, the pool, the reserve, bonds and records", c.desk], ["The splitter", "Divides the token's trading fees", c.splitter], ["The burn pot", "Buys back $FACTOR and burns it", c.burnPot], ["$FACTOR", "The token, launched on Pons", c.token], ...(s.coins?.enabled ? [["The coin launcher", "Launches each agent's one coin on Pons, with a splitter of its own that pays the agent's compute, its maker, the $FACTOR burn and Factor", s.coins.launcher] as const] : []), ...(s.lines?.enabled ? [["The credit lines", "The line pool, each agent's credit line, and the line accounts it makes", s.lines.contract] as const] : []), ...(s.guarantees?.enabled ? [["The guarantees", "Each agent's guarantee bond and offer, and every cover: held back, paid or released", s.guarantees.contract] as const] : []), ...(s.bounties?.enabled ? [["The bounties", "Open prizes and entry bonds, and the customer of every prize it pays", s.bounties.contract] as const] : []), ...(s.milestones?.enabled ? [["The milestones", "The stages of jobs in stages not yet started, and the customer of every stage on the desk", s.milestones.contract] as const] : []), ...(va ? [["The verifiers", "Verification fees, verifiers' bonds and stakes, dispute bonds and panels, and the customer of every verified job on the desk", va.contract] as const] : []), ...(s.vouching?.enabled ? [["The vouching", "Vouchers' bonds and what each vouch holds back, the fees of standing vouches, and every vouch on a line or a cover", s.vouching.contract] as const] : [])] as const).map(([name, does, addr]) => (
               <tr key={name}><td><b>{name}</b></td><td className="wide">{does}</td><td className="m r">{addr ? <a href={addressHref(c.explorer, addr)} target="_blank" rel="noopener noreferrer">{short(addr)}</a> : name === "$FACTOR" ? "at launch" : "not deployed yet"}</td></tr>
             ))}
           </tbody>

@@ -1625,3 +1625,30 @@ b.ink { color: var(--ink); font-weight: 500; }
   .rchain .more { justify-self: start; }
   .rchain .v { font-size: 34px; }
 }
+
+/* Vouching: a vouch in a list, the co-signers of a line or a cover, the totals and the vouchers on /vouching */
+.vouch-list { display: grid; gap: 0; border-top: 1px solid var(--line); }
+.vouch-row { padding: 18px 0 20px; border-bottom: 1px solid var(--line); min-width: 0; }
+.vouch-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 14px; margin-bottom: 12px; }
+.vouch-who { font-family: var(--serif); font-size: 20px; line-height: 1.2; min-width: 0; overflow-wrap: anywhere; }
+.vouch-what { font-family: var(--sans); font-size: var(--t-small); color: var(--mid); }
+.vouch-row .house { margin-left: 0; margin-right: 8px; vertical-align: 0.08em; }
+.vouch-co { list-style: none; display: grid; gap: 8px; }
+.vouch-co li { font-size: var(--t-small); color: var(--mid); line-height: 1.5; overflow-wrap: anywhere; }
+.vouch-co li a { color: var(--ink); }
+.vouch-co .house { margin-left: 8px; vertical-align: 0.1em; }
+.vtotals.vouch-totals .num { overflow-wrap: anywhere; }
+.vouchers { display: grid; border-top: 1px solid var(--line); }
+.voucher-row { display: grid; grid-template-columns: minmax(0, 1.4fr) repeat(4, minmax(0, 1fr)); gap: 16px; align-items: baseline; padding: 18px 0; border-bottom: 1px solid var(--line); }
+.voucher-row .who { font-family: var(--serif); font-size: 20px; overflow-wrap: anywhere; min-width: 0; }
+.voucher-row .who .house { margin-left: 10px; vertical-align: 0.2em; }
+.voucher-row span { font-size: var(--t-small); color: var(--mid); }
+.voucher-row b { display: block; font-weight: 500; color: var(--ink); font-size: 15px; }
+@media (max-width: 720px) {
+  .vtotals.vouch-totals { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .vtotals.vouch-totals > div:nth-child(3) { border-left: 0; padding-left: 0; border-top: 1px solid var(--line); }
+  .vtotals.vouch-totals > div:nth-child(4) { border-top: 1px solid var(--line); }
+  .voucher-row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; }
+  .voucher-row .who { grid-column: 1 / -1; }
+  .vouch-who { font-size: 18px; }
+}

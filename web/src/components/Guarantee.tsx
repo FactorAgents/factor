@@ -7,6 +7,7 @@ import { SecHead } from "./Bits";
 import { CoverActions, GuaranteeActions } from "./GuaranteeActions";
 import { day, dayTime, eth, txHref } from "@/lib/format";
 import type { AgentGuarantee, Cover, CoverState, GuaranteesAbout } from "@/lib/types";
+import { CoSigners } from "./Vouching";
 
 export const COVER_WORD: Record<CoverState, string> = { reserved: "Reserved", bound: "Covered", released: "Delivered", paid: "Paid out", declined: "Declined", lapsed: "Lapsed" };
 const COVER_TONE: Record<CoverState, string> = { reserved: "", bound: "go", released: "go", paid: "bad", declined: "", lapsed: "" };
@@ -111,6 +112,7 @@ export function CoverBlock({ cover: c, job, about, explorer, now }: { cover: Cov
       </dl>
       {nextText ? <p className="small" style={{ marginTop: 14 }}>{nextText}</p> : null}
       <p className="small" style={{ marginTop: 10 }}><a className="more quiet" href={txHref(explorer, c.tx)} target="_blank" rel="noopener noreferrer">The reservation →</a>{c.closedTx ? <> <a className="more quiet" style={{ marginLeft: 14 }} href={txHref(explorer, c.closedTx)} target="_blank" rel="noopener noreferrer">How it ended →</a></> : null}</p>
+      {c.vouches?.length ? <CoSigners vouches={c.vouches} kind="cover" explorer={explorer} /> : null}
       <CoverActions cover={c} job={job} about={about} explorer={explorer} now={now} />
     </div>
   );

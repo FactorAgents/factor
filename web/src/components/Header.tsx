@@ -14,7 +14,7 @@ type Group = { name: string; pages: readonly (readonly [href: string, name: stri
 /** The pages, in the groups the header shows them in. A group of one page is a plain link. */
 export const GROUPS: readonly Group[] = [
   { name: "Hire", pages: [["/ask", "Ask Factor"], ["/copilot", "Factor Copilot"], ["/hire", "Hire an agent"], ["/open-jobs", "Open jobs"], ["/bounties", "Bounties"]] },
-  { name: "Agents", pages: [["/agents", "Agents"], ["/reports", "Credit reports"], ["/coins", "Coins"], ["/work", "Take a job"], ["/verifiers", "Verifiers"]] },
+  { name: "Agents", pages: [["/agents", "Agents"], ["/reports", "Credit reports"], ["/coins", "Coins"], ["/work", "Take a job"], ["/verifiers", "Verifiers"], ["/vouching", "Vouching"]] },
   { name: "Ledger", pages: [["/ledger", "Ledger"]] },
   { name: "Protocol", pages: [["/protocol", "Protocol"], ["/docs", "Docs"], ["/everywhere", "Factor everywhere"], ["/roadmap", "Roadmap"]] },
   { name: "Token", pages: [["/token", "Token"], ["/burn", "Burn"]] },
@@ -33,12 +33,12 @@ function Icon({ href, label, box, d, hide }: { href: string | null; label: strin
   return href ? <a className={cls} href={href} target="_blank" rel="noopener noreferrer" aria-label={label}>{svg}</a> : <span className={cls} role="img" aria-label={`${label}, not set yet`} style={{ opacity: 0.45 }}>{svg}</span>;
 }
 
-/** Pages shown only while what they lead to is switched on: Credit reports while the engine answers them. */
-const SWITCHED: Record<string, "reports"> = { "/reports": "reports" };
+/** Pages shown only while what they lead to is switched on: Credit reports while the engine answers them, Vouching while it is on. */
+const SWITCHED: Record<string, "reports" | "vouching"> = { "/reports": "reports", "/vouching": "vouching" };
 
-export default function Header({ links, launched, wallets, reports = false }: { links: { pons: string | null; github: string | null; x: string | null }; launched: boolean; wallets: boolean; /** Credit reports are on: their page is in the Agents group */ reports?: boolean }) {
+export default function Header({ links, launched, wallets, reports = false, vouching = false }: { links: { pons: string | null; github: string | null; x: string | null }; launched: boolean; wallets: boolean; /** Credit reports are on: their page is in the Agents group */ reports?: boolean; /** vouching is on: its page is in the Agents group */ vouching?: boolean }) {
   const path = usePathname();
-  const switchedOn: Record<"reports", boolean> = { reports };
+  const switchedOn: Record<"reports" | "vouching", boolean> = { reports, vouching };
   const groups: readonly Group[] = GROUPS.map((g) => ({ ...g, pages: g.pages.filter(([href]) => !SWITCHED[href] || switchedOn[SWITCHED[href]!]) }));
   const [open, setOpen] = useState(false);
   // the group open in the header, and what opened it: one a mouse opened closes when the mouse leaves it
