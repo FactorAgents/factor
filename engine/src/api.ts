@@ -107,6 +107,7 @@ import type { CoverJson, Guarantees, GuaranteesAbout } from "./guarantees.js";
 import type { AgentBountiesJson, Bounties, BountiesAbout } from "./bounties.js";
 import type { MilestoneJobLink, Milestones, MilestonesAbout } from "./milestones.js";
 import { MAKERS, VERIFIER_RULES, VERIFY_TAG, type Verifiers, type VerifiersAbout } from "./verifiers.js";
+import type { Vouching, VouchingAbout, VouchState } from "./vouching.js";
 import { VALIDATION_REGISTRY } from "./erc8004.js";
 import { envelope, hireUrl, MOST_AT_ONCE, ANSWER_HOLDS_S, parseId, seal, type AgentAnswer, type AnswerSigner, type Connect } from "./everywhere.js";
 import type { Erc8004Scores } from "./erc8004score.js";
@@ -179,6 +180,8 @@ export interface EngineView {
   milestones?: Milestones | null;
   /** verifiers (./verifiers.ts) */
   verifiers?: Verifiers | null;
+  /** vouching (./vouching.ts) */
+  vouching?: Vouching | null;
   /** Factor Connect (./everywhere.ts) */
   connect?: Connect | null;
   /** the Factor Score written to ERC-8004 (./erc8004score.ts) */
@@ -727,6 +730,14 @@ export class EngineApi {
       const answer = this.bountiesGet(v, path, query);
       if (answer) return answer;
     }
+    // vouching: the rules and totals, the vouchers (Factor's own apart), the vouches, one vouch, an agent's, a line's, a cover's
+    if (path === "/v1/vouches" || path.startsWith("/v1/vouches/")) {
+      if (from && this.tooMany(from, "vouches-get", 600)) return { status: 429, body: { error: "too many requests: try again in a minute" } };
+      const v = this.view();
+      if (v.state !== "running") return { status: 503, body: { error: "the engine is not reading the chain yet" } };
+      const answer = this.vouchesGet(v, path, query);
+      if (answer) return answer;
+    }
     // verifiers: the rules, the makers and totals, the verifiers, the cases, one case whole
     if (path === "/v1/verifiers" || path.startsWith("/v1/verifiers/")) {
       if (from && this.tooMany(from, "verifiers-get", 600)) return { status: 429, body: { error: "too many requests: try again in a minute" } };
@@ -871,6 +882,7 @@ export class EngineApi {
         ...((x) => (x ? { milestones: x } : {}))(v.milestones?.on() ? v.milestones.agentJson(row.address) : null),
         ...((x) => (x ? { verified: x } : {}))(v.verifiers?.on() ? v.verifiers.agentJson(row.address) : null),
         ...((x) => (x ? { asVerifier: x } : {}))(v.verifiers?.on() ? v.verifiers.verifierJson(row.address) : null),
+        ...((x) => (x ? { vouched: x } : {}))(v.vouching?.on() ? v.vouching.recordOf(row.address) : null),
       }) as unknown as Record<string, unknown>);
     }
     return null;
@@ -1093,6 +1105,51 @@ export class EngineApi {
       return one ? ok({ ...one }) : notFound("no such plan");
     }
     return null;
+  }
+
+  // Vouching (./vouching.ts), read from the database only.
+  private vouchesGet(v: EngineView, path: string, query: URLSearchParams): Answer | null {
+    const vs = v.vouching;
+    const on = !!vs?.on();
+    const about = () => this.vouchingAbout(v);
+    if (path === "/v1/vouches/about") return ok({ ...about() });
+    const states = ["offered", "active", "kept", "failed", "returned", "withdrawn"];
+    const state = query.get("state") ?? "";
+    const addr = (k: string) => { const a = query.get(k)?.trim().toLowerCase() ?? ""; return /^0x[0-9a-f]{40}$/.test(a) ? a : undefined; };
+    if (path === "/v1/vouches") return ok({ ...about(), ...(on ? vs!.list({ ...(states.includes(state) ? { state: state as VouchState } : {}), ...(addr("agent") ? { agent: addr("agent") } : {}), ...(addr("voucher") ? { voucher: addr("voucher") } : {}) }) : { vouchers: [], factorOwn: [], items: [] }) });
+    if (!on) return notFound("vouching is switched off for now");
+    let m = /^\/v1\/vouches\/(\d{1,9})$/.exec(path);
+    if (m) {
+      const one = vs!.vouch(Number(m[1]));
+      return one ? ok({ vouch: vs!.json(one) }) : notFound("no such vouch");
+    }
+    m = /^\/v1\/vouches\/(agent|voucher)\/([0-9a-zA-Z-]{3,42})$/.exec(path);
+    if (m) {
+      const raw = m[2]!.toLowerCase();
+      const address = /^0x[0-9a-f]{40}$/.test(raw) ? raw : [...(v.profiles?.all() ?? new Map()).entries()].find(([, p]) => p.name.toLowerCase() === raw && !p.hidden)?.[0];
+      if (!address) return notFound("no agent by that name or address");
+      if (m[1] === "agent") {
+        const one = vs!.agentJson(address);
+        return one ? ok({ agent: one }) : notFound("no vouch for or from that agent");
+      }
+      const one = vs!.voucherJson(vs!.agentOf(address), true);
+      return one ? ok({ voucher: one }) : notFound("that address has no vouching bond");
+    }
+    m = /^\/v1\/vouches\/(line|cover)\/(0x[0-9a-fA-F]{40}|\d{1,9})$/.exec(path);
+    if (m) {
+      const kind = m[1] as "line" | "cover";
+      const subject = m[2]!.toLowerCase();
+      if ((kind === "line") !== subject.startsWith("0x")) return notFound("a line by its account's address, a cover by its number");
+      return ok({ items: vs!.onSubject(kind, kind === "line" ? vs!.agentOf(subject) : subject) });
+    }
+    return notFound("no such route");
+  }
+
+  private vouchingAbout(v: EngineView): VouchingAbout {
+    const vs = v.vouching;
+    if (vs) return vs.about();
+    const c = v.config.vouching;
+    return { enabled: false, contract: c.contract, chainId: v.config.chainId, rules: { minScore: 300, maxSharePct: 25, feePct: 2, voucherPctOfFee: 50, minVouchEth: 0.0001, lineTermDays: 30, offerDays: 7 }, totals: null };
   }
 
   // Verifiers (./verifiers.ts), read from the database, and the chain only for what it alone can say.
@@ -1887,6 +1944,8 @@ export class EngineApi {
       // its jobs hired with a verifier, and its own record as a verifier when its address is one: only while verifiers are on
       ...((x) => (x ? { verified: x } : {}))(v.verifiers?.on() ? v.verifiers.agentJson(row.address) : null),
       ...((x) => (x ? { asVerifier: x } : {}))(v.verifiers?.on() ? v.verifiers.verifierJson(row.address) : null),
+      // who vouched for it and on what terms, and the vouches it gave: only while vouching is on and it has one
+      ...((x) => (x ? { vouching: x } : {}))(v.vouching?.on() ? v.vouching.agentJson(row.address) : null),
       // its guarantee bond, offer and covers: only while guarantees are on and it has ever had one
       ...((x) => (x ? { guarantee: x } : {}))(v.guarantees?.on() ? v.guarantees.agentJson(row.address, true) : null),
       ...((x) => (x ? { raetoSpend: x } : {}))(v.gateway?.raetoSpendOfAgent(row.address) ?? null),
@@ -2140,7 +2199,7 @@ export class EngineApi {
       ...((t) => (t ? { tree: t } : {}))(this.tree(v, id)),
       ...((h) => (h ? { hiring: h } : {}))(this.hireRoom(v, row, this.chainNow(v, r.snap))),
       // its cover, when it was hired with one: only while guarantees are on
-      ...((c) => (c ? { cover: v.guarantees!.coverJson(c) } : {}))(v.guarantees?.on() ? v.guarantees.coverOfJob(id) : null),
+      ...((c) => (c ? { cover: { ...v.guarantees!.coverJson(c), ...(v.vouching?.on() ? { vouches: v.vouching.onSubject("cover", String(c.id)) } : {}) } } : {}))(v.guarantees?.on() ? v.guarantees.coverOfJob(id) : null),
       ...((x) => (x ? { raetoSpend: x } : {}))(v.gateway?.raetoSpendOfJob(id) ?? null),
       // its paid review, and who may write it until when: only while reviews are on (./reviews.ts)
       ...(this.reviewsOn(v) ? { review: v.reviews!.ofJob(id), reviewing: v.reviews!.standing(row) } : {}),
@@ -2288,7 +2347,9 @@ export class EngineApi {
     const hey = { enabled: this.heyOn(v), project: "https://heyresearch.xyz/project/factor", badge: "https://heyresearch.xyz/api/badge/factor" };
     // Factor Credit Reports (./reports.ts): whether they show, for the dev log and the pages that link to them
     const reports = { enabled: this.reportsOn(v), onErc8004: this.reportsOn(v) && !!v.reportsErc8004?.on() };
-    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused, roster: this.rosterJson(v), hosted, pulse: pulseJson(v, 8), desk: this.deskJson(v), signups, activity, pay, subjobs, firms, plans, erc8004, openJobs, autoApply, verified, coins, lines, guarantees, bounties, milestones, everywhere, ask, copilot, reviews, hey, reports };
+    // vouching (./vouching.ts): whether it shows, the rules and the totals
+    const vouching = this.vouchingAbout(v);
+    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused, roster: this.rosterJson(v), hosted, pulse: pulseJson(v, 8), desk: this.deskJson(v), signups, activity, pay, subjobs, firms, plans, erc8004, openJobs, autoApply, verified, coins, lines, guarantees, bounties, milestones, everywhere, ask, copilot, reviews, hey, reports, vouching };
     if (!r) {
       return { ...base, launched: false, stats: { advancedEth: 0, settledJobs: 0, jobs: 0, poolEth: 0, reserveEth: 0, outEth: 0, heldEth: 0, burnedTokens: 0, supplyLeft: SUPPLY, agents: 0, demoJobs: 0, lostEth: 0, poolFromTradingEth: 0 }, burn: null, agents: [], jobs: [], events: [], burns: [] };
     }
@@ -2391,6 +2452,7 @@ export class EngineApi {
       bounties: v.bounties ? v.bounties.health() : null,
       milestones: v.milestones ? v.milestones.health() : null,
       verifiers: v.verifiers ? v.verifiers.health() : null,
+      vouching: v.vouching ? v.vouching.health() : null,
       ask: v.ask ? v.ask.health() : null,
       copilot: v.copilot ? v.copilot.health() : null,
       reviews: v.reviews ? v.reviews.health() : null,

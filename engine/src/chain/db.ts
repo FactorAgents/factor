@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS engine_locks (name TEXT PRIMARY KEY, holder TEXT NOT 
 -- Everything the engine sent, would have sent (dry), or could not send: what, why, and how it ended.
 CREATE TABLE IF NOT EXISTS engine_actions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  kind TEXT NOT NULL,                -- sweep, claim_token, burn, settle_job, refund_job, collect, return_compute, erc8004, line, guarantee, bounty, milestone, verifier, unstick
+  kind TEXT NOT NULL,                -- sweep, claim_token, burn, settle_job, refund_job, collect, return_compute, erc8004, line, guarantee, bounty, milestone, verifier, vouch, unstick
   ref TEXT NOT NULL DEFAULT '',
   mode TEXT NOT NULL,                -- dry or live
   status TEXT NOT NULL,              -- dry, signed, sent, done, failed, replaced
@@ -659,6 +659,51 @@ CREATE TABLE IF NOT EXISTS guarantee_moves (
 );
 CREATE INDEX IF NOT EXISTS guarantee_moves_agent ON guarantee_moves (agent, block);
 CREATE INDEX IF NOT EXISTS guarantee_moves_block ON guarantee_moves (block);
+-- Vouching (../vouching.ts): each voucher with a vouching bond, as first seen in a log, and what is read of it since (its
+-- bond, what is held back, its record, its score), as JSON.
+CREATE TABLE IF NOT EXISTS vouch_vouchers (
+  voucher TEXT PRIMARY KEY,
+  block INTEGER NOT NULL,
+  state TEXT NOT NULL DEFAULT '{}',
+  state_at INTEGER NOT NULL DEFAULT 0   -- ms: 0 marks it to be read again
+);
+CREATE INDEX IF NOT EXISTS vouch_vouchers_block ON vouch_vouchers (block);
+-- Each vouch, as its Offered log says it, then accepted, withdrawn or settled; with where its line or cover stands.
+CREATE TABLE IF NOT EXISTS vouch_vouches (
+  id INTEGER PRIMARY KEY,
+  block INTEGER NOT NULL,
+  at INTEGER NOT NULL,
+  tx_hash TEXT NOT NULL,
+  voucher TEXT NOT NULL,
+  agent TEXT NOT NULL,
+  kind TEXT NOT NULL,                -- line, cover
+  subject TEXT NOT NULL,             -- the line account, or the cover's number
+  amount TEXT NOT NULL,
+  fee TEXT NOT NULL,
+  expires_at INTEGER NOT NULL,
+  state TEXT NOT NULL DEFAULT 'offered', -- offered, active, kept, failed, returned, withdrawn
+  started_at INTEGER,
+  ends_at INTEGER,
+  payer TEXT,
+  accepted_tx TEXT,
+  ended_tx TEXT,
+  ended_at INTEGER,
+  to_voucher TEXT NOT NULL DEFAULT '0',
+  burned TEXT NOT NULL DEFAULT '0',
+  paid TEXT NOT NULL DEFAULT '0',    -- to whoever bore the loss
+  paid_to TEXT,
+  fee_back TEXT NOT NULL DEFAULT '0',
+  debt_at_offer TEXT NOT NULL DEFAULT '0',
+  subject_state TEXT NOT NULL DEFAULT '{}', -- JSON: the line's debt, due time and default, or the cover's and its job's state
+  read_at INTEGER NOT NULL DEFAULT 0,
+  ties TEXT,                         -- JSON: the ties Factor's records show between the voucher and the agent
+  ties_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS vouch_vouches_agent ON vouch_vouches (agent, id);
+CREATE INDEX IF NOT EXISTS vouch_vouches_voucher ON vouch_vouches (voucher, id);
+CREATE INDEX IF NOT EXISTS vouch_vouches_subject ON vouch_vouches (kind, subject);
+CREATE INDEX IF NOT EXISTS vouch_vouches_state ON vouch_vouches (state);
+CREATE INDEX IF NOT EXISTS vouch_vouches_block ON vouch_vouches (block);
 CREATE TABLE IF NOT EXISTS job_titles (
   job_id INTEGER PRIMARY KEY,
   title TEXT NOT NULL,
@@ -668,7 +713,7 @@ CREATE TABLE IF NOT EXISTS job_titles (
 );
 `;
 
-export type ActionKind = "sweep" | "retry_split" | "claim_token" | "burn" | "settle_job" | "refund_job" | "collect" | "return_compute" | "skim" | "relay" | "erc8004" | "coin_sweep" | "line" | "guarantee" | "bounty" | "milestone" | "verifier" | "erc8004_score" | "erc8004_report" | "unstick";
+export type ActionKind = "sweep" | "retry_split" | "claim_token" | "burn" | "settle_job" | "refund_job" | "collect" | "return_compute" | "skim" | "relay" | "erc8004" | "coin_sweep" | "line" | "guarantee" | "bounty" | "milestone" | "verifier" | "vouch" | "erc8004_score" | "erc8004_report" | "unstick";
 export type ActionStatus = "dry" | "signed" | "sent" | "done" | "failed" | "replaced";
 
 export interface ActionRow {
@@ -700,7 +745,7 @@ export interface EventRow {
 }
 
 // The tables a stretch of blocks writes to, all keyed by block: what a reorg or a reindex takes back.
-const BY_BLOCK = ["chain_events", "chain_splits", "chain_burns", "ledger", "desk_advances", "coins", "coin_splits", "coin_trades", "coin_transfers", "lines", "line_moves", "guarantee_bonds", "guarantee_covers", "guarantee_moves", "bounties", "bounty_entries", "milestone_plans", "milestone_stages", "verifier_cases", "verifier_seats", "verifier_money", "verifier_list"];
+const BY_BLOCK = ["chain_events", "chain_splits", "chain_burns", "ledger", "desk_advances", "coins", "coin_splits", "coin_trades", "coin_transfers", "lines", "line_moves", "guarantee_bonds", "guarantee_covers", "guarantee_moves", "bounties", "bounty_entries", "milestone_plans", "milestone_stages", "verifier_cases", "verifier_seats", "verifier_money", "verifier_list", "vouch_vouchers", "vouch_vouches"];
 
 export class EngineDb {
   readonly holder = randomBytes(6).toString("hex"); // this process, for the locks

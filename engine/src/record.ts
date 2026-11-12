@@ -153,6 +153,8 @@ export interface RecordJson {
   verified?: AgentVerifiedJson;
   /** its record as a verifier itself, when its address is one (./verifiers.ts), outside the attestation */
   asVerifier?: VerifierJson;
+  /** the vouches that count for it (./vouching.ts): standing now, the ETH behind them, and how ended ones went, outside the attestation. Present while vouching is on and it has had one */
+  vouched?: { standing: number; backedEth: number; kept: number; failed: number };
   page: string;
   badge: string;
   attestation: { signer: string; signature: Hex; digest: Hex; message: RecordMessage; issuedAt: string; expiresAt: string } | null;
@@ -178,6 +180,7 @@ export async function recordOf(o: {
   milestones?: AgentMilestonesJson | null;
   verified?: AgentVerifiedJson | null;
   asVerifier?: VerifierJson | null;
+  vouched?: { standing: number; backedEth: number; kept: number; failed: number } | null;
 }): Promise<RecordJson> {
   const r: AgentRecord = o.row.record;
   const { byState, distinct } = jobCounts(o.db, o.row.address);
@@ -214,6 +217,7 @@ export async function recordOf(o: {
     ...(o.milestones ? { milestones: { plans: o.milestones.plans, done: o.milestones.done, missed: o.milestones.missed, stagesPaid: o.milestones.stagesPaid, paidEth: o.milestones.paidEth } } : {}),
     ...(o.verified ? { verified: o.verified } : {}),
     ...(o.asVerifier ? { asVerifier: o.asVerifier } : {}),
+    ...(o.vouched ? { vouched: o.vouched } : {}),
     page: `${o.site}/agents/${path}`, badge: `${o.site}/api/v1/badge/${o.row.address}`,
     attestation,
   };

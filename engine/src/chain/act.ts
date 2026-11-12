@@ -28,6 +28,9 @@
 //                   to be refunded or settled: close(), which refunds or settles it first and pays or releases the cover;
 //                   a reservation past its hour: lapse() (../guarantees.ts). Before the desk's own settling and refunding,
 //                   so a covered job is refunded and its cover paid in one transaction.
+//   vouch           a standing vouch whose outcome is on the chain: settle(), which recovers its line or closes its cover
+//                   first when due, and pays the loss or the voucher's part of the fee; an offer never accepted within
+//                   its seven days: withdraw() (../vouching.ts). Right after the line's own sweeps and recoveries.
 //   line            income waiting in a line account whose credit line owes: the account's sweep() pays the line; and a
 //                   line still owed 30 days past its due time: the line contract's recover() (../lines.ts). Unspent
 //                   compute credit of a line that defaulted goes back to the line contract with return_compute.
@@ -54,7 +57,7 @@ import type { ActionKind, ActionRow } from "./db.js";
 import { ponsEscrowAbi } from "./pons.js";
 
 export type SendKind = Exclude<ActionKind, "unstick">;
-export const KINDS: SendKind[] = ["relay", "sweep", "coin_sweep", "retry_split", "claim_token", "burn", "guarantee", "bounty", "milestone", "verifier", "settle_job", "refund_job", "collect", "line", "return_compute", "skim", "erc8004", "erc8004_score", "erc8004_report"];
+export const KINDS: SendKind[] = ["relay", "sweep", "coin_sweep", "retry_split", "claim_token", "burn", "guarantee", "bounty", "milestone", "verifier", "settle_job", "refund_job", "collect", "line", "vouch", "return_compute", "skim", "erc8004", "erc8004_score", "erc8004_report"];
 // In dry mode nothing changes on the chain, so a trigger stays true: what would be sent is shown again this often.
 export const DRY_REPEAT_S = 1800;
 const BPS = 10_000n;
@@ -887,6 +890,15 @@ async function verifierStep(ctx: Ctx, head: Head): Promise<string> {
   return say(ctx, "verifier", await ctx.verifiers.step(ctx, head, (kind, ref, call, detail, feeCap) => attempt(ctx, kind, ref, call, detail, feeCap)));
 }
 
+// ---------- vouching ----------
+
+// A vouch whose outcome is on the chain is settled, and an offer past its seven days withdrawn (../vouching.ts decides;
+// the attempt is the same as every other one here).
+async function vouchStep(ctx: Ctx, head: Head): Promise<string> {
+  if (!ctx.vouching) return say(ctx, "vouch", "vouching is not switched on");
+  return say(ctx, "vouch", await ctx.vouching.step(ctx, head, (kind, ref, call, detail, feeCap) => attempt(ctx, kind, ref, call, detail, feeCap)));
+}
+
 const STEPS: [SendKind, (ctx: Ctx, head: Head) => Promise<string>][] = [
   ["relay", relay],
   ["sweep", sweep],
@@ -902,6 +914,7 @@ const STEPS: [SendKind, (ctx: Ctx, head: Head) => Promise<string>][] = [
   ["refund_job", refundJobs],
   ["collect", collect],
   ["line", lineStep],
+  ["vouch", vouchStep],
   ["return_compute", returnCompute],
   ["skim", skim],
   ["erc8004", writeErc8004],

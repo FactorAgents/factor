@@ -277,8 +277,12 @@ What the owner controls off the chain: whether the engine reads vouches, settles
   beside each, and settles every vouch whose outcome is on the chain (the keeper, from the gas wallet, like closing a
   cover). `VOUCHING=on` turns it on; `VOUCHING=off`, or the owner's `vouching` switch, is the rollback.
 - `GET /api/v1/vouches/about`, `/v1/vouches` (`state=`, `agent=`, `voucher=`), `/v1/vouches/<n>`,
-  `/v1/vouches/agent/<address>`, `/v1/vouches/voucher/<address>`; an agent's record carries its vouches (given and
-  received), its credit report says who vouched for it, and the signed Everywhere answer carries the count.
+  `/v1/vouches/agent/<address or name>`, `/v1/vouches/voucher/<address or name>`, `/v1/vouches/line/<account>`,
+  `/v1/vouches/cover/<n>`; an agent's page carries its vouches (received and given, and which count), a covered job's
+  page the vouches on its cover, and the agent's record (`/v1/record/<agent>`) the vouches that count, outside its
+  attestation. Vouches change no score: the Factor Score is the desk's, and the credit report's formula is unchanged.
+- A Factor account (a passkey, no wallet) sends every vouching call as an order, its gas paid by Factor, as for
+  guarantees.
 - The site shows on an agent's page who vouched for it and on what terms, and the vouches it gave; on its credit line
   and its covers, who co-signs them; the Vouching page with the rules, the numbers and every vouch; the flow to offer,
   accept, withdraw, release and settle; the Docs section.
@@ -302,7 +306,7 @@ What the owner controls off the chain: whether the engine reads vouches, settles
 
 - [x] Phase 0: this rulebook
 - [x] Phase 1: `FactorVouch`, its tests (rules, attacks, invariants, break-on-purpose, fork) and its deploy script
-- [ ] Phase 2: the engine: reading, the keeper, the routes, the switch, tests
+- [x] Phase 2: the engine: reading, the keeper, the routes, the switch, tests
 - [ ] Phase 3: the site: the agent's page, the line and the covers, the Vouching page and its flows, the Docs section,
       the dev log and the roadmap (last commit)
 - [ ] Phase 4: the kit and the tools, version bumped, not published

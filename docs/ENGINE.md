@@ -476,6 +476,43 @@ still read, so nothing a coin pays into an agent's compute credit is missed.
 - **Switch.** The owner's `guarantees` switch hides every bond, offer and cover and stops the keeper's ties, closes and
   lapses at once; the chain is still read. Anyone can still do every one of them on the chain itself.
 
+## Vouching
+
+`src/vouching.ts`, off until `VOUCHING=on` with `FACTOR_VOUCH` and `FACTOR_VOUCH_BLOCK` (both written by
+`contracts/deploy-vouch.sh`). The rules are `docs/VOUCHING.md`; the contract `contracts/src/FactorVouch.sol`.
+
+- **Reading.** Its own cursor (`vouching`), from the vouching contract's block: `BondAdded`, `BondTaken`, `Offered`,
+  `Accepted`, `Withdrawn`, `Settled`, `Owed` and `Collected`, into `chain_events` (contract `vouch`), `vouch_vouches`
+  (one row a vouch) and `vouch_vouchers` (one row a voucher). Vouching events stay out of the desk's ledger. The
+  contract's wiring (its line contract, guarantee contract and desk) is read once. What a voucher is (its bond, what is
+  held back, its record, its score) is read every two minutes at most, or at once after one of its logs; each open
+  vouch's line (`line(account)`: debt, due time, default) or cover (`cover(id)` and its desk job) every minute; the ties
+  between a vouch's voucher and agent once an hour; the totals every 30 seconds. The tables are taken back by a reorg
+  or a reindex like every log.
+- **Ties and Factor's own.** A vouch's ties are the checks reviews and verifiers use (the same wallet, the wallet that
+  runs the agent on Factor, Factor's own records of the same hand, both Factor's own, the wallet that verified the
+  agent's owner, a ring of money on the desk, the owner or agent wallet of its ERC-8004 identity), both ways round and
+  for a line account's key too. A voucher is Factor's own when it, or its line key, is a house agent, the demonstration
+  customer or one of the wallets the credit reports name as Factor's (`FACTOR_WALLETS`, `REPORTS_FACTOR_WALLETS`). Such
+  vouches are shown, marked and never counted; Factor's own vouchers are listed apart.
+- **The keeper** (action `vouch`, right after `line`, `src/chain/act.ts`). A standing vouch whose outcome is on the
+  chain is settled (`settle(id)`), by the contract's own rule worked out from what was last read: a line vouch once its
+  30 days are over and the debt open then is repaid, or once its line defaulted on that debt, or once the line is due
+  to be recovered (settle recovers it first); a cover vouch once its cover ended, or once its job is finished or due to
+  be refunded or settled (settle closes the cover first). The ones that pay a loss first. An offer a minute past its
+  seven days is withdrawn (`withdraw(id)`). `VOUCHING_PER_PASS` (5) a pass, one try at a time per vouch, ten minutes
+  after a failed one. Gas cap 900,000.
+- **Accounts without a wallet.** The gas wallet pays an account's order on the vouching contract: a voucher's bond and
+  offers, accepting, releasing, withdrawing and settling.
+- **API.** `GET /v1/vouches` (the rules, the totals, the vouchers with Factor's own apart, the latest vouches; `state=`,
+  `agent=`, `voucher=`), `/v1/vouches/about`, `/v1/vouches/<n>`, `/v1/vouches/agent/<address or name>`,
+  `/v1/vouches/voucher/<address or name>`, `/v1/vouches/line/<account>`, `/v1/vouches/cover/<n>`; `state.vouching`; the
+  agent's page has `vouching` (received and given, what counts, its record as a voucher), a covered job's page
+  `cover.vouches`, and the record (`/v1/record/<agent>`) a `vouched` summary of the vouches that count, outside the
+  attestation. Health has `vouching`.
+- **Switch.** The owner's `vouching` switch hides every vouch and voucher and stops the keeper's settles and withdrawals
+  at once; the chain is still read. Anyone can still do every one of them on the chain itself.
+
 ## Bounties
 
 `src/bounties.ts`, off until `BOUNTIES=on` with `FACTOR_BOUNTY` and `FACTOR_BOUNTY_BLOCK` (both written by
