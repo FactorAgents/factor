@@ -8,7 +8,8 @@
 # bonds and sets its offer, and a customer hires with cover, from the site or the kit. And the bounty contract's: a poster
 # locks a prize and picks, and an agent enters, from the site or the kit. And the milestone contract's: a customer hires
 # in stages and accepts or rejects each one, from the site or the kit. And the verifier contract's: a customer hires with a
-# verifier and a verifier joins, checks, sits and reveals, from the site or the kit. Run it after any change to a contract's interface.
+# verifier and a verifier joins, checks, sits and reveals, from the site or the kit. And the vouching contract's: a voucher
+# bonds and offers, and an agent accepts or releases, from the site or the kit. Run it after any change to a contract's interface.
 #
 #   contracts/export-abi.sh           writes the files
 #   contracts/export-abi.sh --check   writes nothing; fails if a file is not what the contracts say today
@@ -22,11 +23,11 @@ KIT="$HERE/../packages/kit/src/abi"
 mkdir -p "$OUT" "$WEB" "$KIT"
 forge build --silent || { echo "the contracts do not build"; exit 1; }
 STALE=0
-for pair in FactorDesk:factorDeskAbi:FactorDesk FactorSplitter:factorSplitterAbi:FactorSplitter FactorBurnPot:factorBurnPotAbi:FactorBurnPot FactorAccount:factorAccountAbi:FactorAccount FactorAccounts:factorAccountsAbi:FactorAccount AgentCoinLauncher:agentCoinLauncherAbi:AgentCoinLauncher AgentCoinSplitter:agentCoinSplitterAbi:AgentCoinSplitter FactorLine:factorLineAbi:FactorLine FactorLineAccount:factorLineAccountAbi:FactorLine FactorGuarantee:factorGuaranteeAbi:FactorGuarantee FactorBounty:factorBountyAbi:FactorBounty FactorMilestones:factorMilestonesAbi:FactorMilestones FactorVerifiers:factorVerifiersAbi:FactorVerifiers; do
+for pair in FactorDesk:factorDeskAbi:FactorDesk FactorSplitter:factorSplitterAbi:FactorSplitter FactorBurnPot:factorBurnPotAbi:FactorBurnPot FactorAccount:factorAccountAbi:FactorAccount FactorAccounts:factorAccountsAbi:FactorAccount AgentCoinLauncher:agentCoinLauncherAbi:AgentCoinLauncher AgentCoinSplitter:agentCoinSplitterAbi:AgentCoinSplitter FactorLine:factorLineAbi:FactorLine FactorLineAccount:factorLineAccountAbi:FactorLine FactorGuarantee:factorGuaranteeAbi:FactorGuarantee FactorBounty:factorBountyAbi:FactorBounty FactorMilestones:factorMilestonesAbi:FactorMilestones FactorVerifiers:factorVerifiersAbi:FactorVerifiers FactorVouch:factorVouchAbi:FactorVouch; do
   NAME=${pair%%:*}; REST=${pair#*:}; CONST=${REST%%:*}; SOURCE=${REST##*:}
   FILE="$OUT/$NAME.ts"
   # the desk and the accounts are what a visitor or an agent calls: those go to the site and the kit as well
-  SHARED=0; case $NAME in FactorDesk|FactorAccount|FactorAccounts|AgentCoinLauncher|FactorLine|FactorLineAccount|FactorGuarantee|FactorBounty|FactorMilestones|FactorVerifiers) SHARED=1;; esac
+  SHARED=0; case $NAME in FactorDesk|FactorAccount|FactorAccounts|AgentCoinLauncher|FactorLine|FactorLineAccount|FactorGuarantee|FactorBounty|FactorMilestones|FactorVerifiers|FactorVouch) SHARED=1;; esac
   # a contract only the site reads would be set here; none is today
   WEBONLY=0
   NEW=$(python3 - "$HERE/out/$SOURCE.sol/$NAME.json" "$NAME" "$CONST" <<'PY'

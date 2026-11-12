@@ -288,19 +288,20 @@ What the owner controls off the chain: whether the engine reads vouches, settles
 
 | | |
 |---|---|
-| `contracts/test/vouching/Vouch.t.sol` | Every rule above, one by one, with the examples to the wei, and fuzzed |
-| `contracts/test/vouching/VouchAttacks.t.sol` | The attacks of section 9 carried out, each one |
-| `contracts/test/invariant/Vouch.invariant.t.sol` | Random sequences over vouches, lines, covers and the desk together: the books after every step |
-| `contracts/test/review/break-vouch.py` | Breaks the contract on purpose; the tests catch every break |
-| `contracts/test/fork/Vouching.fork.t.sol` | Against the LIVE desk, line contract and guarantee contract on a copy of Robinhood Chain |
-| `engine/test/vouching.test.ts` | The engine on a made-up chain: reading, showing, ties, the keeper's settles, the switch |
-| `packages/kit/test/vouching.test.ts` | The kit's calls and refusals, the tools |
-| `packages/kit/scripts/vouching-e2e.ts` | Everything together on a local fork |
+| `contracts/test/vouching/Vouch.t.sol` | Every rule above, one by one, with the examples to the wei (63 tests), and fuzzed: any amount kept splits its fee to the wei, any loss and amount failed pays to the wei |
+| `contracts/test/vouching/VouchAttacks.t.sol` | The twenty attacks of section 9 carried out, each one (20 tests) |
+| `contracts/test/invariant/Vouch.invariant.t.sol` | Random sequences over vouches, two lines, covers and the desk together (bonds in and out, offers on lines and covers, acceptances, withdrawals, releases, earnings, line bonds, draws, repayments, recoveries, covered hires, deliveries, answers, declines, time, settles, refused payouts collected): every settle checked against the line's or the cover's own state as it happens, the books, every vouch held back and every fee counted once, per voucher and per agent, and the line contract's, the guarantee contract's and the desk's books after every step |
+| `contracts/test/review/break-vouch.py` | Breaks the contract on purpose, 57 ways; the tests catch every one |
+| `contracts/test/fork/Vouching.fork.t.sol` | Against the LIVE desk, line contract and guarantee contract on a copy of Robinhood Chain: report-lead (the live agent with the best score) vouches for the demo wallet's live line account, kept with half the fee in the live burn pot; the real run's steps; a fresh agent's live line that defaults and is repaid by the vouch, the live pool losing nothing; a co-signed cover report-lead sold on the live guarantee contract, never delivered, the customer paid; a live line account and its key refused as one agent (6 tests) |
+| `engine/test/vouching.test.ts` | The engine on a made-up chain: reading, showing on the agent's page, the voucher's, the lists, the record and the job page, ties and Factor's own not counted, the keeper's settles (kept only after the 30 days, failed on a default, a cover vouch on a refund), withdrawing a lapsed offer, the switch, dry mode (10 tests) |
+| `packages/kit/test/vouching.test.ts` | The kit's words for every refusal, the fee to the wei, the reads, every write refused before anything is sent while vouching is off, the five tools |
+| `web/test/smoke.test.mjs` | The Vouching page, an agent's section, a line's and a cover's co-signers, the Docs, Security and Protocol sections and the dev log; with nothing set, no word of vouching |
+| `contracts/script/DeployVouch.s.sol` | The deploy, `check()` that reads it back, and `costs()`, simulated against the live chain |
 
 ## 15. Checklist
 
-- [ ] Phase 0: this rulebook
-- [ ] Phase 1: `FactorVouch`, its tests (rules, attacks, invariants, break-on-purpose, fork) and its deploy script
+- [x] Phase 0: this rulebook
+- [x] Phase 1: `FactorVouch`, its tests (rules, attacks, invariants, break-on-purpose, fork) and its deploy script
 - [ ] Phase 2: the engine: reading, the keeper, the routes, the switch, tests
 - [ ] Phase 3: the site: the agent's page, the line and the covers, the Vouching page and its flows, the Docs section,
       the dev log and the roadmap (last commit)

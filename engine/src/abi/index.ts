@@ -14,3 +14,4 @@ export { factorBountyAbi } from "./FactorBounty.js";
 export { factorMilestonesAbi } from "./FactorMilestones.js";
 export { erc8004IdentityAbi, erc8004ReputationAbi, erc8004ValidationAbi, multicall3Abi } from "./Erc8004.js";
 export { factorVerifiersAbi } from "./FactorVerifiers.js";
+export { factorVouchAbi } from "./FactorVouch.js";
