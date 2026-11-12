@@ -1,0 +1,41 @@
+Vouching: the small real run on Robinhood Chain mainnet, 2026-11-12.
+
+The FINAL vouching contract (FactorVouch, no owner, no admin, no upgrade) was deployed from Factor's demo wallet
+0x50A9Bf50C3337d5db03efdF89DEB0F5A0B908f17 with the code of the branch `vouching`, given the LIVE guarantee contract
+0x577A00Ad9B0a719C4465A3a887F969B0E377daEF, and through it the live line contract 0xc9405ca62eD1e9a4a058F404e5c1C893F7ae67c4,
+the live desk 0x487Eb282E9Aa56aE871c15A16C5B061b9d2faA6F and the live burn pot 0xff54EbC9c6871Fb1c5C9e03ac45250488d923F79.
+Because it has no owner, this deployment is the production contract. Two wallets, both Factor's own test wallets, as in
+the earlier real runs: report-lead 0x74325C9644973d9C7A293BDFc970a573A38419e1 (the voucher: the live agent with the
+desk's best score, 323) and the demo wallet (the deployer, and the vouched agent: the key of its live credit line,
+whose line account is 0x4Af5cbd7BaAD4AE2F09d45fd9b55bD49214b2c5F). Both are Factor's own, so the engine shows the vouch
+as Factor's own and never counts it.
+
+Every transaction (UTC, hash, what, from, ETH moved besides gas, gas paid):
+
+2026-11-12T18:40:27Z  0xcc97dcbc80772181f9605dd0172d2f7e8444212a7af3483000e07823097672c4  deploy FactorVouch beside the live guarantee contract, line contract and desk (no owner: the production contract)  from demo wallet  value 0 ETH  gas 0.000071075968366 ETH (3544229 gas)
+2026-11-12T18:41:26Z  0x617b025e0507ed04532d470e191e0d3376b93d12953475bb95c621ee5a228264  the demo wallet sends report-lead its vouching bond and gas money (comes back at the end)  from demo wallet  value 0.00045 ETH  gas 0.000000421554 ETH (21000 gas)
+2026-11-12T18:41:29Z  0xd8278da0a01b99342dbc0733e8177912659a081054e14b3c22eb657d4e1179d4  report-lead bonds 0.0004 ETH in the vouching contract  from report-lead  value 0.0004 ETH  gas 0.00000193954 ETH (96977 gas)
+2026-11-12T18:41:38Z  0x03660676449890a2c46c4d1ea2761417f359f84d93838baca20641922ac9c527  report-lead offers to co-sign the demo wallet's credit line for 0.0001 ETH  from report-lead  value 0 ETH  gas 0.000006345897344 ETH (317168 gas)
+2026-11-12T18:41:56Z  0x0839b8ab1dc9b14c08518834f0b48784cc7d3fc0ef79d3b58981b8d084d9cb6b  the demo wallet accepts vouch 1, paying its fee of 0.000002 ETH (2%)  from demo wallet  value 0.000002 ETH  gas 0.0000035228871 ETH (175530 gas)
+2026-11-12T18:42:04Z  0x92cd45000b03e425b8d71a79166dd39de8d8b6de72c6fe68c33e606166a12e0b  the demo wallet releases vouch 1, its line owing nothing: kept, 0.000001 ETH to report-lead's bond and 0.000001 ETH to the burn pot  from demo wallet  value 0 ETH  gas 0.000003072222248 ETH (153427 gas)
+2026-11-12T18:42:17Z  0x6af86f984d94380f558777f2052b8551c4eff3620d7c96b1068869c7458ccd57  report-lead offers to co-sign the demo wallet's credit line for 0.0001 ETH  from report-lead  value 0 ETH  gas 0.000006009761904 ETH (300068 gas)
+2026-11-12T18:42:20Z  0xd5fdf2d076cc5d57d9bc4ea069d359e3ba902e6c220afc12e9f233f1f6448cb1  the demo wallet accepts vouch 2, paying its fee of 0.000002 ETH (2%)  from demo wallet  value 0.000002 ETH  gas 0.00000248658768 ETH (124230 gas)
+2026-11-12T18:42:27Z  0x01d7f1f66d8219b4b4adb437deb4f60ba50118aed566c54eca668dd81321f249  report-lead takes the free part of its vouching bond out (0.000301 ETH)  from report-lead  value 0 ETH  gas 0.00000105802 ETH (52901 gas)
+2026-11-12T18:42:29Z  0x0917130677d4b54ef92610457fab146c306d4da78f1ae80d65d9222b3801889e  report-lead sends 0.00034017633282 ETH back to the demo wallet  from report-lead  value 0.00034017633282 ETH  gas 0.000000420714 ETH (21000 gas)
+
+What was checked, on the chain (contracts/script/DeployVouch.s.sol check(), and reads of the contract after each step):
+- the vouching contract 0x23ee52Fd61D3FbcBD1746BD2931554152AaFC248 (deploy block 112745422, 3,544,229 gas, 16,068 bytes of
+  code) read back: wired to the live guarantee contract, and through it to the live line contract, desk and burn pot; the
+  least score 300, a quarter of a bond on one agent, the fee 2%, half of it to the voucher, the smallest vouch 0.0001, 30
+  days for a line vouch, 7 days for an offer
+- report-lead's score as the contract reads it: 323; what it could vouch for the demo wallet before bonding: 0
+- vouch 1: offered (0.0001 held back of a 0.0004 bond), accepted with its 0.000002 fee, released by the demo wallet with its
+  line owing nothing: kept, 0.000001 into report-lead's bond and 0.000001 to the live burn pot
+- vouch 2: offered and accepted, left standing until 2026-12-12 18:42 UTC, when the live keeper settles it once vouching is
+  released (kept, as the demo wallet's line owes nothing)
+- report-lead took out its free bond (0.000301) and sent what it held back to the demo wallet
+
+Totals (ETH, from both wallets): gas for 10 transactions 0.000096353152642 (demo wallet 0.000080579219394 in 5,
+report-lead 0.000015773933248 in 5; the deploy alone 0.000071075968366); fees 0.000004 (vouch 1's: 0.000001 burned,
+0.000001 into report-lead's bond; vouch 2's 0.000002 held); held in the contract for vouch 2: 0.0001 of report-lead's bond.
+Out of the two wallets in all: 0.000199353152642, under the run's cap of 0.002.

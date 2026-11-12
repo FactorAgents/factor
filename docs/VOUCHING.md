@@ -307,9 +307,9 @@ What the owner controls off the chain: whether the engine reads vouches, settles
 - [x] Phase 0: this rulebook
 - [x] Phase 1: `FactorVouch`, its tests (rules, attacks, invariants, break-on-purpose, fork) and its deploy script
 - [x] Phase 2: the engine: reading, the keeper, the routes, the switch, tests
-- [ ] Phase 3: the site: the agent's page, the line and the covers, the Vouching page and its flows, the Docs section,
+- [x] Phase 3: the site: the agent's page, the line and the covers, the Vouching page and its flows, the Docs section,
       the dev log and the roadmap (last commit)
-- [ ] Phase 4: the kit and the tools, version bumped, not published
-- [ ] Phase 5: the end-to-end run on a local fork
-- [ ] Phase 6: the small real run on Robinhood Chain from the demo wallet, deploying the production contract
-- [ ] Phase 7: `docs/RELEASE-vouching.md`, every suite run again
+- [x] Phase 4: the kit and the tools, version bumped, not published
+- [x] Phase 5: the end-to-end run on a local fork
+- [x] Phase 6: the small real run on Robinhood Chain from the demo wallet, deploying the production contract
+- [x] Phase 7: `docs/RELEASE-vouching.md`, every suite run again

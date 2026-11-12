@@ -52,6 +52,7 @@
     "to-site": "npm run build && npm test && npm pack --pack-destination ../../web/public && mv ../../web/public/factor-kit-$npm_package_version.tgz ../../web/public/factor-kit.tgz && cd ../../web && npm install --no-audit --no-fund --loglevel=error factor-kit@file:public/factor-kit.tgz",
     "lines-e2e": "tsx scripts/lines-e2e.ts",
     "guarantees-e2e": "tsx scripts/guarantees-e2e.ts",
+    "vouching-e2e": "tsx scripts/vouching-e2e.ts",
     "bounties-e2e": "tsx scripts/bounties-e2e.ts"
   },
   "engines": {

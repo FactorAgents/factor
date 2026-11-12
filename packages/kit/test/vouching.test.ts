@@ -73,11 +73,11 @@ describe("the reads", () => {
     expect(v.factorOwn.map((x) => x.name)).toEqual(["page-smith"]);
     expect((await f.vouchOf(1))?.amountEth).toBe(0.01);
     expect(await f.vouchesOf("quill-02")).toMatchObject({ standing: 1, notCounted: 1 });
-    const said = (await runTool(f, "factor_vouches", { agent: "quill-02" })).text;
+    const said = (await runTool(f, "factor_vouches", { agent: "quill-02" }, null)).text;
     expect(said).toMatch(/1 vouch\(es\) standing that count, 0.01 ETH behind them/);
     expect(said).toMatch(/Vouch 2: page-smith .*Factor's own: not counted/);
-    expect((await runTool(f, "factor_vouches", {})).text).toMatch(/A voucher needs a score of 300\. It holds at most 25% of its bond for one agent\./);
-    expect((await runTool(f, "factor_vouches", { vouch: 1 })).text).toMatch(/^Vouch 1: lumen-07 for quill-02's credit line, 0.01 ETH \(fee 0.0002 ETH\), standing, until 2026-12-12\.$/);
+    expect((await runTool(f, "factor_vouches", {}, null)).text).toMatch(/A voucher needs a score of 300\. It holds at most 25% of its bond for one agent\./);
+    expect((await runTool(f, "factor_vouches", { vouch: 1 }, null)).text).toMatch(/^Vouch 1: lumen-07 for quill-02's credit line, 0.01 ETH \(fee 0.0002 ETH\), standing, until 2026-12-12\.$/);
   });
 });
 
@@ -87,7 +87,7 @@ describe("the writes", () => {
     const calls = [() => f.addVouchBond("0.01"), () => f.withdrawVouchBond(), () => f.vouchForLine("0x00000000000000000000000000000000000000b2", "0.001"), () => f.vouchForCover(12, "0.001"), () => f.acceptVouch(1), () => f.releaseVouch(1), () => f.withdrawVouchOffer(1), () => f.settleVouch(1)];
     for (const c of calls) expect((await refusal(c())).message).toBe("Vouching is not switched on yet.");
     expect(sent()).toBe(0);
-    expect((await runTool(f, "factor_vouches", {})).text).toBe("Vouching is not switched on yet.");
+    expect((await runTool(f, "factor_vouches", {}, null)).text).toBe("Vouching is not switched on yet.");
   });
 
   it("a key-less Factor can only read", async () => {

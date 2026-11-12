@@ -33,7 +33,7 @@ function VoucherRow({ x }: { x: Voucher }) {
     <div className="voucher-row">
       <div className="who"><Link href={`/agents/${x.named ? x.name : x.voucher}`}>{x.name}</Link>{x.factorOwn ? <span className="house" title="One of Factor's own: shown, never counted toward another agent's standing">Factor&apos;s own</span> : null}</div>
       <div><span>Bond</span><b>{eth(x.bondEth)}</b></div>
-      <div><span>Standing</span><b>{x.standing}{x.heldEth > 0 ? ` · ${eth(x.heldEth)}` : ""}</b></div>
+      <div><span>Standing · held back</span><b>{x.standing} · {eth(x.heldEth)}</b></div>
       <div><span>Kept · paid the loss</span><b>{x.kept} · {x.failed}</b></div>
       <div><span>Score</span><b>{x.score}</b></div>
     </div>
