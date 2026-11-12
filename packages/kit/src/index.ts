@@ -26,6 +26,8 @@ import { factorLineAccountAbi } from "./abi/FactorLineAccount.js";
 import { drawParts, lineWordsOf } from "./lines.js";
 import { factorGuaranteeAbi } from "./abi/FactorGuarantee.js";
 import { coverFee, guaranteeWordsOf } from "./guarantees.js";
+import { factorVouchAbi } from "./abi/FactorVouch.js";
+import { vouchFee, vouchWordsOf } from "./vouching.js";
 import { factorBountyAbi } from "./abi/FactorBounty.js";
 import { BOUNTY_STATES, bountyEntryHash, bountyParts, bountyReadMessage, bountyWordsOf, bytesOf, MIN_PRIZE_WEI, TASK_BYTES, textHash, WORK_BYTES } from "./bounties.js";
 import { factorMilestonesAbi } from "./abi/FactorMilestones.js";
@@ -33,7 +35,7 @@ import { checkTerms, MAX_STAGE_S, MILESTONE_STATES, milestoneWordsOf, MIN_STAGE_
 import { caseNumber, CASE_WORDS, checkReason, checkVerifierTerms, commitOf, keepVerdict, makerName, MIN_BOND_WEI, MIN_FEE_WEI, MIN_JOB_WEI, readVerdict, reasonHashOf, saltOf, sealMessage, sendVerifierText, textHashOf, VALIDATION_REGISTRY, VALIDATION_TAG, validationWordsOf, VERIFIER_STATES, VERIFIERS_ABI, VERIFIERS_GASLESS, verifiersOff, verifierTermsHash, withReceipt } from "./verifiers.js";
 import { erc8004ValidationAbi } from "./abi/Erc8004Validation.js";
 import { CHAIN_ID, DEFAULT_API, DEFAULT_RPC } from "./defaults.js";
-import type { AccountInfo, Agent, AgentPage, Applicant, Application, AutoApplyStatus, ComputeCredit, ComputeKey, Deal, Erc8004Entries, Erc8004Status, Firm, FirmHire, FirmPage, FirmRecord, Job, JobPage, JobState, JobTree, LedgerLine, ModelAnswer, OpenJob, OpenJobHire, PickedJob, OpenJobPage, OpenJobPosted, Page, PayLinkInfo, Plan, PlanMonthSent, PlanPage, RouterModel, Sent, State, SubJob, OwnerCheck, VerifiedStatus, Coin, CoinsAbout, CoinLaunched, CoinLaunchTx, CreditLine, LinesAbout, LineSent, AgentGuarantee, Cover, CoverState, CoveredHire, GuaranteesAbout, GuaranteeSent, BountiesAbout, Bounty, BountyPage, BountyEntry, BountyPoster, AgentBounties, BountyPosted, BountyEntered, BountyPicked, BountyState, Burn, PublishedLink, MilestonesAbout, MilestonePlan, MilestonesHired, MilestoneSent, MilestoneState, AgentMilestones, VerifiersAbout, Verifier, VerifierCase, VerifierCaseState, VerifierPage, VerifierSent, VerifiedHire, VerdictGiven, VerdictSealed, ModelReceiptInput, VerdictReceipt, VerifiedErc8004, AgentVerified } from "./types.js";
+import type { AccountInfo, Agent, AgentPage, Applicant, Application, AutoApplyStatus, ComputeCredit, ComputeKey, Deal, Erc8004Entries, Erc8004Status, Firm, FirmHire, FirmPage, FirmRecord, Job, JobPage, JobState, JobTree, LedgerLine, ModelAnswer, OpenJob, OpenJobHire, PickedJob, OpenJobPage, OpenJobPosted, Page, PayLinkInfo, Plan, PlanMonthSent, PlanPage, RouterModel, Sent, State, SubJob, OwnerCheck, VerifiedStatus, Coin, CoinsAbout, CoinLaunched, CoinLaunchTx, CreditLine, LinesAbout, LineSent, AgentGuarantee, Cover, CoverState, CoveredHire, GuaranteesAbout, GuaranteeSent, BountiesAbout, Bounty, BountyPage, BountyEntry, BountyPoster, AgentBounties, BountyPosted, BountyEntered, BountyPicked, BountyState, Burn, PublishedLink, MilestonesAbout, MilestonePlan, MilestonesHired, MilestoneSent, MilestoneState, AgentMilestones, VerifiersAbout, Verifier, VerifierCase, VerifierCaseState, VerifierPage, VerifierSent, VerifiedHire, VerdictGiven, VerdictSealed, ModelReceiptInput, VerdictReceipt, VerifiedErc8004, AgentVerified, VouchingAbout, Vouch, Voucher, AgentVouching, VouchSent, VouchState } from "./types.js";
 import { coinAskMessage, coinDescription, coinLogo, coinNameProblem, coinPermissionTypedData, suggestCoin, type CoinPermission } from "./coins.js";
 import { MONTH_S, PLAN_TITLE_MOST, planMessage, stopPlanMessage, type PlanText } from "./plans.js";
 import { FIRM_SLUG, firmHireMessage, firmMessage, joinMessage, leaveMessage, slugOf } from "./firms.js";
@@ -64,6 +66,7 @@ export { coinAskMessage, coinDescription, coinLogo, coinNameProblem, coinPermiss
 export type { CoinPermission } from "./coins.js";
 export { drawParts, LINE_WORDS } from "./lines.js";
 export { coverFee, GUARANTEE_WORDS } from "./guarantees.js";
+export { vouchFee, VOUCH_WORDS, vouchWordsOf } from "./vouching.js";
 export { BOUNTY_WORDS, bountyEntryHash, bountyParts, bountyReadMessage, MIN_PRIZE_WEI, TASK_BYTES, WORK_BYTES } from "./bounties.js";
 export { checkTerms, MAX_STAGES, MILESTONE_WORDS, MIN_STAGE_WEI, MIN_STAGES, termsHash, termsText } from "./milestones.js";
 export type { Terms } from "./milestones.js";
@@ -2166,6 +2169,167 @@ export class Factor {
     return this.guaranteeSent(agent, sent);
   }
 
+  // ---------- vouching ----------
+
+  /** Vouching: whether it is on, the contract, the rules, the totals, the vouchers (Factor's own apart) and the latest vouches. */
+  async vouching(o: { state?: VouchState; agent?: string; voucher?: string } = {}): Promise<VouchingAbout & { vouchers: Voucher[]; factorOwn: Voucher[]; items: Vouch[] }> {
+    const q = new URLSearchParams({ ...(o.state ? { state: o.state } : {}), ...(o.agent ? { agent: o.agent } : {}), ...(o.voucher ? { voucher: o.voucher } : {}) }).toString();
+    const r = await read<VouchingAbout & { vouchers: Voucher[]; factorOwn: Voucher[]; items: Vouch[] }>(this.api, `/vouches${q ? `?${q}` : ""}`);
+    return r ?? { enabled: false, contract: null, chainId: this.chainId, rules: { minScore: 300, maxSharePct: 25, feePct: 2, voucherPctOfFee: 50, minVouchEth: 0.0001, lineTermDays: 30, offerDays: 7 }, totals: null, vouchers: [], factorOwn: [], items: [] };
+  }
+
+  /** One vouch, by its number: who vouched for whom, on what, how much, the fee, where it stands and what happens next. */
+  async vouchOf(id: number): Promise<Vouch | null> {
+    return (await read<{ vouch: Vouch }>(this.api, `/vouches/${whole(id)}`))?.vouch ?? null;
+  }
+
+  /** An agent's vouches, by its name or address (left out: this wallet's own): who vouched for it and on what terms, which count, and its own record as a voucher. */
+  async vouchesOf(agent?: string): Promise<AgentVouching | null> {
+    const who = agent ?? this.mine();
+    return (await read<{ agent: AgentVouching }>(this.api, `/vouches/agent/${who}`))?.agent ?? null;
+  }
+
+  /** One voucher, by its name or address (left out: this wallet's own): its vouching bond, what is held back, its score and its vouches. */
+  async voucher(id?: string): Promise<Voucher | null> {
+    const who = id ?? this.mine();
+    return (await read<{ voucher: Voucher }>(this.api, `/vouches/voucher/${who}`))?.voucher ?? null;
+  }
+
+  /** Add to this wallet's vouching bond (its line account's, when it has a credit line): the ETH its vouches are held back from. Only the part no vouch holds back comes out again. */
+  async addVouchBond(amount: Amount): Promise<VouchSent> {
+    const me = await this.guaranteeTarget();
+    const sent = await this.callVouch("addBond", [me], toWei(amount));
+    return this.vouchSent(sent, null, me);
+  }
+
+  /** Take out vouching bond no vouch holds back: all that is free when `amount` is left out. It goes to this agent's own desk address (a line account repays its line first). */
+  async withdrawVouchBond(amount?: Amount): Promise<VouchSent> {
+    const me = await this.guaranteeTarget();
+    const vc = await this.vouchContract();
+    const free = (await this.pub.readContract({ address: vc, abi: VOUCH, functionName: "freeOf", args: [me] })) as bigint;
+    const value = amount === undefined ? free : toWei(amount);
+    if (value === 0n || value > free) throw new Refusal(free === 0n ? "Nothing in the vouching bond is free: all of it backs vouches that have not ended, or there is none." : `${ethText(free)} ETH of the vouching bond is free.`, "not_free");
+    const sent = await this.callVouch("takeBond", [me, value], 0n);
+    return this.vouchSent(sent, null, me);
+  }
+
+  /**
+   * Offer to co-sign another agent's credit line (by its name, its address or its key): `amount` of this wallet's vouching
+   * bond is held back for it at once. The agent accepts by paying the fee, 2% of the amount; the vouch then stands 30
+   * days. If the line defaults on debt that was open while it stood, the line pool is paid from the fee and this bond;
+   * if not, half the fee goes into this bond. Needs a score of 300 or more, and at most a quarter of the bond on one agent.
+   */
+  async vouchForLine(agent: string, amount: Amount): Promise<VouchSent> {
+    const vc = await this.vouchContract();
+    const me = await this.guaranteeTarget();
+    const who = await this.agentAddress(agent);
+    const line = (await this.pub.readContract({ address: vc, abi: VOUCH, functionName: "line", args: [] })) as Hex;
+    const keyOf = (await this.pub.readContract({ address: line, abi: LINE, functionName: "keyOf", args: [who] })) as string;
+    const account = /^0x0{40}$/.test(keyOf) ? ((await this.pub.readContract({ address: line, abi: LINE, functionName: "accountOf", args: [who] })) as string) : who;
+    if (/^0x0{40}$/.test(account)) throw new Refusal(`${agent} has no credit line to vouch for.`, "no_line");
+    const sent = await this.callVouch("offerLine", [me, account, toWei(amount)], 0n);
+    return this.vouchSent(sent, this.vouchIdOf(sent.receipt.logs), me);
+  }
+
+  /**
+   * Offer to co-sign the cover a customer bought on a desk job (by the job's number): `amount` of this wallet's vouching
+   * bond is held back for it. The covered agent accepts by paying the fee. If the job is never delivered, its customer is
+   * paid the amount (from the fee first, then this bond), on top of the agent's own cover and the desk's refund.
+   */
+  async vouchForCover(jobId: number, amount: Amount): Promise<VouchSent> {
+    const vc = await this.vouchContract();
+    const me = await this.guaranteeTarget();
+    const g = (await this.pub.readContract({ address: vc, abi: VOUCH, functionName: "guarantee", args: [] })) as Hex;
+    const cover = (await this.pub.readContract({ address: g, abi: GUARANTEE, functionName: "coverOf", args: [BigInt(whole(jobId))] })) as bigint;
+    if (cover === 0n) throw new Refusal(`Job ${jobId} has no cover to co-sign.`, "no_cover");
+    const sent = await this.callVouch("offerCover", [me, cover, toWei(amount)], 0n);
+    return this.vouchSent(sent, this.vouchIdOf(sent.receipt.logs), me);
+  }
+
+  /** Accept a vouch offered to this agent, paying its fee (2% of the amount, read from the chain; `maxFeeEth` caps it). */
+  async acceptVouch(id: number, o: { maxFeeEth?: Amount } = {}): Promise<VouchSent> {
+    const vc = await this.vouchContract();
+    const v = (await this.pub.readContract({ address: vc, abi: VOUCH, functionName: "vouch", args: [BigInt(whole(id))] })) as { fee: bigint; amount: bigint; state: number };
+    if (VOUCH_STATES[v.state] !== "offered") throw new Refusal(`Vouch ${id} is ${VOUCH_STATES[v.state] ?? "not an offer"}.`, "not_offered");
+    if (vouchFee(v.amount).fee !== v.fee) throw new Refusal("The vouch's fee is not 2% of its amount: nothing will be sent.", "bad_fee");
+    if (o.maxFeeEth !== undefined && v.fee > toWei(o.maxFeeEth)) throw new Refusal(`The vouch's fee is ${ethText(v.fee)} ETH, over the ${ethText(toWei(o.maxFeeEth))} ETH allowed.`, "over_cap");
+    return this.vouchSent(await this.callVouch("accept", [BigInt(id)], v.fee), id);
+  }
+
+  /** End a vouch on this agent's credit line early, while the line owes nothing: kept, and the voucher earns its half of the fee. */
+  async releaseVouch(id: number): Promise<VouchSent> {
+    return this.vouchSent(await this.callVouch("release", [BigInt(whole(id))], 0n), id);
+  }
+
+  /** Take back an offer nobody accepted: the voucher at any time, anyone after its seven days. */
+  async withdrawVouchOffer(id: number): Promise<VouchSent> {
+    return this.vouchSent(await this.callVouch("withdraw", [BigInt(whole(id))], 0n), id);
+  }
+
+  /** Anyone, once a vouch's line or cover has ended: settle it. Factor does it by itself; this is for doing it now. */
+  async settleVouch(id: number): Promise<VouchSent> {
+    return this.vouchSent(await this.callVouch("settle", [BigInt(whole(id))], 0n), id);
+  }
+
+  /** The vouching contract, on and a contract on the chain. */
+  private async vouchContract(): Promise<Hex> {
+    const about = await read<VouchingAbout>(this.api, "/vouches/about");
+    if (!about?.enabled || !about.contract || !/^0x[0-9a-fA-F]{40}$/.test(about.contract)) throw new Refusal("Vouching is not switched on yet.", "vouching_off");
+    const vc = about.contract.toLowerCase() as Hex;
+    const code = await this.pub.getCode({ address: vc });
+    if (!code || code === "0x") throw new Refusal(`There is no contract at ${vc}, where the site says vouching is. Nothing will be sent to it.`, "no_vouch_contract");
+    return vc;
+  }
+
+  private vouchIdOf(logs: unknown[]): number | null {
+    for (const l of logs as { topics: [Hex, ...Hex[]]; data: Hex }[]) {
+      try {
+        const d = decodeEventLog({ abi: VOUCH, topics: l.topics, data: l.data }) as { eventName: string; args: { id?: bigint } };
+        if (d.eventName === "Offered" && d.args.id !== undefined) return Number(d.args.id);
+      } catch { /* another contract's log */ }
+    }
+    return null;
+  }
+
+  private async vouchSent(sent: { hash: Hex; explorer: string }, id: number | null, voucher?: Hex): Promise<VouchSent> {
+    const vc = await this.vouchContract();
+    const out: VouchSent = { hash: sent.hash, explorer: sent.explorer, vouch: id };
+    if (id !== null) {
+      const v = (await this.pub.readContract({ address: vc, abi: VOUCH, functionName: "vouch", args: [BigInt(id)] })) as { state: number };
+      out.state = VOUCH_STATES[v.state] ?? undefined;
+    }
+    if (voucher) {
+      const b = (await this.pub.readContract({ address: vc, abi: VOUCH, functionName: "voucherOf", args: [voucher] })) as { bond: bigint; held: bigint };
+      Object.assign(out, { voucher, bondEth: ethText(b.bond), freeEth: ethText(b.bond - b.held) });
+    }
+    return out;
+  }
+
+  /** One call to the vouching contract, from this wallet or its Factor account: tried, sent, followed until it is mined. */
+  private async callVouch(functionName: string, args: readonly unknown[], value: bigint): Promise<{ hash: Hex; explorer: string; receipt: { logs: unknown[] } }> {
+    if (!this.account || !this.wallet) throw new Refusal("This Factor was connected without a key: it can only read.", "read_only");
+    const vc = await this.vouchContract();
+    if (this.via) {
+      try {
+        await this.pub.simulateContract({ address: vc, abi: VOUCH, functionName, args, account: this.via, value } as never);
+      } catch (e) {
+        if (/insufficient (funds|balance)|exceeds the balance/i.test(`${(e as { shortMessage?: string }).shortMessage} ${(e as Error).message}`)) throw new Refusal(WORDS.AccountShort!([await this.pub.getBalance({ address: this.via }), value]), "account_short");
+        throw new Refusal(vouchWordsOf(e), "vouch_refused");
+      }
+      return this.order([{ to: vc, value, data: encodeFunctionData({ abi: VOUCH, functionName, args } as never) }]);
+    }
+    let hash: Hex;
+    try {
+      const { request } = await this.pub.simulateContract({ address: vc, abi: VOUCH, functionName, args, account: this.account, value } as never);
+      hash = await this.wallet.writeContract(request as never);
+    } catch (e) {
+      throw e instanceof Refusal ? e : new Refusal(vouchWordsOf(e), "vouch_refused");
+    }
+    const receipt = await this.pub.waitForTransactionReceipt({ hash, timeout: 180_000 });
+    if (receipt.status !== "success") throw new Refusal(`The transaction ${hash} was mined and refused. Nothing changed but the gas.`, "reverted");
+    return { hash, explorer: `${this.explorer}/tx/${hash}`, receipt };
+  }
+
   /** The guarantee contract, on and a contract on the chain. */
   private async guaranteeContract(): Promise<Hex> {
     const about = await read<GuaranteesAbout>(this.api, "/guarantees/about");
@@ -3629,6 +3793,8 @@ const LAUNCHER = agentCoinLauncherAbi as Abi;
 const LINE = factorLineAbi as Abi;
 const LINE_ACCOUNT = factorLineAccountAbi as Abi;
 const GUARANTEE = factorGuaranteeAbi as Abi;
+const VOUCH = factorVouchAbi as Abi;
+const VOUCH_STATES: (VouchState | null)[] = [null, "offered", "active", "kept", "failed", "returned", "withdrawn"];
 const BOUNTY = factorBountyAbi as Abi;
 const MILESTONES = factorMilestonesAbi as Abi;
 // The launcher's own refusals, in plain words: a few share a name with an account's, and mean something else here.

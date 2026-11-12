@@ -912,3 +912,64 @@ export interface VerdictSealed extends Sent {
   /** where the verdict and its salt were kept on this machine, or null */
   kept: string | null;
 }
+
+// ---------- vouching ----------
+
+/** Vouching: whether it is on, the contract, the rules and the totals (the engine's VouchingAbout). */
+export interface VouchingAbout {
+  enabled: boolean; contract: string | null; chainId: number;
+  rules: { minScore: number; maxSharePct: number; feePct: number; voucherPctOfFee: number; minVouchEth: number; lineTermDays: number; offerDays: number };
+  totals: { bondsEth: number; heldEth: number; vouchedEth: number; paidEth: number; earnedEth: number; burnedEth: number; vouches: number; standing: number } | null;
+}
+
+/** offered: waiting for the agent. active: standing. kept: repaid or delivered. failed: the loss paid. returned: the job was declined. withdrawn: never accepted */
+export type VouchState = "offered" | "active" | "kept" | "failed" | "returned" | "withdrawn";
+
+/** One vouch, as the site serves it (the engine's VouchJson). */
+export interface Vouch {
+  id: number;
+  /** line: a credit line, by its line account. cover: a cover on one desk job */
+  kind: "line" | "cover";
+  state: VouchState;
+  voucher: string; voucherName: string; voucherNamed: boolean;
+  agent: string; agentName: string; agentNamed: boolean; agentKey: string | null;
+  amountEth: number; amountWei: string; feeEth: number; feeWei: string;
+  offeredAt: string; expiresAt: string; tx: string;
+  startedAt?: string; acceptedTx?: string; endsAt?: string;
+  line?: { account: string; owesEth?: number; dueAt?: string | null; late?: boolean; defaulted?: boolean; owedAtOfferEth: number };
+  cover?: { id: number; job?: string | null; customer?: string; priceEth?: number; coverEth?: number; state?: string };
+  endedTx?: string; endedAt?: string; toVoucherEth?: number; burnedEth?: number; paidEth?: number; paidTo?: string | null; feeBackEth?: number;
+  next?: { what: "accept" | "lapsed" | "settle" | "ends" | "waits-for-repayment" | "kept-when-settled" | "pays-if-not-delivered"; at: string };
+  /** ties Factor's records show between the voucher and the agent, in words */
+  ties: string[];
+  /** the voucher is one of Factor's own */
+  factorOwn: boolean;
+  /** counted toward the agent's standing: not Factor's own and no tie */
+  counts: boolean;
+}
+
+/** One voucher, as the site serves it (the engine's VoucherJson). */
+export interface Voucher {
+  voucher: string; name: string; named: boolean; factorOwn: boolean;
+  bondEth: number; heldEth: number; freeEth: number; freeWei: string; perAgentEth: number;
+  score: number; strong: boolean;
+  vouches: number; kept: number; failed: number; returned: number; standing: number;
+  vouchedEth: number; lostEth: number; earnedEth: number;
+  items?: Vouch[];
+}
+
+/** An agent's vouches: received and given (the engine's AgentVouchingJson). */
+export interface AgentVouching {
+  agent: string; received: Vouch[];
+  standing: number; backedEth: number; kept: number; failed: number; notCounted: number;
+  voucher: Voucher | null;
+}
+
+/** A vouching call that was sent: the transaction, the vouch's number when it made or changed one, and the voucher's bond right after. */
+export interface VouchSent extends Sent {
+  vouch: number | null;
+  /** the voucher's desk address, its bond and what is free, when the call was the voucher's */
+  voucher?: string; bondEth?: string; freeEth?: string;
+  /** the vouch's state on the chain right after */
+  state?: VouchState;
+}

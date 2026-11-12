@@ -10,7 +10,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { formatEther } from "viem";
 import { z } from "zod";
-import { bountyParts, Factor, Refusal, toWei, type Agent, type Bounty, type CoinPermission, type Job, type MilestonePlan, type ModelReceiptInput, type VerdictModel, type VerifiedErc8004, type Verifier, type VerifierCase, type VerifiersAbout } from "./index.js";
+import { bountyParts, Factor, Refusal, toWei, type Agent, type Bounty, type CoinPermission, type Job, type MilestonePlan, type ModelReceiptInput, type VerdictModel, type VerifiedErc8004, type Verifier, type VerifierCase, type VerifiersAbout, type Vouch } from "./index.js";
 import { CASE_WORDS, makerName, VERIFIERS_GASLESS } from "./verifiers.js";
 import { askedText } from "./ask.js";
 import { reviewsText } from "./reviews.js";
@@ -971,6 +971,92 @@ export const TOOLS: Tool[] = [
       if (!c) return `Job ${a.job} has no cover.`;
       const next = c.next ? ` Next: ${c.next.what === "pays-if-not-delivered" ? `if not delivered by ${c.next.at}, the cover is paid to the customer` : c.next.what === "releases" ? `the cover goes back to the bond once the job settles (${c.next.at} at the latest)` : c.next.what === "tie" ? `it is tied to its job by ${c.next.at}` : c.next.what === "pays" ? "the cover is being paid to the customer" : "it lapses back to the bond"}.` : "";
       return `Job ${a.job}: ${c.coverEth} ETH of cover from ${c.agentName}'s guarantee bond, fee ${c.feeEth} ETH. ${c.state === "paid" ? `Not delivered: ${c.paidEth ?? c.coverEth} ETH was paid to the customer.` : c.state === "released" ? "Delivered: the cover went back to the bond." : c.state === "declined" ? "Declined: the customer had the price and the fee back." : c.state === "lapsed" ? "Never tied to a job: it lapsed." : c.state === "reserved" ? "Reserved, not tied to the job yet." : "Covered."}${next}`;
+    },
+  },
+  {
+    name: "factor_vouches", readOnly: true,
+    input: { agent: z.string().optional().describe("An agent's name or address: who vouched for it, and the vouches it gave. Left out with no vouch: the rules and the vouchers"), vouch: z.number().int().min(1).optional().describe("One vouch's number") },
+    description: "Vouching on Factor: an agent with a strong score (300 or more) co-signs a newer agent's credit line, or a cover it sold on a job, up to a quarter of its own vouching bond. The vouched agent pays a fee of 2% of the amount. Kept (the line repaid, the job delivered): half the fee goes to the voucher, half buys back and burns $FACTOR. Failed (the line defaulted, the job never delivered): the fee and then the voucher's bond pay whoever bore the loss, the line pool or the customer. Shows an agent's vouches (which count: not Factor's own, no tie Factor's records show), one vouch, or the rules and the vouchers.",
+    async run(f, a) {
+      const about = await f.vouching();
+      if (!about.enabled) return "Vouching is not switched on yet.";
+      const one = (v: Vouch) => `Vouch ${v.id}: ${v.voucherName} for ${v.agentName}'s ${v.kind === "line" ? "credit line" : `cover on job ${v.cover?.job ? Number(v.cover.job) : "?"}`}, ${v.amountEth} ETH (fee ${v.feeEth} ETH), ${v.state === "active" ? "standing" : v.state}${v.state === "failed" ? `: ${v.paidEth} ETH paid to ${v.kind === "line" ? "the line pool" : "the customer"}` : v.state === "kept" ? `: the voucher earned ${v.toVoucherEth} ETH` : ""}${v.endsAt && v.state === "active" ? `, until ${v.endsAt.slice(0, 10)}` : ""}${v.counts ? "" : v.factorOwn ? " (Factor's own: not counted)" : ` (not counted: ${v.ties.join("; ")})`}.`;
+      if (typeof a.vouch === "number") {
+        const v = await f.vouchOf(a.vouch);
+        return v ? one(v) : `There is no vouch ${a.vouch}.`;
+      }
+      if (typeof a.agent === "string") {
+        const v = await f.vouchesOf(a.agent);
+        if (!v) return `No vouch for or from ${a.agent}.`;
+        const lines = [`${a.agent}: ${v.standing} vouch(es) standing that count, ${v.backedEth} ETH behind them; ${v.kept} kept, ${v.failed} failed${v.notCounted ? `; ${v.notCounted} shown and not counted` : ""}.`, ...v.received.map(one)];
+        if (v.voucher) lines.push(`As a voucher: bond ${v.voucher.bondEth} ETH, ${v.voucher.heldEth} ETH held back, ${v.voucher.freeEth} ETH free, score ${v.voucher.score}${v.voucher.strong ? "" : " (under 300: it cannot offer)"}; ${v.voucher.kept} kept, ${v.voucher.failed} failed, earned ${v.voucher.earnedEth} ETH.`);
+        return lines.join("\n");
+      }
+      const r = about.rules;
+      return [
+        `A voucher needs a score of ${r.minScore}. It holds at most ${r.maxSharePct}% of its bond for one agent. The fee is ${r.feePct}% of the amount, paid by the vouched agent; ${r.voucherPctOfFee}% of it to the voucher when kept. A line vouch stands ${r.lineTermDays} days; an offer waits ${r.offerDays} days.`,
+        about.vouchers.length ? `Vouchers: ${about.vouchers.map((x) => `${x.name} (bond ${x.bondEth} ETH, ${x.standing} standing, ${x.kept} kept, ${x.failed} failed)`).join("; ")}.` : "No voucher outside Factor's own yet.",
+        ...(about.factorOwn.length ? [`Factor's own, ranked apart: ${about.factorOwn.map((x) => x.name).join(", ")}.`] : []),
+      ].join("\n");
+    },
+  },
+  {
+    name: "factor_vouch_bond", readOnly: false,
+    input: { add: amount.optional().describe("ETH to add to this wallet's vouching bond, as text"), withdraw: z.union([amount, z.literal("all")]).optional().describe('ETH to take out: only the part no vouch holds back. "all" for all of that') },
+    description: "This wallet's vouching bond (its line account's, when it has a credit line): add to it, or take out what no vouch holds back. Adding SPENDS ETH from this wallet, held to the day's cap. Every vouch it offers is held back from this bond, at most a quarter of it for one agent.",
+    async run(f, a, spending) {
+      need(f);
+      const said: string[] = [];
+      if (typeof a.add === "string") {
+        const v = toWei(a.add);
+        spending?.check(v, false);
+        const r = await f.addVouchBond(a.add);
+        spending?.add(v);
+        said.push(`Bonded ${a.add} ETH: the vouching bond is ${r.bondEth} ETH, ${r.freeEth} ETH free. ${r.explorer}`);
+      }
+      if (a.withdraw !== undefined) {
+        const r = await f.withdrawVouchBond(a.withdraw === "all" ? undefined : String(a.withdraw));
+        said.push(`Took bond out: it is ${r.bondEth} ETH now, ${r.freeEth} ETH free. ${r.explorer}`);
+      }
+      return said.length ? said.join("\n") : "Say an amount to add, or what to take out.";
+    },
+  },
+  {
+    name: "factor_vouch_for", readOnly: false,
+    input: { agent: z.string().optional().describe("Co-sign this agent's credit line: its name, address or key"), job: jobId.optional().describe("Or co-sign the cover a customer bought on this desk job"), amount },
+    description: "Offer to co-sign another agent's credit line, or the cover on one of its jobs, with this wallet's vouching bond. The amount is held back from the bond at once; the agent accepts by paying a 2% fee. If its line defaults on debt open while the vouch stood, or the covered job is never delivered, the fee and then THIS BOND pay the loss. Needs a score of 300 or more, a quarter of the bond at most on one agent, never for itself or its own line account. Confirm the agent and the amount with the user.",
+    async run(f, a) {
+      need(f);
+      if (typeof a.agent !== "string" && a.job === undefined) return "Say whose credit line (agent) or which covered job (job).";
+      const r = typeof a.job === "number" ? await f.vouchForCover(a.job, String(a.amount)) : await f.vouchForLine(String(a.agent), String(a.amount));
+      return `Offered vouch ${r.vouch}: ${a.amount} ETH held back from the vouching bond (${r.freeEth} ETH free now). It stands once the agent accepts and pays its fee; the offer waits seven days. ${r.explorer}`;
+    },
+  },
+  {
+    name: "factor_vouch_answer", readOnly: false,
+    input: { vouch: z.number().int().min(1).describe("The vouch's number"), action: z.enum(["accept", "release", "withdraw"]).describe("accept: this agent takes an offer and pays its fee. release: this agent ends its line vouch early while the line owes nothing. withdraw: the voucher takes back an offer not accepted yet") },
+    description: "Answer a vouch. accept SPENDS ETH: the fee, 2% of the amount, paid by this agent to the vouching contract (half to the voucher and half burned when kept). release ends a vouch on this agent's credit line while it owes nothing (kept). withdraw takes back an offer nobody accepted.",
+    async run(f, a, spending) {
+      need(f);
+      const id = a.vouch as number;
+      if (a.action === "accept") {
+        const v = await f.vouchOf(id);
+        if (v) spending?.check(BigInt(v.feeWei), false);
+        const r = await f.acceptVouch(id);
+        if (v) spending?.add(BigInt(v.feeWei));
+        return `Accepted vouch ${id}${v ? ` from ${v.voucherName}: ${v.amountEth} ETH behind this agent, fee ${v.feeEth} ETH` : ""}. ${r.explorer}`;
+      }
+      const r = a.action === "release" ? await f.releaseVouch(id) : await f.withdrawVouchOffer(id);
+      return `Vouch ${id} is ${r.state ?? "changed"}. ${r.explorer}`;
+    },
+  },
+  {
+    name: "factor_vouch_settle", readOnly: false, input: { vouch: z.number().int().min(1).describe("The vouch's number") },
+    description: "Settle a vouch whose line or cover has ended: kept (the voucher earns half the fee), failed (the loss paid from the fee and the voucher's bond) or returned (the job was declined). Anyone may; Factor does it by itself. Costs only gas.",
+    async run(f, a) {
+      need(f);
+      const r = await f.settleVouch(a.vouch as number);
+      return `Vouch ${a.vouch} is ${r.state ?? "settled"}. ${r.explorer}`;
     },
   },
   {

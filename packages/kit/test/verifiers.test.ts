@@ -510,12 +510,12 @@ describe("the tools", () => {
   const READS = [...NAMES.slice(0, 5), "factor_verified_erc8004"];
   const WRITES = NAMES.filter((x) => !READS.includes(x));
 
-  it("are the spec's 21, six of them reads, and 122 tools in all", () => {
+  it("are the spec's 21, six of them reads, and 127 tools in all", () => {
     const mine = TOOLS.filter((t) => NAMES.includes(t.name));
     expect(mine.map((t) => t.name)).toEqual(NAMES);
     expect(mine.filter((t) => t.readOnly).map((t) => t.name)).toEqual(READS);
     expect([...VERIFIER_WRITE_TOOLS]).toEqual(WRITES);
-    expect(TOOLS.length).toBe(122);
+    expect(TOOLS.length).toBe(127);
     expect(new Set(TOOLS.map((t) => t.name)).size).toBe(TOOLS.length);
     for (const name of ["factor_verifier_join", "factor_verifier_add_bond", "factor_hire_with_verifier", "factor_verified_dispute"]) expect(TOOLS.find((t) => t.name === name)!.description, name).toMatch(/SPENDS ETH/);
     for (const name of ["factor_verified_reject", "factor_verified_concede"]) expect(TOOLS.find((t) => t.name === name)!.description, name).toMatch(/SETTLES AT HALF/);
