@@ -774,14 +774,14 @@ test("the roadmap: on the home page, every phase in order, what is live checked 
   assert.match(html, /id="roadmap"/);
   const t = text(html);
   assert.match(t, /07 Roadmap The credit layer for AI agents \./);
-  assert.match(t, /17 of 20 phases live/);
+  assert.match(t, /18 of 20 phases live/);
   // the intro counts from the roadmap itself, so it never goes stale
-  assert.match(t, /Seventeen phases are live, the next three are planned, and more will follow\./);
-  assert.doesNotMatch(t, /Thirteen phases|Fourteen phases|Fifteen phases|Sixteen phases/);
+  assert.match(t, /Eighteen phases are live, the next two are planned, and more will follow\./);
+  assert.doesNotMatch(t, /Thirteen phases|Fourteen phases|Fifteen phases|Sixteen phases|Seventeen phases/);
   const names = ["Launch", "Compute on credit", "Pay with Factor", "Agents hire agents", "Agent firms", "Monthly clients", "Agents find their own work", "Agents that bid", "Bounties", "Agent coins", "Factor Score", "Credit lines", "Verified owners", "Guarantees", "Milestones", "Factor everywhere", "Verifiers", "Vouching", "Selling locked pay", "Agent treasury"];
   let at = t.indexOf("Stage 1");
   names.forEach((name, i) => { const k = t.indexOf(`Phase ${String(i + 1).padStart(2, "0")} ${name}`, at); assert.ok(k > at, `phase ${i + 1} ${name} in order`); at = k; });
-  for (const day of ["14 Oct", "15 Oct", "16 Oct", "17 Oct", "18 Oct", "19 Oct", "20 Oct", "22 Oct", "23 Oct", "24 Oct", "28 Oct", "30 Oct", "1 Nov", "2 Nov", "3 Nov", "4 Nov", "9 Nov"]) assert.match(t, new RegExp(`Live ${day}`));
+  for (const day of ["14 Oct", "15 Oct", "16 Oct", "17 Oct", "18 Oct", "19 Oct", "20 Oct", "22 Oct", "23 Oct", "24 Oct", "28 Oct", "30 Oct", "1 Nov", "2 Nov", "3 Nov", "4 Nov", "9 Nov", "12 Nov"]) assert.match(t, new RegExp(`Live ${day}`));
   assert.match(t, /Live 20 Oct Phase 11 Factor Score/);
   assert.match(t, /Live 28 Oct Phase 10 Agent coins/);
   assert.match(t, /Live 30 Oct Phase 12 Credit lines/);
@@ -791,9 +791,10 @@ test("the roadmap: on the home page, every phase in order, what is live checked 
   assert.match(t, /Live 3 Nov Phase 15 Milestones/);
   assert.match(t, /Live 4 Nov Phase 16 Factor everywhere/);
   assert.match(t, /Live 9 Nov Phase 17 Verifiers/);
-  assert.match(t, /Next Phase 18 Vouching The plan is/);
-  assert.equal((t.match(/Planned Phase/g) ?? []).length, 2);
-  for (const name of ["Selling locked pay", "Agent treasury"]) assert.match(t, new RegExp(`Planned Phase \\d+ ${name} The plan is`));
+  assert.match(t, /Live 12 Nov Phase 18 Vouching/);
+  assert.match(t, /Next Phase 19 Selling locked pay The plan is/);
+  assert.equal((t.match(/Planned Phase/g) ?? []).length, 1);
+  for (const name of ["Agent treasury"]) assert.match(t, new RegExp(`Planned Phase \\d+ ${name} The plan is`));
   assert.match(t, /Stage 5 Agents fund each other/);
   for (const w of ["October", "November", "December"]) assert.ok(!t.slice(t.indexOf("Stage 2")).includes(w), `no planned date: ${w}`);
   // the line runs on past the last phase into a stage still being planned, with no phase number and no date
