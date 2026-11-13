@@ -322,7 +322,7 @@ export interface LedgerEvent {
 export interface Burn { n: number; at: string; eth: number; tokens: number; tx: string }
 /** The burn pot, read from the chain: what it holds, when the next burn may go and what it would spend. */
 export interface BurnPot { potEth: number; nextEth: number; nextAt: string | null; ready: boolean; open: boolean; count: number; ethSpent: number; lastAt: string | null; everyMin: number; smallestEth: number; bonded?: boolean; lastFeesAt?: string | null }
-export interface LogEntry { date: string; area: string; title: string; text: string; /** shown only while this is switched on */ only?: "raeto" | "hey" | "reports" | "reports8004" | "vouching" }
+export interface LogEntry { date: string; area: string; title: string; text: string; /** shown only while this is switched on */ only?: "raeto" | "hey" | "reports" | "reports8004" | "vouching" | "claims" }
 
 export interface Params {
   advanceMaxPct: number;     // of the locked payment
@@ -416,6 +416,8 @@ export interface FactorState {
   reports?: { enabled: boolean; /** credit report scores are being written to ERC-8004 */ onErc8004?: boolean };
   /** vouching: whether it is on, the contract, the rules and the totals */
   vouching?: VouchingAbout;
+  /** selling locked pay (engine/src/claims.ts): whether it is on, the contract, the rules and the totals */
+  claims?: ClaimsAbout;
 }
 
 /** One of a firm's agents and its part of the firm's work: the lead's is the firm's jobs, a member's the sub-jobs it took under them. */
@@ -823,3 +825,26 @@ export interface AgentVouching {
 }
 /** The vouches page: the rules, the vouchers (Factor's own apart) and the latest vouches. */
 export interface VouchList extends VouchingAbout { vouchers: Voucher[]; factorOwn: Voucher[]; items: Vouch[] }
+
+// ---------- selling locked pay (engine/src/claims.ts; contracts/src/FactorClaims.sol) ----------
+
+/** Where a claim stands: for sale, bought and waiting for its job, paid when the job ended, or taken off sale. */
+export type ClaimState = "listed" | "sold" | "paid" | "closed";
+/** Amounts are wei (a string, or a number), times are unix seconds, as the engine gives them. */
+type Wei = string | number;
+/** One claim on a job's locked pay, as the engine gives it. */
+export interface ClaimView {
+  id: number | string; job: number | string; account: string; seller: string; state: ClaimState;
+  face: Wei; price: Wei; discountBps: number; holder: string | null; buyer: string | null; paid: Wei | null; owing: Wei | null;
+  listedAt: number | string; soldAt: number | string | null; endedAt: number | string | null;
+  listedTx: string | null; boughtTx: string | null; paidTx: string | null; jobState?: string; dueAt?: number | string; factorOwn?: boolean;
+  /** names, when the engine knows them */ sellerName?: string; holderName?: string;
+}
+/** Selling locked pay: whether it is on, the contract, the rules from the contract and the totals. */
+export interface ClaimsAbout {
+  enabled: boolean; contract: string | null; fromBlock?: number | null;
+  rules: { maxDiscountBps: number; minFace: Wei; maxOpen: number; review: number; grace: number };
+  totals?: { claims: number; listed: number; sold: number; faceSold: Wei; priceSold: Wei; paid: Wei; owedBack: Wei; repaid: Wei };
+}
+/** An agent's pay account, the claims it listed or sold and the claims it bought or holds. */
+export interface AgentClaims { account: string | null; key: string | null; debt: Wei; claims: ClaimView[]; bought: ClaimView[] }

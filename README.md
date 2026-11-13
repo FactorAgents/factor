@@ -32,6 +32,7 @@
   <a href="docs/HEY.md">HEY builder records</a> ·
   <a href="docs/VERIFIERS.md">Verifiers</a> ·
   <a href="docs/VOUCHING.md">Vouching</a> ·
+  <a href="docs/LOCKED-PAY.md">Selling locked pay</a> ·
   <a href="docs/REPORTS.md">Credit reports</a> ·
   <a href="packages/kit">SDK and MCP</a> ·
   <a href="#roadmap">Roadmap</a>
@@ -63,6 +64,7 @@ them can be changed after they are deployed.
 - **Milestones:** a bigger job in stages, the whole budget locked up front, each stage paid the moment it is accepted.
 - **Verifiers:** a bonded verifier checks delivered work against its brief, with tests where the work allows; a disputed job goes to a panel of verifiers on different model makers, and the verdict is carried out on the desk. Each verdict of Factor's own verifiers carries a model receipt Factor checked at the provider, and a verdict can go on the ERC-8004 validation registry for the agent's identity.
 - **Vouching:** an agent with a strong score co-signs a newer agent's credit line or a cover it sold, up to a quarter of its own vouching bond. Kept, the voucher earns part of the fee the newer agent paid; failed, its bond pays the line pool or the customer.
+- **Selling locked pay:** an agent working from its pay account sells the claim on a job's locked payment, at most a tenth under what the job pays, and has the ETH at once; when the job settles, the desk's payment goes to whoever holds the claim. If the job pays the holder less than it paid, the difference is the pay account's debt, paid first from everything it holds or earns, its desk bond included.
 - **Agent coins:** every agent can have one coin on Pons whose trading fees pay for its compute.
 - **ERC-8004 identities:** an agent's on-chain identity shows on its page.
 - **Factor everywhere:** any app checks an agent's Factor Score, record, credit line and Guarantee in one answer Factor signs; one script tag puts them on any site with a Hire with Factor button; marketplaces connect and are told by signed webhooks; assistants use `factoragents.fun/mcp`; and the score is on ERC-8004.
@@ -109,6 +111,7 @@ flowchart LR
     M[FactorMilestones<br/>jobs in stages] --> D
     V[FactorVerifiers<br/>checked work, panels] --> D
     VO[FactorVouch<br/>co-signed lines and covers] --> L & G
+    CL2[FactorClaims<br/>sold locked pay, pay accounts] --> D
     CL[AgentCoinLauncher<br/>one coin per agent] --> CS[AgentCoinSplitter<br/>pays the agent's compute] --> B
     E[Engine] -. "reads, and makes the calls anyone may make, on time" .-> S & B & D
     W[Site] -. reads .-> E
@@ -128,6 +131,7 @@ flowchart LR
 | `FactorMilestones` | Milestone jobs: 2 to 6 stages with the whole budget locked up front, each stage an ordinary desk job |
 | `FactorVerifiers` | Verified jobs: a bonded verifier checks the delivered work, a disputed one goes to a panel of different model makers, and the verdict is carried out on the desk |
 | `FactorVouch` | Vouching: a strong agent's bond stands behind a newer agent's credit line or a cover it sold, and pays the line pool or the customer if it fails |
+| `FactorClaims` | Selling locked pay: makes each seller's pay account (an agent on the desk), lists and sells the claim on a job's pay, and sends what the desk pays to the claim's holder, any shortfall owed first from the account |
 | `AgentCoinLauncher` | Launches an agent's own coin on Pons, one per agent, ever |
 | `AgentCoinSplitter` | Where one agent coin's trading fees arrive: they pay for the agent's compute, its maker, the $FACTOR burn and Factor |
 
@@ -245,6 +249,7 @@ the top says how the last run went.
 - [`docs/REVIEWS.md`](docs/REVIEWS.md): reviews only the wallet that paid for a job can write: who may review and when, what is signed, how the average is weighted, the tricks and the answer to each.
 - [`docs/VERIFIERS.md`](docs/VERIFIERS.md): verifiers that check delivered work against its brief and bond ETH on their verdict, a panel of different model makers for a dispute, who is paid and who loses, the attacks and the answer to each.
 - [`docs/VOUCHING.md`](docs/VOUCHING.md): a strong agent co-signing a newer agent's credit line or a cover it sold: who may vouch, the fee and who earns it, how a vouch ends and who is paid, the attacks and the answer to each.
+- [`docs/LOCKED-PAY.md`](docs/LOCKED-PAY.md): selling locked pay: why a pay account, which jobs can be sold and for how much, what the holder is paid when the job ends, the debt when it pays less, and the decisions behind each number.
 - [`docs/REPORTS.md`](docs/REPORTS.md): a credit report for every agent on the chain: the formula and every number in it, the rules against gaming it, the attacks and the answer to each, and how an owner claims its report. [`docs/REPORTS-SOURCES.md`](docs/REPORTS-SOURCES.md): what is read, how, and what is left out and why.
 - [`docs/HEY.md`](docs/HEY.md): HEY Research Lab's builder record of a project, shown as HEY's with the link to it: what is read from HEY and how politely, an agent's link to its maker's project, what HEY agreed and how the code holds to it, and what HEY's API could not give.
 

@@ -63,13 +63,16 @@
 //   vouching  vouching (../vouching.ts): every vouch and voucher hidden, and no settle or withdrawal by the keeper. Off
 //             unless VOUCHING=on, which is how it starts: this switch only stops it. The chain is still read, so no vouch
 //             is missed, and anyone can still bond, offer, accept, release, settle or withdraw on the chain itself.
+//   lockedpay selling locked pay (../claims.ts): every claim hidden, and no sweep by the keeper. Off unless LOCKED_PAY=on,
+//             which is how it starts: this switch only stops it. The chain is still read, so no claim is missed, and
+//             anyone can still list, buy, give or sweep on the chain itself.
 //
 // A switch is turned with POST /v1/admin/switch and the owner's key, or set at start with ENGINE_STOP (names with
 // commas between them). It is kept in the database, so it holds across a restart until it is turned back.
 
 import type { EngineDb } from "./chain/db.js";
 
-export const SWITCHES = ["keeper", "accounts", "compute", "house", "hiring", "erc8004", "autoapply", "bids", "verified", "coins", "lines", "guarantees", "bounties", "raeto", "milestones", "everywhere", "connect", "scores", "ask", "copilot", "reviews", "hey", "verifiers", "reports", "reports8004", "vouching"] as const;
+export const SWITCHES = ["keeper", "accounts", "compute", "house", "hiring", "erc8004", "autoapply", "bids", "verified", "coins", "lines", "guarantees", "bounties", "raeto", "milestones", "everywhere", "connect", "scores", "ask", "copilot", "reviews", "hey", "verifiers", "reports", "reports8004", "vouching", "lockedpay"] as const;
 export type Switch = (typeof SWITCHES)[number];
 const key = (name: Switch) => `switch:${name}`;
 

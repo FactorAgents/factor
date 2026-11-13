@@ -33,7 +33,7 @@ const P = ETH / 25n;
 
 // every key the site's type has (web/src/lib/types.ts), so a change on one side is noticed on the other
 function expectShape(s: FactorState): void {
-  expect(Object.keys(s).sort()).toEqual(["accounts", "activity", "agents", "asOf", "ask", "autoApply", "bounties", "burn", "burns", "coins", "compute", "contracts", "copilot", "desk", "erc8004", "events", "everywhere", "firms", "guarantees", "hey", "hosted", "jobs", "launched", "lines", "links", "milestones", "openJobs", "params", "paused", "pay", "plans", "pulse", "reports", "reviews", "roster", "signups", "source", "stats", "subjobs", "verified", "vouching"]);
+  expect(Object.keys(s).sort()).toEqual(["accounts", "activity", "agents", "asOf", "ask", "autoApply", "bounties", "burn", "burns", "claims", "coins", "compute", "contracts", "copilot", "desk", "erc8004", "events", "everywhere", "firms", "guarantees", "hey", "hosted", "jobs", "launched", "lines", "links", "milestones", "openJobs", "params", "paused", "pay", "plans", "pulse", "reports", "reviews", "roster", "signups", "source", "stats", "subjobs", "verified", "vouching"]);
   // Factor's own agents are said in every answer, before the launch and after: fifteen, each with what it takes a job for
   const roster = (s as unknown as { roster: { name: string; does: string; fromEth: number }[] }).roster;
   expect(roster).toHaveLength(15);
@@ -431,7 +431,7 @@ describe("the owner's health answer", () => {
     const h = await health(r.engine);
     expect(h).toMatchObject({ mode: "dry", state: "running", launched: true, gateway: A.gateway, contracts: { desk: A.desk, splitter: A.splitter, burnPot: A.burnPot } });
     expect(h.desk).toMatchObject({ pool: ETH.toString(), jobCount: 2, agents: 1, jobsKnown: 2, waitingToBeRead: 0, dueToSettle: 1, dueToRefund: 1 });
-    expect(Object.keys(h.actions).sort()).toEqual(["bounty", "burn", "claim_token", "coin_sweep", "collect", "erc8004", "erc8004_report", "erc8004_score", "guarantee", "line", "milestone", "refund_job", "relay", "retry_split", "return_compute", "settle_job", "skim", "sweep", "verifier", "vouch"]);
+    expect(Object.keys(h.actions).sort()).toEqual(["bounty", "burn", "claim_token", "claims", "coin_sweep", "collect", "erc8004", "erc8004_report", "erc8004_score", "guarantee", "line", "milestone", "refund_job", "relay", "retry_split", "return_compute", "settle_job", "skim", "sweep", "verifier", "vouch"]);
     expect(h.watchers.map((w: { watcher: string }) => w.watcher)).toEqual(["burnPot", "desk", "splitter", "token"]);
     const text = JSON.stringify(h) + JSON.stringify(await state(r.engine));
     expect(text).not.toContain(key);

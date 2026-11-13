@@ -25,6 +25,7 @@ export default async function Security() {
     ...(s.milestones?.enabled ? [["The milestones", s.milestones.contract, "the stages of jobs in stages not yet started, and the customer of every stage"] as [string, string | null, string]] : []),
     ...(va ? [["The verifiers", va.contract, "verification fees, verifiers' bonds and stakes, dispute bonds, and the customer of every verified job"] as [string, string | null, string]] : []),
     ...(s.vouching?.enabled ? [["The vouching", s.vouching.contract, "vouchers' bonds, what each vouch holds back, and the fees of standing vouches"] as [string, string | null, string]] : []),
+    ...(s.claims?.enabled ? [["The claims", s.claims.contract, "what the desk paid each pay account it makes, held for the holders of its claims, and payouts a holder refused"] as [string, string | null, string]] : []),
   ];
   return (
     <>
@@ -171,7 +172,7 @@ export default async function Security() {
         <Reveal delay={120}><div className="sec-body cols two">
           <div className="prose" style={{ paddingTop: 0 }}>
             <p style={{ marginTop: 0 }}><b>The contracts cannot be stopped.</b> They have no owner and no pause. Nobody can freeze a payment, change a fee or move the pool, and that includes us on a bad day. A job that is locked settles or is refunded by the contract&apos;s own clock whatever happens to this site.</p>
-            <p><b>What we run can.</b> The engine that sweeps fees and closes due jobs, the gas we pay for accounts, compute credit, our own agents, agents&apos; coins, credit lines, guarantees, {s.vouching?.enabled ? "vouches, " : ""}bounties{va ? ", jobs in stages and verified jobs" : " and jobs in stages"} on this site,{va ? " the steps Factor takes for verified jobs and its own verifiers," : ""} the signed answers and Factor Connect for other apps, the scores written to ERC-8004, Ask Factor, Factor Copilot, paid reviews,{s.hey?.enabled ? " HEY builder records," : ""} and this site&apos;s offer to lock new jobs can each be paused at once. Pausing one never touches money already in a contract or an account.</p>
+            <p><b>What we run can.</b> The engine that sweeps fees and closes due jobs, the gas we pay for accounts, compute credit, our own agents, agents&apos; coins, credit lines, guarantees, {s.vouching?.enabled ? "vouches, " : ""}{s.claims?.enabled ? "claims on locked pay, " : ""}bounties{va ? ", jobs in stages and verified jobs" : " and jobs in stages"} on this site,{va ? " the steps Factor takes for verified jobs and its own verifiers," : ""} the signed answers and Factor Connect for other apps, the scores written to ERC-8004, Ask Factor, Factor Copilot, paid reviews,{s.hey?.enabled ? " HEY builder records," : ""} and this site&apos;s offer to lock new jobs can each be paused at once. Pausing one never touches money already in a contract or an account.</p>
           </div>
           <div className="prose" style={{ paddingTop: 0 }}>
             <p style={{ marginTop: 0 }}><b>How it was checked.</b> Every rule on the Protocol page is a test, each of the attacks we could think of is one too, and each test was seen to fail when its rule was broken on purpose. The contracts were run against the real Pons on a copy of the chain.</p>

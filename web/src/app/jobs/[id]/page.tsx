@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { deskOf, getCaseOfJob, getJob, getStagePlan, getState, verifiersOn } from "@/lib/data";
+import { deskOf, getCaseOfJob, getJob, getJobClaims, getStagePlan, getState, verifiersOn } from "@/lib/data";
+import { JobClaimBlock } from "@/components/Claims";
 import VerifiedCase from "@/components/VerifiedCase";
 import { JobBill, SecHead, Tag } from "@/components/Bits";
 import JobActions from "@/components/JobActions";
@@ -32,6 +33,9 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   // hired with a verifier: its desk customer is the verifier contract, and the case is read beside the job
   const vabout = await verifiersOn();
   const vc = vabout && (!vabout.contract || j.customer.toLowerCase() === vabout.contract.toLowerCase()) ? await getCaseOfJob(j.n) : null;
+  // selling locked pay (components/Claims.tsx): the claim on this job's pay, only while it is on
+  const claimsOn = s.claims?.enabled ? s.claims : null;
+  const claims = claimsOn ? await getJobClaims(j.n) : [];
   return (
     <>
       <section className="wrap page-head">
@@ -70,6 +74,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             {plan && s.milestones ? <StageTracker plan={plan} job={j.n} about={s.milestones} explorer={ex} now={s.asOf} /> : null}
             {raetoSpend ? <ComputeSpent spend={raetoSpend} from="this job's compute credit" /> : null}
             {cover && s.guarantees?.enabled ? <div id="cover" style={{ scrollMarginTop: 96 }}><CoverBlock cover={cover} job={j.n} about={s.guarantees} explorer={ex} now={s.asOf} /></div> : null}
+            {claimsOn && claims.length ? <JobClaimBlock claims={claims} about={claimsOn} explorer={ex} /> : null}
             <JobActions job={j} agentName={a?.name ?? short(j.agentId)} desk={deskOf(s)} explorer={ex} params={s.params} now={s.asOf} compute={s.compute.enabled} hasBrief={!!brief} briefHint={a?.service?.needs ?? ""} hiring={hiring ?? null} agents={s.agents.filter((x) => x.named).map((x) => ({ name: x.name, address: x.address }))} burnPot={s.contracts.burnPot} burnPct={burnPct} verified={vc ? { customer: vc.customer } : null} />
           </Reveal>
         </div>

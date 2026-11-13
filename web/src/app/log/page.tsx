@@ -9,7 +9,7 @@ export const metadata: Metadata = { title: "Dev log" };
 
 export default async function Log() {
   const s = await getState();
-  const shown = DEVLOG.filter((l) => !l.only || (l.only === "raeto" && s.compute.raeto) || (l.only === "hey" && !!s.hey?.enabled) || (l.only === "reports" && !!s.reports?.enabled) || (l.only === "reports8004" && !!s.reports?.onErc8004) || (l.only === "vouching" && !!s.vouching?.enabled));
+  const shown = DEVLOG.filter((l) => !l.only || (l.only === "raeto" && s.compute.raeto) || (l.only === "hey" && !!s.hey?.enabled) || (l.only === "reports" && !!s.reports?.enabled) || (l.only === "reports8004" && !!s.reports?.onErc8004) || (l.only === "vouching" && !!s.vouching?.enabled) || (l.only === "claims" && !!s.claims?.enabled));
   return (
     <>
       <PageHead kicker="Dev log" title={<>What shipped, <em>newest</em> first.</>} lead="Every release of Factor, with its date and what part of it changed." />

@@ -4,7 +4,7 @@ import { Fragment } from "react";
 import { FileLine } from "@/components/Desk";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { deskOf, getAgent, getAutoApply, getCoinsAbout, getHey, getPayLinks, getState, getVerified, verifiersOn } from "@/lib/data";
+import { deskOf, getAgent, getAgentClaims, getAutoApply, getCoinsAbout, getHey, getPayLinks, getState, getVerified, verifiersOn } from "@/lib/data";
 import { CoinMark, OwnRisk } from "@/components/Coins";
 import CoinLaunch from "@/components/CoinLaunch";
 import { VerifiedMark, VerifyPanel } from "@/components/Verified";
@@ -19,6 +19,7 @@ import Erc8004Card, { Erc8004Mark } from "@/components/Erc8004";
 import CreditLineCard, { OpenLineCard } from "@/components/CreditLine";
 import GuaranteeCard, { GuaranteeMark, NoGuaranteeCard } from "@/components/Guarantee";
 import VouchingCard, { VouchMark } from "@/components/Vouching";
+import AgentClaimsCard from "@/components/Claims";
 import BountyCard from "@/components/BountyCard";
 import MilestonesCard from "@/components/MilestonesCard";
 import VerifiedJobsCard from "@/components/VerifiedJobsCard";
@@ -43,6 +44,9 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
   const { agent: a, jobs, hiring, firms, plans, factorScore, erc8004, coin, line, guarantee, bounties, milestones, raetoSpend, scoreOnChain, reviews, verified, asVerifier, vouching } = got;
   // vouching (components/Vouching.tsx): only while it is on
   const vOnch = s.vouching?.enabled ? s.vouching : null;
+  // selling locked pay (components/Claims.tsx): its pay account and claims, only while it is on
+  const claimsOn = s.claims?.enabled ? s.claims : null;
+  const claims = claimsOn ? await getAgentClaims(a.address) : null;
   const lineAccount = a.line ? (a.line.role === "account" ? a.address : a.line.account) : null;
   const hiredBy = hiring?.hiredBy ?? [], hires = hiring?.hires ?? [];
   const who = (x: { address: string; name: string; named: boolean }) => `/agents/${x.named ? x.name : x.address}`;
@@ -119,6 +123,8 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
       <VerifiedJobsCard v={verified} asVerifier={asVerifier} who={a.name} hire={vOn ? `/hire?agent=${a.address}&verifier=1` : null} />
       {guarantee && s.guarantees?.enabled ? <GuaranteeCard g={guarantee} about={s.guarantees} name={a.name} address={a.address} explorer={s.contracts.explorer} hire={`/hire?agent=${a.address}&cover=1`} house={a.house} />
         : s.guarantees?.enabled && s.guarantees.contract && !a.house && !a.hosted && !a.barred ? <NoGuaranteeCard address={a.address} keyOf={a.line?.role === "account" ? a.line.key : null} name={a.name} about={s.guarantees} explorer={s.contracts.explorer} /> : null}
+
+      {claimsOn ? <AgentClaimsCard x={claims} about={claimsOn} name={a.name} address={a.address} explorer={s.contracts.explorer} /> : null}
 
       {vOnch ? <VouchingCard v={vouching ?? null} about={vOnch} name={a.name} address={a.address} lineAccount={lineAccount} explorer={s.contracts.explorer} now={s.asOf} house={a.house || !!a.hosted} /> : null}
 

@@ -26,6 +26,7 @@ import { readBounties, type BountiesConfig } from "../bounties.js";
 import { readMilestones, type MilestonesConfig } from "../milestones.js";
 import { readVerifiers, type VerifiersConfig } from "../verifiers.js";
 import { readVouching, type VouchingConfig } from "../vouching.js";
+import { readClaims, type ClaimsConfig } from "../claims.js";
 import { readEverywhere, type EverywhereConfig } from "../everywhere.js";
 import { readAsk, type AskConfig } from "../ask.js";
 import { readCopilot, type CopilotConfig } from "../copilot.js";
@@ -62,7 +63,7 @@ export interface EngineParams {
   burnRetryS: number; // ENGINE_BURN_RETRY_S
   maxGasWei: bigint; // ENGINE_MAX_GAS_GWEI: the most the engine pays per unit of gas
   unstickMaxGasWei: bigint; // ENGINE_UNSTICK_MAX_GAS_GWEI: the same for replacing a transaction that is stuck
-  gasCaps: { sweep: bigint; claim_token: bigint; burn: bigint; settle_job: bigint; refund_job: bigint; collect: bigint; return_compute: bigint; relay: bigint; retry_split: bigint; skim: bigint; erc8004: bigint; coin_sweep: bigint; line: bigint; guarantee: bigint; bounty: bigint; milestone: bigint; verifier: bigint; vouch: bigint; erc8004_score: bigint; erc8004_report: bigint };
+  gasCaps: { sweep: bigint; claim_token: bigint; burn: bigint; settle_job: bigint; refund_job: bigint; collect: bigint; return_compute: bigint; relay: bigint; retry_split: bigint; skim: bigint; erc8004: bigint; coin_sweep: bigint; line: bigint; guarantee: bigint; bounty: bigint; milestone: bigint; verifier: bigint; vouch: bigint; claims: bigint; erc8004_score: bigint; erc8004_report: bigint };
   jobsPerPass: number; // ENGINE_JOBS_PER_PASS: jobs the engine settles or refunds in one pass at most
   deskReadsPerPass: number; // ENGINE_DESK_READS_PER_PASS: jobs and agents read back from the desk in one pass at most
   gasHeadroomBps: number; // on top of the node's estimate
@@ -89,7 +90,7 @@ export const DEFAULTS: EngineParams = {
   burnRetryS: 120,
   maxGasWei: 2n * GWEI,
   unstickMaxGasWei: 20n * GWEI,
-  gasCaps: { sweep: 700_000n, claim_token: 400_000n, burn: 900_000n, settle_job: 600_000n, refund_job: 500_000n, collect: 200_000n, return_compute: 150_000n, relay: 1_500_000n, retry_split: 400_000n, skim: 100_000n, erc8004: 500_000n, coin_sweep: 800_000n, line: 600_000n, guarantee: 600_000n, bounty: 4_000_000n, milestone: 900_000n, verifier: 700_000n, vouch: 900_000n, erc8004_score: 400_000n, erc8004_report: 400_000n },
+  gasCaps: { sweep: 700_000n, claim_token: 400_000n, burn: 900_000n, settle_job: 600_000n, refund_job: 500_000n, collect: 200_000n, return_compute: 150_000n, relay: 1_500_000n, retry_split: 400_000n, skim: 100_000n, erc8004: 500_000n, coin_sweep: 800_000n, line: 600_000n, guarantee: 600_000n, bounty: 4_000_000n, milestone: 900_000n, verifier: 700_000n, vouch: 900_000n, claims: 1_500_000n, erc8004_score: 400_000n, erc8004_report: 400_000n },
   jobsPerPass: 5,
   deskReadsPerPass: 200,
   gasHeadroomBps: 2500,
@@ -168,6 +169,8 @@ export interface EngineConfig {
   verifiers: VerifiersConfig;
   // vouching (../vouching.ts): whether vouches are read and shown, and settled and withdrawn by the keeper
   vouching: VouchingConfig;
+  // selling locked pay (../claims.ts): whether claims are read and shown, and pay accounts swept by the keeper
+  claims: ClaimsConfig;
   // Factor everywhere (../everywhere.ts): the signed answers for any app, and Factor Connect for marketplaces
   everywhere: EverywhereConfig;
   // the Factor Score on ERC-8004 (../erc8004score.ts): whether scores are written to the agents' reputation, and the day's gas
@@ -366,6 +369,8 @@ export function readConfig(processEnv: Env = process.env): EngineConfig {
   const milestones = readMilestones(env, problems);
   const verifiers = readVerifiers(env, problems);
   const vouching = readVouching(env, problems);
+  const claims = readClaims(env, problems);
+  if (claims.contract && [desk, splitter, burnPot, lines.line, guarantees.guarantee, bounties.bounty, milestones.milestones, verifiers.contract, vouching.contract].includes(claims.contract)) problems.push("FACTOR_CLAIMS is the same address as another of the contracts");
   if (vouching.contract && [desk, splitter, burnPot, lines.line, guarantees.guarantee, bounties.bounty, milestones.milestones, verifiers.contract].includes(vouching.contract)) problems.push("FACTOR_VOUCH is the same address as another of the contracts");
   if (verifiers.contract && [desk, splitter, burnPot, lines.line, guarantees.guarantee, bounties.bounty, milestones.milestones].includes(verifiers.contract)) problems.push("FACTOR_VERIFIERS is the same address as another of the contracts");
   if (milestones.milestones && [desk, splitter, burnPot, lines.line, guarantees.guarantee, bounties.bounty].includes(milestones.milestones)) problems.push("FACTOR_MILESTONES is the same address as another of the contracts");
@@ -422,6 +427,7 @@ export function readConfig(processEnv: Env = process.env): EngineConfig {
     milestones,
     verifiers,
     vouching,
+    claims,
     everywhere,
     scores,
     ask,

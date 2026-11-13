@@ -52,6 +52,7 @@ import { Bounties } from "./bounties.js";
 import { Milestones } from "./milestones.js";
 import { Verifiers, chainPriceOf, routerAsker, routerLookup } from "./verifiers.js";
 import { Vouching } from "./vouching.js";
+import { Claims } from "./claims.js";
 import { answerSigner, Connect, type AnswerSigner } from "./everywhere.js";
 import { Erc8004Scores } from "./erc8004score.js";
 import { Ask, askModelOf, type AskModel } from "./ask.js";
@@ -156,6 +157,8 @@ export class Engine {
   verifiers: Verifiers | null = null;
   /** vouching (./vouching.ts): strong agents co-signing newer agents' lines and covers, read, settled and withdrawn by the keeper */
   vouching: Vouching | null = null;
+  /** selling locked pay (./claims.ts): claims on jobs' locked payments, read, and pay accounts swept by the keeper */
+  claims: Claims | null = null;
   /** Factor Connect (./everywhere.ts): marketplaces, their hire links and the webhooks they are sent */
   connect: Connect | null = null;
   /** the Factor Score written to ERC-8004 (./erc8004score.ts) */
@@ -237,7 +240,7 @@ export class Engine {
     for (const [name, l] of this.loops) loops[name] = { lastRunAt: l.lastRunAt, lastOkAt: l.lastOkAt, runs: l.runs, failures: l.failures, waitMs: l.waitMs, backingOff: l.backingOff };
     return {
       config: this.config, state: this.state, problems: this.problems, warnings: this.warnings, lastError: this.lastError, loops, ctx: this.ctx, rpc: this.chain?.health() ?? null, now: this.now,
-      links: { pons: link(this.env.FACTOR_PONS_URL), github: link(this.env.FACTOR_GITHUB_URL), x: link(this.env.FACTOR_X_URL) }, dataDirSet: !!this.env.FACTOR_DATA_DIR?.trim(), profiles: this.profiles, gateway: this.gateway, accounts: this.accounts, house: this.house, demo: this.demo, pulse: this.pulse, deskMind: this.deskMind, launchList: this.launchList, activity: this.activity, matcher: this.matcher, pay: this.pay, subjobs: this.subjobs, recordSigner: this.recordSigner, firms: this.firms, plans: this.plans, erc8004: this.erc8004, openjobs: this.openjobs, autoapply: this.autoapply, verified: this.verified, coins: this.coins, lines: this.lines, guarantees: this.guarantees, bounties: this.bounties, milestones: this.milestones, verifiers: this.verifiers, vouching: this.vouching,
+      links: { pons: link(this.env.FACTOR_PONS_URL), github: link(this.env.FACTOR_GITHUB_URL), x: link(this.env.FACTOR_X_URL) }, dataDirSet: !!this.env.FACTOR_DATA_DIR?.trim(), profiles: this.profiles, gateway: this.gateway, accounts: this.accounts, house: this.house, demo: this.demo, pulse: this.pulse, deskMind: this.deskMind, launchList: this.launchList, activity: this.activity, matcher: this.matcher, pay: this.pay, subjobs: this.subjobs, recordSigner: this.recordSigner, firms: this.firms, plans: this.plans, erc8004: this.erc8004, openjobs: this.openjobs, autoapply: this.autoapply, verified: this.verified, coins: this.coins, lines: this.lines, guarantees: this.guarantees, bounties: this.bounties, milestones: this.milestones, verifiers: this.verifiers, vouching: this.vouching, claims: this.claims,
       connect: this.connect, erc8004Scores: this.erc8004Scores, answerSigner: this.answerSigner, ask: this.ask, copilot: this.copilot, reviews: this.reviews, hey: this.hey, reports: this.reports, reportsErc8004: this.reportsErc8004,
     };
   }
@@ -706,6 +709,16 @@ export class Engine {
     this.accounts.vouch = () => (this.vouching?.reading() ? c.vouching.contract : null);
     if (c.vouching.enabled && c.vouching.note) this.log(`[vouching] NOT ON: ${c.vouching.note}`);
     else if (c.vouching.enabled) this.log(`[vouching] on: vouches are read from ${c.vouching.contract}; the keeper settles a vouch once its line or cover has ended, and withdraws an offer nobody accepted in its seven days`);
+    // selling locked pay: made whether or not it is on, and reads nothing until LOCKED_PAY=on and the contract is given.
+    // Factor's own are the same wallets as vouching's
+    this.claims = new Claims({
+      cfg: c.claims, db, chain: this.chain, chainId: c.chainId, nowS, now: this.now, log: this.log,
+      names: () => this.profiles!.all(),
+      factorOwn: (a) => factorOwn(a) || c.reports.factorWallets.includes(a),
+    });
+    this.ctx.claims = this.claims;
+    if (c.claims.enabled && c.claims.note) this.log(`[lockedpay] NOT ON: ${c.claims.note}`);
+    else if (c.claims.enabled) this.log(`[lockedpay] on: claims are read from ${c.claims.contract}; the keeper sweeps a pay account once a claimed job has ended or can be ended, or it owes a holder and can pay`);
     // HEY builder records: made whether or not they are on, so an agent's link is kept; HEY is asked nothing while off
     this.hey = new Hey({
       cfg: c.hey, db, now: this.now, log: this.log, setters,
@@ -985,6 +998,11 @@ export class Engine {
     if (this.vouching?.reading()) {
       if ((await this.vouching.watch(this.ctx, pass.head)).length && this.api) this.api.forget();
       await this.vouching.refresh();
+    }
+    // selling locked pay: its logs, then what is read of it (./claims.ts)
+    if (this.claims?.reading()) {
+      if ((await this.claims.watch(this.ctx, pass.head)).length && this.api) this.api.forget();
+      await this.claims.refresh();
     }
     // an open job whose rule is the best Factor Score is picked as soon as its moment has come (./openjobs.ts)
     try { this.openjobs?.pickDue(); } catch (e) { this.log(`[openjobs] picking failed: ${e instanceof Error ? e.message : String(e)}`); }

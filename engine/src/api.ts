@@ -108,6 +108,7 @@ import type { AgentBountiesJson, Bounties, BountiesAbout } from "./bounties.js";
 import type { MilestoneJobLink, Milestones, MilestonesAbout } from "./milestones.js";
 import { MAKERS, VERIFIER_RULES, VERIFY_TAG, type Verifiers, type VerifiersAbout } from "./verifiers.js";
 import type { Vouching, VouchingAbout, VouchState } from "./vouching.js";
+import { CLAIM_RULES, CLAIM_STATES, type Claims, type ClaimsAbout, type ClaimState } from "./claims.js";
 import { VALIDATION_REGISTRY } from "./erc8004.js";
 import { envelope, hireUrl, MOST_AT_ONCE, ANSWER_HOLDS_S, parseId, seal, type AgentAnswer, type AnswerSigner, type Connect } from "./everywhere.js";
 import type { Erc8004Scores } from "./erc8004score.js";
@@ -182,6 +183,8 @@ export interface EngineView {
   verifiers?: Verifiers | null;
   /** vouching (./vouching.ts) */
   vouching?: Vouching | null;
+  /** selling locked pay (./claims.ts) */
+  claims?: Claims | null;
   /** Factor Connect (./everywhere.ts) */
   connect?: Connect | null;
   /** the Factor Score written to ERC-8004 (./erc8004score.ts) */
@@ -738,6 +741,14 @@ export class EngineApi {
       const answer = this.vouchesGet(v, path, query);
       if (answer) return answer;
     }
+    // selling locked pay: the rules and totals, the latest claims, one claim, a job's, an agent's
+    if (path === "/v1/claims" || path.startsWith("/v1/claims/")) {
+      if (from && this.tooMany(from, "claims-get", 600)) return { status: 429, body: { error: "too many requests: try again in a minute" } };
+      const v = this.view();
+      if (v.state !== "running") return { status: 503, body: { error: "the engine is not reading the chain yet" } };
+      const answer = this.claimsGet(v, path, query);
+      if (answer) return answer;
+    }
     // verifiers: the rules, the makers and totals, the verifiers, the cases, one case whole
     if (path === "/v1/verifiers" || path.startsWith("/v1/verifiers/")) {
       if (from && this.tooMany(from, "verifiers-get", 600)) return { status: 429, body: { error: "too many requests: try again in a minute" } };
@@ -1143,6 +1154,40 @@ export class EngineApi {
       return ok({ items: vs!.onSubject(kind, kind === "line" ? vs!.agentOf(subject) : subject) });
     }
     return notFound("no such route");
+  }
+
+  // Selling locked pay (./claims.ts), read from the database only.
+  private claimsGet(v: EngineView, path: string, query: URLSearchParams): Answer | null {
+    const cs = v.claims;
+    const on = !!cs?.on();
+    if (path === "/v1/claims/about") return ok({ ...this.claimsAbout(v) });
+    if (path === "/v1/claims") {
+      const state = query.get("state") ?? "";
+      const limit = Number(query.get("limit") ?? "30");
+      return ok({ ...this.claimsAbout(v), claims: on ? cs!.list({ ...((CLAIM_STATES as string[]).includes(state) ? { state: state as ClaimState } : {}), limit: Number.isFinite(limit) ? limit : 30 }) : [] });
+    }
+    if (!on) return notFound("selling locked pay is switched off for now");
+    let m = /^\/v1\/claims\/(\d{1,9})$/.exec(path);
+    if (m) {
+      const one = cs!.claim(Number(m[1]));
+      return one ? ok({ claim: cs!.json(one) }) : notFound("no such claim");
+    }
+    m = /^\/v1\/claims\/job\/(\d{1,9})$/.exec(path);
+    if (m) return ok({ claims: cs!.onJob(Number(m[1])) });
+    m = /^\/v1\/claims\/agent\/([0-9a-zA-Z-]{3,42})$/.exec(path);
+    if (m) {
+      const raw = m[1]!.toLowerCase();
+      const address = /^0x[0-9a-f]{40}$/.test(raw) ? raw : [...(v.profiles?.all() ?? new Map()).entries()].find(([, p]) => p.name.toLowerCase() === raw && !p.hidden)?.[0];
+      if (!address) return notFound("no agent by that name or address");
+      return ok({ ...(cs!.agentJson(address) ?? { account: null, key: null, debt: "0", claims: [], bought: [] }) });
+    }
+    return notFound("no such route");
+  }
+
+  private claimsAbout(v: EngineView): ClaimsAbout {
+    if (v.claims) return v.claims.about();
+    const c = v.config.claims;
+    return { enabled: false, contract: c.contract, fromBlock: c.fromBlock === null ? null : c.fromBlock.toString(), chainId: v.config.chainId, rules: { maxDiscountBps: CLAIM_RULES.maxDiscountBps, minFace: CLAIM_RULES.minFace, maxOpen: CLAIM_RULES.maxOpen, review: CLAIM_RULES.review, grace: CLAIM_RULES.grace }, totals: null };
   }
 
   private vouchingAbout(v: EngineView): VouchingAbout {
@@ -1946,6 +1991,8 @@ export class EngineApi {
       ...((x) => (x ? { asVerifier: x } : {}))(v.verifiers?.on() ? v.verifiers.verifierJson(row.address) : null),
       // who vouched for it and on what terms, and the vouches it gave: only while vouching is on and it has one
       ...((x) => (x ? { vouching: x } : {}))(v.vouching?.on() ? v.vouching.agentJson(row.address) : null),
+      // its pay account and the claims on its pay, and the claims it bought: only while selling locked pay is on and it has one
+      ...((x) => (x ? { lockedPay: x } : {}))(v.claims?.on() ? v.claims.agentJson(row.address) : null),
       // its guarantee bond, offer and covers: only while guarantees are on and it has ever had one
       ...((x) => (x ? { guarantee: x } : {}))(v.guarantees?.on() ? v.guarantees.agentJson(row.address, true) : null),
       ...((x) => (x ? { raetoSpend: x } : {}))(v.gateway?.raetoSpendOfAgent(row.address) ?? null),
@@ -2201,6 +2248,8 @@ export class EngineApi {
       // its cover, when it was hired with one: only while guarantees are on
       ...((c) => (c ? { cover: { ...v.guarantees!.coverJson(c), ...(v.vouching?.on() ? { vouches: v.vouching.onSubject("cover", String(c.id)) } : {}) } } : {}))(v.guarantees?.on() ? v.guarantees.coverOfJob(id) : null),
       ...((x) => (x ? { raetoSpend: x } : {}))(v.gateway?.raetoSpendOfJob(id) ?? null),
+      // the claim on its locked payment, when its agent listed one: only while selling locked pay is on
+      ...((x) => (x ? { claim: x } : {}))(v.claims?.on() ? v.claims.latestOnJob(id) : null),
       // its paid review, and who may write it until when: only while reviews are on (./reviews.ts)
       ...(this.reviewsOn(v) ? { review: v.reviews!.ofJob(id), reviewing: v.reviews!.standing(row) } : {}),
     });
@@ -2349,7 +2398,9 @@ export class EngineApi {
     const reports = { enabled: this.reportsOn(v), onErc8004: this.reportsOn(v) && !!v.reportsErc8004?.on() };
     // vouching (./vouching.ts): whether it shows, the rules and the totals
     const vouching = this.vouchingAbout(v);
-    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused, roster: this.rosterJson(v), hosted, pulse: pulseJson(v, 8), desk: this.deskJson(v), signups, activity, pay, subjobs, firms, plans, erc8004, openJobs, autoApply, verified, coins, lines, guarantees, bounties, milestones, everywhere, ask, copilot, reviews, hey, reports, vouching };
+    // selling locked pay (./claims.ts): whether it shows, the rules and the totals
+    const claims = this.claimsAbout(v);
+    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused, roster: this.rosterJson(v), hosted, pulse: pulseJson(v, 8), desk: this.deskJson(v), signups, activity, pay, subjobs, firms, plans, erc8004, openJobs, autoApply, verified, coins, lines, guarantees, bounties, milestones, everywhere, ask, copilot, reviews, hey, reports, vouching, claims };
     if (!r) {
       return { ...base, launched: false, stats: { advancedEth: 0, settledJobs: 0, jobs: 0, poolEth: 0, reserveEth: 0, outEth: 0, heldEth: 0, burnedTokens: 0, supplyLeft: SUPPLY, agents: 0, demoJobs: 0, lostEth: 0, poolFromTradingEth: 0 }, burn: null, agents: [], jobs: [], events: [], burns: [] };
     }
@@ -2453,6 +2504,7 @@ export class EngineApi {
       milestones: v.milestones ? v.milestones.health() : null,
       verifiers: v.verifiers ? v.verifiers.health() : null,
       vouching: v.vouching ? v.vouching.health() : null,
+      lockedpay: v.claims ? v.claims.health() : null,
       ask: v.ask ? v.ask.health() : null,
       copilot: v.copilot ? v.copilot.health() : null,
       reviews: v.reviews ? v.reviews.health() : null,

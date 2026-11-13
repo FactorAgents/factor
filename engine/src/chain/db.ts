@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS engine_locks (name TEXT PRIMARY KEY, holder TEXT NOT 
 -- Everything the engine sent, would have sent (dry), or could not send: what, why, and how it ended.
 CREATE TABLE IF NOT EXISTS engine_actions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  kind TEXT NOT NULL,                -- sweep, claim_token, burn, settle_job, refund_job, collect, return_compute, erc8004, line, guarantee, bounty, milestone, verifier, vouch, unstick
+  kind TEXT NOT NULL,                -- sweep, claim_token, burn, settle_job, refund_job, collect, return_compute, erc8004, line, guarantee, bounty, milestone, verifier, vouch, claims, unstick
   ref TEXT NOT NULL DEFAULT '',
   mode TEXT NOT NULL,                -- dry or live
   status TEXT NOT NULL,              -- dry, signed, sent, done, failed, replaced
@@ -704,6 +704,52 @@ CREATE INDEX IF NOT EXISTS vouch_vouches_voucher ON vouch_vouches (voucher, id);
 CREATE INDEX IF NOT EXISTS vouch_vouches_subject ON vouch_vouches (kind, subject);
 CREATE INDEX IF NOT EXISTS vouch_vouches_state ON vouch_vouches (state);
 CREATE INDEX IF NOT EXISTS vouch_vouches_block ON vouch_vouches (block);
+-- Selling locked pay (../claims.ts): each pay account as its Opened log says it, and what is read of it since (what it owes
+-- holders, its ETH, its desk bond and the pool advances it has out).
+CREATE TABLE IF NOT EXISTS claims_accounts (
+  account TEXT PRIMARY KEY,
+  key TEXT NOT NULL,
+  block INTEGER NOT NULL,
+  at INTEGER NOT NULL,
+  tx_hash TEXT NOT NULL,
+  debt TEXT NOT NULL DEFAULT '0',
+  balance TEXT NOT NULL DEFAULT '0',
+  bond TEXT NOT NULL DEFAULT '0',
+  advanced TEXT NOT NULL DEFAULT '0',
+  state_at INTEGER NOT NULL DEFAULT 0   -- ms: 0 marks it to be read again
+);
+CREATE INDEX IF NOT EXISTS claims_accounts_key ON claims_accounts (key);
+CREATE INDEX IF NOT EXISTS claims_accounts_block ON claims_accounts (block);
+-- Each claim, as its Listed log says it, then bought, given, paid or closed; with where its desk job stands.
+CREATE TABLE IF NOT EXISTS claims_claims (
+  id INTEGER PRIMARY KEY,
+  block INTEGER NOT NULL,
+  at INTEGER NOT NULL,
+  tx_hash TEXT NOT NULL,
+  job INTEGER NOT NULL,
+  account TEXT NOT NULL,
+  seller TEXT,
+  face TEXT NOT NULL,
+  price TEXT NOT NULL,
+  state TEXT NOT NULL DEFAULT 'listed', -- listed, sold, paid, closed
+  holder TEXT,
+  buyer TEXT,
+  paid TEXT NOT NULL DEFAULT '0',
+  owing TEXT NOT NULL DEFAULT '0',
+  sold_at INTEGER,
+  bought_tx TEXT,
+  ended_at INTEGER,
+  paid_tx TEXT,
+  job_state INTEGER NOT NULL DEFAULT 0,
+  due_at INTEGER NOT NULL DEFAULT 0,
+  delivered_at INTEGER NOT NULL DEFAULT 0,
+  read_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS claims_claims_job ON claims_claims (job, id);
+CREATE INDEX IF NOT EXISTS claims_claims_account ON claims_claims (account, id);
+CREATE INDEX IF NOT EXISTS claims_claims_holder ON claims_claims (holder);
+CREATE INDEX IF NOT EXISTS claims_claims_state ON claims_claims (state);
+CREATE INDEX IF NOT EXISTS claims_claims_block ON claims_claims (block);
 CREATE TABLE IF NOT EXISTS job_titles (
   job_id INTEGER PRIMARY KEY,
   title TEXT NOT NULL,
@@ -713,7 +759,7 @@ CREATE TABLE IF NOT EXISTS job_titles (
 );
 `;
 
-export type ActionKind = "sweep" | "retry_split" | "claim_token" | "burn" | "settle_job" | "refund_job" | "collect" | "return_compute" | "skim" | "relay" | "erc8004" | "coin_sweep" | "line" | "guarantee" | "bounty" | "milestone" | "verifier" | "vouch" | "erc8004_score" | "erc8004_report" | "unstick";
+export type ActionKind = "sweep" | "retry_split" | "claim_token" | "burn" | "settle_job" | "refund_job" | "collect" | "return_compute" | "skim" | "relay" | "erc8004" | "coin_sweep" | "line" | "guarantee" | "bounty" | "milestone" | "verifier" | "vouch" | "claims" | "erc8004_score" | "erc8004_report" | "unstick";
 export type ActionStatus = "dry" | "signed" | "sent" | "done" | "failed" | "replaced";
 
 export interface ActionRow {
@@ -745,7 +791,7 @@ export interface EventRow {
 }
 
 // The tables a stretch of blocks writes to, all keyed by block: what a reorg or a reindex takes back.
-const BY_BLOCK = ["chain_events", "chain_splits", "chain_burns", "ledger", "desk_advances", "coins", "coin_splits", "coin_trades", "coin_transfers", "lines", "line_moves", "guarantee_bonds", "guarantee_covers", "guarantee_moves", "bounties", "bounty_entries", "milestone_plans", "milestone_stages", "verifier_cases", "verifier_seats", "verifier_money", "verifier_list", "vouch_vouchers", "vouch_vouches"];
+const BY_BLOCK = ["chain_events", "chain_splits", "chain_burns", "ledger", "desk_advances", "coins", "coin_splits", "coin_trades", "coin_transfers", "lines", "line_moves", "guarantee_bonds", "guarantee_covers", "guarantee_moves", "bounties", "bounty_entries", "milestone_plans", "milestone_stages", "verifier_cases", "verifier_seats", "verifier_money", "verifier_list", "vouch_vouchers", "vouch_vouches", "claims_accounts", "claims_claims"];
 
 export class EngineDb {
   readonly holder = randomBytes(6).toString("hex"); // this process, for the locks

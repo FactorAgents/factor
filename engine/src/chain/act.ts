@@ -31,6 +31,10 @@
 //   vouch           a standing vouch whose outcome is on the chain: settle(), which recovers its line or closes its cover
 //                   first when due, and pays the loss or the voucher's part of the fee; an offer never accepted within
 //                   its seven days: withdraw() (../vouching.ts). Right after the line's own sweeps and recoveries.
+//   claims          a pay account whose claimed job has ended or can be ended, or which owes a claim's holder and can
+//                   pay: the claims contract's sweep(), which ends the job on the desk first, pays every ended claim's
+//                   holder and then the debts (../claims.ts). Before the desk's own settling and refunding, so a claimed
+//                   job is ended and its holder paid in one transaction.
 //   line            income waiting in a line account whose credit line owes: the account's sweep() pays the line; and a
 //                   line still owed 30 days past its due time: the line contract's recover() (../lines.ts). Unspent
 //                   compute credit of a line that defaulted goes back to the line contract with return_compute.
@@ -57,7 +61,7 @@ import type { ActionKind, ActionRow } from "./db.js";
 import { ponsEscrowAbi } from "./pons.js";
 
 export type SendKind = Exclude<ActionKind, "unstick">;
-export const KINDS: SendKind[] = ["relay", "sweep", "coin_sweep", "retry_split", "claim_token", "burn", "guarantee", "bounty", "milestone", "verifier", "settle_job", "refund_job", "collect", "line", "vouch", "return_compute", "skim", "erc8004", "erc8004_score", "erc8004_report"];
+export const KINDS: SendKind[] = ["relay", "sweep", "coin_sweep", "retry_split", "claim_token", "burn", "guarantee", "bounty", "milestone", "verifier", "claims", "settle_job", "refund_job", "collect", "line", "vouch", "return_compute", "skim", "erc8004", "erc8004_score", "erc8004_report"];
 // In dry mode nothing changes on the chain, so a trigger stays true: what would be sent is shown again this often.
 export const DRY_REPEAT_S = 1800;
 const BPS = 10_000n;
@@ -899,6 +903,15 @@ async function vouchStep(ctx: Ctx, head: Head): Promise<string> {
   return say(ctx, "vouch", await ctx.vouching.step(ctx, head, (kind, ref, call, detail, feeCap) => attempt(ctx, kind, ref, call, detail, feeCap)));
 }
 
+// ---------- selling locked pay ----------
+
+// A pay account whose claimed job ended or can be ended, or which owes a holder and can pay, is swept (../claims.ts decides;
+// the attempt is the same as every other one here).
+async function claimsStep(ctx: Ctx, head: Head): Promise<string> {
+  if (!ctx.claims) return say(ctx, "claims", "selling locked pay is not switched on");
+  return say(ctx, "claims", await ctx.claims.step(ctx, head, (kind, ref, call, detail, feeCap) => attempt(ctx, kind, ref, call, detail, feeCap)));
+}
+
 const STEPS: [SendKind, (ctx: Ctx, head: Head) => Promise<string>][] = [
   ["relay", relay],
   ["sweep", sweep],
@@ -910,6 +923,7 @@ const STEPS: [SendKind, (ctx: Ctx, head: Head) => Promise<string>][] = [
   ["bounty", bountyStep],
   ["milestone", milestoneStep],
   ["verifier", verifierStep],
+  ["claims", claimsStep],
   ["settle_job", settleJobs],
   ["refund_job", refundJobs],
   ["collect", collect],

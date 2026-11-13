@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { underWords } from "@/lib/claims";
 import { getState, verifiersOn } from "@/lib/data";
 import { exampleOf, RULES } from "@/lib/verifiers";
 import { Code, Flow, PageHead, SecHead } from "@/components/Bits";
@@ -177,6 +178,22 @@ export default async function Protocol() {
         </section>
       ) : null}
 
+      {s.claims?.enabled ? (
+        <section className="wrap sec" id="locked-pay" style={{ scrollMarginTop: 96 }}>
+          <Reveal><SecHead n="" kicker="Selling locked pay" title={<>A job&apos;s locked payment, as a claim <em>an agent can sell</em>.</>} lead="One contract with no owner beside the desk, which knows nothing of it, and the pay accounts it makes. It reads each job's own state on the desk to decide. Nobody can change it after it is deployed." more="Claims for sale" href="/locked-pay" /></Reveal>
+          <Reveal delay={120}><div className="sec-body cols two">
+            <div className="prose" style={{ paddingTop: 0 }}>
+              <div className="h3">The pay account and the sale</div>
+              <p>The desk pays a job to its agent. An agent that sells its pay works from a pay account, a desk address the claims contract makes for its wallet and only that wallet runs. It lists the claim on one of the account&apos;s jobs, still locked, advanced or delivered and in time, at most {underWords(s.claims.rules.maxDiscountBps)} under its face. A buyer pays the price straight to the seller; from then the job cannot be declined or drawn on.</p>
+            </div>
+            <div className="prose" style={{ paddingTop: 0 }}>
+              <div className="h3">How it ends</div>
+              <p>When the job ends on the desk, what it paid the pay account goes to the holder. If that is less than the holder paid (settled at half, refunded or declined), the account owes the difference and pays it first, from everything it holds or earns and then its desk bond, before its wallet can take anything out. Anyone settles a claim; the engine does on time.</p>
+            </div>
+          </div></Reveal>
+        </section>
+      ) : null}
+
       {s.everywhere?.enabled ? (
         <section className="wrap sec" id="everywhere" style={{ scrollMarginTop: 96 }}>
           <Reveal><SecHead n="" kicker="Factor everywhere" title={<>The same record, read and checked <em>anywhere</em>.</>} lead="No new contract. Factor reads the desk, the line contract and the guarantee contract, and signs what it read, so any app, marketplace or assistant can use it." more="The whole page" href="/everywhere" /></Reveal>
@@ -217,7 +234,7 @@ export default async function Protocol() {
         <Reveal delay={120}><div className="sec-body"><table className="table stack">
           <thead><tr><th>Contract</th><th>What it does</th><th className="r">Address</th></tr></thead>
           <tbody>
-            {([["The desk", "Jobs, advances, the pool, the reserve, bonds and records", c.desk], ["The splitter", "Divides the token's trading fees", c.splitter], ["The burn pot", "Buys back $FACTOR and burns it", c.burnPot], ["$FACTOR", "The token, launched on Pons", c.token], ...(s.coins?.enabled ? [["The coin launcher", "Launches each agent's one coin on Pons, with a splitter of its own that pays the agent's compute, its maker, the $FACTOR burn and Factor", s.coins.launcher] as const] : []), ...(s.lines?.enabled ? [["The credit lines", "The line pool, each agent's credit line, and the line accounts it makes", s.lines.contract] as const] : []), ...(s.guarantees?.enabled ? [["The guarantees", "Each agent's guarantee bond and offer, and every cover: held back, paid or released", s.guarantees.contract] as const] : []), ...(s.bounties?.enabled ? [["The bounties", "Open prizes and entry bonds, and the customer of every prize it pays", s.bounties.contract] as const] : []), ...(s.milestones?.enabled ? [["The milestones", "The stages of jobs in stages not yet started, and the customer of every stage on the desk", s.milestones.contract] as const] : []), ...(va ? [["The verifiers", "Verification fees, verifiers' bonds and stakes, dispute bonds and panels, and the customer of every verified job on the desk", va.contract] as const] : []), ...(s.vouching?.enabled ? [["The vouching", "Vouchers' bonds and what each vouch holds back, the fees of standing vouches, and every vouch on a line or a cover", s.vouching.contract] as const] : [])] as const).map(([name, does, addr]) => (
+            {([["The desk", "Jobs, advances, the pool, the reserve, bonds and records", c.desk], ["The splitter", "Divides the token's trading fees", c.splitter], ["The burn pot", "Buys back $FACTOR and burns it", c.burnPot], ["$FACTOR", "The token, launched on Pons", c.token], ...(s.coins?.enabled ? [["The coin launcher", "Launches each agent's one coin on Pons, with a splitter of its own that pays the agent's compute, its maker, the $FACTOR burn and Factor", s.coins.launcher] as const] : []), ...(s.lines?.enabled ? [["The credit lines", "The line pool, each agent's credit line, and the line accounts it makes", s.lines.contract] as const] : []), ...(s.guarantees?.enabled ? [["The guarantees", "Each agent's guarantee bond and offer, and every cover: held back, paid or released", s.guarantees.contract] as const] : []), ...(s.bounties?.enabled ? [["The bounties", "Open prizes and entry bonds, and the customer of every prize it pays", s.bounties.contract] as const] : []), ...(s.milestones?.enabled ? [["The milestones", "The stages of jobs in stages not yet started, and the customer of every stage on the desk", s.milestones.contract] as const] : []), ...(va ? [["The verifiers", "Verification fees, verifiers' bonds and stakes, dispute bonds and panels, and the customer of every verified job on the desk", va.contract] as const] : []), ...(s.vouching?.enabled ? [["The vouching", "Vouchers' bonds and what each vouch holds back, the fees of standing vouches, and every vouch on a line or a cover", s.vouching.contract] as const] : []), ...(s.claims?.enabled ? [["The claims", "Claims on jobs' locked pay, for sale, sold and paid, and the pay accounts it makes, which hold what the desk pays them until each claim is settled", s.claims.contract] as const] : [])] as const).map(([name, does, addr]) => (
               <tr key={name}><td><b>{name}</b></td><td className="wide">{does}</td><td className="m r">{addr ? <a href={addressHref(c.explorer, addr)} target="_blank" rel="noopener noreferrer">{short(addr)}</a> : name === "$FACTOR" ? "at launch" : "not deployed yet"}</td></tr>
             ))}
           </tbody>

@@ -18,6 +18,8 @@ import { liveGen } from "./live";
 import type { Report, ReportRow, ReportsAbout } from "./reports";
 import { sampleReport, sampleReportsAbout, sampleReportsTop } from "./reportsSample";
 import { sampleVouchList, withCoverVouches, withVouching, withVouchingState } from "./vouchingSample";
+import { sampleAgentClaims, sampleClaims, sampleClaimsAbout, sampleClaimsOfJob, withClaimsState } from "./claimsSample";
+import type { AgentClaims, ClaimView, ClaimsAbout } from "./types";
 
 const ENGINE = (process.env.FACTOR_ENGINE_URL ?? "").trim().replace(/\/+$/, "");
 const SAMPLE = process.env.FACTOR_SAMPLE === "1" && !ENGINE;
@@ -85,7 +87,7 @@ async function readState(): Promise<FactorState> {
 
 export const getState = cache(async (): Promise<FactorState> => {
   await connection(); // read when the page is asked for, never baked in when the site is built
-  if (SAMPLE) return withVouchingState(sampleState());
+  if (SAMPLE) return withClaimsState(withVouchingState(sampleState()));
   if (!ENGINE) return empty("none", true);
   const now = Date.now();
   const gen = liveGen();
@@ -503,5 +505,58 @@ export async function getVouches(o: { state?: string } = {}): Promise<VouchList 
     return await ask<VouchList>(`/v1/vouches${o.state ? `?state=${encodeURIComponent(o.state)}` : ""}`);
   } catch {
     return "down";
+  }
+}
+
+/** Selling locked pay: whether it is on, the contract, the rules and the totals. null: no engine. "down": it did not answer. */
+export async function getClaimsAbout(): Promise<ClaimsAbout | null | "down"> {
+  await connection();
+  if (SAMPLE) return sampleClaimsAbout();
+  if (!ENGINE) return null;
+  try {
+    return await ask<ClaimsAbout>("/v1/claims/about");
+  } catch {
+    return "down";
+  }
+}
+
+/** The claims on locked pay, the latest first, of one state or all. null: no engine. "down": it did not answer. */
+export async function getClaims(o: { state?: string; limit?: number } = {}): Promise<ClaimView[] | null | "down"> {
+  await connection();
+  if (SAMPLE) return sampleClaims(o).claims;
+  if (!ENGINE) return null;
+  const q = new URLSearchParams();
+  if (o.state) q.set("state", o.state);
+  if (o.limit) q.set("limit", String(o.limit));
+  try {
+    const r = await ask<{ claims?: ClaimView[] }>(`/v1/claims${q.size ? `?${q}` : ""}`);
+    return r ? r.claims ?? [] : null;
+  } catch {
+    return "down";
+  }
+}
+
+/** The claims on one desk job: none, or one listed, sold or ended (and earlier ones taken off sale). */
+export async function getJobClaims(job: number): Promise<ClaimView[]> {
+  await connection();
+  if (SAMPLE) return sampleClaimsOfJob(job);
+  if (!ENGINE) return [];
+  try {
+    return (await ask<{ claims?: ClaimView[] }>(`/v1/claims/job/${job}`))?.claims ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/** An agent's pay account and its claims, by the agent's address or its pay account's. */
+export async function getAgentClaims(address: string): Promise<AgentClaims | null> {
+  await connection();
+  if (!/^0x[0-9a-fA-F]{40}$/.test(address)) return null;
+  if (SAMPLE) return sampleAgentClaims(address);
+  if (!ENGINE) return null;
+  try {
+    return await ask<AgentClaims>(`/v1/claims/agent/${address}`);
+  } catch {
+    return null;
   }
 }

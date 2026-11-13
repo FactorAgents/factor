@@ -12,6 +12,7 @@ import type { Bounties } from "../bounties.js";
 import type { Milestones } from "../milestones.js";
 import type { Verifiers } from "../verifiers.js";
 import type { Vouching } from "../vouching.js";
+import type { Claims } from "../claims.js";
 import type { Chain, Signer } from "./chain.js";
 import type { EngineMode, EngineParams } from "./config.js";
 import type { EngineDb } from "./db.js";
@@ -77,6 +78,7 @@ export interface Ctx {
   milestones?: Milestones | null; // milestones: read, stepped (../milestones.ts)
   verifiers?: Verifiers | null; // verifiers: read, stepped (../verifiers.ts)
   vouching?: Vouching | null; // vouching: read, settled and withdrawn (../vouching.ts)
+  claims?: Claims | null; // selling locked pay: read, pay accounts swept (../claims.ts)
 }
 
 // The chain as the engine last read it. Amounts are wei in text; times are unix seconds unless they say ms.
