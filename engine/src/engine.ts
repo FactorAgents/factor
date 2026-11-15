@@ -61,6 +61,7 @@ import { Reviews } from "./reviews.js";
 import { Hey, type HeyFetch } from "./hey.js";
 import { Reports } from "./reports.js";
 import { ReportsErc8004 } from "./reportserc8004.js";
+import { Recoverable } from "./recoverable.js";
 import { REPORT_VERSION } from "./reportscore.js";
 import { TAG2 } from "./erc8004.js";
 import { DeskStore, STATE } from "./desk.js";
@@ -177,6 +178,8 @@ export class Engine {
   reports: Reports | null = null;
   /** credit report scores written to ERC-8004 (./reportserc8004.ts): made whether or not it is on, so what was written still shows */
   reportsErc8004: ReportsErc8004 | null = null;
+  /** the Recoverable mark with Upoch (./recoverable.ts): made once the chain is read, reads nothing until RECOVERABLE=on */
+  recoverable: Recoverable | null = null;
   /** the splitter's admin, read at the boot check: Factor's own wallet, which sets the rules of Factor's own agents */
   private splitterAdmin: string | null = null;
   /** the key that signs agents' records for other apps (./record.ts), or null */
@@ -241,7 +244,7 @@ export class Engine {
     return {
       config: this.config, state: this.state, problems: this.problems, warnings: this.warnings, lastError: this.lastError, loops, ctx: this.ctx, rpc: this.chain?.health() ?? null, now: this.now,
       links: { pons: link(this.env.FACTOR_PONS_URL), github: link(this.env.FACTOR_GITHUB_URL), x: link(this.env.FACTOR_X_URL) }, dataDirSet: !!this.env.FACTOR_DATA_DIR?.trim(), profiles: this.profiles, gateway: this.gateway, accounts: this.accounts, house: this.house, demo: this.demo, pulse: this.pulse, deskMind: this.deskMind, launchList: this.launchList, activity: this.activity, matcher: this.matcher, pay: this.pay, subjobs: this.subjobs, recordSigner: this.recordSigner, firms: this.firms, plans: this.plans, erc8004: this.erc8004, openjobs: this.openjobs, autoapply: this.autoapply, verified: this.verified, coins: this.coins, lines: this.lines, guarantees: this.guarantees, bounties: this.bounties, milestones: this.milestones, verifiers: this.verifiers, vouching: this.vouching, claims: this.claims,
-      connect: this.connect, erc8004Scores: this.erc8004Scores, answerSigner: this.answerSigner, ask: this.ask, copilot: this.copilot, reviews: this.reviews, hey: this.hey, reports: this.reports, reportsErc8004: this.reportsErc8004,
+      connect: this.connect, erc8004Scores: this.erc8004Scores, answerSigner: this.answerSigner, ask: this.ask, copilot: this.copilot, reviews: this.reviews, hey: this.hey, reports: this.reports, reportsErc8004: this.reportsErc8004, recoverable: this.recoverable,
     };
   }
 
@@ -734,6 +737,8 @@ export class Engine {
       const vc = this.verifiers?.reading() ? this.verifiers.ofJob(j.id) : null;
       return vc ? vc.customer : j.customer;
     };
+    // the Recoverable mark with Upoch: read only, from Upoch's Epoch contract; reads nothing until RECOVERABLE=on
+    this.recoverable = new Recoverable(c.recoverable, { db, chain: this.chain, explorer: c.explorer, now: this.now, log: this.log });
     this.reports = new Reports(c.reports, {
       db, chain: this.chain, chainId: c.chainId, explorer: c.explorer, now: this.now, nowS, log: this.log,
       deskAgents: () => (db.q("SELECT address, registered_at FROM desk_agents").all() as { address: string; registered_at: number }[]).map((r) => ({ address: r.address, registeredAt: r.registered_at })),
@@ -751,6 +756,7 @@ export class Engine {
       signed: async (address, message, signature) => this.profiles!.signed(address, message, signature),
       signer: () => this.answerSigner,
       onChain: (agentId) => this.reportsErc8004?.ofAgent(agentId) ?? null,
+      recovery: (who) => this.recoverable?.of(who) ?? null,
     });
     // credit reports on ERC-8004: made whether or not it is on, so what was written still shows after it is switched off
     this.reportsErc8004 = new ReportsErc8004(c.reportsErc8004, { db, reports: () => this.reports, chain: this.chain, chainId: c.chainId, explorer: c.explorer, now: this.now, nowS, writer: () => this.ctx?.facts.bot ?? null, log: this.log });
@@ -758,6 +764,7 @@ export class Engine {
     if (c.reportsErc8004.enabled && !c.reports.enabled) this.log("[reports8004] NOT ON: REPORTS_ERC8004 needs REPORTS=on, which scores the agents");
     else if (c.reportsErc8004.enabled) this.log(`[reports8004] on: every ranked agent's credit report score is written to its ERC-8004 reputation, again when it changes (at most every ${c.reportsErc8004.everyH} h), ${c.reportsErc8004.perPass} a pass, up to ${Number(c.reportsErc8004.gasDayWei / 10n ** 12n) / 1e6} ETH of gas a day`);
     if (c.reports.enabled) this.log(`[reports] on: every agent on the chain is read from the ERC-8004 registries${c.reports.priors ? ", Priors' loans" : ""} and the desk, ${c.reports.perPass} log queries a pass of ${c.reports.span.toLocaleString("en-US")} blocks, and scored by ${REPORT_VERSION} every ${c.reports.scoreEveryS} s; it moves no money`);
+    if (c.recoverable.enabled) this.log(`[recoverable] on: Upoch's workflows are read from ${c.recoverable.contract} every ${c.recoverable.everyS} s, read only; an agent is Recoverable with a linked workflow that is active, has a checkpoint in the last 7 days and a guardian; never in a score`);
     if (c.hey.enabled) this.log(`[hey] on: builder records are read from ${c.hey.base} with x-hey-integration: ${c.hey.integration}, kept ${Math.round(c.hey.freshMs / 1000)} s, ${c.hey.perMinute} calls a minute at most${this.env.HEY_API_KEY?.trim() ? ", with Factor's free key" : ""}; shown as HEY's, never in the Factor Score`);
     if (c.reviews.enabled) this.log(`[reviews] on: a job's customer reviews it once it is paid, within ${c.reviews.windowDays} days; changes for ${c.reviews.editDays} days; jobs from ${Number(c.reviews.floorWei / 10n ** 12n) / 1e6} ETH count toward the average. Factor pays no gas for reviews`);
     if (c.coins.enabled && c.coins.note) this.log(`[coins] NOT ON: ${c.coins.note}`);
@@ -812,7 +819,21 @@ export class Engine {
     if (this.ctx.mode === "live" && this.config.house.enabled) this.every("house", 5000, () => this.houseOnce(), false);
     // credit reports read on their own loop: a long backfill never holds up the desk's own reading
     if (this.config.reports.enabled) this.every("reports", 3000, () => this.reportsOnce(), false);
+    // the Recoverable mark: Upoch's contract read at once, then every RECOVERABLE_EVERY_S (a minute's tick, each reading when due)
+    if (this.config.recoverable.enabled) this.every("recoverable", 60_000, () => this.recoverableOnce());
   }
+
+  /** One reading of Upoch's contract for the Recoverable mark (./recoverable.ts), when the last is old enough. */
+  async recoverableOnce(): Promise<void> {
+    const r = this.recoverable;
+    if (!r?.on()) return;
+    if (this.now() - this.recoverableAt < this.config.recoverable.everyS * 1000) return;
+    this.recoverableAt = this.now();
+    const said = await r.refresh();
+    this.api.forget();
+    this.log(`[recoverable] ${said}`);
+  }
+  private recoverableAt = 0;
 
   /** One pass of the credit reports' reading and scoring (./reports.ts): quick while there is a backfill to read. */
   async reportsOnce(): Promise<void> {

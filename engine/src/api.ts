@@ -62,6 +62,7 @@
 //   GET  /v1/reports            Factor Credit Reports (reports.ts): whether they are on, what has been read, the totals
 //   GET  /v1/reports/formula, /top?limit=&offset=&own=1, /find?q=, /agent/<id>, /signed/<id>, /erc8004/<id>
 //   POST /v1/reports/claim      an agent's owner signs to claim its credit report and add a profile
+//   GET  /v1/recoverable        the Recoverable mark with Upoch (recoverable.ts): the rule, the contract, every Recoverable agent
 //
 // Every GET is answered from the database (the last reading of the chain, the ledger, the engine's copy of each
 // job and agent), so a burst of visitors costs the node nothing. Before the contracts are given, and whenever the
@@ -119,6 +120,7 @@ import type { Hey, HeyLookup } from "./hey.js";
 import { FORMULA } from "./reportscore.js";
 import type { Reports } from "./reports.js";
 import type { ReportsErc8004 } from "./reportserc8004.js";
+import type { Recoverable, RecoveryJson } from "./recoverable.js";
 
 export interface Answer {
   status: number;
@@ -203,6 +205,8 @@ export interface EngineView {
   reports?: Reports | null;
   /** credit report scores written to ERC-8004 (./reportserc8004.ts) */
   reportsErc8004?: ReportsErc8004 | null;
+  /** the Recoverable mark with Upoch (./recoverable.ts) */
+  recoverable?: Recoverable | null;
 }
 
 /** Factor everywhere, as the site reads it: web/src/lib/types.ts keeps the same shape by hand. */
@@ -631,6 +635,11 @@ export class EngineApi {
     if (path === "/v1/reports" || path.startsWith("/v1/reports/")) {
       if (from && this.tooMany(from, "reports-get", 600)) return { status: 429, body: { error: "too many requests: try again in a minute" } };
       return this.reportsGet(this.view(), path, query);
+    }
+    // the Recoverable mark with Upoch (./recoverable.ts): the rule and every Recoverable agent, from the last reading
+    if (path === "/v1/recoverable") {
+      if (from && this.tooMany(from, "recoverable-get", 600)) return { status: 429, body: { error: "too many requests: try again in a minute" } };
+      return ok(this.recoverableList(this.view()));
     }
     if (path === "/v1/everywhere" || path.startsWith("/v1/everywhere/") || path.startsWith("/v1/connect/ticket/")) return this.everywhereGet(this.view(), path, query, from, connectKey);
     // the file a score entry on ERC-8004 points at (./erc8004score.ts)
@@ -1571,6 +1580,37 @@ export class EngineApi {
     return a;
   }
 
+  // ---- the Recoverable mark with Upoch (./recoverable.ts) ----
+
+  private recoverableOn(v: EngineView): boolean {
+    return !!v.recoverable?.on() && !!v.ctx;
+  }
+
+  /** A desk agent's mark, by its ERC-8004 identity (Factor's link, or the one whose owner or agentWallet it is): null with none. */
+  private recoverableOf(v: EngineView, address: string): (RecoveryJson & { agentId: string }) | null {
+    if (!this.recoverableOn(v) || !v.reports) return null;
+    const id = v.reports.identityOf(address);
+    const mark = id ? v.recoverable!.of({ owner: id.owner, agentWallet: id.agentWallet }) : null;
+    return mark && id ? { ...mark, agentId: id.agentId } : null;
+  }
+
+  /** Every Recoverable agent: the identities whose owner or agentWallet is linked to an Upoch workflow that counts now. */
+  private recoverableList(v: EngineView): Record<string, unknown> {
+    if (!this.recoverableOn(v)) return { enabled: false };
+    const rc = v.recoverable!;
+    const about = rc.about();
+    // the identities are the credit reports' (./reports.ts): read only while they are on
+    const ids = this.reportsOn(v) ? v.reports!.identitiesOf(rc.wallets()) : [];
+    const site = v.reports?.cfg.site ?? "https://factoragents.fun";
+    const items = ids.flatMap((i) => {
+      const m = rc.of({ owner: i.owner, agentWallet: i.agentWallet });
+      if (!m?.recoverable) return [];
+      const w = m.workflow;
+      return [{ agentId: i.agentId, name: i.name, owner: i.owner, agentWallet: i.agentWallet, line: m.line, workflow: { id: w.id, name: w.name, link: w.link, lastCheckpointAt: w.lastCheckpointAt, ageDays: w.ageDays, checkpoints: w.checkpoints, guardians: w.guardians, guardianThreshold: w.guardianThreshold }, page: `${site}/reports/${i.agentId}`, report: `${site}/api/v1/reports/agent/${i.agentId}` }];
+    });
+    return { ...about, identitiesRead: this.reportsOn(v), total: items.length, items };
+  }
+
   // ---- Factor Credit Reports (./reports.ts) ----
 
   private reportsOn(v: EngineView): boolean {
@@ -1998,6 +2038,8 @@ export class EngineApi {
       ...((x) => (x ? { raetoSpend: x } : {}))(v.gateway?.raetoSpendOfAgent(row.address) ?? null),
       // its Factor Score as Factor last wrote it to ERC-8004: only while that is on and one was written
       ...((x) => (x ? { scoreOnChain: x } : {}))(this.everywhereOn(v) && v.erc8004Scores?.on() ? v.erc8004Scores.json(row.address) : null),
+      // the Recoverable mark with Upoch and its evidence, by its ERC-8004 identity: only while it is on and a workflow is linked. Never in the score
+      ...((x) => (x ? { recoverable: x } : {}))(this.recoverableOf(v, row.address)),
       // its paid reviews: only while they are on (./reviews.ts). Shown beside the score, never in it
       ...(this.reviewsOn(v) ? { reviews: ((x) => ({ ...x.summary, items: x.items, repliers: x.repliers }))(v.reviews!.ofAgent(row.address, 50)) } : {}),
     });
@@ -2396,11 +2438,13 @@ export class EngineApi {
     const hey = { enabled: this.heyOn(v), project: "https://heyresearch.xyz/project/factor", badge: "https://heyresearch.xyz/api/badge/factor" };
     // Factor Credit Reports (./reports.ts): whether they show, for the dev log and the pages that link to them
     const reports = { enabled: this.reportsOn(v), onErc8004: this.reportsOn(v) && !!v.reportsErc8004?.on() };
+    // the Recoverable mark with Upoch (./recoverable.ts): whether it shows, for the docs and the pages that carry it
+    const recoverable = { enabled: this.recoverableOn(v) };
     // vouching (./vouching.ts): whether it shows, the rules and the totals
     const vouching = this.vouchingAbout(v);
     // selling locked pay (./claims.ts): whether it shows, the rules and the totals
     const claims = this.claimsAbout(v);
-    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused, roster: this.rosterJson(v), hosted, pulse: pulseJson(v, 8), desk: this.deskJson(v), signups, activity, pay, subjobs, firms, plans, erc8004, openJobs, autoApply, verified, coins, lines, guarantees, bounties, milestones, everywhere, ask, copilot, reviews, hey, reports, vouching, claims };
+    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused, roster: this.rosterJson(v), hosted, pulse: pulseJson(v, 8), desk: this.deskJson(v), signups, activity, pay, subjobs, firms, plans, erc8004, openJobs, autoApply, verified, coins, lines, guarantees, bounties, milestones, everywhere, ask, copilot, reviews, hey, reports, vouching, claims, recoverable };
     if (!r) {
       return { ...base, launched: false, stats: { advancedEth: 0, settledJobs: 0, jobs: 0, poolEth: 0, reserveEth: 0, outEth: 0, heldEth: 0, burnedTokens: 0, supplyLeft: SUPPLY, agents: 0, demoJobs: 0, lostEth: 0, poolFromTradingEth: 0 }, burn: null, agents: [], jobs: [], events: [], burns: [] };
     }
@@ -2511,6 +2555,7 @@ export class EngineApi {
       hey: v.hey ? v.hey.health() : null,
       reports: v.reports ? v.reports.health() : null,
       reportsErc8004: v.reportsErc8004 ? v.reportsErc8004.health() : null,
+      recoverable: v.recoverable ? v.recoverable.health() : null,
       erc8004: v.erc8004 ? { ...v.erc8004.about(), spentTodayWei: v.erc8004.spentToday().toString(), gasDayWei: c.erc8004.gasDayWei.toString(), scan: ctx.db.getJson("erc8004:scan") } : null,
       events: ctx.db.count("chain_events"),
       ledger: ctx.db.count("ledger"),

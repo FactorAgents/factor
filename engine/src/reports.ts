@@ -40,6 +40,7 @@ import { seal, type AnswerSigner, type Sealed } from "./everywhere.js";
 import { FORMULA, NOT_AN_OPINION, REPORT_VERSION, REVIEW_TAG, SOURCE_NAME, onHundred, scoreReport, starsOf, type DeskJobIn, type FeedbackIn, type LoanIn, type ReportInput, type ReviewIn, type ScoreResult, type SourceKey, type ValidationIn } from "./reportscore.js";
 import { REPORT_ERC8004_SCHEMA, REPORT_TAG1, reportFile, type ReportOnChain } from "./reportserc8004.js";
 import { stopped } from "./switches.js";
+import type { AgentWallets, RecoveryJson } from "./recoverable.js";
 
 type Env = Record<string, string | undefined>;
 
@@ -311,6 +312,8 @@ export interface ReportJson extends Omit<ScoreResult, "firstAt" | "lastAt"> {
   links: { page: string; card: string; badge: string; signed: string; erc8004: string | null; desk: string | null };
   /** its score on the ERC-8004 reputation registry, written by Factor (./reportserc8004.ts); null for an agent with no identity */
   onChain: ReportOnChain | null;
+  /** the Recoverable mark with Upoch (./recoverable.ts) and its evidence: null while it is off, for an agent with no identity, or no Upoch workflow linked to it. It changes no point */
+  recovery: RecoveryJson | null;
 }
 
 export interface ReportRow { subject: string; agentId: string | null; wallet: string | null; name: string; score: number; parts: Record<string, number>; pulled: number; flags: string[]; sources: string[]; factorOwn: boolean; rank: number | null; lastAt: string | null }
@@ -349,6 +352,8 @@ export interface ReportsDeps {
   signer: () => AnswerSigner | null;
   /** a report's place on ERC-8004 (./reportserc8004.ts), by its identity's number */
   onChain?: (agentId: string) => ReportOnChain | null;
+  /** the Recoverable mark (./recoverable.ts) for an identity's owner and agentWallet */
+  recovery?: (who: AgentWallets) => RecoveryJson | null;
 }
 
 interface Shared { makers: Map<string, number>; walletMakers: Map<string, Set<string>>; recipients: Map<string, number>; payers: Map<string, number>; deskReg: Map<string, number>; loanWallets: Map<number, Set<string>> }
@@ -816,6 +821,25 @@ export class Reports {
     return byName?.subject ?? null;
   }
 
+  /** An agent's ERC-8004 identity with its owner and agentWallet, by anything resolve takes; null with no identity. */
+  identityOf(raw: string): { agentId: string; owner: string | null; agentWallet: string | null } | null {
+    const subject = this.resolve(raw);
+    const m = subject ? /^8004:(\d+)$/.exec(subject) : null;
+    const ident = m ? this.identity(Number(m[1])) : null;
+    return ident ? { agentId: String(ident.agent_id), owner: ident.owner, agentWallet: ident.wallet } : null;
+  }
+
+  /** The identities whose owner or agentWallet is one of the wallets, newest first, with their names as the reports give them. */
+  identitiesOf(wallets: string[], most = 200): { agentId: string; owner: string | null; agentWallet: string | null; name: string }[] {
+    const ws = [...new Set(wallets.map((w) => w.toLowerCase()))].slice(0, 500);
+    if (!ws.length) return [];
+    const marks = ws.map(() => "?").join(", ");
+    const rows = this.d.db.q(`SELECT i.agent_id, i.owner, i.wallet, i.name, s.name AS shown FROM report_identities i LEFT JOIN report_scores s ON s.subject = '8004:' || i.agent_id
+      WHERE i.owner IN (${marks}) OR i.wallet IN (${marks}) ORDER BY i.agent_id DESC LIMIT ?`).all(...ws, ...ws, most) as { agent_id: number; owner: string | null; wallet: string | null; name: string | null; shown: string | null }[];
+    const hidden = (id: number) => !!this.d.db.q("SELECT 1 FROM report_hidden WHERE subject = ?").get(`8004:${id}`);
+    return rows.map((r) => ({ agentId: String(r.agent_id), owner: r.owner, agentWallet: r.wallet, name: r.shown ?? (hidden(r.agent_id) ? null : r.name) ?? `Agent #${r.agent_id}` }));
+  }
+
   /** Up to 12 agents for what someone typed: a number, a wallet, or part of a name. */
   find(q: string): ReportRow[] {
     const s = q.trim().slice(0, 64);
@@ -909,6 +933,8 @@ export class Reports {
       timeline: this.timeline(input, who, r),
       erc8004,
       onChain: who.agentId ? this.d.onChain?.(who.agentId) ?? null : null,
+      // the Recoverable mark: by the identity's owner and agentWallet only, as the rule with Upoch says; never in the score
+      recovery: who.agentId ? this.d.recovery?.({ owner: who.owner, agentWallet: who.agentWallet }) ?? null : null,
       claim: claim ? { by: claim.by, name: claim.name, about: claim.about, site: claim.site, x: claim.x, signedAt: new Date(claim.signed_at * 1000).toISOString() } : null,
       links: {
         page, card: `${this.cfg.site}/api/v1/reports/${who.agentId ?? subject}/card.png`, badge: `${this.cfg.site}/api/v1/reports/${who.agentId ?? subject}/badge.svg`, signed: `${this.cfg.site}/api/v1/reports/signed/${who.agentId ?? subject}`,

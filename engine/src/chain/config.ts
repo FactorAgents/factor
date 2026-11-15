@@ -35,6 +35,7 @@ import { readHey, type HeyConfig } from "../hey.js";
 import { readReports, type ReportsConfig } from "../reports.js";
 import { readScores, type ScoresConfig } from "../erc8004score.js";
 import { readReportsErc8004, type ReportsErc8004Config } from "../reportserc8004.js";
+import { readRecoverable, type RecoverableConfig } from "../recoverable.js";
 
 // the chain the token lives on, written down once
 export const CHAIN = { id: 4663, name: "Robinhood Chain", rpcUrl: "https://rpc.mainnet.chain.robinhood.com", explorer: "https://robinhoodchain.blockscout.com" } as const;
@@ -187,6 +188,8 @@ export interface EngineConfig {
   reports: ReportsConfig;
   /** credit report scores written to ERC-8004 (../reportserc8004.ts) */
   reportsErc8004: ReportsErc8004Config;
+  /** the Recoverable mark with Upoch (../recoverable.ts): read only, shown on reports and agents' pages, never in a score */
+  recoverable: RecoverableConfig;
 }
 
 // A factor.env-style file: NAME=value lines. What the environment already says wins.
@@ -382,6 +385,7 @@ export function readConfig(processEnv: Env = process.env): EngineConfig {
   const hey = readHey(env, problems);
   const reports = readReports(env, problems);
   const reportsErc8004 = readReportsErc8004(env, problems);
+  const recoverable = readRecoverable(env, problems);
   if (accounts.factory && (accounts.factory === desk || accounts.factory === splitter || accounts.factory === burnPot)) problems.push("FACTOR_ACCOUNTS is the same address as another of the contracts");
   const rawAdmin = env.ENGINE_ADMIN_KEY?.trim() ?? "";
   if (rawAdmin && rawAdmin.length < 24) problems.push("ENGINE_ADMIN_KEY must be at least 24 characters");
@@ -436,6 +440,7 @@ export function readConfig(processEnv: Env = process.env): EngineConfig {
     hey,
     reports,
     reportsErc8004,
+    recoverable,
   };
 }
 
