@@ -563,7 +563,7 @@ test("each page is small enough for a phone, and nothing loads from another site
   for (const path of PAGES) {
     const { html, headers } = await get(path);
     // the docs, with every section on, are the largest page: still a fraction of one picture
-    assert.ok(html.length < 290_000, `${path} is ${html.length} bytes`);
+    assert.ok(html.length < 300_000, `${path} is ${html.length} bytes`);
     // HEY Research Lab's own badge for Factor in the footer, and the links to Factor's page on HEY, are the one exception
     assert.doesNotMatch(html, /(src|href)="https?:\/\/(?!ponsfamily\.com|github\.com|x\.com|robinhoodchain\.blockscout\.com\/(tx|address)\/0x|heyresearch\.xyz\/(api\/badge\/factor(\?theme=dark)?"|project\/factor(\?utm_source=badge&amp;utm_medium=html)?"))/, `${path} loads from another site`);
     assert.match(headers.get("content-security-policy") ?? "", /default-src 'self'/, `${path} has no content policy`);
@@ -1473,6 +1473,39 @@ test("credit reports: the leaderboard, a lookup, a report with its flags and its
   }
   assert.doesNotMatch(bareBoard, /ledger-reader/);
   assert.equal((await get("/reports/486", BARE)).status, 404);
+});
+
+test("the Recoverable mark with Upoch: on a report with its evidence, on an agent's page, in the list and the docs; never while off", async () => {
+  const desk = plain((await get("/reports/486")).html);
+  assert.match(desk, /Recoverable Recoverable Recent on-chain checkpoints and a guardian who can restore it, on Upoch\./);
+  assert.match(desk, /Recoverable, checkpoints and recovery on Upoch\./);
+  assert.match(desk, /Upoch workflow #5/);
+  assert.match(desk, /Linked by its agentWallet is the workflow's executor/);
+  assert.match(desk, /Last checkpoint/);
+  assert.match(desk, /Guardians how many must agree to restore it 1, threshold 1/);
+  assert.match(desk, /A checkpoint in the last 7 days/);
+  assert.match(desk, /Also linked Upoch workflow #2 its last checkpoint is 12\.0 days old, more than 7/);
+  assert.doesNotMatch(desk, /Factor Score/);
+  // a report with no Upoch workflow linked shows nothing of it
+  assert.doesNotMatch(plain((await get("/reports/467")).html), /Recoverable|Upoch/);
+  // on a desk agent's page, by its ERC-8004 identity, with the way to the evidence
+  const lumen = (await get("/agents/lumen-07")).html;
+  assert.match(plain(lumen), /Recoverable Recoverable Recent on-chain checkpoints and a guardian who can restore it, on Upoch\. Upoch workflow #5: last checkpoint 3 hours ago, 1 guardian\./);
+  assert.match(lumen, /href="\/reports\/211#recovery"/);
+  assert.doesNotMatch(plain((await get("/agents/page-smith")).html), /Recoverable/);
+  // the list, and the number written as 8004:<n> through the site's door
+  const list = await (await fetch(`${BASE}/api/v1/recoverable`)).json();
+  assert.equal(list.items[0].agentId, "486");
+  assert.equal(list.items[0].workflow.id, 5);
+  assert.equal((await (await fetch(`${BASE}/api/v1/reports/agent/8004:486`)).json()).recovery.workflow.id, 5);
+  assert.match(plain((await get("/docs")).html), /Checkpoints on the chain, and a guardian who can restore it\./);
+  // an ERC-8004 number that is no agent on the desk leads to its credit report
+  const r = await fetch(`${BASE}/agents/486`, { redirect: "manual" });
+  assert.ok([307, 308].includes(r.status), `agents/486 answered ${r.status}`);
+  assert.match(r.headers.get("location") ?? "", /\/reports\/486$/);
+  // with nothing set: no mark, no section, nothing in the docs
+  for (const path of ["/docs", "/agents"]) assert.doesNotMatch(plain((await get(path, BARE)).html), /Recoverable|Upoch/, path);
+  assert.equal((await get("/agents/486", BARE)).status, 404);
 });
 
 test("selling locked pay: the page, a job's claim, an agent's pay account, the docs, the protocol and the log", async () => {

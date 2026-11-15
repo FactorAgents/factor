@@ -2,6 +2,7 @@
 // (engine/src/reports.ts), so every report page draws without an engine. Never on the real site: the sample is refused
 // whenever FACTOR_ENGINE_URL is set.
 import type { Report, ReportRow, ReportsAbout } from "./reports";
+import type { Recovery } from "./recoverable";
 
 const SITE = "https://factoragents.fun";
 /** a made-up transaction hash, for the sample only */
@@ -42,8 +43,31 @@ export function sampleReportsFind(q: string): { enabled: true; items: ReportRow[
   return { enabled: true, items: ROWS.filter((r) => r.agentId === s || r.wallet === s || r.name.includes(s)).slice(0, 12) };
 }
 
+/** The sample's Recoverable mark, as the engine reads it from Upoch's Epoch contract (engine/src/recoverable.ts), at `asOf`. */
+export function sampleRecovery(agentWallet: string, asOf: string): Recovery {
+  const t = Date.parse(asOf);
+  const iso = (min: number) => new Date(t - min * 60_000).toISOString();
+  const workflow = { id: 5, name: "Upoch workflow #5", recoverable: true, link: [{ wallet: agentWallet, is: "agentWallet" as const, as: "executor" as const }], active: true, status: "active" as const, recent: true, lastCheckpointAt: iso(190), ageDays: 0.1, checkpoints: 13, guardian: true, guardians: 1, guardianThreshold: 1, timelockSeconds: 86_400, why: [] };
+  return {
+    recoverable: true, source: "upoch", line: "Recoverable, checkpoints and recovery on Upoch", workflow,
+    workflows: [workflow, { ...workflow, id: 2, name: "Upoch workflow #2", recoverable: false, recent: false, lastCheckpointAt: iso(12 * 1440), ageDays: 12, checkpoints: 5, link: [{ wallet: agentWallet, is: "agentWallet", as: "owner" }], why: ["its last checkpoint is 12.0 days old, more than 7"] }],
+    rule: { recentDays: 7, text: "Recoverable when at least one Upoch workflow linked to the agent (its ERC-8004 owner or agentWallet is the workflow's owner or an executor) is active, has a checkpoint in the last 7 days, and has at least one guardian with a threshold of 1 or more. A timelock alone does not count, and checkpoints alone never count." },
+    contract: "0x6179d9123C3C1f9e82f948101a4350cb55Aa8C27", contractUrl: "https://robinhoodchain.blockscout.com/address/0x6179d9123C3C1f9e82f948101a4350cb55Aa8C27", readAt: iso(4),
+  };
+}
+
+/** The list of Recoverable agents, as /v1/recoverable answers it: the sample's one. */
+export function sampleRecoverable(): Record<string, unknown> {
+  const row = ROWS[0]!;
+  const m = sampleRecovery(row.wallet!, "2026-11-10T09:00:00.000Z");
+  return {
+    enabled: true, source: "upoch", rule: m.rule, contract: m.contract, contractUrl: m.contractUrl, readAt: m.readAt, everyS: 600, workflows: 8, recoverableWorkflows: [5], identitiesRead: true, total: 1,
+    items: [{ agentId: row.agentId, name: row.name, owner: row.wallet, agentWallet: row.wallet, line: m.line, workflow: { id: 5, name: m.workflow.name, link: m.workflow.link, lastCheckpointAt: m.workflow.lastCheckpointAt, ageDays: m.workflow.ageDays, checkpoints: m.workflow.checkpoints, guardians: 1, guardianThreshold: 1 }, page: `${SITE}/reports/${row.agentId}`, report: `${SITE}/api/v1/reports/agent/${row.agentId}` }],
+  };
+}
+
 export function sampleReport(id: string): Report | null {
-  const row = ROWS.find((r) => r.agentId === id.replace(/^#/, "") || r.wallet === id.toLowerCase() || r.name === id);
+  const row = ROWS.find((r) => r.agentId === id.replace(/^#|^8004:/, "") || r.wallet === id.toLowerCase() || r.name === id);
   if (!row) return null;
   const loops = row.flags.includes("loop-loans");
   const desk = row.sources.includes("factor-desk");
@@ -73,6 +97,8 @@ export function sampleReport(id: string): Report | null {
     erc8004: [{ client: "0x03af41aeb1eea4da0572bbb6ab1b4c5331f17ac7", tag1: "credit.statement", tag2: "unsecured", value: "10", at: "2026-11-02T11:00:00.000Z", counted: false, why: "this wallet never paid the agent for a job on the chain" }],
     claim: null,
     onChain: { written: true, since: "2026-11-11T18:00:00.000Z", score: row.score, version: "factor-report/1.1.0", tx: SAMPLE_TX(Number(row.agentId)), txUrl: `https://robinhoodchain.blockscout.com/tx/${SAMPLE_TX(Number(row.agentId))}`, index: 1, at: "2026-11-11T18:00:00.000Z", uri: `${SITE}/api/v1/erc8004/report/${ROWS.indexOf(row) + 1}`, entries: 1, reviewer: "0xe4314Ba4DAe5f31582ec23812d5f40287f1eFdE0", registry: "0x8004BAa17C55a88189AE136b182e5fdA19dE9b63", tag1: "factorReport", read: `getSummary(${row.agentId}, [0xe4314Ba4DAe5f31582ec23812d5f40287f1eFdE0], "factorReport", "") on 0x8004BAa17C55a88189AE136b182e5fdA19dE9b63`, prepared: null },
+    // the sample's one Recoverable agent: ledger-reader, linked to an Upoch workflow by its agentWallet
+    recovery: row.agentId === "486" ? sampleRecovery(row.wallet!, "2026-11-10T09:00:00.000Z") : null,
     links: { page: `${SITE}/reports/${row.agentId}`, card: `${SITE}/api/v1/reports/${row.agentId}/card.png`, badge: `${SITE}/api/v1/reports/${row.agentId}/badge.svg`, signed: `${SITE}/api/v1/reports/signed/${row.agentId}`, erc8004: null, desk: desk ? `${SITE}/agents/${row.name}` : null },
   };
 }

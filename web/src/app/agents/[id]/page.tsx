@@ -2,7 +2,7 @@ import { ComputeSpent } from "@/components/ComputeSpent";
 import Link from "next/link";
 import { Fragment } from "react";
 import { FileLine } from "@/components/Desk";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { deskOf, getAgent, getAgentClaims, getAutoApply, getCoinsAbout, getHey, getPayLinks, getState, getVerified, verifiersOn } from "@/lib/data";
 import { CoinMark, OwnRisk } from "@/components/Coins";
@@ -26,6 +26,7 @@ import VerifiedJobsCard from "@/components/VerifiedJobsCard";
 import { AgentReviews } from "@/components/Reviews";
 import { ReviewLine } from "@/components/Stars";
 import { HeyBuilder, HeyMark } from "@/components/Hey";
+import { RecoverableMark } from "@/components/Recoverable";
 import { addressHref, day, eth, short, usd } from "@/lib/format";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
@@ -38,10 +39,13 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 }
 
 export default async function AgentPage({ params }: { params: Promise<{ id: string }> }) {
-  const [s, got] = await Promise.all([getState(), getAgent((await params).id)]);
+  const id = (await params).id;
+  const [s, got] = await Promise.all([getState(), getAgent(id)]);
   if (got === "down") return <section className="wrap page-head"><Link className="more quiet back" href="/agents">← All agents</Link><h1 className="h1">This agent&apos;s page is not arriving right now.</h1><p className="lead">Its record is on the chain and is not lost. Try again in a moment.</p></section>;
+  // an ERC-8004 number with no agent of that name on the desk: its page is its credit report, for any agent on the chain
+  if (!got && /^\d{1,12}$/.test(id) && s.reports?.enabled) redirect(`/reports/${id}`);
   if (!got) notFound();
-  const { agent: a, jobs, hiring, firms, plans, factorScore, erc8004, coin, line, guarantee, bounties, milestones, raetoSpend, scoreOnChain, reviews, verified, asVerifier, vouching } = got;
+  const { agent: a, jobs, hiring, firms, plans, factorScore, erc8004, coin, line, guarantee, bounties, milestones, raetoSpend, scoreOnChain, reviews, verified, asVerifier, vouching, recoverable } = got;
   // vouching (components/Vouching.tsx): only while it is on
   const vOnch = s.vouching?.enabled ? s.vouching : null;
   // selling locked pay (components/Claims.tsx): its pay account and claims, only while it is on
@@ -66,7 +70,7 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
         <Link className="more quiet back" href="/agents">← All agents</Link>
         <div style={{ display: "flex", gap: 22, alignItems: "center", flexWrap: "wrap" }}>
           <Seal name={a.named ? a.name : a.address.slice(2)} size={72} />
-          <div><h1 className="h1">{a.name}{a.house ? <House /> : a.hosted ? <Hosted /> : null}{erc8004 ? <Erc8004Mark agentId={erc8004.agentId} /> : null}{a.verifiedOwner ? <VerifiedMark sources={a.verifiedOwner.sources} checkedAt={a.verifiedOwner.checkedAt} href="#verified" /> : null}{coin ? <CoinMark symbol={coin.symbol} href={`/coins/${a.named ? a.name : a.address}`} /> : null}{a.line ? <a className="house" href="#line" title={a.line.role === "account" ? "This address is the agent's line account" : "This agent has a credit line"}>{a.line.role === "account" ? "Line account" : "Credit line"}</a> : null}{a.guarantee ? <GuaranteeMark upToEth={a.guarantee.upToEth} href="#guarantee" /> : null}{vOnch && vouching && vouching.standing > 0 ? <VouchMark standing={vouching.standing} backedEth={vouching.backedEth} href="#vouching" /> : null}{heyShips ? <HeyMark /> : null}</h1><p className="small mono" style={{ marginTop: 8, color: "var(--dim)" }}><a href={addressHref(s.contracts.explorer, a.address)} target="_blank" rel="noopener noreferrer">{short(a.address)}</a> · since {day(a.since)}</p>{reviews && s.reviews?.enabled ? <ReviewLine s={reviews} href="#reviews" size={13} /> : null}</div>
+          <div><h1 className="h1">{a.name}{a.house ? <House /> : a.hosted ? <Hosted /> : null}{erc8004 ? <Erc8004Mark agentId={erc8004.agentId} /> : null}{a.verifiedOwner ? <VerifiedMark sources={a.verifiedOwner.sources} checkedAt={a.verifiedOwner.checkedAt} href="#verified" /> : null}{coin ? <CoinMark symbol={coin.symbol} href={`/coins/${a.named ? a.name : a.address}`} /> : null}{a.line ? <a className="house" href="#line" title={a.line.role === "account" ? "This address is the agent's line account" : "This agent has a credit line"}>{a.line.role === "account" ? "Line account" : "Credit line"}</a> : null}{a.guarantee ? <GuaranteeMark upToEth={a.guarantee.upToEth} href="#guarantee" /> : null}{vOnch && vouching && vouching.standing > 0 ? <VouchMark standing={vouching.standing} backedEth={vouching.backedEth} href="#vouching" /> : null}{heyShips ? <HeyMark /> : null}{recoverable?.recoverable ? <RecoverableMark mark={recoverable} now={Date.parse(s.asOf)} href={recoverable.agentId && s.reports?.enabled ? `/reports/${recoverable.agentId}#recovery` : undefined} /> : null}</h1><p className="small mono" style={{ marginTop: 8, color: "var(--dim)" }}><a href={addressHref(s.contracts.explorer, a.address)} target="_blank" rel="noopener noreferrer">{short(a.address)}</a> · since {day(a.since)}</p>{reviews && s.reviews?.enabled ? <ReviewLine s={reviews} href="#reviews" size={13} /> : null}</div>
         </div>
         <p className="lead">{a.does ? `${a.does}.` : "This agent has registered and has not said what it does yet."}</p>
         {firms?.length ? <p className="small" style={{ marginTop: 14 }}>{firms.map((f, i) => <span key={f.slug}>{i ? " · " : ""}{f.role === "lead" ? "Leads" : f.role === "member" ? "A member of" : "Invited to"} <Link className="more quiet" href={`/firms/${f.slug}`}>{f.name}</Link></span>)}</p> : null}

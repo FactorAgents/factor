@@ -1,6 +1,7 @@
 // The shape of everything the site draws. It is the engine's answer, word for word (engine/src/api.ts): keep the two
 // in step by hand. Amounts of ETH are plain numbers here because the site only shows them: arithmetic on money
 // happens in wei, in the contracts, the engine, and lib/desk.ts when a wallet sends something.
+import type { Recovery } from "./recoverable";
 
 /** half: the customer rejected the delivery and the job settled at half. declined: the agent said no. */
 export type JobState = "locked" | "advanced" | "delivered" | "settled" | "half" | "declined" | "refunded";
@@ -414,6 +415,8 @@ export interface FactorState {
   hey?: { enabled: boolean; project: string; badge: string };
   /** Factor Credit Reports (engine/src/reports.ts): whether they show */
   reports?: { enabled: boolean; /** credit report scores are being written to ERC-8004 */ onErc8004?: boolean };
+  /** the Recoverable mark with Upoch (engine/src/recoverable.ts): whether it shows */
+  recoverable?: { enabled: boolean };
   /** vouching: whether it is on, the contract, the rules and the totals */
   vouching?: VouchingAbout;
   /** selling locked pay (engine/src/claims.ts): whether it is on, the contract, the rules and the totals */
@@ -519,7 +522,7 @@ export interface AgentAnswer {
 /** An agent's Factor Score as Factor last wrote it to ERC-8004 (engine/src/erc8004score.ts, ScoreJson). */
 export interface ScoreOnChain { score: number; value: string; tag1: string; agentId: string; reviewer: string; tx: string; index: number | null; at: string; written: number }
 
-export interface AgentPage { /** its jobs hired with a verifier, while verifiers are on and it has had one */ verified?: AgentVerified; /** its record as a verifier, when its own address is also one */ asVerifier?: Verifier; /** its paid reviews, while they are on */ reviews?: ReviewSummary & { items: Review[]; /** the wallets that may answer its reviews */ repliers?: string[] }; /** its Factor Score on ERC-8004, while that is on and one was written */ scoreOnChain?: ScoreOnChain; raetoSpend?: RaetoSpend; /** bounties entered and won */ bounties?: AgentBounties; /** its jobs in stages */ milestones?: AgentMilestones; agent: Agent; /** its Factor Score: the desk's number, the parts, the income behind it, what it can draw */ factorScore?: FactorScore; jobs: Job[]; events: LedgerEvent[]; hiring?: Hiring; /** the firms it leads, belongs to or is invited to */ firms?: { slug: string; name: string; house: boolean; role: "lead" | "member" | "invited" }[]; /** its monthly clients, when it has any plan */ plans?: PlansSummary; /** its ERC-8004 identity and the entries written to it, when one is linked */ erc8004?: Erc8004; /** its own coin, when it has one listed */ coin?: Coin; /** its credit line, from either side, while lines are on */ line?: CreditLine; /** its guarantee bond, offer and covers, while guarantees are on and it has had one */ guarantee?: AgentGuarantee; /** who vouched for it and the vouches it gave, while vouching is on and it has one */ vouching?: AgentVouching }
+export interface AgentPage { /** its jobs hired with a verifier, while verifiers are on and it has had one */ verified?: AgentVerified; /** its record as a verifier, when its own address is also one */ asVerifier?: Verifier; /** its paid reviews, while they are on */ reviews?: ReviewSummary & { items: Review[]; /** the wallets that may answer its reviews */ repliers?: string[] }; /** its Factor Score on ERC-8004, while that is on and one was written */ scoreOnChain?: ScoreOnChain; raetoSpend?: RaetoSpend; /** bounties entered and won */ bounties?: AgentBounties; /** its jobs in stages */ milestones?: AgentMilestones; agent: Agent; /** its Factor Score: the desk's number, the parts, the income behind it, what it can draw */ factorScore?: FactorScore; jobs: Job[]; events: LedgerEvent[]; hiring?: Hiring; /** the firms it leads, belongs to or is invited to */ firms?: { slug: string; name: string; house: boolean; role: "lead" | "member" | "invited" }[]; /** its monthly clients, when it has any plan */ plans?: PlansSummary; /** its ERC-8004 identity and the entries written to it, when one is linked */ erc8004?: Erc8004; /** its own coin, when it has one listed */ coin?: Coin; /** its credit line, from either side, while lines are on */ line?: CreditLine; /** its guarantee bond, offer and covers, while guarantees are on and it has had one */ guarantee?: AgentGuarantee; /** who vouched for it and the vouches it gave, while vouching is on and it has one */ vouching?: AgentVouching; /** the Recoverable mark with Upoch, by its ERC-8004 identity, while it is on and a workflow is linked */ recoverable?: Recovery }
 
 /** One job in a chain of work: the customer's job at depth 0, the jobs its agent hired for at 1, and so on. */
 export interface TreeNode {

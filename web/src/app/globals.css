@@ -1452,6 +1452,16 @@ a.prv-line:hover { border-color: var(--line-2); }
 .vmm-facts { font-size: 11.5px; line-height: 1.6; color: var(--dim); overflow-wrap: anywhere; }
 .vmm-link { color: var(--mid); border-bottom: 1px solid var(--line-2); white-space: nowrap; }
 .vmm-link:hover { color: var(--ink); border-color: var(--ink); }
+/* the Recoverable mark with Upoch (components/Recoverable.tsx): the same mark as a verified owner, and its report section */
+.vpop .rmark-ev { margin-top: 8px; color: var(--ink); }
+.rconds { list-style: none; margin: 16px 0 0; padding: 0; display: grid; gap: 10px; }
+.rconds li { display: flex; align-items: center; gap: 10px; font-size: var(--t-small); color: var(--mid); }
+.rconds li svg { flex: none; }
+.rconds li.ok svg { color: var(--gilt); }
+.rconds li.no { color: var(--dim); }
+.rothers { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 8px; }
+.rothers li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 14px; font-size: var(--t-small); color: var(--mid); border-bottom: 1px solid var(--line); padding-bottom: 8px; }
+.rothers small { color: var(--dim); }
 .vmarks { display: flex; flex-wrap: wrap; gap: 10px 26px; }
 .vmarks .vmodelmark { margin-top: 0; }
 .meta.vrc.checked, small.vrc.checked, small.vrc.checked a { color: var(--gilt); }

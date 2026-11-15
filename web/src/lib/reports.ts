@@ -3,6 +3,7 @@
 // helpers the pages share. Every figure on a report page is the engine's: nothing is worked out here.
 import { Refusal } from "./desk";
 import { signText, type Provider } from "./wallet";
+import type { Recovery } from "./recoverable";
 
 export type ReportSource = "factor-desk" | "factor-lines" | "priors" | "erc8004-reputation" | "erc8004-validation" | "factor-reviews" | "erc8004-identity";
 
@@ -35,6 +36,8 @@ export interface Report {
   links: { page: string; card: string; badge: string; signed: string; erc8004: string | null; desk: string | null };
   /** its score on the ERC-8004 reputation registry, written by Factor (engine/src/reportserc8004.ts); null with no identity */
   onChain?: ReportOnChain | null;
+  /** the Recoverable mark with Upoch and its evidence (engine/src/recoverable.ts); null while it is off or no workflow is linked */
+  recovery?: Recovery | null;
 }
 
 /** A report's place on ERC-8004: written (since when, the transaction, its file), or prepared and not yet written. */

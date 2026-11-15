@@ -2,6 +2,7 @@
 // behind it. Nothing here is real. It is shown only when FACTOR_SAMPLE=1 (see data.ts): a site with no engine shows
 // an empty desk, never these.
 import type { Advance, Agent, AgentGuarantee, AgentMilestones, AgentPage, MilestonePlan, Applicant, AutoApplyStatus, Bounty, BountyEntry, BountyHistory, BountyList, BountyPage, Burn, Coin, Cover, CreditLine, Draw, FactorScore, FactorState, Firm, FirmPage, IncomeLine, IncomeSource, Job, JobPage, LedgerEvent, OpenJob, OpenJobList, OpenJobPage, Page, Params, Plan, PlanPage, PlansSummary, Review, ReviewStanding, ReviewSummary, ScorePart } from "./types";
+import { sampleRecovery } from "./reportsSample";
 
 /** The sample's signer for Factor everywhere's answers (lib/everywhere.ts): a key made for the sample alone, worth nothing. */
 export const SAMPLE_SIGNER = "0xa4cedcbc8f7718430b68e5c3a8363a6c258fc976";
@@ -504,6 +505,7 @@ export function sampleState(): FactorState {
     // HEY builder records: the footer shows HEY's real badge for Factor; the sample's made-up agents have no record on HEY
     hey: { enabled: true, project: "https://heyresearch.xyz/project/factor", badge: "https://heyresearch.xyz/api/badge/factor" },
     reports: { enabled: true, onErc8004: true },
+    recoverable: { enabled: true },
     // the sample has no engine: its guarantee is shown, and nothing can be bonded or covered from it
     guarantees: {
       enabled: true, contract: null, chainId: 4663,
@@ -518,7 +520,7 @@ const find = (id: string): Agent | undefined => agents.find((a) => a.address ===
 export const sampleBits = { A, TX, at, later, addressOf, find };
 export function sampleAgent(id: string): AgentPage | null {
   const a = find(id);
-  return a ? { ...(RAETO_ON && a.name === "orbit-ops" ? { raetoSpend: RAETO_SPEND } : {}), reviews: { ...(reviewSummary(a.address) ?? { average: null, count: 0, notCounted: 0 }), items: reviews.filter((r) => r.agent === a.address), repliers: [a.address] }, agent: withReviews(a), factorScore: { ...sampleScore(a, SETTLED_BY[a.name] ?? {}), ...(a.name === "orbit-ops" ? { line: { other: LINE_ACCOUNT, role: "key" as const, onTime: 1, late: 0, defaulted: false, points: 0, why: "Its credit line has always been repaid on time." } } : {}) }, jobs: jobs.filter((j) => j.agentId === a.address), events: events.filter((x) => x.agentId === a.address), ...(a.name === "quill-02" ? { plans: planSummary() } : {}), ...(a.name === "lumen-07" ? { erc8004: sampleErc8004(a.address) } : {}), ...((c) => (c ? { coin: c } : {}))(sampleCoin(a.address)), ...((l) => (l ? { line: l } : {}))(sampleLine(a.address)), ...((g) => (g ? { guarantee: g } : {}))(sampleGuarantee(a.address)), ...((x) => (x ? { milestones: x } : {}))(agentMilestones(a.address)) } : null;
+  return a ? { ...(RAETO_ON && a.name === "orbit-ops" ? { raetoSpend: RAETO_SPEND } : {}), reviews: { ...(reviewSummary(a.address) ?? { average: null, count: 0, notCounted: 0 }), items: reviews.filter((r) => r.agent === a.address), repliers: [a.address] }, agent: withReviews(a), factorScore: { ...sampleScore(a, SETTLED_BY[a.name] ?? {}), ...(a.name === "orbit-ops" ? { line: { other: LINE_ACCOUNT, role: "key" as const, onTime: 1, late: 0, defaulted: false, points: 0, why: "Its credit line has always been repaid on time." } } : {}) }, jobs: jobs.filter((j) => j.agentId === a.address), events: events.filter((x) => x.agentId === a.address), ...(a.name === "quill-02" ? { plans: planSummary() } : {}), ...(a.name === "lumen-07" ? { erc8004: sampleErc8004(a.address), recoverable: { ...sampleRecovery(a.address, at(0)), agentId: "211" } } : {}), ...((c) => (c ? { coin: c } : {}))(sampleCoin(a.address)), ...((l) => (l ? { line: l } : {}))(sampleLine(a.address)), ...((g) => (g ? { guarantee: g } : {}))(sampleGuarantee(a.address)), ...((x) => (x ? { milestones: x } : {}))(agentMilestones(a.address)) } : null;
 }
 /** The sample's one agent with an ERC-8004 identity: an entry for each of its settled jobs. */
 function sampleErc8004(address: string): NonNullable<AgentPage["erc8004"]> {
