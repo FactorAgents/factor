@@ -97,6 +97,9 @@ export interface WorkflowJson {
   name: string;
   recoverable: boolean;
   link: WorkflowLink[];
+  /** "agentWallet": the agent's own wallet is the workflow's owner or an executor. "owner": only its ERC-8004 owner is,
+   * as when one deployer runs workflows for several agents, so the workflow may belong to another agent of that owner. */
+  via: "agentWallet" | "owner" | null;
   active: boolean;
   status: "active" | "paused" | "other";
   recent: boolean;
@@ -120,7 +123,7 @@ export interface RecoveryJson {
   line: string;
   /** the workflow that makes it Recoverable (the best one), or, when none does, the linked one closest to it */
   workflow: WorkflowJson;
-  /** every workflow linked to it, those that count first */
+  /** every workflow linked to it: through the agent's own wallet first, then those only its owner runs; those that count first */
   workflows: WorkflowJson[];
   rule: { recentDays: number; text: string };
   contract: string;
@@ -160,6 +163,7 @@ export function judgeWorkflow(w: WorkflowRead, nowS: number, link: WorkflowLink[
   if (!guardian) why.push(w.timelockSeconds > 0 ? "only a timelock, no guardian" : "no guardian");
   return {
     id: w.id, name: `Upoch workflow #${w.id}`, recoverable: linked && active && recent && guardian, link,
+    via: link.some((l) => l.is === "agentWallet") ? "agentWallet" : linked ? "owner" : null,
     active, status: active ? "active" : w.status === PAUSED ? "paused" : "other",
     recent, lastCheckpointAt: w.lastCheckpointAt === null ? null : new Date(w.lastCheckpointAt * 1000).toISOString(), ageDays: age === null ? null : Math.round(age * 10) / 10,
     checkpoints: w.checkpoints, guardian, guardians: w.guardians.length, guardianThreshold: w.guardianThreshold, timelockSeconds: w.timelockSeconds, why,
@@ -179,7 +183,7 @@ export function recoveryOf(who: AgentWallets, workflows: WorkflowRead[], nowS: n
   return {
     recoverable: best.recoverable, source: "upoch",
     line: best.recoverable ? MARK_LINE : `Not Recoverable now. ${best.name}: ${best.why.join(", ")}.`,
-    workflow: best, workflows: linked, rule: { recentDays: RECENT_DAYS, text: RULE_TEXT },
+    workflow: best, workflows: [...linked.filter((x) => x.via === "agentWallet"), ...linked.filter((x) => x.via !== "agentWallet")], rule: { recentDays: RECENT_DAYS, text: RULE_TEXT },
     contract, contractUrl: o.explorer ? `${o.explorer}/address/${contract}` : null, readAt: new Date(o.readAt).toISOString(),
   };
 }

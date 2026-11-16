@@ -105,6 +105,17 @@ describe("the rule", () => {
     expect(none.recoverable).toBe(false);
     expect(none.workflow.id).toBe(4);
   });
+
+  it("tells the agent's own workflows from those only its owner runs (one deployer, several agents)", () => {
+    const own = wf({ id: 5, owner: OWNER, executors: [WALLET], lastCheckpointAt: NOW - 9000 });
+    const mirrors = [6, 7, 8].map((id) => wf({ id, owner: OWNER, lastCheckpointAt: NOW - 60 }));
+    const m = mark([...mirrors, own])!;
+    expect(m.workflow.id).toBe(5);
+    expect(m.workflow.via).toBe("agentWallet");
+    expect(m.workflows.map((w) => [w.id, w.via])).toEqual([[5, "agentWallet"], [6, "owner"], [7, "owner"], [8, "owner"]]);
+    // a workflow the agent's wallet signs is its own even when the owner also owns it
+    expect(mark([own])!.workflow.link.map((l) => l.is)).toEqual(["agentWallet", "owner"]);
+  });
 });
 
 describe("the configuration", () => {

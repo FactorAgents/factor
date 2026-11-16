@@ -7,6 +7,8 @@ export interface RecoveryWorkflow {
   name: string;
   recoverable: boolean;
   link: { wallet: string; is: "owner" | "agentWallet"; as: "owner" | "executor" }[];
+  /** linked through the agent's own wallet, or only through its ERC-8004 owner (the same owner, maybe another agent) */
+  via?: "agentWallet" | "owner" | null;
   active: boolean;
   status: "active" | "paused" | "other";
   recent: boolean;

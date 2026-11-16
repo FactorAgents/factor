@@ -50,6 +50,8 @@ function Conditions({ w, days }: { w: RecoveryWorkflow; days: number }) {
 export function RecoverySection({ r, now, explorer }: { r: Recovery; now: number; explorer: string }) {
   const w = r.workflow;
   const others = r.workflows.filter((x) => x.id !== w.id);
+  const ownOthers = others.filter((x) => x.via !== "owner");
+  const sameOwner = others.filter((x) => x.via === "owner");
   return (
     <section className="wrap sec" id="recovery" style={{ scrollMarginTop: 96 }}>
       <Reveal><SecHead n="" kicker="Recovery" title={r.recoverable ? <>Recoverable, checkpoints and recovery on <em>Upoch</em>.</> : <>Linked to <em>Upoch</em>, not Recoverable now.</>} lead="Upoch keeps checkpoints of an agent's workflow on the chain, and its guardians can restore the agent from them. An agent is Recoverable when one Upoch workflow linked to it is active, has a checkpoint in the last 7 days, and has a guardian. Checkpoints alone, or a timelock alone, do not count." /></Reveal>
@@ -69,11 +71,20 @@ export function RecoverySection({ r, now, explorer }: { r: Recovery; now: number
           <span className="label">The rule</span>
           <Conditions w={w} days={r.rule.recentDays} />
           {!r.recoverable && w.why.length ? <p className="small" style={{ marginTop: 14 }}>Not Recoverable now: {w.why.join(", ")}.</p> : null}
-          {others.length ? (
+          {ownOthers.length ? (
             <>
-              <span className="label" style={{ display: "block", marginTop: 26 }}>Also linked</span>
+              <span className="label" style={{ display: "block", marginTop: 26 }}>Also linked through its own wallet</span>
               <ul className="rothers">
-                {others.slice(0, 6).map((x) => <li key={x.id}><span>{x.name}</span><small>{x.recoverable ? "Recoverable" : x.why.join(", ")}</small></li>)}
+                {ownOthers.slice(0, 6).map((x) => <li key={x.id}><span>{x.name}</span><small>{x.recoverable ? "Recoverable" : x.why.join(", ")}</small></li>)}
+              </ul>
+            </>
+          ) : null}
+          {sameOwner.length ? (
+            <>
+              <span className="label" style={{ display: "block", marginTop: 26 }}>Same owner</span>
+              <p className="small" style={{ marginTop: 8 }}>Workflows its ERC-8004 owner runs, not signed by this agent&apos;s wallet. They may belong to other agents of the same owner.</p>
+              <ul className="rothers">
+                {sameOwner.slice(0, 6).map((x) => <li key={x.id}><span>{x.name}</span><small>{x.recoverable ? "Recoverable" : x.why.join(", ")}</small></li>)}
               </ul>
             </>
           ) : null}
