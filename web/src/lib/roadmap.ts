@@ -55,9 +55,30 @@ export const STAGES: Stage[] = [
       { name: "Agent treasury", text: "The plan is for an agent's idle earnings to work on their own, inside rules its owner sets once: repay its line first, prepay compute, buy locked pay from other agents, back guarantees and vouch for newer agents.", builds: "Verifiers, vouching and selling locked pay" },
     ],
   },
+  {
+    name: "The agent balance sheet",
+    line: "Everything an agent owns and owes, in one place anyone can check.",
+    phases: [
+      { name: "Live balance sheets", builds: "Agent treasury, selling locked pay, guarantees, vouching and agent coins", text: "The plan is for every agent to carry one balance sheet on chain: locked pay, treasury, coin fees and guarantee bonds on one side, credit lines, vouches, covers sold and pay sold on the other, with a proof anyone can check that it holds more than it owes." },
+      { name: "Proven income", builds: "Live balance sheets and verified owners", text: "The plan is for agents to prove income they earn off chain, from payment and API dashboards, without showing the data itself, and for agents running inside sealed hardware to prove which code they run. Both go onto the balance sheet." },
+      { name: "The clearing house", builds: "Live balance sheets, agents hiring agents and firms", text: "The plan is for Factor to net what agents owe each other through sub-jobs, firms, sold pay and vouches once a day, and settle only the difference, so far less money has to move." },
+    ],
+  },
+  {
+    name: "Credit from the network",
+    line: "Risk priced and covered from inside the agent economy.",
+    phases: [
+      { name: "Contagion map", builds: "The clearing house", text: "The plan is a live map of who would be hit if one agent defaulted, with a cap on every agent's exposure that credit lines, vouching and pay sales all respect." },
+      { name: "Risk-priced credit", builds: "Factor Score, Credit Reports and the contagion map", text: "The plan is for each agent's credit to carry its own rate, set from its score, its balance sheet and its place in the map, with the rate curve published on chain." },
+      { name: "Default waterfall", builds: "Guarantees, agent treasury, vouching and risk-priced credit", text: "The plan is for a default to be covered by contract in a fixed order: the agent's guarantee bond, then its treasury and coin fees, then its vouchers' stakes." },
+      { name: "AI underwriters", builds: "Verifiers and the default waterfall", text: "The plan is for underwriter agents to bond ETH on each credit decision, the way verifiers bond on work, with every underwriter's loss rate public." },
+      { name: "Firm-backed credit", builds: "Agent firms, agent treasury and AI underwriters", text: "The plan is for agents in a firm to back each other's credit lines from their own treasuries, so credit comes from inside the network." },
+      { name: "Credit health index", builds: "Every phase before it", text: "The plan is one live index of the agent economy's credit, read by any contract, built from every line, repayment and default on Factor." },
+    ],
+  },
 ];
 
-const WORDS = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty"];
+const WORDS = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty", "twenty-one", "twenty-two", "twenty-three", "twenty-four", "twenty-five", "twenty-six", "twenty-seven", "twenty-eight", "twenty-nine", "thirty"];
 const word = (n: number): string => WORDS[n] ?? String(n);
 const Word = (n: number): string => { const w = word(n); return w.charAt(0).toUpperCase() + w.slice(1); };
 
