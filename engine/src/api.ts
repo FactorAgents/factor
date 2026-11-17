@@ -1606,7 +1606,7 @@ export class EngineApi {
       const m = rc.of({ owner: i.owner, agentWallet: i.agentWallet });
       if (!m?.recoverable) return [];
       const w = m.workflow;
-      return [{ agentId: i.agentId, name: i.name, owner: i.owner, agentWallet: i.agentWallet, line: m.line, workflow: { id: w.id, name: w.name, link: w.link, lastCheckpointAt: w.lastCheckpointAt, ageDays: w.ageDays, checkpoints: w.checkpoints, guardians: w.guardians, guardianThreshold: w.guardianThreshold }, page: `${site}/reports/${i.agentId}`, report: `${site}/api/v1/reports/agent/${i.agentId}` }];
+      return [{ agentId: i.agentId, name: i.name, owner: i.owner, agentWallet: i.agentWallet, line: m.line, workflow: { id: w.id, name: w.name, link: w.link, lastCheckpointAt: w.lastCheckpointAt, ageDays: w.ageDays, checkpoints: w.checkpoints, guardians: w.guardians, guardianThreshold: w.guardianThreshold, ...(w.upoch ? { upoch: w.upoch } : {}) }, page: `${site}/reports/${i.agentId}`, report: `${site}/api/v1/reports/agent/${i.agentId}` }];
     });
     return { ...about, identitiesRead: this.reportsOn(v), total: items.length, items };
   }

@@ -47,10 +47,10 @@ export function sampleReportsFind(q: string): { enabled: true; items: ReportRow[
 export function sampleRecovery(agentWallet: string, asOf: string): Recovery {
   const t = Date.parse(asOf);
   const iso = (min: number) => new Date(t - min * 60_000).toISOString();
-  const workflow = { id: 5, name: "Upoch workflow #5", recoverable: true, link: [{ wallet: agentWallet, is: "agentWallet" as const, as: "executor" as const }], active: true, status: "active" as const, recent: true, lastCheckpointAt: iso(190), ageDays: 0.1, checkpoints: 13, guardian: true, guardians: 1, guardianThreshold: 1, timelockSeconds: 86_400, why: [] };
+  const workflow = { id: 5, name: "Upoch workflow #5", recoverable: true, link: [{ wallet: agentWallet, is: "agentWallet" as const, as: "executor" as const }], active: true, status: "active" as const, recent: true, lastCheckpointAt: iso(190), ageDays: 0.1, checkpoints: 13, guardian: true, guardians: 1, guardianThreshold: 1, timelockSeconds: 86_400, why: [], upoch: { verified: true, checks: [{ label: "Workflow active", ok: true }, { label: "Checkpoint in the last 7 days", ok: true }, { label: "A guardian can approve recovery", ok: true }], page: "https://upoch.tech/verified/5", readAt: iso(5) } };
   return {
     recoverable: true, source: "upoch", line: "Recoverable, checkpoints and recovery on Upoch", workflow,
-    workflows: [workflow, { ...workflow, id: 2, name: "Upoch workflow #2", recoverable: false, recent: false, lastCheckpointAt: iso(12 * 1440), ageDays: 12, checkpoints: 5, link: [{ wallet: agentWallet, is: "agentWallet", as: "owner" }], why: ["its last checkpoint is 12.0 days old, more than 7"] }],
+    workflows: [workflow, { ...workflow, id: 2, name: "Upoch workflow #2", recoverable: false, recent: false, lastCheckpointAt: iso(12 * 1440), ageDays: 12, checkpoints: 5, link: [{ wallet: agentWallet, is: "agentWallet", as: "owner" }], why: ["its last checkpoint is 12.0 days old, more than 7"], upoch: { verified: false, checks: [{ label: "Checkpoint in the last 7 days", ok: false }], page: "https://upoch.tech/verified/2", readAt: iso(5) } }],
     rule: { recentDays: 7, text: "Recoverable when at least one Upoch workflow linked to the agent (its ERC-8004 owner or agentWallet is the workflow's owner or an executor) is active, has a checkpoint in the last 7 days, and has at least one guardian with a threshold of 1 or more. A timelock alone does not count, and checkpoints alone never count." },
     contract: "0x6179d9123C3C1f9e82f948101a4350cb55Aa8C27", contractUrl: "https://robinhoodchain.blockscout.com/address/0x6179d9123C3C1f9e82f948101a4350cb55Aa8C27", readAt: iso(4),
   };
@@ -62,7 +62,7 @@ export function sampleRecoverable(): Record<string, unknown> {
   const m = sampleRecovery(row.wallet!, "2026-11-10T09:00:00.000Z");
   return {
     enabled: true, source: "upoch", rule: m.rule, contract: m.contract, contractUrl: m.contractUrl, readAt: m.readAt, everyS: 600, workflows: 8, recoverableWorkflows: [5], identitiesRead: true, total: 1,
-    items: [{ agentId: row.agentId, name: row.name, owner: row.wallet, agentWallet: row.wallet, line: m.line, workflow: { id: 5, name: m.workflow.name, link: m.workflow.link, lastCheckpointAt: m.workflow.lastCheckpointAt, ageDays: m.workflow.ageDays, checkpoints: m.workflow.checkpoints, guardians: 1, guardianThreshold: 1 }, page: `${SITE}/reports/${row.agentId}`, report: `${SITE}/api/v1/reports/agent/${row.agentId}` }],
+    items: [{ agentId: row.agentId, name: row.name, owner: row.wallet, agentWallet: row.wallet, line: m.line, workflow: { id: 5, name: m.workflow.name, link: m.workflow.link, lastCheckpointAt: m.workflow.lastCheckpointAt, ageDays: m.workflow.ageDays, checkpoints: m.workflow.checkpoints, guardians: 1, guardianThreshold: 1, upoch: m.workflow.upoch }, page: `${SITE}/reports/${row.agentId}`, report: `${SITE}/api/v1/reports/agent/${row.agentId}` }],
   };
 }
 

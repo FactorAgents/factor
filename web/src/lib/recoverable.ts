@@ -20,6 +20,8 @@ export interface RecoveryWorkflow {
   guardianThreshold: number;
   timelockSeconds: number;
   why: string[];
+  /** Upoch's own Verified status for this workflow, read from Upoch's API; absent when it could not be read lately */
+  upoch?: { verified: boolean; checks: { label: string; ok: boolean }[]; page: string; readAt: string };
 }
 
 /** An agent's mark and its evidence: on its credit report ("recovery") and its desk page ("recoverable"). */

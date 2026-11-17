@@ -22,6 +22,12 @@
 //
 // Switches: RECOVERABLE=on (off unless it is said) reads and shows it; the owner's "recoverable" switch (./switches.ts)
 // hides every mark at once and stops the reading, without a restart.
+//
+// Upoch Verified: Upoch's own status for a workflow (active, a checkpoint in the last 7 days, a guardian), read from
+// UPOCH_VERIFIED_URL/api/verified/<id> after each good reading of the contract and shown beside the workflow it is for.
+// It is Upoch's word, said as theirs, with a link to its page there; it never decides the Recoverable mark and changes no
+// score. A status that cannot be read, or is older than a good reading may stand, is not shown at all. UPOCH_VERIFIED=off
+// stops it.
 
 import { getAddress, parseAbi, type Abi } from "viem";
 import type { Chain } from "./chain/chain.js";
@@ -56,6 +62,10 @@ export interface RecoverableConfig {
   contract: string;
   /** RECOVERABLE_EVERY_S: seconds between readings of the contract */
   everyS: number;
+  /** UPOCH_VERIFIED: on unless it is said off. Upoch's own Verified status for each workflow, read from its API */
+  verified: boolean;
+  /** UPOCH_VERIFIED_URL: Upoch's site, https */
+  verifiedUrl: string;
 }
 
 export function readRecoverable(env: Env, problems: string[] = []): RecoverableConfig {
@@ -67,7 +77,15 @@ export function readRecoverable(env: Env, problems: string[] = []): RecoverableC
     if (/^\d{1,6}$/.test(e) && Number(e) >= 60 && Number(e) <= 86_400) everyS = Number(e);
     else problems.push(`RECOVERABLE_EVERY_S must be a whole number from 60 to 86400: it is "${e}"`);
   }
-  return { enabled: raw === "on", contract: UPOCH_EPOCH, everyS };
+  const v = (env.UPOCH_VERIFIED ?? "").trim().toLowerCase();
+  if (v && v !== "on" && v !== "off") problems.push(`UPOCH_VERIFIED must be on or off: it is "${env.UPOCH_VERIFIED}"`);
+  let verifiedUrl = "https://upoch.tech";
+  const u = env.UPOCH_VERIFIED_URL?.trim().replace(/\/+$/, "");
+  if (u) {
+    if (/^https:\/\/[a-z0-9.-]+(:\d+)?$/i.test(u)) verifiedUrl = u;
+    else problems.push(`UPOCH_VERIFIED_URL must be an https site with no path: it is "${env.UPOCH_VERIFIED_URL}"`);
+  }
+  return { enabled: raw === "on", contract: UPOCH_EPOCH, everyS, verified: v !== "off", verifiedUrl };
 }
 
 // ---------- the rule ----------
@@ -113,6 +131,18 @@ export interface WorkflowJson {
   timelockSeconds: number;
   /** what keeps it from counting, in words; empty when it counts */
   why: string[];
+  /** Upoch's own Verified status for this workflow, as Upoch says it; absent when it could not be read lately */
+  upoch?: UpochVerified;
+}
+
+/** Upoch Verified for one workflow, from Upoch's API: its word, with the page anyone can check it on. */
+export interface UpochVerified {
+  verified: boolean;
+  /** Upoch's checks, each as it says it */
+  checks: { label: string; ok: boolean }[];
+  /** the workflow's page on Upoch, made here from the id, never taken from the answer */
+  page: string;
+  readAt: string;
 }
 
 /** An agent's mark and its evidence. */
@@ -175,8 +205,12 @@ const rank = (j: WorkflowJson): number[] => [j.recoverable ? 1 : 0, [j.active, j
 const better = (a: WorkflowJson, b: WorkflowJson): number => { const x = rank(a), y = rank(b); for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return y[i]! - x[i]!; return 0; };
 
 /** An agent's mark from the workflows read: null when no workflow is linked to it. */
-export function recoveryOf(who: AgentWallets, workflows: WorkflowRead[], nowS: number, o: { readAt: number; contract?: string; explorer?: string | null }): RecoveryJson | null {
-  const linked = workflows.map((w) => ({ w, link: linksOf(w, who) })).filter((x) => x.link.length > 0).map((x) => judgeWorkflow(x.w, nowS, x.link)).sort(better);
+export function recoveryOf(who: AgentWallets, workflows: WorkflowRead[], nowS: number, o: { readAt: number; contract?: string; explorer?: string | null; upoch?: (id: number) => UpochVerified | null }): RecoveryJson | null {
+  const linked = workflows.map((w) => ({ w, link: linksOf(w, who) })).filter((x) => x.link.length > 0).map((x) => {
+    const j = judgeWorkflow(x.w, nowS, x.link);
+    const u = o.upoch?.(x.w.id);
+    return u ? { ...j, upoch: u } : j;
+  }).sort(better);
   if (!linked.length) return null;
   const best = linked[0]!;
   const contract = getAddress(o.contract ?? UPOCH_EPOCH);
@@ -198,7 +232,22 @@ export interface RecoverableDeps {
   /** the wall clock, ms */
   now: () => number;
   log: (line: string) => void;
+  /** for Upoch's API: the engine gives the global fetch; without one Upoch Verified is not read */
+  fetch?: typeof fetch;
 }
+
+/** Upoch's answer for one workflow, checked: null when it is not what Upoch's API says it answers. */
+export function parseUpochVerified(id: number, body: unknown, base: string, at: number): UpochVerified | null {
+  const b = body as { workflowId?: unknown; verified?: unknown; checks?: unknown } | null;
+  if (!b || typeof b !== "object" || Number(b.workflowId) !== id || typeof b.verified !== "boolean") return null;
+  const checks = Array.isArray(b.checks)
+    ? b.checks.flatMap((c: { label?: unknown; ok?: unknown }) => (c && typeof c.label === "string" && typeof c.ok === "boolean" ? [{ label: c.label.slice(0, 80), ok: c.ok }] : [])).slice(0, 8)
+    : [];
+  return { verified: b.verified, checks, page: `${base}/verified/${id}`, readAt: new Date(at).toISOString() };
+}
+
+/** The most workflows Upoch's API is asked about after one reading: the newest. */
+const MOST_VERIFIED = 200;
 
 interface Reading { at: number; workflows: WorkflowRead[] }
 
@@ -208,6 +257,10 @@ export class Recoverable {
   private lastTryAt = 0;
   private failures = 0;
   private lastError: string | null = null;
+  /** Upoch Verified by workflow id, with when it was read (ms) */
+  private upoch = new Map<number, { v: UpochVerified; at: number }>();
+  private upochRun: Promise<void> | null = null;
+  private upochFailing = false;
 
   constructor(readonly cfg: RecoverableConfig, private d: RecoverableDeps) {}
 
@@ -265,6 +318,7 @@ export class Recoverable {
         if (this.failures) this.d.log("[recoverable] Upoch's contract answers again");
         this.failures = 0;
         this.lastError = null;
+        this.readUpoch(workflows.map((w) => w.id)).catch(() => undefined);
         return `read ${workflows.length} workflow${workflows.length === 1 ? "" : "s"}, ${this.recoverableWorkflows().length} recoverable`;
       } catch (e) {
         const m = ((e as Error).message ?? String(e)).split("\n")[0]!.slice(0, 200);
@@ -277,6 +331,43 @@ export class Recoverable {
       }
     })();
     return this.busy;
+  }
+
+  /** Upoch Verified for the workflows read, a few at a time; a workflow that cannot be read keeps nothing new. Never throws
+   * into a reading of the contract, and is said in the log once while Upoch's API does not answer. */
+  readUpoch(ids: number[]): Promise<void> {
+    if (!this.cfg.verified || !this.on() || !this.d.fetch) return Promise.resolve();
+    if (this.upochRun) return this.upochRun;
+    const f = this.d.fetch;
+    this.upochRun = (async () => {
+      let ok = 0, failed = 0;
+      const want = ids.slice(-MOST_VERIFIED);
+      for (let i = 0; i < want.length; i += 4) {
+        await Promise.all(want.slice(i, i + 4).map(async (id) => {
+          try {
+            const res = await f(`${this.cfg.verifiedUrl}/api/verified/${id}`, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(8000) });
+            if (res.status === 404) { this.upoch.delete(id); ok++; return; }
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const v = parseUpochVerified(id, await res.json(), this.cfg.verifiedUrl, this.d.now());
+            if (!v) throw new Error("an answer Factor does not read");
+            this.upoch.set(id, { v, at: this.d.now() });
+            ok++;
+          } catch {
+            failed++;
+          }
+        }));
+      }
+      if (failed && !ok && !this.upochFailing) { this.d.log("[recoverable] Upoch's API does not answer: Upoch Verified is not shown once the last status is old"); this.upochFailing = true; }
+      if (ok && this.upochFailing) { this.d.log("[recoverable] Upoch's API answers again"); this.upochFailing = false; }
+    })().finally(() => { this.upochRun = null; });
+    return this.upochRun;
+  }
+
+  /** Upoch Verified for one workflow, while it is recent enough to show: null otherwise. */
+  private upochOf(id: number): UpochVerified | null {
+    if (!this.cfg.verified) return null;
+    const x = this.upoch.get(id);
+    return x && this.d.now() - x.at <= this.standsMs ? x.v : null;
   }
 
   /** A reading in the background when the last is older than the interval: what a report calls, never waiting on it. */
@@ -297,7 +388,7 @@ export class Recoverable {
     this.refreshIfDue();
     const r = this.reading();
     if (!r || (!who.owner && !who.agentWallet)) return null;
-    return recoveryOf(who, r.workflows, Math.floor(this.d.now() / 1000), { readAt: r.at, contract: this.cfg.contract, explorer: this.d.explorer });
+    return recoveryOf(who, r.workflows, Math.floor(this.d.now() / 1000), { readAt: r.at, contract: this.cfg.contract, explorer: this.d.explorer, upoch: (id) => this.upochOf(id) });
   }
 
   /** The wallets an agent can be linked by to a workflow that counts now: owners and executors. */
@@ -315,10 +406,11 @@ export class Recoverable {
       contract, contractUrl: this.d.explorer ? `${this.d.explorer}/address/${contract}` : null,
       readAt: r ? new Date(r.at).toISOString() : null, everyS: this.cfg.everyS,
       workflows: r ? r.workflows.length : null, recoverableWorkflows: r ? this.recoverableWorkflows().map((w) => w.id) : null,
+      upochVerified: this.cfg.verified ? { source: `${this.cfg.verifiedUrl}/api/verified/<id>`, workflows: r ? r.workflows.flatMap((w) => { const u = this.upochOf(w.id); return u ? [{ id: w.id, verified: u.verified, page: u.page }] : []; }) : [] } : null,
     };
   }
 
   health(): Record<string, unknown> {
-    return { enabled: this.cfg.enabled, on: this.on(), readAt: this.last ? new Date(this.last.at).toISOString() : null, shown: !!this.reading(), workflows: this.last?.workflows.length ?? null, failures: this.failures, lastError: this.lastError };
+    return { enabled: this.cfg.enabled, on: this.on(), readAt: this.last ? new Date(this.last.at).toISOString() : null, shown: !!this.reading(), workflows: this.last?.workflows.length ?? null, failures: this.failures, lastError: this.lastError, upochVerified: this.cfg.verified ? { read: this.upoch.size, failing: this.upochFailing } : null };
   }
 }

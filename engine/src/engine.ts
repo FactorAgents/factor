@@ -82,6 +82,7 @@ export interface EngineOptions {
   askModel?: AskModel | null; // instead of the model Ask Factor would ask (tests)
   copilotModel?: AskModel | null; // instead of the model Copilot would ask (tests)
   heyFetch?: HeyFetch; // instead of HEY Research Lab's API (tests)
+  upochFetch?: typeof fetch | null; // instead of Upoch's API (tests); null reads nothing from it
 }
 
 const ZERO = "0x0000000000000000000000000000000000000000";
@@ -738,7 +739,7 @@ export class Engine {
       return vc ? vc.customer : j.customer;
     };
     // the Recoverable mark with Upoch: read only, from Upoch's Epoch contract; reads nothing until RECOVERABLE=on
-    this.recoverable = new Recoverable(c.recoverable, { db, chain: this.chain, explorer: c.explorer, now: this.now, log: this.log });
+    this.recoverable = new Recoverable(c.recoverable, { db, chain: this.chain, explorer: c.explorer, now: this.now, log: this.log, ...((f) => (f ? { fetch: f } : {}))(this.opts.upochFetch === undefined ? globalThis.fetch.bind(globalThis) : this.opts.upochFetch) });
     this.reports = new Reports(c.reports, {
       db, chain: this.chain, chainId: c.chainId, explorer: c.explorer, now: this.now, nowS, log: this.log,
       deskAgents: () => (db.q("SELECT address, registered_at FROM desk_agents").all() as { address: string; registered_at: number }[]).map((r) => ({ address: r.address, registeredAt: r.registered_at })),

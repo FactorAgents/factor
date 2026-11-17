@@ -42,7 +42,7 @@ export interface Rig {
   turn(): Promise<void>;
 }
 
-export async function rig(mode: EngineMode, o: { chain?: FakeChain; more?: Env; sqlite?: Database.Database; signer?: boolean; houseSigners?: (name: string) => HouseSigner; verifiedProviders?: Provider[]; askModel?: AskModel | null; copilotModel?: AskModel | null; heyFetch?: HeyFetch } = {}): Promise<Rig> {
+export async function rig(mode: EngineMode, o: { chain?: FakeChain; more?: Env; sqlite?: Database.Database; signer?: boolean; houseSigners?: (name: string) => HouseSigner; verifiedProviders?: Provider[]; askModel?: AskModel | null; copilotModel?: AskModel | null; heyFetch?: HeyFetch; upochFetch?: typeof fetch | null } = {}): Promise<Rig> {
   const chain = o.chain ?? new FakeChain();
   const wall = { extra: 0 };
   const now = () => chain.time * 1000 + wall.extra;
@@ -61,6 +61,7 @@ export async function rig(mode: EngineMode, o: { chain?: FakeChain; more?: Env; 
     ...(o.askModel !== undefined ? { askModel: o.askModel } : {}),
     ...(o.copilotModel !== undefined ? { copilotModel: o.copilotModel } : {}),
     ...(o.heyFetch ? { heyFetch: o.heyFetch } : {}),
+    upochFetch: o.upochFetch ?? null, // tests never reach Upoch's API unless they give one
   });
   engine.start();
   await engine.ready();

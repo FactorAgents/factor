@@ -31,6 +31,17 @@ export function RecoverableMark({ mark, now, href }: { mark: Recovery; now: numb
   );
 }
 
+/** Upoch Verified beside the Recoverable mark: Upoch's own word for the workflow, linking to its page on Upoch. Shown only
+ * while Upoch says Verified; a lapsed status shows in the Recovery section, grey. */
+export function UpochVerifiedMark({ w }: { w: RecoveryWorkflow }) {
+  if (!w.upoch?.verified) return null;
+  return (
+    <a className="vmark umark" href={w.upoch.page} target="_blank" rel="noopener noreferrer" title={`Upoch Verified: ${w.upoch.checks.map((c) => c.label).join(", ")}. Checked by Upoch from the chain.`}>
+      <Yes />Upoch Verified
+    </a>
+  );
+}
+
 /** The four conditions of the rule, each as the workflow shown meets it or not. */
 function Conditions({ w, days }: { w: RecoveryWorkflow; days: number }) {
   const rows: [boolean, string][] = [
@@ -64,6 +75,7 @@ export function RecoverySection({ r, now, explorer }: { r: Recovery; now: number
             <dt>Last checkpoint<small>{w.lastCheckpointAt ? dayTime(w.lastCheckpointAt) : "none yet"}</small></dt><dd>{agoWords(w.lastCheckpointAt, now)}</dd>
             <dt>Checkpoints</dt><dd className="num">{w.checkpoints.toLocaleString("en-US")}</dd>
             <dt>Guardians<small>how many must agree to restore it</small></dt><dd>{w.guardians}, threshold {w.guardianThreshold}</dd>
+            {w.upoch ? <><dt>Upoch Verified<small>Upoch&apos;s own check, read from its API</small></dt><dd>{w.upoch.verified ? <a href={w.upoch.page} target="_blank" rel="noopener noreferrer">Verified</a> : <a className="lapsed" href={w.upoch.page} target="_blank" rel="noopener noreferrer">Lapsed</a>}</dd></> : null}
             {w.timelockSeconds > 0 ? <><dt>Timelock<small>a delay on the owner&apos;s own rollback</small></dt><dd>{timeWords(w.timelockSeconds)}</dd></> : null}
           </dl>
         </div>

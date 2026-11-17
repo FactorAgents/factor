@@ -7,7 +7,7 @@ import { getAddress } from "viem";
 import { afterEach, describe, expect, it } from "vitest";
 import type { CallSpec } from "../src/chain/chain.js";
 import { open, EngineDb } from "../src/chain/db.js";
-import { judgeWorkflow, linksOf, MARK_LINE, readRecoverable, Recoverable, recoveryOf, RECENT_DAYS, UPOCH_EPOCH, type AgentWallets, type WorkflowRead } from "../src/recoverable.js";
+import { judgeWorkflow, linksOf, MARK_LINE, parseUpochVerified, readRecoverable, Recoverable, recoveryOf, RECENT_DAYS, UPOCH_EPOCH, type AgentWallets, type WorkflowRead } from "../src/recoverable.js";
 import { turn } from "../src/switches.js";
 import { ETH, FakeChain } from "./chain/fake.js";
 import { rig, type Rig } from "./chain/harness.js";
@@ -120,7 +120,7 @@ describe("the rule", () => {
 
 describe("the configuration", () => {
   it("is off unless RECOVERABLE=on, reads Upoch's contract every ten minutes, and refuses what makes no sense", () => {
-    expect(readRecoverable({})).toEqual({ enabled: false, contract: UPOCH_EPOCH, everyS: 600 });
+    expect(readRecoverable({})).toEqual({ enabled: false, contract: UPOCH_EPOCH, everyS: 600, verified: true, verifiedUrl: "https://upoch.tech" });
     expect(readRecoverable({ RECOVERABLE: "on", RECOVERABLE_EVERY_S: "120" })).toMatchObject({ enabled: true, everyS: 120 });
     const problems: string[] = [];
     readRecoverable({ RECOVERABLE: "yes", RECOVERABLE_EVERY_S: "5" }, problems);
@@ -245,6 +245,121 @@ describe("the reading", () => {
   });
 });
 
+// ---------- Upoch Verified, read from Upoch's API ----------
+
+/** Upoch's API, made up: a status per workflow, or down. Counts every call. */
+class UpochApi {
+  status = new Map<number, boolean>();
+  down = false;
+  calls: string[] = [];
+  fetch = (async (url: string | URL) => {
+    const u = String(url);
+    this.calls.push(u);
+    if (this.down) return new Response("bad gateway", { status: 502 });
+    const id = Number(u.split("/").pop());
+    if (!this.status.has(id)) return new Response(JSON.stringify({ error: "not found" }), { status: 404 });
+    const v = this.status.get(id)!;
+    return new Response(JSON.stringify({ workflowId: id, verified: v, checks: [{ key: "active", ok: true, label: "Workflow active" }, { key: "recent", ok: v, label: "Checkpoint in the last 7 days" }], page: "https://elsewhere.example/x", badge: "https://elsewhere.example/b.svg" }), { status: 200, headers: { "content-type": "application/json" } });
+  }) as typeof fetch;
+}
+
+describe("Upoch Verified", () => {
+  const clock = { ms: NOW * 1000 };
+  const made = (env: Record<string, string> = { RECOVERABLE: "on" }) => {
+    const epoch = new Epoch();
+    const api = new UpochApi();
+    const db = new EngineDb(open(":memory:"), () => clock.ms);
+    const lines: string[] = [];
+    const rc = new Recoverable(readRecoverable(env), { db, chain: { read: async <T,>(c: CallSpec) => epoch.answer(c) as T }, explorer: null, now: () => clock.ms, log: (l) => lines.push(l), fetch: api.fetch });
+    return { epoch, api, rc, lines };
+  };
+
+  it("reads only what Upoch's API says it answers, and makes the page link itself", () => {
+    const v = parseUpochVerified(5, { workflowId: 5, verified: true, checks: [{ label: "Workflow active", ok: true }, { label: 3, ok: true }], page: "https://evil.example" }, "https://upoch.tech", NOW * 1000)!;
+    expect(v).toEqual({ verified: true, checks: [{ label: "Workflow active", ok: true }], page: "https://upoch.tech/verified/5", readAt: new Date(NOW * 1000).toISOString() });
+    expect(parseUpochVerified(5, { workflowId: 6, verified: true }, "https://upoch.tech", 0)).toBeNull(); // another workflow's answer
+    expect(parseUpochVerified(5, { workflowId: 5, verified: "yes" }, "https://upoch.tech", 0)).toBeNull();
+    expect(parseUpochVerified(5, null, "https://upoch.tech", 0)).toBeNull();
+  });
+
+  it("is on with the mark unless UPOCH_VERIFIED=off, and takes only an https site", () => {
+    expect(readRecoverable({ RECOVERABLE: "on" })).toMatchObject({ verified: true, verifiedUrl: "https://upoch.tech" });
+    expect(readRecoverable({ RECOVERABLE: "on", UPOCH_VERIFIED: "off" }).verified).toBe(false);
+    const problems: string[] = [];
+    readRecoverable({ UPOCH_VERIFIED: "maybe", UPOCH_VERIFIED_URL: "http://upoch.tech/x" }, problems);
+    expect(problems).toHaveLength(2);
+  });
+
+  it("puts Upoch's status beside the workflow it is for, and never decides the mark", async () => {
+    clock.ms = NOW * 1000;
+    const { epoch, api, rc } = made();
+    epoch.add({ owner: OWNER, checkpoints: [{ timestamp: NOW - 60 }] });
+    epoch.add({ owner: OWNER, guardians: [], threshold: 0, checkpoints: [{ timestamp: NOW - 60 }] });
+    api.status.set(1, true);
+    api.status.set(2, false);
+    await rc.refresh();
+    await rc.readUpoch([1, 2]);
+    expect(api.calls).toEqual(["https://upoch.tech/api/verified/1", "https://upoch.tech/api/verified/2"]);
+    const m = rc.of(agent)!;
+    expect(m.recoverable).toBe(true);
+    expect(m.workflow.upoch).toMatchObject({ verified: true, page: "https://upoch.tech/verified/1" });
+    expect(m.workflows.find((w) => w.id === 2)!.upoch!.verified).toBe(false);
+    // Upoch says Verified, the rule says no: the mark stays the rule's
+    api.status.set(1, true);
+    epoch.workflows[0]!.status = 1;
+    await rc.refresh();
+    await rc.readUpoch([1, 2]);
+    expect(rc.of(agent)!.recoverable).toBe(false);
+    expect(rc.about().upochVerified).toMatchObject({ workflows: [{ id: 1, verified: true }, { id: 2, verified: false }] });
+  });
+
+  it("keeps the last status a while when Upoch's API does not answer, then shows none; a workflow it does not know shows none", async () => {
+    clock.ms = NOW * 1000;
+    const { epoch, api, rc, lines } = made();
+    epoch.add({ owner: OWNER, checkpoints: [{ timestamp: NOW - 60 }] });
+    epoch.add({ owner: OWNER, checkpoints: [{ timestamp: NOW - 60 }] });
+    api.status.set(1, true);
+    await rc.refresh();
+    await rc.readUpoch([1, 2]);
+    expect(rc.of(agent)!.workflows.find((w) => w.id === 2)!.upoch).toBeUndefined(); // 404 at Upoch
+    api.down = true;
+    clock.ms += 11 * 60_000;
+    await rc.refresh();
+    await rc.readUpoch([1, 2]);
+    expect(lines.some((l) => /Upoch's API does not answer/.test(l))).toBe(true);
+    expect(rc.of(agent)!.workflows.find((w) => w.id === 1)!.upoch!.verified).toBe(true); // 11 minutes old
+    clock.ms += 25 * 60_000;
+    await rc.refresh();
+    await rc.readUpoch([1, 2]);
+    expect(rc.of(agent)!.recoverable).toBe(true); // the chain still answers
+    expect(rc.of(agent)!.workflows.every((w) => w.upoch === undefined)).toBe(true); // 36 minutes without Upoch: none shown
+    api.down = false;
+    await rc.readUpoch([1, 2]);
+    expect(rc.of(agent)!.workflow.upoch!.verified).toBe(true);
+    expect(lines.some((l) => /Upoch's API answers again/.test(l))).toBe(true);
+  });
+
+  it("asks Upoch nothing with UPOCH_VERIFIED=off, with the mark off, or with the owner's switch turned", async () => {
+    for (const env of [{ RECOVERABLE: "on", UPOCH_VERIFIED: "off" }, {} as Record<string, string>]) {
+      const { epoch, api, rc } = made(env);
+      epoch.add({ owner: OWNER, checkpoints: [{ timestamp: NOW }] });
+      api.status.set(1, true);
+      await rc.refresh().catch(() => undefined);
+      await rc.readUpoch([1]);
+      expect(api.calls).toEqual([]);
+      if (rc.of(agent)) expect(rc.of(agent)!.workflow.upoch).toBeUndefined();
+    }
+    const { epoch, api, rc, } = made();
+    epoch.add({ owner: OWNER, checkpoints: [{ timestamp: NOW }] });
+    await rc.refresh();
+    await rc.readUpoch([1]);
+    const before = api.calls.length;
+    turn((rc as any).d.db, "recoverable", false, "a test");
+    await rc.readUpoch([1]);
+    expect(api.calls.length).toBe(before);
+  });
+});
+
 // ---------- end to end, on the made-up chain ----------
 
 const rigs: Rig[] = [];
@@ -256,7 +371,7 @@ const get = async (r: Rig, path: string): Promise<Body> => { const [p, q = ""] =
 
 describe("the mark on Factor", () => {
   const DESK = "0x00000000000000000000000000000000000d0001";
-  async function world(more: Record<string, string> = {}) {
+  async function world(more: Record<string, string> = {}, upochFetch: typeof fetch | null = null) {
     const chain = new FakeChain();
     chain.fund(ETH);
     // an identity on its own (Upoch's case: the agentWallet is a workflow's executor), a desk agent with an identity
@@ -271,7 +386,7 @@ describe("the mark on Factor", () => {
     epoch.add({ owner: STRANGER, executors: [GUARDIAN], checkpoints: [{ timestamp: chain.time - 2 * DAY }] });
     epoch.add({ owner: EXEC, guardians: [], threshold: 0, timelock: 3600, checkpoints: [{ timestamp: chain.time - 60 }] });
     chain.extra = { answer: (c) => epoch.answer(c), run: () => undefined };
-    const r = await rig("watch", { chain, copilotModel: null, more: { REPORTS: "on", REPORTS_FROM_BLOCK: "0", REPORTS_SPAN: "1000", REPORTS_PRIORS: "off", REPORTS_CONFIRMATIONS: "0", RECOVERABLE: "on", ...more } });
+    const r = await rig("watch", { chain, copilotModel: null, more: { REPORTS: "on", REPORTS_FROM_BLOCK: "0", REPORTS_SPAN: "1000", REPORTS_PRIORS: "off", REPORTS_CONFIRMATIONS: "0", RECOVERABLE: "on", ...more }, upochFetch });
     rigs.push(r);
     await r.engine.watchOnce();
     while (!r.engine.reports!.caughtUp()) await r.engine.reports!.pass();
@@ -324,6 +439,23 @@ describe("the mark on Factor", () => {
     expect((await get(on.r, `/v1/reports/agent/${ids.upoch}`)).recovery).toBeNull();
     expect((await get(on.r, `/v1/agents/${DESK}`)).recoverable).toBeUndefined();
     expect(await get(on.r, "/v1/recoverable")).toEqual({ status: 200, enabled: false });
+  });
+
+  it("puts Upoch Verified in the credit report and the list, and changes no point of the score", async () => {
+    const api = new UpochApi();
+    api.status.set(1, true);
+    const { r, ids } = await world({}, api.fetch);
+    await r.engine.recoverable!.readUpoch([1, 2, 3]);
+    r.engine["api"].forget();
+    const rep = await get(r, `/v1/reports/agent/${ids.upoch}`);
+    expect(rep.recovery.workflow.upoch).toMatchObject({ verified: true, page: "https://upoch.tech/verified/1" });
+    const list = await get(r, "/v1/recoverable");
+    expect(list.items.find((i: Body) => i.agentId === String(ids.upoch)).workflow.upoch.verified).toBe(true);
+    const { r: plain } = await world();
+    const without = await get(plain, `/v1/reports/agent/${ids.upoch}`);
+    expect(without.recovery.workflow.upoch).toBeUndefined();
+    const strip = (x: Body) => { const { recovery: _a, asOf: _b, ...rest } = x; return rest; };
+    expect(strip(rep)).toEqual(strip(without));
   });
 
   it("shows nothing when Upoch's contract cannot be read", async () => {

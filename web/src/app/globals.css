@@ -965,6 +965,10 @@ button.toggle { width: 100%; text-align: left; background: transparent; color: i
 .vmark.has-pop { cursor: pointer; }
 .vmark.has-pop:focus-visible { outline: 1px solid var(--gilt); outline-offset: 2px; }
 .vmark.none { color: var(--dim); background: none; border-color: var(--line); }
+.vmark.umark { margin-left: 8px; cursor: pointer; text-decoration: none; }
+.vmark.umark svg { flex: none; margin-top: -1px; width: 11px; height: 11px; }
+.vmark.umark:hover { border-color: var(--gilt); }
+.kv a.lapsed { color: var(--dim); }
 .h1 .vmark { vertical-align: 0.6em; font-size: 10.5px; }
 .vpop { position: absolute; z-index: 30; left: 0; top: calc(100% + 10px); width: min(320px, 78vw); padding: 14px 16px; background: var(--paper-2); border: 1px solid var(--line-2); border-radius: 3px; box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45); font-family: var(--sans); font-size: 13px; line-height: 1.5; letter-spacing: 0; text-transform: none; color: var(--mid); white-space: normal; text-align: left; opacity: 0; transform: translateY(-4px); pointer-events: none; transition: opacity 0.18s ease, transform 0.18s ease; }
 .vpop b { display: block; font-family: var(--mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; font-weight: 400; color: var(--gilt); margin-bottom: 8px; }

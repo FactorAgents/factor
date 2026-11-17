@@ -564,8 +564,9 @@ test("each page is small enough for a phone, and nothing loads from another site
     const { html, headers } = await get(path);
     // the docs, with every section on, are the largest page: still a fraction of one picture
     assert.ok(html.length < 300_000, `${path} is ${html.length} bytes`);
-    // HEY Research Lab's own badge for Factor in the footer, and the links to Factor's page on HEY, are the one exception
-    assert.doesNotMatch(html, /(src|href)="https?:\/\/(?!ponsfamily\.com|github\.com|x\.com|robinhoodchain\.blockscout\.com\/(tx|address)\/0x|heyresearch\.xyz\/(api\/badge\/factor(\?theme=dark)?"|project\/factor(\?utm_source=badge&amp;utm_medium=html)?"))/, `${path} loads from another site`);
+    // HEY Research Lab's own badge for Factor in the footer, the links to Factor's page on HEY, and links to a workflow's
+    // Upoch Verified page are the exceptions
+    assert.doesNotMatch(html, /(src|href)="https?:\/\/(?!ponsfamily\.com|github\.com|x\.com|robinhoodchain\.blockscout\.com\/(tx|address)\/0x|upoch\.tech\/verified\/\d+"|heyresearch\.xyz\/(api\/badge\/factor(\?theme=dark)?"|project\/factor(\?utm_source=badge&amp;utm_medium=html)?"))/, `${path} loads from another site`);
     assert.match(headers.get("content-security-policy") ?? "", /default-src 'self'/, `${path} has no content policy`);
   }
 });
@@ -1484,8 +1485,13 @@ test("the Recoverable mark with Upoch: on a report with its evidence, on an agen
   assert.match(desk, /Last checkpoint/);
   assert.match(desk, /Guardians how many must agree to restore it 1, threshold 1/);
   assert.match(desk, /A checkpoint in the last 7 days/);
-  assert.match(desk, /Also linked Upoch workflow #2 its last checkpoint is 12\.0 days old, more than 7/);
+  assert.match(desk, /Also linked through its own wallet Upoch workflow #2 its last checkpoint is 12\.0 days old, more than 7/);
   assert.doesNotMatch(desk, /Factor Score/);
+  // Upoch Verified beside the mark, linking to Upoch's page, and in the evidence
+  const deskHtml = (await get("/reports/486")).html;
+  assert.match(deskHtml, /class="vmark umark" href="https:\/\/upoch\.tech\/verified\/5"/);
+  assert.match(desk, /Upoch Verified Upoch's own check, read from its API Verified/);
+  assert.match(plain((await get("/docs")).html), /Upoch Verified\. Beside the mark, Upoch's own status/);
   // a report with no Upoch workflow linked shows nothing of it
   assert.doesNotMatch(plain((await get("/reports/467")).html), /Recoverable|Upoch/);
   // on a desk agent's page, by its ERC-8004 identity, with the way to the evidence
