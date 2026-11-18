@@ -530,6 +530,32 @@ still read, so nothing a coin pays into an agent's compute credit is missed.
 - **Switch.** The owner's `lockedpay` switch hides every claim and stops the keeper's sweeps at once; the chain is still
   read, and anyone can still sweep on the chain itself.
 
+## Agent treasury
+
+`src/treasury.ts`, off until `TREASURY=on` with `FACTOR_TREASURY` and `FACTOR_TREASURY_BLOCK` (both written by
+`contracts/deploy-treasury.sh`). The rules are `docs/TREASURY.md`; the contract `contracts/src/FactorTreasury.sol`.
+
+- **Reading.** `Deposited`, `Withdrawn`, `RulesSet`, `LineRepaid`, `ComputePrepaid`, `ClaimBought`, `GuaranteeBacked`,
+  `VouchBacked`, `Skipped` and `Ran` into `treasury_agents` (one row a treasury: what it holds, its rules, its totals and
+  the next run, as JSON) and `treasury_moves` (one row a log), taken back by a reorg like the other tables. Each treasury
+  that holds ETH or has rules is read back from `balanceOf`, `rulesOf`, `totalsOf` and the contract's own `preview` for
+  the claims on sale now (the biggest discount first, ten at most), every minute at most.
+- **Compute.** `ComputePrepaid` becomes a lot of compute credit that is the agent's own at once (`compute_lots`, source
+  `treasury`, state `kept`), priced at the ETH price of the moment like a coin's. It is read even while the owner's
+  switch is off, so no prepayment is missed.
+- **The keeper** (action `treasury`, 2,500,000 gas). `run(agent, claims)` when the last preview says a run would do
+  something, with the claims the preview would buy; one treasury at most every `TREASURY_EVERY_MIN` (30),
+  `TREASURY_PER_PASS` (5) a pass, simulated before it is sent. It runs last in a pass.
+- **API.** `GET /v1/treasury` (the treasuries, the latest run first), `/v1/treasury/about`, `/v1/treasury/<address or
+  name>` (what it holds, its rules, its totals, its runs with every step, the next run; an address that never used it
+  reads as an empty treasury) and `/v1/treasury/<address or name>/preview` (the next run alone); `state.treasury`; an
+  agent's page has `treasury`; a credit report has `treasury` with the receipts, which change no point of the score.
+  Treasuries of Factor's own wallets are marked and left out of the totals. Health has `treasury`.
+- **Accounts.** A Factor account's `deposit`, `setRules`, `withdraw` and `run` on the treasury contract are paid for like
+  its other calls.
+- **Switch.** The owner's `treasury` switch hides every treasury and stops the keeper's runs at once; the chain is still
+  read, anyone can still run a treasury on the chain itself, and an agent's withdrawal needs nobody.
+
 ## Bounties
 
 `src/bounties.ts`, off until `BOUNTIES=on` with `FACTOR_BOUNTY` and `FACTOR_BOUNTY_BLOCK` (both written by

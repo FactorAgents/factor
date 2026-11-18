@@ -147,7 +147,7 @@ export interface RaetoAbout { models: string[]; feePct: number; routeFeeMostUsd:
 /** What an agent's (or a job's) credit went on through raeto/auto: the dollars, the calls, and which models Raeto picked. */
 export interface RaetoSpend { spentUsd: number; calls: number; models: { model: string; tier: string; calls: number; usd: number }[] }
 /** What an agent has left to spend on models, and the lots of credit it came from: compute advances, its coin's fees, or its credit line. */
-export interface ComputeCredit { agent: string; balanceUsd: number; enabled: boolean; lots: { job: number; at: string; usd: number | null; spentUsd: number; state: "open" | "kept" | "closed"; /** a lot its coin's fees or its credit line paid for, not a job's advance */ paidBy?: "coin" | "line" }[]; /** what it spent through raeto/auto, while that is served */ raeto?: RaetoSpend }
+export interface ComputeCredit { agent: string; balanceUsd: number; enabled: boolean; lots: { job: number; at: string; usd: number | null; spentUsd: number; state: "open" | "kept" | "closed"; /** a lot its coin's fees or its credit line paid for, not a job's advance */ paidBy?: "coin" | "line" | "treasury" }[]; /** what it spent through raeto/auto, while that is served */ raeto?: RaetoSpend }
 /**
  * What a program needs to spend an agent's compute credit. `baseURL` with `apiKey` for Anthropic's library (Claude);
  * `openaiBaseURL` with `apiKey` for OpenAI's library or any that speaks its shape, for every model of the second door
@@ -972,4 +972,40 @@ export interface VouchSent extends Sent {
   voucher?: string; bondEth?: string; freeEth?: string;
   /** the vouch's state on the chain right after */
   state?: VouchState;
+}
+
+// ---------- agent treasury ----------
+
+/** An agent's treasury rules, as the engine shows them: wei in text. A run does the uses in this order. */
+export interface TreasuryRules {
+  floor: string;
+  repay: { on: boolean; daily: string };
+  compute: { on: boolean; daily: string };
+  claims: { on: boolean; daily: string; maxPrice: string; minDiscountBps: number; minScore: number; deliveredOnly: boolean };
+  guarantee: { on: boolean; upTo: string };
+  vouch: { on: boolean; upTo: string };
+}
+/** What a run would do now, as the contract's own preview says it. */
+export interface TreasuryNext { claims: { id: number; price: string }[]; repay: string; compute: string; buy: string; guarantee: string; vouch: string; total: string; lineFirst: boolean; readAt: string }
+/** One step of a run: a receipt. */
+export interface TreasuryReceipt { kind: "repay" | "compute" | "claim" | "guarantee" | "vouch"; text: string; amount: string; amountEth: number; at: string; tx: string; claim?: number }
+export interface TreasuryRun { tx: string; at: string; by: string | null; spent: string; spentEth: number; steps: TreasuryReceipt[]; skipped: number }
+export interface TreasuryTotals { deposited: string; withdrawn: string; repaid: string; compute: string; claims: string; guarantee: string; vouch: string; runs: number; claimsBought: number }
+/** One agent's treasury (Factor.treasury). */
+export interface Treasury {
+  agent: string; name: string; named: boolean; balance: string; balanceEth: number;
+  /** what a run may spend now: what it holds above its floor */
+  spendable: string;
+  rules: TreasuryRules | null; totals: TreasuryTotals | null; runs: TreasuryRun[]; next: TreasuryNext | null; openedAt: string | null; factorOwn: boolean;
+}
+export interface TreasuryAbout {
+  enabled: boolean; contract: string | null; fromBlock?: string | null; chainId: number;
+  rules: { minStep: string; maxClaims: number; day: number; order: string[] };
+  totals: { treasuries: number; held: string; runs: number; repaid: string; compute: string; claims: string; guarantee: string; vouch: string; factorOwn: number } | null;
+}
+/** What a treasury call did (Factor.treasuryDeposit and the rest). */
+export interface TreasurySent extends Sent {
+  agent: string;
+  /** what the treasury holds after it, in ETH as text */
+  balanceEth: string;
 }

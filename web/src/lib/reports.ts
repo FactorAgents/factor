@@ -4,6 +4,7 @@
 import { Refusal } from "./desk";
 import { signText, type Provider } from "./wallet";
 import type { Recovery } from "./recoverable";
+import type { TreasuryReceipt } from "./types";
 
 export type ReportSource = "factor-desk" | "factor-lines" | "priors" | "erc8004-reputation" | "erc8004-validation" | "factor-reviews" | "erc8004-identity";
 
@@ -40,6 +41,8 @@ export interface Report {
   recovery?: Recovery | null;
   /** the Replay-verified mark with Zolva (engine/src/zolva.ts): only on Zolva's own identity, while every public agent matches */
   replay?: Replay | null;
+  /** what its treasury did by its own rules, each step a receipt (engine/src/treasury.ts): never in the score */
+  treasury?: { agent: string; balance: string; runs: number; receipts: TreasuryReceipt[] } | null;
 }
 
 /** A report's place on ERC-8004: written (since when, the transaction, its file), or prepared and not yet written. */

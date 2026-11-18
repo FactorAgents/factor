@@ -24,7 +24,7 @@
 
 import { createHash, randomBytes } from "node:crypto";
 import { decodeEventLog, decodeFunctionData, encodeAbiParameters, encodeFunctionData, hashMessage, keccak256, toFunctionSelector, type Abi, type AbiFunction, type Hex } from "viem";
-import { factorAccountAbi, factorAccountsAbi, factorBountyAbi, factorDeskAbi, factorGuaranteeAbi, factorLineAbi, factorLineAccountAbi, factorMilestonesAbi, factorVouchAbi } from "./abi/index.js";
+import { factorAccountAbi, factorAccountsAbi, factorBountyAbi, factorDeskAbi, factorGuaranteeAbi, factorLineAbi, factorLineAccountAbi, factorMilestonesAbi, factorTreasuryAbi, factorVouchAbi } from "./abi/index.js";
 import { normalizeAddress } from "./chain/address.js";
 import { nodeBusy, reason, revertOf, type Chain, type ChainLog, type Receipt } from "./chain/chain.js";
 import type { EngineDb } from "./chain/db.js";
@@ -221,7 +221,9 @@ const BOUNTY_PAID = selectorsOf(factorBountyAbi as Abi, ["post", "enter", "pick"
 const MILESTONES_PAID = selectorsOf(factorMilestonesAbi as Abi, ["post", "accept", "reject", "step", "collect"]);
 // vouching (../vouching.ts): a voucher's bond and offers, an agent's acceptance and release, and the steps anyone may take
 const VOUCH_PAID = selectorsOf(factorVouchAbi as Abi, ["addBond", "takeBond", "offerLine", "offerCover", "accept", "withdraw", "release", "settle", "collect"]);
-const ERRORS = [...DESK, ...ACCOUNT, ...(factorLineAbi as Abi), ...(factorLineAccountAbi as Abi), ...(factorGuaranteeAbi as Abi), ...(factorBountyAbi as Abi), ...(factorMilestonesAbi as Abi), ...(factorVouchAbi as Abi)].filter((x) => x.type === "error") as Abi;
+// the agent treasury (../treasury.ts): putting ETH in, the agent's own rules and withdrawal, and a run anyone may make
+const TREASURY_PAID = selectorsOf(factorTreasuryAbi as Abi, ["deposit", "withdraw", "setRules", "run"]);
+const ERRORS = [...DESK, ...ACCOUNT, ...(factorLineAbi as Abi), ...(factorLineAccountAbi as Abi), ...(factorGuaranteeAbi as Abi), ...(factorBountyAbi as Abi), ...(factorMilestonesAbi as Abi), ...(factorVouchAbi as Abi), ...(factorTreasuryAbi as Abi)].filter((x) => x.type === "error") as Abi;
 const ERC1271_VALID = "0x1626ba7e";
 
 export interface Refused { status: number; error: string; refused?: { name: string; args: string[] } }
@@ -262,6 +264,8 @@ export class Accounts {
   milestones: (() => string | null) | null = null;
   /** the vouching contract, while vouching is read (../vouching.ts): set by the engine */
   vouch: (() => string | null) | null = null;
+  /** the treasury contract, while treasuries are read (../treasury.ts): set by the engine */
+  treasury: (() => string | null) | null = null;
 
   constructor(
     readonly cfg: AccountsConfig,
@@ -304,6 +308,8 @@ export class Accounts {
         if (!MILESTONES_PAID.has(selector)) return "On the milestone contract, Factor pays for hiring in stages, accepting or rejecting a stage, and a step.";
       } else if (this.vouch?.() && c.to === this.vouch()) {
         if (!VOUCH_PAID.has(selector)) return "On the vouching contract, Factor pays for a voucher's bond and offers, accepting or releasing a vouch, and settling one.";
+      } else if (this.treasury?.() && c.to === this.treasury()) {
+        if (!TREASURY_PAID.has(selector)) return "On the treasury contract, Factor pays for putting ETH in, setting rules, taking ETH out and a run.";
       } else if (this.lines?.() && c.to === this.lines()!.line) {
         if (!LINE_PAID.has(selector)) return "On the credit line contract, Factor pays for opening a line, drawing and repaying.";
       } else if (this.lines?.() && c.to === this.lines()!.accountOf(account)) {
@@ -442,7 +448,8 @@ export class Accounts {
     const bt = this.bounty?.() ?? null;
     const ml = this.milestones?.() ?? null;
     const vo = this.vouch?.() ?? null;
-    if (to !== this.desk && !this.store.get(to) && to !== this.cfg.factory && !(l && (to === l.line || l.accountOf(normalizeAddress(body.from) ?? "") === to)) && !(gt && to === gt) && !(bt && to === bt) && !(ml && to === ml) && !(vo && to === vo)) return no(400, "only the desk and accounts are read here");
+    const tr = this.treasury?.() ?? null;
+    if (to !== this.desk && !this.store.get(to) && to !== this.cfg.factory && !(l && (to === l.line || l.accountOf(normalizeAddress(body.from) ?? "") === to)) && !(gt && to === gt) && !(bt && to === bt) && !(ml && to === ml) && !(vo && to === vo) && !(tr && to === tr)) return no(400, "only the desk and accounts are read here");
     if (body.code === true) return { result: (await this.chain.code(to)) as Hex };
     let value = 0n;
     if (typeof body.value === "string" && /^\d{1,30}$/.test(body.value)) value = BigInt(body.value);

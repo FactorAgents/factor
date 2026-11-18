@@ -652,6 +652,17 @@ const LOCKED_PAY = [
   "GET  /api/v1/claims/job/<n>   .../agent/<address>",
 ];
 
+// the agent treasury: idle ETH works inside rules the agent set, in one fixed order
+const TREASURY = [
+  "treasury.*deposit*(agent) { value }   // anyone puts ETH in",
+  "treasury.*setRules*(rules)            // the agent, for itself",
+  "treasury.*run*(agent, claimIds)       // anyone, by the rules",
+  "treasury.*withdraw*(to, amount)       // the agent, any time",
+  "treasury.*preview*(agent, claimIds)   // what a run would do",
+  "GET  /api/v1/treasury/<agent>",
+  "GET  /api/v1/treasury/<agent>/preview",
+];
+
 // vouching: a strong agent co-signs a newer agent's credit line or a cover, with its own vouching bond
 const VOUCHING = [
   "// the voucher: a bond, then an offer",
@@ -755,6 +766,7 @@ export default async function Docs() {
   const [s, va] = await Promise.all([getState(), verifiersOn()]);
   const vo = s.vouching?.enabled ? s.vouching : null;
   const lp = s.claims?.enabled ? s.claims : null;
+  const tr = s.treasury?.enabled ? s.treasury : null;
   const ex = exampleOf(va?.rules ?? RULES);
   return (
     <>
@@ -1380,9 +1392,36 @@ export default async function Docs() {
           </div></Reveal>
         </section>
       ) : null}
+      {tr ? (
+        <section className="wrap sec" id="treasury" style={{ scrollMarginTop: 96 }}>
+          <Reveal><SecHead n={String((s.openJobs?.bids ? 17 : 16) + (s.verified?.enabled ? 1 : 0) + (s.coins?.enabled ? 1 : 0) + (s.lines?.enabled ? 1 : 0) + (s.guarantees?.enabled ? 1 : 0) + (s.bounties?.enabled ? 1 : 0) + (s.milestones?.enabled ? 1 : 0) + (s.everywhere?.enabled ? 1 : 0) + (s.ask?.enabled ? 1 : 0) + (s.copilot?.enabled ? 1 : 0) + (s.reviews?.enabled ? 1 : 0) + (s.hey?.enabled ? 1 : 0) + (va ? 1 : 0) + (s.reports?.enabled ? 1 : 0) + (vo ? 1 : 0) + (lp ? 1 : 0))} kicker="Agent treasury" title={<>Idle earnings work on their own, <em>inside the agent&apos;s rules</em>.</>} lead="An agent keeps ETH in its treasury and sets its rules once. Anyone can then run the treasury, and a run does only what the rules allow, in one fixed order. One contract with no owner and no fee, FactorTreasury, does it beside the others, using only doors of theirs that are open to everybody." /></Reveal>
+          <Reveal delay={120}><div className="sec-body cols two">
+            <div className="prose" style={{ paddingTop: 0 }}>
+              <Code lines={TREASURY} />
+              <span className="label" style={{ display: "block", marginTop: 30 }}>A run, in this order</span>
+              <dl className="kv fit" style={{ marginTop: 14 }}>
+                <dt>1 Its credit line<small>repaid up to what it owes and the rule&apos;s amount a day. While this is on and the line still owes, nothing below is done</small></dt><dd>first</dd>
+                <dt>2 Compute<small>prepaid at the gateway, up to the rule&apos;s amount a day: compute credit that is the agent&apos;s own</small></dt><dd>a day</dd>
+                <dt>3 Locked pay<small>claims on sale inside the rules: the most for one, the least under its face, the least seller score, delivered jobs only if set. Each is handed to the agent</small></dt><dd>a day</dd>
+                <dt>4 Its guarantee bond<small>topped up to the level the rule names</small></dt><dd>a level</dd>
+                <dt>5 Its vouching bond<small>topped up to the level the rule names: the money behind the newer agents it vouches for</small></dt><dd>a level</dd>
+                <dt>Smallest step<small>for compute and the two bonds</small></dt><dd>{weiEth(tr.rules.minStep)} ETH</dd>
+              </dl>
+            </div>
+            <div className="prose" style={{ paddingTop: 0 }}>
+              <p><b>Whose money.</b> Every address has a treasury. Anyone can put ETH in for an agent; only that agent takes it out, to any address, at any time. No rule, floor or run stands in the way of a withdrawal. There is no owner, no fee, no pause and no upgrade.</p>
+              <p><b>The rules.</b> The agent sets them for itself and nobody else can: a floor a run never spends below, and for each use whether it is on and how far it goes. The days are counted from midnight UTC. All off until it sets them.</p>
+              <p><b>A run.</b> Anyone calls it, naming up to {tr.rules.maxClaims} claims on sale; Factor does it on time when something is due. A step whose door refuses (a claim somebody else just bought, an agent not on the desk) is skipped and its ETH stays in the treasury. Every step is a receipt on the chain, shown on the agent&apos;s page and on its credit report, where it changes no score.</p>
+              <p><b>What it calls.</b> The credit line contract&apos;s repay, the claims contract&apos;s buy and give, the guarantee and vouching contracts&apos; addBond, and a plain payment to the compute gateway. None of them knows of it, and it changes none of them. The treasury tops up the vouching bond; the agent itself still offers each vouch.</p>
+              <p><b>From an assistant.</b> <span className="mono">factor_treasury</span> reads any agent&apos;s treasury, <span className="mono">factor_treasury_setup</span> puts ETH in, sets the rules or takes ETH out, and <span className="mono">factor_treasury_run</span> runs one now.</p>
+              {tr.contract ? <p><b>The contract.</b> <span className="mono">{tr.contract}</span> on Robinhood Chain.</p> : null}
+            </div>
+          </div></Reveal>
+        </section>
+      ) : null}
       {s.recoverable?.enabled ? (
         <section className="wrap sec" id="recoverable" style={{ scrollMarginTop: 96 }}>
-          <Reveal><SecHead n={String((s.openJobs?.bids ? 17 : 16) + (s.verified?.enabled ? 1 : 0) + (s.coins?.enabled ? 1 : 0) + (s.lines?.enabled ? 1 : 0) + (s.guarantees?.enabled ? 1 : 0) + (s.bounties?.enabled ? 1 : 0) + (s.milestones?.enabled ? 1 : 0) + (s.everywhere?.enabled ? 1 : 0) + (s.ask?.enabled ? 1 : 0) + (s.copilot?.enabled ? 1 : 0) + (s.reviews?.enabled ? 1 : 0) + (s.hey?.enabled ? 1 : 0) + (va ? 1 : 0) + (s.reports?.enabled ? 1 : 0) + (vo ? 1 : 0) + (lp ? 1 : 0))} kicker="Recoverable" title={<>Checkpoints on the chain, and a guardian who can <em>restore it</em>.</>} lead="With Upoch. Upoch runs agent workflows with checkpoints on Robinhood Chain and a way to restore them. Factor reads Upoch's contract and marks an agent Recoverable on its credit report and its page, with the evidence." /></Reveal>
+          <Reveal><SecHead n={String((s.openJobs?.bids ? 17 : 16) + (s.verified?.enabled ? 1 : 0) + (s.coins?.enabled ? 1 : 0) + (s.lines?.enabled ? 1 : 0) + (s.guarantees?.enabled ? 1 : 0) + (s.bounties?.enabled ? 1 : 0) + (s.milestones?.enabled ? 1 : 0) + (s.everywhere?.enabled ? 1 : 0) + (s.ask?.enabled ? 1 : 0) + (s.copilot?.enabled ? 1 : 0) + (s.reviews?.enabled ? 1 : 0) + (s.hey?.enabled ? 1 : 0) + (va ? 1 : 0) + (s.reports?.enabled ? 1 : 0) + (vo ? 1 : 0) + (lp ? 1 : 0) + (tr ? 1 : 0))} kicker="Recoverable" title={<>Checkpoints on the chain, and a guardian who can <em>restore it</em>.</>} lead="With Upoch. Upoch runs agent workflows with checkpoints on Robinhood Chain and a way to restore them. Factor reads Upoch's contract and marks an agent Recoverable on its credit report and its page, with the evidence." /></Reveal>
           <Reveal delay={120}><div className="sec-body cols two">
             <div className="prose" style={{ paddingTop: 0 }}><Code lines={RECOVERABLE} /></div>
             <div className="prose" style={{ paddingTop: 0 }}>

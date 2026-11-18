@@ -323,7 +323,7 @@ export interface LedgerEvent {
 export interface Burn { n: number; at: string; eth: number; tokens: number; tx: string }
 /** The burn pot, read from the chain: what it holds, when the next burn may go and what it would spend. */
 export interface BurnPot { potEth: number; nextEth: number; nextAt: string | null; ready: boolean; open: boolean; count: number; ethSpent: number; lastAt: string | null; everyMin: number; smallestEth: number; bonded?: boolean; lastFeesAt?: string | null }
-export interface LogEntry { date: string; area: string; title: string; text: string; /** shown only while this is switched on */ only?: "raeto" | "hey" | "reports" | "reports8004" | "vouching" | "claims" }
+export interface LogEntry { date: string; area: string; title: string; text: string; /** shown only while this is switched on */ only?: "raeto" | "hey" | "reports" | "reports8004" | "vouching" | "claims" | "treasury" }
 
 export interface Params {
   advanceMaxPct: number;     // of the locked payment
@@ -341,7 +341,7 @@ export interface Compute { enabled: boolean; markupPct: number; maxTokens: numbe
 /** What credit went on through Raeto: which models answered, and what each cost off the credit. */
 export interface RaetoSpend { spentUsd: number; calls: number; models: { model: string; tier: string; calls: number; usd: number }[] }
 /** What an agent has left to spend on models, and the advances it came from. */
-export interface Credit { raeto?: RaetoSpend; agent: string; balanceUsd: number; enabled: boolean; lots: { job: number; at: string; usd: number | null; spentUsd: number; state: "open" | "kept" | "closed"; /** paid by the agent's own coin or a draw on its credit line, not by an advance on a job */ paidBy?: "coin" | "line" }[] }
+export interface Credit { raeto?: RaetoSpend; agent: string; balanceUsd: number; enabled: boolean; lots: { job: number; at: string; usd: number | null; spentUsd: number; state: "open" | "kept" | "closed"; /** paid by the agent's own coin or a draw on its credit line, not by an advance on a job */ paidBy?: "coin" | "line" | "treasury" }[] }
 
 export interface FactorState {
   /** engine: read from the chain. sample: made-up figures for building the site. none: no engine was given. */
@@ -421,6 +421,8 @@ export interface FactorState {
   vouching?: VouchingAbout;
   /** selling locked pay (engine/src/claims.ts): whether it is on, the contract, the rules and the totals */
   claims?: ClaimsAbout;
+  /** the agent treasury (engine/src/treasury.ts): whether it is on, the contract, the order of a run and the totals */
+  treasury?: TreasuryAbout;
 }
 
 /** One of a firm's agents and its part of the firm's work: the lead's is the firm's jobs, a member's the sub-jobs it took under them. */
@@ -851,3 +853,34 @@ export interface ClaimsAbout {
 }
 /** An agent's pay account, the claims it listed or sold and the claims it bought or holds. */
 export interface AgentClaims { account: string | null; key: string | null; debt: Wei; claims: ClaimView[]; bought: ClaimView[] }
+
+// ---------- the agent treasury (engine/src/treasury.ts; contracts/src/FactorTreasury.sol) ----------
+
+/** An agent's treasury rules: wei in text. A run does the uses in this order. */
+export interface TreasuryRules {
+  floor: string;
+  repay: { on: boolean; daily: string };
+  compute: { on: boolean; daily: string };
+  claims: { on: boolean; daily: string; maxPrice: string; minDiscountBps: number; minScore: number; deliveredOnly: boolean };
+  guarantee: { on: boolean; upTo: string };
+  vouch: { on: boolean; upTo: string };
+}
+/** What a run would do now, as the contract's own preview says it. */
+export interface TreasuryNext { claims: { id: number; price: string }[]; repay: string; compute: string; buy: string; guarantee: string; vouch: string; total: string; lineFirst: boolean; readAt: string }
+/** One step of a run: a receipt. */
+export interface TreasuryReceipt { kind: "repay" | "compute" | "claim" | "guarantee" | "vouch"; text: string; amount: string; amountEth: number; at: string; tx: string; claim?: number }
+export interface TreasuryRun { tx: string; at: string; by: string | null; spent: string; spentEth: number; steps: TreasuryReceipt[]; skipped: number }
+export interface TreasuryTotals { deposited: string; withdrawn: string; repaid: string; compute: string; claims: string; guarantee: string; vouch: string; runs: number; claimsBought: number }
+/** One agent's treasury, as the engine gives it. */
+export interface TreasuryView {
+  agent: string; name: string; named: boolean; balance: string; balanceEth: number;
+  /** what a run may spend now: what it holds above its floor */
+  spendable: string;
+  rules: TreasuryRules | null; totals: TreasuryTotals | null; runs: TreasuryRun[]; next: TreasuryNext | null; openedAt: string | null; factorOwn: boolean;
+}
+/** The agent treasury: whether it is on, the contract, the order of a run and the totals. */
+export interface TreasuryAbout {
+  enabled: boolean; contract: string | null; fromBlock?: string | null; chainId?: number;
+  rules: { minStep: string; maxClaims: number; day: number; order: string[] };
+  totals: { treasuries: number; held: string; runs: number; repaid: string; compute: string; claims: string; guarantee: string; vouch: string; factorOwn: number } | null;
+}

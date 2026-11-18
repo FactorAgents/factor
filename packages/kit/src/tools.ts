@@ -10,7 +10,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { formatEther } from "viem";
 import { z } from "zod";
-import { bountyParts, Factor, Refusal, toWei, type Agent, type Bounty, type CoinPermission, type Job, type MilestonePlan, type ModelReceiptInput, type VerdictModel, type VerifiedErc8004, type Verifier, type VerifierCase, type VerifiersAbout, type Vouch } from "./index.js";
+import { bountyParts, Factor, Refusal, toWei, treasuryText, treasuryNextText, type Agent, type Bounty, type CoinPermission, type Job, type MilestonePlan, type ModelReceiptInput, type VerdictModel, type VerifiedErc8004, type Verifier, type VerifierCase, type VerifiersAbout, type Vouch } from "./index.js";
 import { CASE_WORDS, makerName, VERIFIERS_GASLESS } from "./verifiers.js";
 import { askedText } from "./ask.js";
 import { reviewsText } from "./reviews.js";
@@ -344,7 +344,7 @@ export const TOOLS: Tool[] = [
     async run(f, a) {
       const [c, s] = await Promise.all([f.computeCredit(a.agent as string | undefined), f.state()]);
       const usd = (n: number) => `$${n.toFixed(n > 0 && n < 1 ? 4 : 2)}`;
-      const lots = c.lots.map((l) => `${l.paidBy === "coin" ? "its coin's fees" : l.paidBy === "line" ? "its credit line" : `job ${l.job}`}: ${l.usd === null ? "being priced" : `${usd(l.spentUsd)} of ${usd(l.usd)} spent`}${l.state === "closed" ? " (refunded, closed)" : ""}`).join("; ");
+      const lots = c.lots.map((l) => `${l.paidBy === "coin" ? "its coin's fees" : l.paidBy === "line" ? "its credit line" : l.paidBy === "treasury" ? "its treasury" : `job ${l.job}`}: ${l.usd === null ? "being priced" : `${usd(l.spentUsd)} of ${usd(l.usd)} spent`}${l.state === "closed" ? " (refunded, closed)" : ""}`).join("; ");
       const direct = s.compute?.models.length ? ` Claude directly, per million tokens: ${s.compute.models.map((m) => `${m.id} ${usd(m.inUsd)} in / ${usd(m.outUsd)} out`).join(", ")}.` : "";
       const router = s.compute?.router?.enabled ? ` And ${s.compute.router.models} models from every maker (GPT, Claude, Gemini, Grok, DeepSeek, Llama, Mistral and more): factor_compute_models lists them.` : "";
       const raeto = s.compute?.raeto ? ` Or raeto/auto, which picks the model for each request: a call costs what Raeto charged for it, with its ${s.compute.raeto.feePct}% fee and Factor's margin.` : "";
@@ -971,6 +971,78 @@ export const TOOLS: Tool[] = [
       if (!c) return `Job ${a.job} has no cover.`;
       const next = c.next ? ` Next: ${c.next.what === "pays-if-not-delivered" ? `if not delivered by ${c.next.at}, the cover is paid to the customer` : c.next.what === "releases" ? `the cover goes back to the bond once the job settles (${c.next.at} at the latest)` : c.next.what === "tie" ? `it is tied to its job by ${c.next.at}` : c.next.what === "pays" ? "the cover is being paid to the customer" : "it lapses back to the bond"}.` : "";
       return `Job ${a.job}: ${c.coverEth} ETH of cover from ${c.agentName}'s guarantee bond, fee ${c.feeEth} ETH. ${c.state === "paid" ? `Not delivered: ${c.paidEth ?? c.coverEth} ETH was paid to the customer.` : c.state === "released" ? "Delivered: the cover went back to the bond." : c.state === "declined" ? "Declined: the customer had the price and the fee back." : c.state === "lapsed" ? "Never tied to a job: it lapsed." : c.state === "reserved" ? "Reserved, not tied to the job yet." : "Covered."}${next}`;
+    },
+  },
+  {
+    name: "factor_treasury", readOnly: true,
+    input: { agent: z.string().optional().describe("An agent's name or address. Left out: this wallet's own treasury") },
+    description: "An agent's treasury on Factor: ETH the agent keeps in the treasury contract, which works on its own inside rules the agent set once. Says what it holds, the floor a run never spends below, the uses that are on in their fixed order (repay its credit line first, prepay compute, buy locked pay inside its rules, top up its guarantee bond, top up its vouching bond), the latest runs with every step, and what the next run would do. Only the agent can take ETH out, at any time. Reads only.",
+    async run(f, a) {
+      const about = await f.treasuryAbout();
+      if (!about.enabled) return "The agent treasury is not switched on yet.";
+      const t = await f.treasury(typeof a.agent === "string" ? a.agent : undefined);
+      return t ? treasuryText(t) : "No agent by that name or address.";
+    },
+  },
+  {
+    name: "factor_treasury_setup", readOnly: false,
+    input: {
+      deposit: amount.optional().describe("ETH to put into this wallet's treasury, as text"),
+      withdraw: z.union([amount, z.literal("all")]).optional().describe('ETH to take out of this wallet\'s treasury, to this wallet. "all" for everything. No rule or floor stands in the way'),
+      rules: z.object({
+        floorEth: amount.optional().describe("ETH a run never spends below"),
+        repayDailyEth: amount.optional().describe("Use 1 on: repay this agent's own credit line first, at most this much a day"),
+        computeDailyEth: amount.optional().describe("Use 2 on: prepay compute at the gateway, at most this much a day"),
+        claimsDailyEth: amount.optional().describe("Use 3 on: buy locked pay, at most this much a day. Needs claimMaxPriceEth"),
+        claimMaxPriceEth: amount.optional().describe("The most for one claim"),
+        claimMinDiscountPct: z.number().min(0).max(100).optional().describe("A claim must be at least this many percent under what its job pays"),
+        claimMinScore: z.number().int().min(0).max(1000).optional().describe("The least desk score of the seller's pay account"),
+        claimDeliveredOnly: z.boolean().optional().describe("Only claims whose job is already delivered"),
+        guaranteeUpToEth: amount.optional().describe("Use 4 on: top up this agent's guarantee bond to this level"),
+        vouchUpToEth: amount.optional().describe("Use 5 on: top up this agent's vouching bond to this level"),
+      }).optional().describe("The rules, whole: they replace the ones set before. A use with no amount is off"),
+    },
+    description: "Set up this wallet's treasury on Factor: put ETH in, set the rules, or take ETH out. A deposit SPENDS ETH from this wallet into its own treasury, held to the day's cap; it comes out again whenever this wallet asks. The rules are the floor and, for each use, how far it goes: repay its credit line (a day), prepay compute (a day), buy locked pay (a day, per claim, least discount, least seller score, delivered only), its guarantee bond and its vouching bond (a level). Anyone can then run the treasury and Factor does so on time; a run does only what the rules allow, in that order.",
+    async run(f, a, spending) {
+      need(f);
+      const said: string[] = [];
+      if (typeof a.deposit === "string") {
+        const v = toWei(a.deposit);
+        spending?.check(v, false);
+        const r = await f.treasuryDeposit(a.deposit);
+        spending?.add(v);
+        said.push(`Put ${a.deposit} ETH in: the treasury holds ${r.balanceEth} ETH. ${r.explorer}`);
+      }
+      if (a.rules && typeof a.rules === "object") {
+        const x = a.rules as Record<string, unknown>;
+        const s = (k: string) => (typeof x[k] === "string" ? (x[k] as string) : undefined);
+        if (s("claimsDailyEth") && !s("claimMaxPriceEth")) return "To buy locked pay, say the most for one claim too (claimMaxPriceEth).";
+        const r = await f.setTreasuryRules({
+          ...(s("floorEth") ? { floorEth: s("floorEth")! } : {}),
+          ...(s("repayDailyEth") ? { repay: { dailyEth: s("repayDailyEth")! } } : {}),
+          ...(s("computeDailyEth") ? { compute: { dailyEth: s("computeDailyEth")! } } : {}),
+          ...(s("claimsDailyEth") ? { claims: { dailyEth: s("claimsDailyEth")!, maxPriceEth: s("claimMaxPriceEth")!, ...(typeof x.claimMinDiscountPct === "number" ? { minDiscountPct: x.claimMinDiscountPct } : {}), ...(typeof x.claimMinScore === "number" ? { minScore: x.claimMinScore } : {}), ...(x.claimDeliveredOnly === true ? { deliveredOnly: true } : {}) } } : {}),
+          ...(s("guaranteeUpToEth") ? { guarantee: { upToEth: s("guaranteeUpToEth")! } } : {}),
+          ...(s("vouchUpToEth") ? { vouch: { upToEth: s("vouchUpToEth")! } } : {}),
+        });
+        said.push(`The rules are set. ${r.explorer}`);
+      }
+      if (a.withdraw !== undefined) {
+        const r = await f.treasuryWithdraw(a.withdraw === "all" ? undefined : String(a.withdraw));
+        said.push(`Took ${a.withdraw === "all" ? "everything" : `${String(a.withdraw)} ETH`} out: the treasury holds ${r.balanceEth} ETH. ${r.explorer}`);
+      }
+      return said.length ? said.join("\n") : "Say what to put in, the rules, or what to take out.";
+    },
+  },
+  {
+    name: "factor_treasury_run", readOnly: false,
+    input: { agent: z.string().regex(/^0x[0-9a-fA-F]{40}$/).optional().describe("The agent's address. Left out: this wallet's own treasury"), claims: z.array(z.number().int().min(1)).max(10).optional().describe("Numbers of claims on sale it may buy, if they are inside its rules") },
+    description: "Run a treasury now by its agent's rules: repay the line first, then compute, locked pay and the bonds, never below the floor. Anyone may run any treasury; Factor does it by itself on time. It moves only that treasury's own ETH, only as its rules allow. Costs only gas.",
+    async run(f, a) {
+      need(f);
+      const before = await f.treasuryNext(typeof a.agent === "string" ? a.agent : undefined).catch(() => null);
+      const r = await f.runTreasury(typeof a.agent === "string" ? a.agent : undefined, Array.isArray(a.claims) ? (a.claims as number[]) : []);
+      return `The treasury ran${before && BigInt(before.total) > 0n ? `. ${treasuryNextText(before).replace("The next run would", "It was due to")}` : "."} It holds ${r.balanceEth} ETH now. ${r.explorer}`;
     },
   },
   {

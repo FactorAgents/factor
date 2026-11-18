@@ -563,7 +563,7 @@ test("each page is small enough for a phone, and nothing loads from another site
   for (const path of PAGES) {
     const { html, headers } = await get(path);
     // the docs, with every section on, are the largest page: still a fraction of one picture
-    assert.ok(html.length < 300_000, `${path} is ${html.length} bytes`);
+    assert.ok(html.length < 320_000, `${path} is ${html.length} bytes`);
     // HEY Research Lab's own badge for Factor in the footer, the links to Factor's page on HEY, and links to a workflow's
     // Upoch Verified page are the exceptions
     assert.doesNotMatch(html, /(src|href)="https?:\/\/(?!ponsfamily\.com|github\.com|x\.com|robinhoodchain\.blockscout\.com\/(tx|address)\/0x|upoch\.tech\/verified\/\d+"|heyresearch\.xyz\/(api\/badge\/factor(\?theme=dark)?"|project\/factor(\?utm_source=badge&amp;utm_medium=html)?"))/, `${path} loads from another site`);
@@ -775,14 +775,14 @@ test("the roadmap: on the home page, every phase in order, what is live checked 
   assert.match(html, /id="roadmap"/);
   const t = text(html);
   assert.match(t, /07 Roadmap The credit layer for AI agents \./);
-  assert.match(t, /19 of 29 phases live/);
+  assert.match(t, /20 of 29 phases live/);
   // the intro counts from the roadmap itself, so it never goes stale
-  assert.match(t, /Nineteen phases are live, the next ten are planned, and more will follow\./);
-  assert.doesNotMatch(t, /Thirteen phases|Fourteen phases|Fifteen phases|Sixteen phases|Seventeen phases|Eighteen phases/);
+  assert.match(t, /Twenty phases are live, the next nine are planned, and more will follow\./);
+  assert.doesNotMatch(t, /Thirteen phases|Fourteen phases|Fifteen phases|Sixteen phases|Seventeen phases|Eighteen phases|Nineteen phases/);
   const names = ["Launch", "Compute on credit", "Pay with Factor", "Agents hire agents", "Agent firms", "Monthly clients", "Agents find their own work", "Agents that bid", "Bounties", "Agent coins", "Factor Score", "Credit lines", "Verified owners", "Guarantees", "Milestones", "Factor everywhere", "Verifiers", "Vouching", "Selling locked pay", "Agent treasury", "Live balance sheets", "Proven income", "The clearing house", "Contagion map", "Risk-priced credit", "Default waterfall", "AI underwriters", "Firm-backed credit", "Credit health index"];
   let at = t.indexOf("Stage 1");
   names.forEach((name, i) => { const k = t.indexOf(`Phase ${String(i + 1).padStart(2, "0")} ${name}`, at); assert.ok(k > at, `phase ${i + 1} ${name} in order`); at = k; });
-  for (const day of ["14 Oct", "15 Oct", "16 Oct", "17 Oct", "18 Oct", "19 Oct", "20 Oct", "22 Oct", "23 Oct", "24 Oct", "28 Oct", "30 Oct", "1 Nov", "2 Nov", "3 Nov", "4 Nov", "9 Nov", "12 Nov", "13 Nov"]) assert.match(t, new RegExp(`Live ${day}`));
+  for (const day of ["14 Oct", "15 Oct", "16 Oct", "17 Oct", "18 Oct", "19 Oct", "20 Oct", "22 Oct", "23 Oct", "24 Oct", "28 Oct", "30 Oct", "1 Nov", "2 Nov", "3 Nov", "4 Nov", "9 Nov", "12 Nov", "13 Nov", "18 Nov"]) assert.match(t, new RegExp(`Live ${day}`));
   assert.match(t, /Live 20 Oct Phase 11 Factor Score/);
   assert.match(t, /Live 28 Oct Phase 10 Agent coins/);
   assert.match(t, /Live 30 Oct Phase 12 Credit lines/);
@@ -794,8 +794,9 @@ test("the roadmap: on the home page, every phase in order, what is live checked 
   assert.match(t, /Live 9 Nov Phase 17 Verifiers/);
   assert.match(t, /Live 12 Nov Phase 18 Vouching/);
   assert.match(t, /Live 13 Nov Phase 19 Selling locked pay/);
-  assert.match(t, /Next Phase 20 Agent treasury The plan is/);
-  assert.equal((t.match(/Planned Phase/g) ?? []).length, 9);
+  assert.match(t, /Live 18 Nov Phase 20 Agent treasury/);
+  assert.match(t, /Next Phase 21 Live balance sheets The plan is/);
+  assert.equal((t.match(/Planned Phase/g) ?? []).length, 8);
   assert.match(t, /Stage 5 Agents fund each other/);
   assert.match(t, /Stage 6 The agent balance sheet/);
   assert.match(t, /Stage 7 Credit from the network/);
@@ -977,7 +978,7 @@ test("Factor everywhere: its page under Protocol with a snippet for each case, t
   const init = await mcp({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "smoke", version: "1" } } });
   assert.equal(init.result.serverInfo.name, "factor");
   const tools = (await mcp({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} })).result.tools;
-  assert.deepEqual(tools.map((x) => x.name).sort(), ["factor_agent", "factor_agents", "factor_ask", "factor_builder_record", "factor_check_agent", "factor_copilot", "factor_credit_leaderboard", "factor_credit_report", "factor_erc8004", "factor_find_agent", "factor_firm_record", "factor_guarantee", "factor_hire_link", "factor_line", "factor_open_jobs", "factor_overview", "factor_record", "factor_reviews", "factor_verified_erc8004", "factor_verifier", "factor_verifier_case", "factor_verifier_cases", "factor_verifiers", "factor_verifiers_about", "factor_vouches"]);
+  assert.deepEqual(tools.map((x) => x.name).sort(), ["factor_agent", "factor_agents", "factor_ask", "factor_builder_record", "factor_check_agent", "factor_copilot", "factor_credit_leaderboard", "factor_credit_report", "factor_erc8004", "factor_find_agent", "factor_firm_record", "factor_guarantee", "factor_hire_link", "factor_line", "factor_open_jobs", "factor_overview", "factor_record", "factor_reviews", "factor_treasury", "factor_verified_erc8004", "factor_verifier", "factor_verifier_case", "factor_verifier_cases", "factor_verifiers", "factor_verifiers_about", "factor_vouches"]);
   assert.ok(tools.every((x) => x.annotations.readOnlyHint === true));
   assert.equal((await fetch(`${BASE}/mcp`)).status, 405);
 
@@ -1515,6 +1516,52 @@ test("the Recoverable mark with Upoch: on a report with its evidence, on an agen
   // with nothing set: no mark, no section, nothing in the docs
   for (const path of ["/docs", "/agents"]) assert.doesNotMatch(plain((await get(path, BARE)).html), /Recoverable|Upoch/, path);
   assert.equal((await get("/agents/486", BARE)).status, 404);
+});
+
+test("the agent treasury: an agent's treasury on its page, the empty ones, the docs, the protocol, the log and the API", async () => {
+  // orbit-ops: 0.42 ETH with a floor, every use on, two runs with each step a receipt, and the next run
+  const orbit = plain((await get("/agents/orbit-ops")).html);
+  const part = orbit.slice(orbit.indexOf("Idle earnings, at work."));
+  assert.ok(part.length > 200, "orbit-ops shows its treasury");
+  assert.match(orbit, /Treasury How the treasury works → Idle earnings, at work\./);
+  assert.match(part, /Holds 0\.4200 ETH Floor a run never spends below it 0\.2500 ETH Above the floor what a run may spend 0\.1700 ETH Runs so far 2/);
+  assert.match(part, /Its rules, in the order of a run 1 Repay its credit line up to 0\.05 ETH a day, before anything else 2 Prepay compute up to 0\.005 ETH a day 3 Buy locked pay up to 0\.04 ETH a day, 0\.02 ETH a claim, 3% or more under its face, seller score 200 or more, delivered jobs only 4 Back its guarantee its guarantee bond kept at 0\.05 ETH 5 Back newer agents its vouching bond kept at 0\.04 ETH/);
+  assert.match(part, /Next run A run now would prepay 0\.005 ETH of compute: 0\.005 ETH in all\./);
+  assert.match(part, /Recent runs .*3 steps .*Locked pay Bought the locked pay of job 414 \(claim 2\) for 0\.0188 ETH Guarantee Added 0\.0100 ETH to its guarantee bond Vouching Added 0\.0200 ETH to its vouching bond/);
+  assert.match(part, /2 steps .*Line Repaid 0\.0120 ETH of its credit line: the line owes nothing Compute Prepaid 0\.0050 ETH of compute at the gateway/);
+  assert.match(part, /Run it now Anyone can run orbit-ops's treasury\. A run does only what its rules allow/);
+  assert.doesNotMatch(part.slice(0, part.indexOf("Run it now")), /sample|demo/i);
+  // lumen-07 put ETH in and set no rules; quill-02 never used it and is shown the way in
+  const lumen = plain((await get("/agents/lumen-07")).html);
+  assert.match(lumen, /A treasury, ready\./);
+  assert.match(lumen, /No rules set yet: a run does nothing until lumen-07 sets them\./);
+  assert.match(lumen, /No run yet\. The first comes once a use is on and there is ETH above the floor\./);
+  const quill = plain((await get("/agents/quill-02")).html);
+  assert.match(quill, /No treasury yet\./);
+  assert.match(quill, /Only the agent can take ETH out, at any time\. Nobody else holds it\./);
+  // the docs, the protocol, the security page and the dev log
+  const docs = plain((await get("/docs")).html);
+  assert.match(docs, /Agent treasury Idle earnings work on their own, inside the agent's rules\./);
+  assert.match(docs, /No rule, floor or run stands in the way of a withdrawal\. There is no owner, no fee, no pause and no upgrade\./);
+  assert.match(docs, /1 Its credit line .* first 2 Compute .* a day 3 Locked pay .* a day 4 Its guarantee bond .* a level 5 Its vouching bond/);
+  assert.match(docs, /factor_treasury reads any agent's treasury/);
+  assert.match(plain((await get("/protocol")).html), /An agent's idle ETH, working inside its own rules\..*The treasury Each agent's treasury/);
+  assert.match(plain((await get("/security")).html), /The treasury/);
+  assert.match(plain((await get("/log")).html), /Agent treasury An agent's idle earnings can now work on their own\./);
+  // the API door
+  const about = await (await fetch(`${BASE}/api/v1/treasury/about`)).json();
+  assert.equal(about.enabled, true);
+  assert.deepEqual(about.rules.order, ["repay", "compute", "claims", "guarantee", "vouch"]);
+  const one = (await (await fetch(`${BASE}/api/v1/treasury/orbit-ops`)).json()).treasury;
+  assert.equal(one.runs.length, 2);
+  assert.equal(one.rules.repay.on, true);
+  assert.equal((await (await fetch(`${BASE}/api/v1/treasury/orbit-ops/preview`)).json()).next.total, "5000000000000000");
+  assert.equal((await (await fetch(`${BASE}/api/v1/treasury/quill-02`)).json()).treasury.balance, "0");
+  assert.equal((await fetch(`${BASE}/api/v1/treasury/nobody-here`)).status, 404);
+  // with nothing set: no section, no word of it but the roadmap's
+  for (const path of ["/agents", "/log", "/docs", "/protocol", "/security"]) {
+    assert.doesNotMatch(plain((await get(path, BARE)).html), /treasury|FactorTreasury/i, `${path} speaks of the treasury while it is off`);
+  }
 });
 
 test("selling locked pay: the page, a job's claim, an agent's pay account, the docs, the protocol and the log", async () => {

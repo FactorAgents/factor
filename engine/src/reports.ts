@@ -42,6 +42,7 @@ import { REPORT_ERC8004_SCHEMA, REPORT_TAG1, reportFile, type ReportOnChain } fr
 import { stopped } from "./switches.js";
 import type { AgentWallets, RecoveryJson } from "./recoverable.js";
 import type { ReplayJson } from "./zolva.js";
+import type { ReportTreasuryJson } from "./treasury.js";
 
 type Env = Record<string, string | undefined>;
 
@@ -317,6 +318,8 @@ export interface ReportJson extends Omit<ScoreResult, "firstAt" | "lastAt"> {
   recovery: RecoveryJson | null;
   /** the Replay-verified mark with Zolva (./zolva.ts): only on Zolva's own identity, while every public agent matches. It changes no point */
   replay: ReplayJson | null;
+  /** the receipts of its treasury (./treasury.ts): each step its treasury took by its own rules. null while the treasury is off or it has none. It changes no point */
+  treasury: ReportTreasuryJson | null;
 }
 
 export interface ReportRow { subject: string; agentId: string | null; wallet: string | null; name: string; score: number; parts: Record<string, number>; pulled: number; flags: string[]; sources: string[]; factorOwn: boolean; rank: number | null; lastAt: string | null }
@@ -359,6 +362,8 @@ export interface ReportsDeps {
   recovery?: (who: AgentWallets) => RecoveryJson | null;
   /** the Replay-verified mark (./zolva.ts) for an identity's number */
   replay?: (agentId: string) => ReplayJson | null;
+  /** the receipts of an agent's treasury (./treasury.ts), by any of its wallets */
+  treasury?: (addresses: (string | null)[]) => ReportTreasuryJson | null;
 }
 
 interface Shared { makers: Map<string, number>; walletMakers: Map<string, Set<string>>; recipients: Map<string, number>; payers: Map<string, number>; deskReg: Map<string, number>; loanWallets: Map<number, Set<string>> }
@@ -942,6 +947,8 @@ export class Reports {
       recovery: who.agentId ? this.d.recovery?.({ owner: who.owner, agentWallet: who.agentWallet }) ?? null : null,
       // the Replay-verified mark: Zolva's own identity only, read from Zolva's public answers; never in the score
       replay: who.agentId ? this.d.replay?.(who.agentId) ?? null : null,
+      // what its treasury did by its own rules, each step a receipt: shown, never in the score
+      treasury: this.d.treasury?.([who.agentWallet, who.owner, ...who.desk]) ?? null,
       claim: claim ? { by: claim.by, name: claim.name, about: claim.about, site: claim.site, x: claim.x, signedAt: new Date(claim.signed_at * 1000).toISOString() } : null,
       links: {
         page, card: `${this.cfg.site}/api/v1/reports/${who.agentId ?? subject}/card.png`, badge: `${this.cfg.site}/api/v1/reports/${who.agentId ?? subject}/badge.svg`, signed: `${this.cfg.site}/api/v1/reports/signed/${who.agentId ?? subject}`,

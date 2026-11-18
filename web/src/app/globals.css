@@ -1666,3 +1666,29 @@ b.ink { color: var(--ink); font-weight: 500; }
   .voucher-row .who { grid-column: 1 / -1; }
   .vouch-who { font-size: 18px; }
 }
+
+/* Agent treasury: the uses in the order of a run, a run's steps as receipts, and the rules form */
+.tr-uses { list-style: none; margin-top: 14px; border-top: 1px solid var(--line); }
+.tr-uses li { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 2px 10px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.tr-uses .tr-n { grid-row: 1 / span 2; font-family: var(--mono); font-size: 12px; letter-spacing: 0.1em; color: var(--dim); padding-top: 3px; }
+.tr-uses .tr-name { font-size: 15px; color: var(--mid); }
+.tr-uses .tr-how { font-size: var(--t-small); color: var(--dim); line-height: 1.5; overflow-wrap: anywhere; }
+.tr-uses li.on .tr-n { color: var(--gilt); }
+.tr-uses li.on .tr-name { color: var(--ink); }
+.tr-uses li.on .tr-how { color: var(--mid); }
+.tr-steps { list-style: none; display: grid; gap: 8px; }
+.tr-steps li { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 12px; align-items: baseline; font-size: var(--t-small); color: var(--mid); line-height: 1.5; overflow-wrap: anywhere; padding: 0; border: 0; }
+.cols .tr-steps { margin-top: 0; }
+.cols .tr-steps li, .cols .tr-uses li:first-child { border-top: 0; }
+.cols .tr-steps li { padding: 0; }
+.cols .tr-uses { margin-top: 14px; }
+.cols .tr-uses li { padding: 12px 0; border-top: 0; }
+.tr-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 24px; margin-top: 14px; }
+.tr-form .field .label { white-space: normal; }
+@media (max-width: 560px) {
+  .tr-form { grid-template-columns: 1fr; }
+  .tr-steps li { grid-template-columns: 1fr; gap: 2px; }
+}
+.tr-acts .act:first-child { border-top: 0; }
+.tr-acts.bare .act:first-child { padding-top: 0; }
+.tr-acts.bare .act .h3 { margin-top: 0; }
