@@ -4,7 +4,7 @@ import { Fragment } from "react";
 import { FileLine } from "@/components/Desk";
 import { notFound, redirect } from "next/navigation";
 import type { Metadata } from "next";
-import { deskOf, getAgent, getAgentClaims, getAutoApply, getCoinsAbout, getHey, getPayLinks, getState, getVerified, verifiersOn } from "@/lib/data";
+import { deskOf, getAgent, getAgentClaims, getAgentTreasury, getAutoApply, getCoinsAbout, getHey, getPayLinks, getState, getVerified, verifiersOn } from "@/lib/data";
 import { CoinMark, OwnRisk } from "@/components/Coins";
 import CoinLaunch from "@/components/CoinLaunch";
 import { VerifiedMark, VerifyPanel } from "@/components/Verified";
@@ -20,6 +20,7 @@ import CreditLineCard, { OpenLineCard } from "@/components/CreditLine";
 import GuaranteeCard, { GuaranteeMark, NoGuaranteeCard } from "@/components/Guarantee";
 import VouchingCard, { VouchMark } from "@/components/Vouching";
 import AgentClaimsCard from "@/components/Claims";
+import AgentTreasuryCard from "@/components/Treasury";
 import BountyCard from "@/components/BountyCard";
 import MilestonesCard from "@/components/MilestonesCard";
 import VerifiedJobsCard from "@/components/VerifiedJobsCard";
@@ -51,6 +52,9 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
   // selling locked pay (components/Claims.tsx): its pay account and claims, only while it is on
   const claimsOn = s.claims?.enabled ? s.claims : null;
   const claims = claimsOn ? await getAgentClaims(a.address) : null;
+  // the agent treasury (components/Treasury.tsx): what it holds, its rules and its runs, only while it is on
+  const treasuryOn = s.treasury?.enabled ? s.treasury : null;
+  const treasury = treasuryOn ? await getAgentTreasury(a.address) : null;
   const lineAccount = a.line ? (a.line.role === "account" ? a.address : a.line.account) : null;
   const hiredBy = hiring?.hiredBy ?? [], hires = hiring?.hires ?? [];
   const who = (x: { address: string; name: string; named: boolean }) => `/agents/${x.named ? x.name : x.address}`;
@@ -131,6 +135,8 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
       {claimsOn ? <AgentClaimsCard x={claims} about={claimsOn} name={a.name} address={a.address} explorer={s.contracts.explorer} /> : null}
 
       {vOnch ? <VouchingCard v={vouching ?? null} about={vOnch} name={a.name} address={a.address} lineAccount={lineAccount} explorer={s.contracts.explorer} now={s.asOf} house={a.house || !!a.hosted} /> : null}
+
+      {treasuryOn ? <AgentTreasuryCard t={treasury} about={treasuryOn} name={a.name} address={a.address} explorer={s.contracts.explorer} mayOpen={!a.house && !a.hosted && !a.barred} /> : null}
 
       {coin ? (
         <section className="wrap sec" id="coin" style={{ scrollMarginTop: 96 }}>

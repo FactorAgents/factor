@@ -53,6 +53,7 @@ import { Milestones } from "./milestones.js";
 import { Verifiers, chainPriceOf, routerAsker, routerLookup } from "./verifiers.js";
 import { Vouching } from "./vouching.js";
 import { Claims } from "./claims.js";
+import { Treasury } from "./treasury.js";
 import { answerSigner, Connect, type AnswerSigner } from "./everywhere.js";
 import { Erc8004Scores } from "./erc8004score.js";
 import { Ask, askModelOf, type AskModel } from "./ask.js";
@@ -161,6 +162,8 @@ export class Engine {
   vouching: Vouching | null = null;
   /** selling locked pay (./claims.ts): claims on jobs' locked payments, read, and pay accounts swept by the keeper */
   claims: Claims | null = null;
+  /** agent treasury (./treasury.ts): treasuries read, and run by their agents' rules by the keeper */
+  treasury: Treasury | null = null;
   /** Factor Connect (./everywhere.ts): marketplaces, their hire links and the webhooks they are sent */
   connect: Connect | null = null;
   /** the Factor Score written to ERC-8004 (./erc8004score.ts) */
@@ -244,7 +247,7 @@ export class Engine {
     for (const [name, l] of this.loops) loops[name] = { lastRunAt: l.lastRunAt, lastOkAt: l.lastOkAt, runs: l.runs, failures: l.failures, waitMs: l.waitMs, backingOff: l.backingOff };
     return {
       config: this.config, state: this.state, problems: this.problems, warnings: this.warnings, lastError: this.lastError, loops, ctx: this.ctx, rpc: this.chain?.health() ?? null, now: this.now,
-      links: { pons: link(this.env.FACTOR_PONS_URL), github: link(this.env.FACTOR_GITHUB_URL), x: link(this.env.FACTOR_X_URL) }, dataDirSet: !!this.env.FACTOR_DATA_DIR?.trim(), profiles: this.profiles, gateway: this.gateway, accounts: this.accounts, house: this.house, demo: this.demo, pulse: this.pulse, deskMind: this.deskMind, launchList: this.launchList, activity: this.activity, matcher: this.matcher, pay: this.pay, subjobs: this.subjobs, recordSigner: this.recordSigner, firms: this.firms, plans: this.plans, erc8004: this.erc8004, openjobs: this.openjobs, autoapply: this.autoapply, verified: this.verified, coins: this.coins, lines: this.lines, guarantees: this.guarantees, bounties: this.bounties, milestones: this.milestones, verifiers: this.verifiers, vouching: this.vouching, claims: this.claims,
+      links: { pons: link(this.env.FACTOR_PONS_URL), github: link(this.env.FACTOR_GITHUB_URL), x: link(this.env.FACTOR_X_URL) }, dataDirSet: !!this.env.FACTOR_DATA_DIR?.trim(), profiles: this.profiles, gateway: this.gateway, accounts: this.accounts, house: this.house, demo: this.demo, pulse: this.pulse, deskMind: this.deskMind, launchList: this.launchList, activity: this.activity, matcher: this.matcher, pay: this.pay, subjobs: this.subjobs, recordSigner: this.recordSigner, firms: this.firms, plans: this.plans, erc8004: this.erc8004, openjobs: this.openjobs, autoapply: this.autoapply, verified: this.verified, coins: this.coins, lines: this.lines, guarantees: this.guarantees, bounties: this.bounties, milestones: this.milestones, verifiers: this.verifiers, vouching: this.vouching, claims: this.claims, treasury: this.treasury,
       connect: this.connect, erc8004Scores: this.erc8004Scores, answerSigner: this.answerSigner, ask: this.ask, copilot: this.copilot, reviews: this.reviews, hey: this.hey, reports: this.reports, reportsErc8004: this.reportsErc8004, recoverable: this.recoverable,
     };
   }
@@ -723,6 +726,17 @@ export class Engine {
     this.ctx.claims = this.claims;
     if (c.claims.enabled && c.claims.note) this.log(`[lockedpay] NOT ON: ${c.claims.note}`);
     else if (c.claims.enabled) this.log(`[lockedpay] on: claims are read from ${c.claims.contract}; the keeper sweeps a pay account once a claimed job has ended or can be ended, or it owes a holder and can pay`);
+    // agent treasury: made whether or not it is on, and reads nothing until TREASURY=on and the contract is given
+    this.treasury = new Treasury({
+      cfg: c.treasury, db, chain: this.chain, chainId: c.chainId, nowS, now: this.now, log: this.log,
+      names: () => this.profiles!.all(),
+      factorOwn: (a) => factorOwn(a) || c.reports.factorWallets.includes(a),
+      listedClaims: () => (this.claims?.on() ? this.claims.list({ state: "listed", limit: 50 }).sort((x, y) => y.discountBps - x.discountBps).map((x) => x.id) : []),
+    });
+    this.ctx.treasury = this.treasury;
+    this.accounts.treasury = () => (this.treasury?.reading() ? c.treasury.contract : null);
+    if (c.treasury.enabled && c.treasury.note) this.log(`[treasury] NOT ON: ${c.treasury.note}`);
+    else if (c.treasury.enabled) this.log(`[treasury] on: treasuries are read from ${c.treasury.contract}; the keeper runs one when its own preview says a run would do something, at most every ${c.treasury.everyMin} minutes each`);
     // HEY builder records: made whether or not they are on, so an agent's link is kept; HEY is asked nothing while off
     this.hey = new Hey({
       cfg: c.hey, db, now: this.now, log: this.log, setters,
@@ -758,6 +772,7 @@ export class Engine {
       signer: () => this.answerSigner,
       onChain: (agentId) => this.reportsErc8004?.ofAgent(agentId) ?? null,
       recovery: (who) => this.recoverable?.of(who) ?? null,
+      treasury: (addresses) => this.treasury?.forReport(addresses) ?? null,
     });
     // credit reports on ERC-8004: made whether or not it is on, so what was written still shows after it is switched off
     this.reportsErc8004 = new ReportsErc8004(c.reportsErc8004, { db, reports: () => this.reports, chain: this.chain, chainId: c.chainId, explorer: c.explorer, now: this.now, nowS, writer: () => this.ctx?.facts.bot ?? null, log: this.log });
@@ -1025,6 +1040,11 @@ export class Engine {
     if (this.claims?.reading()) {
       if ((await this.claims.watch(this.ctx, pass.head)).length && this.api) this.api.forget();
       await this.claims.refresh();
+    }
+    // agent treasury: its logs, then what is read of it (./treasury.ts)
+    if (this.treasury?.reading()) {
+      if ((await this.treasury.watch(this.ctx, pass.head)).length && this.api) this.api.forget();
+      await this.treasury.refresh();
     }
     // an open job whose rule is the best Factor Score is picked as soon as its moment has come (./openjobs.ts)
     try { this.openjobs?.pickDue(); } catch (e) { this.log(`[openjobs] picking failed: ${e instanceof Error ? e.message : String(e)}`); }

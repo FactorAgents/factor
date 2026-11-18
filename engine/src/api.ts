@@ -110,6 +110,7 @@ import type { MilestoneJobLink, Milestones, MilestonesAbout } from "./milestones
 import { MAKERS, VERIFIER_RULES, VERIFY_TAG, type Verifiers, type VerifiersAbout } from "./verifiers.js";
 import type { Vouching, VouchingAbout, VouchState } from "./vouching.js";
 import { CLAIM_RULES, CLAIM_STATES, type Claims, type ClaimsAbout, type ClaimState } from "./claims.js";
+import { TREASURY_RULES, type Treasury, type TreasuryAbout } from "./treasury.js";
 import { VALIDATION_REGISTRY } from "./erc8004.js";
 import { envelope, hireUrl, MOST_AT_ONCE, ANSWER_HOLDS_S, parseId, seal, type AgentAnswer, type AnswerSigner, type Connect } from "./everywhere.js";
 import type { Erc8004Scores } from "./erc8004score.js";
@@ -187,6 +188,8 @@ export interface EngineView {
   vouching?: Vouching | null;
   /** selling locked pay (./claims.ts) */
   claims?: Claims | null;
+  /** agent treasury (./treasury.ts) */
+  treasury?: Treasury | null;
   /** Factor Connect (./everywhere.ts) */
   connect?: Connect | null;
   /** the Factor Score written to ERC-8004 (./erc8004score.ts) */
@@ -750,6 +753,14 @@ export class EngineApi {
       const answer = this.vouchesGet(v, path, query);
       if (answer) return answer;
     }
+    // agent treasury: the order and totals, the treasuries, one agent's, and its next run
+    if (path === "/v1/treasury" || path.startsWith("/v1/treasury/")) {
+      if (from && this.tooMany(from, "treasury-get", 600)) return { status: 429, body: { error: "too many requests: try again in a minute" } };
+      const v = this.view();
+      if (v.state !== "running") return { status: 503, body: { error: "the engine is not reading the chain yet" } };
+      const answer = this.treasuryGet(v, path, query);
+      if (answer) return answer;
+    }
     // selling locked pay: the rules and totals, the latest claims, one claim, a job's, an agent's
     if (path === "/v1/claims" || path.startsWith("/v1/claims/")) {
       if (from && this.tooMany(from, "claims-get", 600)) return { status: 429, body: { error: "too many requests: try again in a minute" } };
@@ -1163,6 +1174,36 @@ export class EngineApi {
       return ok({ items: vs!.onSubject(kind, kind === "line" ? vs!.agentOf(subject) : subject) });
     }
     return notFound("no such route");
+  }
+
+  // Agent treasury (./treasury.ts), read from the database only.
+  private treasuryGet(v: EngineView, path: string, query: URLSearchParams): Answer | null {
+    const ts = v.treasury;
+    const on = !!ts?.on();
+    if (path === "/v1/treasury/about") return ok({ ...this.treasuryAbout(v) });
+    if (path === "/v1/treasury") {
+      const limit = Number(query.get("limit") ?? "30");
+      return ok({ ...this.treasuryAbout(v), treasuries: on ? ts!.list(Number.isFinite(limit) ? limit : 30) : [] });
+    }
+    if (!on) return notFound("the agent treasury is switched off for now");
+    const m = /^\/v1\/treasury\/([0-9a-zA-Z-]{3,42})(\/preview)?$/.exec(path);
+    if (m) {
+      const raw = m[1]!.toLowerCase();
+      const address = /^0x[0-9a-f]{40}$/.test(raw) ? raw : [...(v.profiles?.all() ?? new Map()).entries()].find(([, p]) => p.name.toLowerCase() === raw && !p.hidden)?.[0];
+      if (!address) return notFound("no agent by that name or address");
+      const t = ts!.json(address);
+      // an address that never used its treasury: an empty one, since every address has one
+      const empty = { agent: address, name: v.profiles?.all().get(address)?.name ?? address, named: !!v.profiles?.all().get(address), balance: "0", balanceEth: 0, spendable: "0", rules: null, totals: null, runs: [], next: null, openedAt: null, factorOwn: false };
+      if (m[2]) return ok({ agent: address, next: t?.next ?? null, order: TREASURY_RULES.order });
+      return ok({ treasury: t ?? empty });
+    }
+    return notFound("no such route");
+  }
+
+  private treasuryAbout(v: EngineView): TreasuryAbout {
+    if (v.treasury) return v.treasury.about();
+    const c = v.config.treasury;
+    return { enabled: false, contract: c.contract, fromBlock: c.fromBlock === null ? null : c.fromBlock.toString(), chainId: v.config.chainId, rules: { minStep: TREASURY_RULES.minStep, maxClaims: TREASURY_RULES.maxClaims, day: TREASURY_RULES.day, order: TREASURY_RULES.order }, totals: null };
   }
 
   // Selling locked pay (./claims.ts), read from the database only.
@@ -2004,6 +2045,8 @@ export class EngineApi {
     const row = address ? r.store.agent(address) : null;
     if (!row) return notFound("no such agent");
     const names = this.names(v);
+    const treasuryOf = v.treasury?.on() ? v.treasury.json(row.address) : null;
+    const treasuryPart: Record<string, unknown> = treasuryOf ? { treasury: treasuryOf } : {};
     return ok({
       agent: agentJson(row, names, this.chainNow(v, r.snap)),
       // the Factor Score: the desk's number with the income behind it, by the way each job came, and what it can draw
@@ -2031,6 +2074,8 @@ export class EngineApi {
       ...((x) => (x ? { asVerifier: x } : {}))(v.verifiers?.on() ? v.verifiers.verifierJson(row.address) : null),
       // who vouched for it and on what terms, and the vouches it gave: only while vouching is on and it has one
       ...((x) => (x ? { vouching: x } : {}))(v.vouching?.on() ? v.vouching.agentJson(row.address) : null),
+      // its treasury: what it holds, its rules, its runs and the next one: only while the treasury is on and it has used it
+      ...treasuryPart,
       // its pay account and the claims on its pay, and the claims it bought: only while selling locked pay is on and it has one
       ...((x) => (x ? { lockedPay: x } : {}))(v.claims?.on() ? v.claims.agentJson(row.address) : null),
       // its guarantee bond, offer and covers: only while guarantees are on and it has ever had one
@@ -2444,7 +2489,9 @@ export class EngineApi {
     const vouching = this.vouchingAbout(v);
     // selling locked pay (./claims.ts): whether it shows, the rules and the totals
     const claims = this.claimsAbout(v);
-    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused, roster: this.rosterJson(v), hosted, pulse: pulseJson(v, 8), desk: this.deskJson(v), signups, activity, pay, subjobs, firms, plans, erc8004, openJobs, autoApply, verified, coins, lines, guarantees, bounties, milestones, everywhere, ask, copilot, reviews, hey, reports, vouching, claims, recoverable };
+    // agent treasury (./treasury.ts): whether it shows, the order of a run and the totals
+    const treasury = this.treasuryAbout(v);
+    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused, roster: this.rosterJson(v), hosted, pulse: pulseJson(v, 8), desk: this.deskJson(v), signups, activity, pay, subjobs, firms, plans, erc8004, openJobs, autoApply, verified, coins, lines, guarantees, bounties, milestones, everywhere, ask, copilot, reviews, hey, reports, vouching, claims, treasury, recoverable };
     if (!r) {
       return { ...base, launched: false, stats: { advancedEth: 0, settledJobs: 0, jobs: 0, poolEth: 0, reserveEth: 0, outEth: 0, heldEth: 0, burnedTokens: 0, supplyLeft: SUPPLY, agents: 0, demoJobs: 0, lostEth: 0, poolFromTradingEth: 0 }, burn: null, agents: [], jobs: [], events: [], burns: [] };
     }
@@ -2549,6 +2596,7 @@ export class EngineApi {
       verifiers: v.verifiers ? v.verifiers.health() : null,
       vouching: v.vouching ? v.vouching.health() : null,
       lockedpay: v.claims ? v.claims.health() : null,
+      treasury: v.treasury ? v.treasury.health() : null,
       ask: v.ask ? v.ask.health() : null,
       copilot: v.copilot ? v.copilot.health() : null,
       reviews: v.reviews ? v.reviews.health() : null,

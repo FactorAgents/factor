@@ -4,6 +4,7 @@
 import { Refusal } from "./desk";
 import { signText, type Provider } from "./wallet";
 import type { Recovery } from "./recoverable";
+import type { TreasuryReceipt } from "./types";
 
 export type ReportSource = "factor-desk" | "factor-lines" | "priors" | "erc8004-reputation" | "erc8004-validation" | "factor-reviews" | "erc8004-identity";
 
@@ -38,6 +39,8 @@ export interface Report {
   onChain?: ReportOnChain | null;
   /** the Recoverable mark with Upoch and its evidence (engine/src/recoverable.ts); null while it is off or no workflow is linked */
   recovery?: Recovery | null;
+  /** what its treasury did by its own rules, each step a receipt (engine/src/treasury.ts): never in the score */
+  treasury?: { agent: string; balance: string; runs: number; receipts: TreasuryReceipt[] } | null;
 }
 
 /** A report's place on ERC-8004: written (since when, the transaction, its file), or prepared and not yet written. */

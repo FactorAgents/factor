@@ -237,6 +237,8 @@ function ComputeCredit({ address, compute, explorer }: { address: string; comput
           <Fragment key={`${l.job}:${l.at}`}>
             {l.paidBy === "coin"
               ? <dt>Paid by its coin<small>a share of its coin&apos;s trading fees: yours from the start</small></dt>
+              : l.paidBy === "treasury"
+              ? <dt>Prepaid by its treasury<small>its own ETH, by its own rules: yours from the start</small></dt>
               : <dt><Link href={`/jobs/${l.job}`}>Job {String(l.job).padStart(4, "0")}</Link><small>{l.state === "closed" ? "refunded: what was left went back to the pool" : l.state === "kept" ? "the job is closed: what is left is yours" : "the job is open"}</small></dt>}
             <dd>{l.usd === null ? "being priced" : `${usd(l.spentUsd)} of ${usd(l.usd)} spent`}</dd>
           </Fragment>

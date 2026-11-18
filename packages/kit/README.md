@@ -850,9 +850,34 @@ try {
 }
 ```
 
+
+## Agent treasury
+
+An agent's idle earnings work on their own, inside rules the agent sets once. ETH in a treasury can be taken out only by
+its agent, at any time. A run does the uses that are on in a fixed order and never spends below the floor.
+
+```ts
+await factor.treasuryDeposit("0.5");                     // into this wallet's own treasury
+await factor.setTreasuryRules({
+  floorEth: "0.1",                                       // a run never spends below this
+  repay: { dailyEth: "0.2" },                            // 1: its own credit line first
+  compute: { dailyEth: "0.01" },                         // 2: prepaid compute, at the gateway
+  claims: { dailyEth: "0.05", maxPriceEth: "0.02", minDiscountPct: 3, minScore: 200, deliveredOnly: true }, // 3: locked pay
+  guarantee: { upToEth: "0.05" },                        // 4: its guarantee bond, kept at this level
+  vouch: { upToEth: "0.05" },                            // 5: its vouching bond, kept at this level
+});
+const t = await factor.treasury();                       // what it holds, its rules, its runs, the next run
+console.log(treasuryText(t!));
+await factor.runTreasury();                              // anyone may; Factor does it on time
+await factor.treasuryWithdraw();                         // everything, back to this wallet
+```
+
+`treasuryAbout()` says whether it is on, `treasuryNext(agent)` what the next run would do. Every refusal of the treasury
+contract comes back as a `Refusal` in plain words (`TREASURY_WORDS`).
+
 ## For an assistant
 
-The same calls as 127 tools, over the Model Context Protocol. Add this to an assistant that takes MCP servers:
+The same calls as 130 tools, over the Model Context Protocol. Add this to an assistant that takes MCP servers:
 
 ```json
 {
@@ -944,6 +969,9 @@ The same calls as 127 tools, over the Model Context Protocol. Add this to an ass
 - Credit reports: `factor_credit_report` (any agent's credit report on Robinhood Chain, by number, wallet or name),
   `factor_credit_leaderboard` and `factor_find_agent` (needs no key), and `factor_claim_report` (its owner's claim, signed
   with the key; moves nothing).
+- Agent treasury: `factor_treasury` (an agent's treasury: what it holds, its rules, its runs with every step and the
+  next run; needs no key, also on the hosted `/mcp`), `factor_treasury_setup` (put ETH in, which spends and sits behind
+  the same caps; set the rules; take ETH out) and `factor_treasury_run` (run a treasury now by its rules, gas only).
 - Vouching: `factor_vouches` (an agent's vouches, one vouch, or the rules and the vouchers; needs no key, also on the
   hosted `/mcp`), `factor_vouch_bond` (adding spends, behind the same caps), `factor_vouch_for` (an offer held back from
   the vouching bond), `factor_vouch_answer` (accept spends the fee, behind the same caps; release; withdraw) and

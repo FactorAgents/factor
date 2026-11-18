@@ -12,6 +12,8 @@
 //   Refunded, the bond paid    the agent's own bond repaid the pool: what is left of the lot is the agent's
 //   ComputePaid (a coin)       the agent's coin paid its compute share to the gateway (./coins.ts): a lot of credit
 //                              that is the agent's own from the start, paid by its coin and by no job
+//   ComputePrepaid (a treasury) the agent's treasury prepaid compute to the gateway (./treasury.ts): a lot of credit that
+//                              is the agent's own from the start, paid with its own ETH
 //   Drawn (a line, as compute) a draw on a credit line paid to the gateway (./lines.ts): a lot of credit for the line's
 //                              key, kept when the line is repaid in full; if the line defaults, the line pool takes
 //                              back what it lost from what was not spent, and that ETH goes to the line contract
@@ -149,7 +151,7 @@ export function readCompute(env: Env, problems: string[] = []): ComputeConfig {
 
 // ---------- the books ----------
 
-export interface Lot { tx_hash: string; log_index: number; block: number; at: number; job_id: number; agent: string; wei: string; usd_micro: number | null; spent_micro: number; state: "open" | "kept" | "closed"; back_wei: string; back_tx: string | null; source?: "advance" | "coin" | "line"; line?: string | null }
+export interface Lot { tx_hash: string; log_index: number; block: number; at: number; job_id: number; agent: string; wei: string; usd_micro: number | null; spent_micro: number; state: "open" | "kept" | "closed"; back_wei: string; back_tx: string | null; source?: "advance" | "coin" | "line" | "treasury"; line?: string | null }
 
 /** ETH in wei as millionths of a dollar, at a Chainlink price with 8 decimals. Rounded down: credit is never overstated. */
 export const usdMicro = (wei: bigint, ethUsd8: bigint): number => Number((wei * ethUsd8) / 10n ** 20n);
@@ -323,6 +325,15 @@ export class ComputeStore {
     return this.db.q("INSERT OR IGNORE INTO compute_lots (tx_hash, log_index, block, at, job_id, agent, wei, usd_micro, state, source) VALUES (?, ?, ?, ?, 0, ?, ?, ?, 'kept', 'coin')").run(e.tx_hash, e.log_index, e.block, e.at, agent, wei.toString(), usd).changes === 1;
   }
 
+  /**
+   * The agent's treasury prepaid compute to the gateway (./treasury.ts): a lot of credit that is the agent's own at once,
+   * paid with its own ETH. No job and no line stands behind it, so nothing can take it back. Written once.
+   */
+  addTreasuryLot(e: { tx_hash: string; log_index: number; block: number; at: number }, agent: string, wei: bigint, ethUsd8: string | null): boolean {
+    const usd = ethUsd8 ? usdMicro(wei, BigInt(ethUsd8)) : null;
+    return this.db.q("INSERT OR IGNORE INTO compute_lots (tx_hash, log_index, block, at, job_id, agent, wei, usd_micro, state, source) VALUES (?, ?, ?, ?, 0, ?, ?, ?, 'kept', 'treasury')").run(e.tx_hash, e.log_index, e.block, e.at, agent, wei.toString(), usd).changes === 1;
+  }
+
   /** What an agent's coin has paid into its compute credit, and how much of that its calls have spent, in millionths of a dollar. */
   coinCredit(agent: string): { lots: number; wei: string; grantedMicro: number; spentMicro: number } {
     const r = this.db.q("SELECT COUNT(*) AS n, COALESCE(SUM(usd_micro), 0) AS granted, COALESCE(SUM(spent_micro), 0) AS spent FROM compute_lots WHERE agent = ? AND source = 'coin'").get(agent) as { n: number; granted: number; spent: number };
@@ -429,7 +440,7 @@ export class ComputeStore {
   nextCredit(agent: string): { task: string; grantedMicro: number; leftMicro: number } | null {
     const l = this.db.q("SELECT job_id, source, line FROM compute_lots WHERE agent = ? AND usd_micro IS NOT NULL AND state != 'closed' AND usd_micro > spent_micro ORDER BY block, log_index LIMIT 1").get(agent) as { job_id: number; source: string; line: string | null } | undefined;
     if (!l) return null;
-    const [task, where, arg] = l.source === "coin" ? [`factor-coin-${agent}`, "source = 'coin'", null] : l.source === "line" ? [`factor-line-${l.line}`, "source = 'line' AND line = ?", l.line] : [`factor-job-${l.job_id}`, "source = 'advance' AND job_id = ?", l.job_id];
+    const [task, where, arg] = l.source === "coin" ? [`factor-coin-${agent}`, "source = 'coin'", null] : l.source === "treasury" ? [`factor-treasury-${agent}`, "source = 'treasury'", null] : l.source === "line" ? [`factor-line-${l.line}`, "source = 'line' AND line = ?", l.line] : [`factor-job-${l.job_id}`, "source = 'advance' AND job_id = ?", l.job_id];
     const r = this.db.q(`SELECT COALESCE(SUM(usd_micro), 0) AS granted, COALESCE(SUM(spent_micro), 0) AS spent FROM compute_lots WHERE agent = ? AND usd_micro IS NOT NULL AND state != 'closed' AND ${where}`).get(agent, ...(arg === null ? [] : [arg])) as { granted: number; spent: number };
     return { task, grantedMicro: r.granted, leftMicro: r.granted - r.spent };
   }
@@ -681,7 +692,7 @@ export class Gateway {
     return {
       ...(raeto ? { raeto } : {}),
       agent, balanceUsd: micro / 1e6, enabled: this.cfg.enabled,
-      lots: this.store.lots(agent).map((l) => ({ job: l.job_id, at: new Date(l.at * 1000).toISOString(), usd: l.usd_micro === null ? null : l.usd_micro / 1e6, spentUsd: l.spent_micro / 1e6, state: l.state, ...(l.source === "coin" ? { paidBy: "coin" } : l.source === "line" ? { paidBy: "line" } : {}) })),
+      lots: this.store.lots(agent).map((l) => ({ job: l.job_id, at: new Date(l.at * 1000).toISOString(), usd: l.usd_micro === null ? null : l.usd_micro / 1e6, spentUsd: l.spent_micro / 1e6, state: l.state, ...(l.source === "coin" ? { paidBy: "coin" } : l.source === "line" ? { paidBy: "line" } : l.source === "treasury" ? { paidBy: "treasury" } : {}) })),
     };
   }
 

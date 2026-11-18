@@ -31,6 +31,10 @@
 //   vouch           a standing vouch whose outcome is on the chain: settle(), which recovers its line or closes its cover
 //                   first when due, and pays the loss or the voucher's part of the fee; an offer never accepted within
 //                   its seven days: withdraw() (../vouching.ts). Right after the line's own sweeps and recoveries.
+//   treasury        an agent's treasury whose own preview says a run would do something: the treasury contract's run(),
+//                   which repays the agent's line, prepays compute, buys locked pay inside the agent's rules and tops up
+//                   its bonds, in that order (../treasury.ts). After everything else, so the lines and claims it reads
+//                   are as fresh as this pass could make them.
 //   claims          a pay account whose claimed job has ended or can be ended, or which owes a claim's holder and can
 //                   pay: the claims contract's sweep(), which ends the job on the desk first, pays every ended claim's
 //                   holder and then the debts (../claims.ts). Before the desk's own settling and refunding, so a claimed
@@ -61,7 +65,7 @@ import type { ActionKind, ActionRow } from "./db.js";
 import { ponsEscrowAbi } from "./pons.js";
 
 export type SendKind = Exclude<ActionKind, "unstick">;
-export const KINDS: SendKind[] = ["relay", "sweep", "coin_sweep", "retry_split", "claim_token", "burn", "guarantee", "bounty", "milestone", "verifier", "claims", "settle_job", "refund_job", "collect", "line", "vouch", "return_compute", "skim", "erc8004", "erc8004_score", "erc8004_report"];
+export const KINDS: SendKind[] = ["relay", "sweep", "coin_sweep", "retry_split", "claim_token", "burn", "guarantee", "bounty", "milestone", "verifier", "claims", "settle_job", "refund_job", "collect", "line", "vouch", "treasury", "return_compute", "skim", "erc8004", "erc8004_score", "erc8004_report"];
 // In dry mode nothing changes on the chain, so a trigger stays true: what would be sent is shown again this often.
 export const DRY_REPEAT_S = 1800;
 const BPS = 10_000n;
@@ -903,6 +907,15 @@ async function vouchStep(ctx: Ctx, head: Head): Promise<string> {
   return say(ctx, "vouch", await ctx.vouching.step(ctx, head, (kind, ref, call, detail, feeCap) => attempt(ctx, kind, ref, call, detail, feeCap)));
 }
 
+// ---------- agent treasury ----------
+
+// A treasury whose preview says a run would do something is run (../treasury.ts decides; the attempt is the same as every
+// other one here).
+async function treasuryStep(ctx: Ctx, head: Head): Promise<string> {
+  if (!ctx.treasury) return say(ctx, "treasury", "the agent treasury is not switched on");
+  return say(ctx, "treasury", await ctx.treasury.step(ctx, head, (kind, ref, call, detail, feeCap) => attempt(ctx, kind, ref, call, detail, feeCap)));
+}
+
 // ---------- selling locked pay ----------
 
 // A pay account whose claimed job ended or can be ended, or which owes a holder and can pay, is swept (../claims.ts decides;
@@ -929,6 +942,7 @@ const STEPS: [SendKind, (ctx: Ctx, head: Head) => Promise<string>][] = [
   ["collect", collect],
   ["line", lineStep],
   ["vouch", vouchStep],
+  ["treasury", treasuryStep],
   ["return_compute", returnCompute],
   ["skim", skim],
   ["erc8004", writeErc8004],

@@ -28,6 +28,8 @@ import { factorGuaranteeAbi } from "./abi/FactorGuarantee.js";
 import { coverFee, guaranteeWordsOf } from "./guarantees.js";
 import { factorVouchAbi } from "./abi/FactorVouch.js";
 import { vouchFee, vouchWordsOf } from "./vouching.js";
+import { factorTreasuryAbi } from "./abi/FactorTreasury.js";
+import { treasuryRulesWei, treasuryWordsOf, type TreasuryRulesInput } from "./treasury.js";
 import { factorBountyAbi } from "./abi/FactorBounty.js";
 import { BOUNTY_STATES, bountyEntryHash, bountyParts, bountyReadMessage, bountyWordsOf, bytesOf, MIN_PRIZE_WEI, TASK_BYTES, textHash, WORK_BYTES } from "./bounties.js";
 import { factorMilestonesAbi } from "./abi/FactorMilestones.js";
@@ -35,7 +37,7 @@ import { checkTerms, MAX_STAGE_S, MILESTONE_STATES, milestoneWordsOf, MIN_STAGE_
 import { caseNumber, CASE_WORDS, checkReason, checkVerifierTerms, commitOf, keepVerdict, makerName, MIN_BOND_WEI, MIN_FEE_WEI, MIN_JOB_WEI, readVerdict, reasonHashOf, saltOf, sealMessage, sendVerifierText, textHashOf, VALIDATION_REGISTRY, VALIDATION_TAG, validationWordsOf, VERIFIER_STATES, VERIFIERS_ABI, VERIFIERS_GASLESS, verifiersOff, verifierTermsHash, withReceipt } from "./verifiers.js";
 import { erc8004ValidationAbi } from "./abi/Erc8004Validation.js";
 import { CHAIN_ID, DEFAULT_API, DEFAULT_RPC } from "./defaults.js";
-import type { AccountInfo, Agent, AgentPage, Applicant, Application, AutoApplyStatus, ComputeCredit, ComputeKey, Deal, Erc8004Entries, Erc8004Status, Firm, FirmHire, FirmPage, FirmRecord, Job, JobPage, JobState, JobTree, LedgerLine, ModelAnswer, OpenJob, OpenJobHire, PickedJob, OpenJobPage, OpenJobPosted, Page, PayLinkInfo, Plan, PlanMonthSent, PlanPage, RouterModel, Sent, State, SubJob, OwnerCheck, VerifiedStatus, Coin, CoinsAbout, CoinLaunched, CoinLaunchTx, CreditLine, LinesAbout, LineSent, AgentGuarantee, Cover, CoverState, CoveredHire, GuaranteesAbout, GuaranteeSent, BountiesAbout, Bounty, BountyPage, BountyEntry, BountyPoster, AgentBounties, BountyPosted, BountyEntered, BountyPicked, BountyState, Burn, PublishedLink, MilestonesAbout, MilestonePlan, MilestonesHired, MilestoneSent, MilestoneState, AgentMilestones, VerifiersAbout, Verifier, VerifierCase, VerifierCaseState, VerifierPage, VerifierSent, VerifiedHire, VerdictGiven, VerdictSealed, ModelReceiptInput, VerdictReceipt, VerifiedErc8004, AgentVerified, VouchingAbout, Vouch, Voucher, AgentVouching, VouchSent, VouchState } from "./types.js";
+import type { AccountInfo, Treasury, TreasuryAbout, TreasuryNext, TreasurySent, Agent, AgentPage, Applicant, Application, AutoApplyStatus, ComputeCredit, ComputeKey, Deal, Erc8004Entries, Erc8004Status, Firm, FirmHire, FirmPage, FirmRecord, Job, JobPage, JobState, JobTree, LedgerLine, ModelAnswer, OpenJob, OpenJobHire, PickedJob, OpenJobPage, OpenJobPosted, Page, PayLinkInfo, Plan, PlanMonthSent, PlanPage, RouterModel, Sent, State, SubJob, OwnerCheck, VerifiedStatus, Coin, CoinsAbout, CoinLaunched, CoinLaunchTx, CreditLine, LinesAbout, LineSent, AgentGuarantee, Cover, CoverState, CoveredHire, GuaranteesAbout, GuaranteeSent, BountiesAbout, Bounty, BountyPage, BountyEntry, BountyPoster, AgentBounties, BountyPosted, BountyEntered, BountyPicked, BountyState, Burn, PublishedLink, MilestonesAbout, MilestonePlan, MilestonesHired, MilestoneSent, MilestoneState, AgentMilestones, VerifiersAbout, Verifier, VerifierCase, VerifierCaseState, VerifierPage, VerifierSent, VerifiedHire, VerdictGiven, VerdictSealed, ModelReceiptInput, VerdictReceipt, VerifiedErc8004, AgentVerified, VouchingAbout, Vouch, Voucher, AgentVouching, VouchSent, VouchState } from "./types.js";
 import { coinAskMessage, coinDescription, coinLogo, coinNameProblem, coinPermissionTypedData, suggestCoin, type CoinPermission } from "./coins.js";
 import { MONTH_S, PLAN_TITLE_MOST, planMessage, stopPlanMessage, type PlanText } from "./plans.js";
 import { FIRM_SLUG, firmHireMessage, firmMessage, joinMessage, leaveMessage, slugOf } from "./firms.js";
@@ -67,6 +69,7 @@ export type { CoinPermission } from "./coins.js";
 export { drawParts, LINE_WORDS } from "./lines.js";
 export { coverFee, GUARANTEE_WORDS } from "./guarantees.js";
 export { vouchFee, VOUCH_WORDS, vouchWordsOf } from "./vouching.js";
+export { TREASURY_WORDS, treasuryNextText, treasuryRulesText, treasuryRulesWei, treasuryText, treasuryWordsOf, type TreasuryRulesInput, type TreasuryRulesWei } from "./treasury.js";
 export { BOUNTY_WORDS, bountyEntryHash, bountyParts, bountyReadMessage, MIN_PRIZE_WEI, TASK_BYTES, WORK_BYTES } from "./bounties.js";
 export { checkTerms, MAX_STAGES, MILESTONE_WORDS, MIN_STAGE_WEI, MIN_STAGES, termsHash, termsText } from "./milestones.js";
 export type { Terms } from "./milestones.js";
@@ -2271,6 +2274,97 @@ export class Factor {
     return this.vouchSent(await this.callVouch("settle", [BigInt(whole(id))], 0n), id);
   }
 
+  // ---------- agent treasury ----------
+
+  /** The agent treasury: whether it is on, the contract, the order of a run and the totals. */
+  async treasuryAbout(): Promise<TreasuryAbout> {
+    return (await read<TreasuryAbout>(this.api, "/treasury/about")) ?? { enabled: false, contract: null, chainId: this.chainId, rules: { minStep: "100000000000000", maxClaims: 10, day: 86_400, order: ["repay", "compute", "claims", "guarantee", "vouch"] }, totals: null };
+  }
+
+  /** An agent's treasury, by its name or address (left out: this wallet's own): what it holds, its rules, its runs with every step, and the next run. null while the treasury is off. */
+  async treasury(agent?: string): Promise<Treasury | null> {
+    const who = agent ?? this.mine();
+    return (await read<{ treasury: Treasury }>(this.api, `/treasury/${encodeURIComponent(who)}`))?.treasury ?? null;
+  }
+
+  /** What a run of an agent's treasury would do now, step by step, as the contract's own preview says it. */
+  async treasuryNext(agent?: string): Promise<TreasuryNext | null> {
+    const who = agent ?? this.mine();
+    return (await read<{ next: TreasuryNext | null }>(this.api, `/treasury/${encodeURIComponent(who)}/preview`))?.next ?? null;
+  }
+
+  /** Put ETH into a treasury: this wallet's own when `agent` is left out. Whoever puts it in, only the agent can take it out. */
+  async treasuryDeposit(amount: Amount, agent?: string): Promise<TreasurySent> {
+    const to = (agent ? agent.toLowerCase() : this.mine()) as Hex;
+    if (!/^0x[0-9a-f]{40}$/.test(to)) throw new Refusal("Say the agent by its address.", "bad_address");
+    return this.treasurySent(await this.callTreasury("deposit", [to], toWei(amount)), to);
+  }
+
+  /** Take ETH out of this wallet's own treasury, to this wallet or to `to`: all of it when `amount` is left out. No rule or floor stands in the way. */
+  async treasuryWithdraw(amount?: Amount, to?: string): Promise<TreasurySent> {
+    const me = this.mine() as Hex;
+    const tc = await this.treasuryContract();
+    const has = (await this.pub.readContract({ address: tc, abi: TREASURY, functionName: "balanceOf", args: [me] })) as bigint;
+    const value = amount === undefined ? has : toWei(amount);
+    if (value === 0n || value > has) throw new Refusal(has === 0n ? "This treasury holds nothing." : `This treasury holds ${ethText(has)} ETH: no more than that can come out.`, "over_balance");
+    return this.treasurySent(await this.callTreasury("withdraw", [(to ?? me).toLowerCase(), value], 0n), me);
+  }
+
+  /** Set this wallet's own treasury rules, whole: the floor, and for each use whether it is on and how far it goes. A use left out is off. */
+  async setTreasuryRules(rules: TreasuryRulesInput): Promise<TreasurySent> {
+    const me = this.mine() as Hex;
+    return this.treasurySent(await this.callTreasury("setRules", [treasuryRulesWei(rules)], 0n), me);
+  }
+
+  /** Anyone: run an agent's treasury now by its rules (this wallet's own when left out), with the claims on sale it may buy. Factor does it by itself; this is for doing it now. */
+  async runTreasury(agent?: string, claims: number[] = []): Promise<TreasurySent> {
+    const who = (agent ? agent.toLowerCase() : this.mine()) as Hex;
+    if (!/^0x[0-9a-f]{40}$/.test(who)) throw new Refusal("Say the agent by its address.", "bad_address");
+    if (claims.length > 10) throw new Refusal("A run takes ten claims at most.", "too_many");
+    return this.treasurySent(await this.callTreasury("run", [who, claims.map((c) => BigInt(whole(c)))], 0n), who);
+  }
+
+  /** The treasury contract, on and a contract on the chain. */
+  private async treasuryContract(): Promise<Hex> {
+    const about = await read<TreasuryAbout>(this.api, "/treasury/about");
+    if (!about?.enabled || !about.contract || !/^0x[0-9a-fA-F]{40}$/.test(about.contract)) throw new Refusal("The agent treasury is not switched on yet.", "treasury_off");
+    const tc = about.contract.toLowerCase() as Hex;
+    const code = await this.pub.getCode({ address: tc });
+    if (!code || code === "0x") throw new Refusal(`There is no contract at ${tc}, where the site says the treasury is. Nothing will be sent to it.`, "no_treasury_contract");
+    return tc;
+  }
+
+  private async treasurySent(sent: { hash: Hex; explorer: string }, agent: Hex): Promise<TreasurySent> {
+    const tc = await this.treasuryContract();
+    const has = (await this.pub.readContract({ address: tc, abi: TREASURY, functionName: "balanceOf", args: [agent] })) as bigint;
+    return { hash: sent.hash, explorer: sent.explorer, agent, balanceEth: ethText(has) };
+  }
+
+  /** One call to the treasury contract, from this wallet or its Factor account: tried, sent, followed until it is mined. */
+  private async callTreasury(functionName: string, args: readonly unknown[], value: bigint): Promise<{ hash: Hex; explorer: string; receipt: { logs: unknown[] } }> {
+    if (!this.account || !this.wallet) throw new Refusal("This Factor was connected without a key: it can only read.", "read_only");
+    const tc = await this.treasuryContract();
+    if (this.via) {
+      try {
+        await this.pub.simulateContract({ address: tc, abi: TREASURY, functionName, args, account: this.via, value } as never);
+      } catch (e) {
+        if (/insufficient (funds|balance)|exceeds the balance/i.test(`${(e as { shortMessage?: string }).shortMessage} ${(e as Error).message}`)) throw new Refusal(WORDS.AccountShort!([await this.pub.getBalance({ address: this.via }), value]), "account_short");
+        throw new Refusal(treasuryWordsOf(e), "treasury_refused");
+      }
+      return this.order([{ to: tc, value, data: encodeFunctionData({ abi: TREASURY, functionName, args } as never) }]);
+    }
+    let hash: Hex;
+    try {
+      const { request } = await this.pub.simulateContract({ address: tc, abi: TREASURY, functionName, args, account: this.account, value } as never);
+      hash = await this.wallet.writeContract(request as never);
+    } catch (e) {
+      throw e instanceof Refusal ? e : new Refusal(treasuryWordsOf(e), "treasury_refused");
+    }
+    const receipt = await this.pub.waitForTransactionReceipt({ hash, timeout: 180_000 });
+    if (receipt.status !== "success") throw new Refusal(`The transaction ${hash} was mined and refused. Nothing changed but the gas.`, "reverted");
+    return { hash, explorer: `${this.explorer}/tx/${hash}`, receipt };
+  }
+
   /** The vouching contract, on and a contract on the chain. */
   private async vouchContract(): Promise<Hex> {
     const about = await read<VouchingAbout>(this.api, "/vouches/about");
@@ -3794,6 +3888,7 @@ const LINE = factorLineAbi as Abi;
 const LINE_ACCOUNT = factorLineAccountAbi as Abi;
 const GUARANTEE = factorGuaranteeAbi as Abi;
 const VOUCH = factorVouchAbi as Abi;
+const TREASURY = factorTreasuryAbi as Abi;
 const VOUCH_STATES: (VouchState | null)[] = [null, "offered", "active", "kept", "failed", "returned", "withdrawn"];
 const BOUNTY = factorBountyAbi as Abi;
 const MILESTONES = factorMilestonesAbi as Abi;

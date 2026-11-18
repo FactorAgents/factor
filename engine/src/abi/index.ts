@@ -16,3 +16,4 @@ export { erc8004IdentityAbi, erc8004ReputationAbi, erc8004ValidationAbi, multica
 export { factorVerifiersAbi } from "./FactorVerifiers.js";
 export { factorVouchAbi } from "./FactorVouch.js";
 export { factorClaimsAbi } from "./FactorClaims.js";
+export { factorTreasuryAbi } from "./FactorTreasury.js";

@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS engine_locks (name TEXT PRIMARY KEY, holder TEXT NOT 
 -- Everything the engine sent, would have sent (dry), or could not send: what, why, and how it ended.
 CREATE TABLE IF NOT EXISTS engine_actions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  kind TEXT NOT NULL,                -- sweep, claim_token, burn, settle_job, refund_job, collect, return_compute, erc8004, line, guarantee, bounty, milestone, verifier, vouch, claims, unstick
+  kind TEXT NOT NULL,                -- sweep, claim_token, burn, settle_job, refund_job, collect, return_compute, erc8004, line, guarantee, bounty, milestone, verifier, vouch, claims, treasury, unstick
   ref TEXT NOT NULL DEFAULT '',
   mode TEXT NOT NULL,                -- dry or live
   status TEXT NOT NULL,              -- dry, signed, sent, done, failed, replaced
@@ -750,6 +750,39 @@ CREATE INDEX IF NOT EXISTS claims_claims_account ON claims_claims (account, id);
 CREATE INDEX IF NOT EXISTS claims_claims_holder ON claims_claims (holder);
 CREATE INDEX IF NOT EXISTS claims_claims_state ON claims_claims (state);
 CREATE INDEX IF NOT EXISTS claims_claims_block ON claims_claims (block);
+-- Agent treasury (../treasury.ts): each treasury as its first log says it, and what is read of it since (what it holds, its
+-- rules, its totals, and the contract's preview of the next run), as JSON.
+CREATE TABLE IF NOT EXISTS treasury_agents (
+  agent TEXT PRIMARY KEY,
+  block INTEGER NOT NULL,
+  at INTEGER NOT NULL,
+  tx_hash TEXT NOT NULL,
+  balance TEXT NOT NULL DEFAULT '0',
+  rules TEXT,
+  totals TEXT,
+  next TEXT,
+  state_at INTEGER NOT NULL DEFAULT 0,  -- ms: 0 marks it to be read again
+  ran_at INTEGER NOT NULL DEFAULT 0     -- the chain's time of its last run
+);
+CREATE INDEX IF NOT EXISTS treasury_agents_block ON treasury_agents (block);
+-- Each move of a treasury: deposit, withdraw, rules, the five steps of a run (repay, compute, claim, guarantee, vouch),
+-- a step skipped, and the run itself. ref is a claim's number; other the other side (who put in, where it went, the
+-- line account, the job of a claim, the step skipped); rest what was left (the balance, the debt, the bond, a claim's face).
+CREATE TABLE IF NOT EXISTS treasury_moves (
+  tx_hash TEXT NOT NULL,
+  log_index INTEGER NOT NULL,
+  block INTEGER NOT NULL,
+  at INTEGER NOT NULL,
+  agent TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  amount TEXT NOT NULL DEFAULT '0',
+  ref INTEGER NOT NULL DEFAULT 0,
+  other TEXT,
+  rest TEXT,
+  PRIMARY KEY (tx_hash, log_index)
+);
+CREATE INDEX IF NOT EXISTS treasury_moves_agent ON treasury_moves (agent, block, log_index);
+CREATE INDEX IF NOT EXISTS treasury_moves_block ON treasury_moves (block);
 CREATE TABLE IF NOT EXISTS job_titles (
   job_id INTEGER PRIMARY KEY,
   title TEXT NOT NULL,
@@ -759,7 +792,7 @@ CREATE TABLE IF NOT EXISTS job_titles (
 );
 `;
 
-export type ActionKind = "sweep" | "retry_split" | "claim_token" | "burn" | "settle_job" | "refund_job" | "collect" | "return_compute" | "skim" | "relay" | "erc8004" | "coin_sweep" | "line" | "guarantee" | "bounty" | "milestone" | "verifier" | "vouch" | "claims" | "erc8004_score" | "erc8004_report" | "unstick";
+export type ActionKind = "sweep" | "retry_split" | "claim_token" | "burn" | "settle_job" | "refund_job" | "collect" | "return_compute" | "skim" | "relay" | "erc8004" | "coin_sweep" | "line" | "guarantee" | "bounty" | "milestone" | "verifier" | "vouch" | "claims" | "treasury" | "erc8004_score" | "erc8004_report" | "unstick";
 export type ActionStatus = "dry" | "signed" | "sent" | "done" | "failed" | "replaced";
 
 export interface ActionRow {
@@ -791,7 +824,7 @@ export interface EventRow {
 }
 
 // The tables a stretch of blocks writes to, all keyed by block: what a reorg or a reindex takes back.
-const BY_BLOCK = ["chain_events", "chain_splits", "chain_burns", "ledger", "desk_advances", "coins", "coin_splits", "coin_trades", "coin_transfers", "lines", "line_moves", "guarantee_bonds", "guarantee_covers", "guarantee_moves", "bounties", "bounty_entries", "milestone_plans", "milestone_stages", "verifier_cases", "verifier_seats", "verifier_money", "verifier_list", "vouch_vouchers", "vouch_vouches", "claims_accounts", "claims_claims"];
+const BY_BLOCK = ["chain_events", "chain_splits", "chain_burns", "ledger", "desk_advances", "coins", "coin_splits", "coin_trades", "coin_transfers", "lines", "line_moves", "guarantee_bonds", "guarantee_covers", "guarantee_moves", "bounties", "bounty_entries", "milestone_plans", "milestone_stages", "verifier_cases", "verifier_seats", "verifier_money", "verifier_list", "vouch_vouchers", "vouch_vouches", "claims_accounts", "claims_claims", "treasury_agents", "treasury_moves"];
 
 export class EngineDb {
   readonly holder = randomBytes(6).toString("hex"); // this process, for the locks

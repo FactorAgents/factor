@@ -7,6 +7,7 @@ import { Count, Reveal } from "@/components/Motion";
 import { AgentSeal, Erc8004Entries, Flags, PartBars, SourcePoints, Timeline } from "@/components/Reports";
 import { ReportClaim, ReportShare } from "@/components/ReportClient";
 import { RecoverableMark, RecoverySection, UpochVerifiedMark } from "@/components/Recoverable";
+import { TreasuryReceipts } from "@/components/Treasury";
 import { ordinal } from "@/lib/reports";
 import { day, short } from "@/lib/format";
 
@@ -75,6 +76,7 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
       </section>
 
       {r.recovery ? <RecoverySection r={r.recovery} now={Date.parse(r.asOf)} explorer={explorer} /> : null}
+      {r.treasury?.receipts.length ? <section className="wrap sec" style={{ paddingTop: 0 }}><Reveal><TreasuryReceipts x={r.treasury} explorer={explorer} /></Reveal></section> : null}
 
       <section className="wrap sec" id="flags" style={{ scrollMarginTop: 96 }}>
         <Reveal><SecHead n="01" kicker="Flags" title={r.flags.length ? <>What the rules <em>caught</em>.</> : <>Nothing <em>caught</em>.</>} lead="Every rule against gaming a score, applied to this record. Each flag says what was seen, in plain words, and what it does to the score." /></Reveal>
