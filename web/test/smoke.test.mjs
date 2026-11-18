@@ -775,14 +775,14 @@ test("the roadmap: on the home page, every phase in order, what is live checked 
   assert.match(html, /id="roadmap"/);
   const t = text(html);
   assert.match(t, /07 Roadmap The credit layer for AI agents \./);
-  assert.match(t, /19 of 29 phases live/);
+  assert.match(t, /20 of 29 phases live/);
   // the intro counts from the roadmap itself, so it never goes stale
-  assert.match(t, /Nineteen phases are live, the next ten are planned, and more will follow\./);
-  assert.doesNotMatch(t, /Thirteen phases|Fourteen phases|Fifteen phases|Sixteen phases|Seventeen phases|Eighteen phases/);
+  assert.match(t, /Twenty phases are live, the next nine are planned, and more will follow\./);
+  assert.doesNotMatch(t, /Thirteen phases|Fourteen phases|Fifteen phases|Sixteen phases|Seventeen phases|Eighteen phases|Nineteen phases/);
   const names = ["Launch", "Compute on credit", "Pay with Factor", "Agents hire agents", "Agent firms", "Monthly clients", "Agents find their own work", "Agents that bid", "Bounties", "Agent coins", "Factor Score", "Credit lines", "Verified owners", "Guarantees", "Milestones", "Factor everywhere", "Verifiers", "Vouching", "Selling locked pay", "Agent treasury", "Live balance sheets", "Proven income", "The clearing house", "Contagion map", "Risk-priced credit", "Default waterfall", "AI underwriters", "Firm-backed credit", "Credit health index"];
   let at = t.indexOf("Stage 1");
   names.forEach((name, i) => { const k = t.indexOf(`Phase ${String(i + 1).padStart(2, "0")} ${name}`, at); assert.ok(k > at, `phase ${i + 1} ${name} in order`); at = k; });
-  for (const day of ["14 Oct", "15 Oct", "16 Oct", "17 Oct", "18 Oct", "19 Oct", "20 Oct", "22 Oct", "23 Oct", "24 Oct", "28 Oct", "30 Oct", "1 Nov", "2 Nov", "3 Nov", "4 Nov", "9 Nov", "12 Nov", "13 Nov"]) assert.match(t, new RegExp(`Live ${day}`));
+  for (const day of ["14 Oct", "15 Oct", "16 Oct", "17 Oct", "18 Oct", "19 Oct", "20 Oct", "22 Oct", "23 Oct", "24 Oct", "28 Oct", "30 Oct", "1 Nov", "2 Nov", "3 Nov", "4 Nov", "9 Nov", "12 Nov", "13 Nov", "18 Nov"]) assert.match(t, new RegExp(`Live ${day}`));
   assert.match(t, /Live 20 Oct Phase 11 Factor Score/);
   assert.match(t, /Live 28 Oct Phase 10 Agent coins/);
   assert.match(t, /Live 30 Oct Phase 12 Credit lines/);
@@ -794,8 +794,9 @@ test("the roadmap: on the home page, every phase in order, what is live checked 
   assert.match(t, /Live 9 Nov Phase 17 Verifiers/);
   assert.match(t, /Live 12 Nov Phase 18 Vouching/);
   assert.match(t, /Live 13 Nov Phase 19 Selling locked pay/);
-  assert.match(t, /Next Phase 20 Agent treasury The plan is/);
-  assert.equal((t.match(/Planned Phase/g) ?? []).length, 9);
+  assert.match(t, /Live 18 Nov Phase 20 Agent treasury/);
+  assert.match(t, /Next Phase 21 Live balance sheets The plan is/);
+  assert.equal((t.match(/Planned Phase/g) ?? []).length, 8);
   assert.match(t, /Stage 5 Agents fund each other/);
   assert.match(t, /Stage 6 The agent balance sheet/);
   assert.match(t, /Stage 7 Credit from the network/);
