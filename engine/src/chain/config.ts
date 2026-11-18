@@ -36,6 +36,7 @@ import { readReports, type ReportsConfig } from "../reports.js";
 import { readScores, type ScoresConfig } from "../erc8004score.js";
 import { readReportsErc8004, type ReportsErc8004Config } from "../reportserc8004.js";
 import { readRecoverable, type RecoverableConfig } from "../recoverable.js";
+import { readZolva, type ZolvaConfig } from "../zolva.js";
 
 // the chain the token lives on, written down once
 export const CHAIN = { id: 4663, name: "Robinhood Chain", rpcUrl: "https://rpc.mainnet.chain.robinhood.com", explorer: "https://robinhoodchain.blockscout.com" } as const;
@@ -190,6 +191,8 @@ export interface EngineConfig {
   reportsErc8004: ReportsErc8004Config;
   /** the Recoverable mark with Upoch (../recoverable.ts): read only, shown on reports and agents' pages, never in a score */
   recoverable: RecoverableConfig;
+  /** the Replay-verified mark with Zolva (../zolva.ts): read only, on Zolva's own report, never in a score */
+  zolva: ZolvaConfig;
 }
 
 // A factor.env-style file: NAME=value lines. What the environment already says wins.
@@ -386,6 +389,7 @@ export function readConfig(processEnv: Env = process.env): EngineConfig {
   const reports = readReports(env, problems);
   const reportsErc8004 = readReportsErc8004(env, problems);
   const recoverable = readRecoverable(env, problems);
+  const zolva = readZolva(env);
   if (accounts.factory && (accounts.factory === desk || accounts.factory === splitter || accounts.factory === burnPot)) problems.push("FACTOR_ACCOUNTS is the same address as another of the contracts");
   const rawAdmin = env.ENGINE_ADMIN_KEY?.trim() ?? "";
   if (rawAdmin && rawAdmin.length < 24) problems.push("ENGINE_ADMIN_KEY must be at least 24 characters");
@@ -441,6 +445,7 @@ export function readConfig(processEnv: Env = process.env): EngineConfig {
     reports,
     reportsErc8004,
     recoverable,
+    zolva,
   };
 }
 

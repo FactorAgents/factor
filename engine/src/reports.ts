@@ -41,6 +41,7 @@ import { FORMULA, NOT_AN_OPINION, REPORT_VERSION, REVIEW_TAG, SOURCE_NAME, onHun
 import { REPORT_ERC8004_SCHEMA, REPORT_TAG1, reportFile, type ReportOnChain } from "./reportserc8004.js";
 import { stopped } from "./switches.js";
 import type { AgentWallets, RecoveryJson } from "./recoverable.js";
+import type { ReplayJson } from "./zolva.js";
 
 type Env = Record<string, string | undefined>;
 
@@ -314,6 +315,8 @@ export interface ReportJson extends Omit<ScoreResult, "firstAt" | "lastAt"> {
   onChain: ReportOnChain | null;
   /** the Recoverable mark with Upoch (./recoverable.ts) and its evidence: null while it is off, for an agent with no identity, or no Upoch workflow linked to it. It changes no point */
   recovery: RecoveryJson | null;
+  /** the Replay-verified mark with Zolva (./zolva.ts): only on Zolva's own identity, while every public agent matches. It changes no point */
+  replay: ReplayJson | null;
 }
 
 export interface ReportRow { subject: string; agentId: string | null; wallet: string | null; name: string; score: number; parts: Record<string, number>; pulled: number; flags: string[]; sources: string[]; factorOwn: boolean; rank: number | null; lastAt: string | null }
@@ -354,6 +357,8 @@ export interface ReportsDeps {
   onChain?: (agentId: string) => ReportOnChain | null;
   /** the Recoverable mark (./recoverable.ts) for an identity's owner and agentWallet */
   recovery?: (who: AgentWallets) => RecoveryJson | null;
+  /** the Replay-verified mark (./zolva.ts) for an identity's number */
+  replay?: (agentId: string) => ReplayJson | null;
 }
 
 interface Shared { makers: Map<string, number>; walletMakers: Map<string, Set<string>>; recipients: Map<string, number>; payers: Map<string, number>; deskReg: Map<string, number>; loanWallets: Map<number, Set<string>> }
@@ -935,6 +940,8 @@ export class Reports {
       onChain: who.agentId ? this.d.onChain?.(who.agentId) ?? null : null,
       // the Recoverable mark: by the identity's owner and agentWallet only, as the rule with Upoch says; never in the score
       recovery: who.agentId ? this.d.recovery?.({ owner: who.owner, agentWallet: who.agentWallet }) ?? null : null,
+      // the Replay-verified mark: Zolva's own identity only, read from Zolva's public answers; never in the score
+      replay: who.agentId ? this.d.replay?.(who.agentId) ?? null : null,
       claim: claim ? { by: claim.by, name: claim.name, about: claim.about, site: claim.site, x: claim.x, signedAt: new Date(claim.signed_at * 1000).toISOString() } : null,
       links: {
         page, card: `${this.cfg.site}/api/v1/reports/${who.agentId ?? subject}/card.png`, badge: `${this.cfg.site}/api/v1/reports/${who.agentId ?? subject}/badge.svg`, signed: `${this.cfg.site}/api/v1/reports/signed/${who.agentId ?? subject}`,

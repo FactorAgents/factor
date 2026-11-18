@@ -62,6 +62,7 @@ import { Hey, type HeyFetch } from "./hey.js";
 import { Reports } from "./reports.js";
 import { ReportsErc8004 } from "./reportserc8004.js";
 import { Recoverable } from "./recoverable.js";
+import { ZolvaReplay } from "./zolva.js";
 import { REPORT_VERSION } from "./reportscore.js";
 import { TAG2 } from "./erc8004.js";
 import { DeskStore, STATE } from "./desk.js";
@@ -181,6 +182,8 @@ export class Engine {
   reportsErc8004: ReportsErc8004 | null = null;
   /** the Recoverable mark with Upoch (./recoverable.ts): made once the chain is read, reads nothing until RECOVERABLE=on */
   recoverable: Recoverable | null = null;
+  /** the Replay-verified mark with Zolva (./zolva.ts): reads nothing until ZOLVA=on */
+  zolva: ZolvaReplay | null = null;
   /** the splitter's admin, read at the boot check: Factor's own wallet, which sets the rules of Factor's own agents */
   private splitterAdmin: string | null = null;
   /** the key that signs agents' records for other apps (./record.ts), or null */
@@ -739,6 +742,7 @@ export class Engine {
       return vc ? vc.customer : j.customer;
     };
     // the Recoverable mark with Upoch: read only, from Upoch's Epoch contract; reads nothing until RECOVERABLE=on
+    this.zolva = new ZolvaReplay(c.zolva, { fetch: this.opts.upochFetch === null ? (async () => { throw new Error("no fetch in tests"); }) as unknown as typeof fetch : (this.opts.upochFetch ?? globalThis.fetch.bind(globalThis)), now: this.now, log: this.log });
     this.recoverable = new Recoverable(c.recoverable, { db, chain: this.chain, explorer: c.explorer, now: this.now, log: this.log, ...((f) => (f ? { fetch: f } : {}))(this.opts.upochFetch === undefined ? globalThis.fetch.bind(globalThis) : this.opts.upochFetch) });
     this.reports = new Reports(c.reports, {
       db, chain: this.chain, chainId: c.chainId, explorer: c.explorer, now: this.now, nowS, log: this.log,
@@ -758,6 +762,7 @@ export class Engine {
       signer: () => this.answerSigner,
       onChain: (agentId) => this.reportsErc8004?.ofAgent(agentId) ?? null,
       recovery: (who) => this.recoverable?.of(who) ?? null,
+      replay: (agentId) => this.zolva?.of(agentId) ?? null,
     });
     // credit reports on ERC-8004: made whether or not it is on, so what was written still shows after it is switched off
     this.reportsErc8004 = new ReportsErc8004(c.reportsErc8004, { db, reports: () => this.reports, chain: this.chain, chainId: c.chainId, explorer: c.explorer, now: this.now, nowS, writer: () => this.ctx?.facts.bot ?? null, log: this.log });
@@ -822,6 +827,8 @@ export class Engine {
     if (this.config.reports.enabled) this.every("reports", 3000, () => this.reportsOnce(), false);
     // the Recoverable mark: Upoch's contract read at once, then every RECOVERABLE_EVERY_S (a minute's tick, each reading when due)
     if (this.config.recoverable.enabled) this.every("recoverable", 60_000, () => this.recoverableOnce());
+    // the Replay-verified mark: Zolva's public answers read at once, then every ZOLVA_EVERY_S
+    if (this.config.zolva.enabled) this.every("zolva", 60_000, () => this.zolvaOnce());
   }
 
   /** One reading of Upoch's contract for the Recoverable mark (./recoverable.ts), when the last is old enough. */
@@ -835,6 +842,18 @@ export class Engine {
     this.log(`[recoverable] ${said}`);
   }
   private recoverableAt = 0;
+
+  /** One reading of Zolva's public verify answers for the Replay-verified mark (./zolva.ts), when the last is old enough. */
+  async zolvaOnce(): Promise<void> {
+    const z = this.zolva;
+    if (!z?.on()) return;
+    if (this.zolvaAt && this.now() - this.zolvaAt < z.everyS() * 1000) return;
+    this.zolvaAt = this.now();
+    const said = await z.refresh();
+    this.api.forget();
+    this.log(`[zolva] ${said}`);
+  }
+  private zolvaAt = 0;
 
   /** One pass of the credit reports' reading and scoring (./reports.ts): quick while there is a backfill to read. */
   async reportsOnce(): Promise<void> {

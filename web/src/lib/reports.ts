@@ -38,6 +38,8 @@ export interface Report {
   onChain?: ReportOnChain | null;
   /** the Recoverable mark with Upoch and its evidence (engine/src/recoverable.ts); null while it is off or no workflow is linked */
   recovery?: Recovery | null;
+  /** the Replay-verified mark with Zolva (engine/src/zolva.ts): only on Zolva's own identity, while every public agent matches */
+  replay?: Replay | null;
 }
 
 /** A report's place on ERC-8004: written (since when, the transaction, its file), or prepared and not yet written. */
@@ -107,3 +109,6 @@ export async function signClaim(p: Provider, o: { subject: string; by: string; n
 
 /** "3rd". */
 export const ordinal = (n: number): string => `${n.toLocaleString("en-US")}${n % 100 >= 11 && n % 100 <= 13 ? "th" : ["th", "st", "nd", "rd"][n % 10] ?? "th"}`;
+
+/** Zolva's replay of its public agents, as the engine read it from Zolva's public answers. */
+export interface Replay { by: "Zolva"; agents: number; matching: number; hoursVerified: number; verifiedSince: string | null; checkedAt: string; page: string; line: string }

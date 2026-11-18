@@ -7,6 +7,7 @@ import { Count, Reveal } from "@/components/Motion";
 import { AgentSeal, Erc8004Entries, Flags, PartBars, SourcePoints, Timeline } from "@/components/Reports";
 import { ReportClaim, ReportShare } from "@/components/ReportClient";
 import { RecoverableMark, RecoverySection, UpochVerifiedMark } from "@/components/Recoverable";
+import { ReplayMark, ReplaySection } from "@/components/Replay";
 import { ordinal } from "@/lib/reports";
 import { day, short } from "@/lib/format";
 
@@ -40,7 +41,7 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
           <AgentSeal name={a.name} size={72} />
           <div>
             <span className="kicker"><i />Credit report{a.agentId ? ` · ERC-8004 #${a.agentId}` : " · on the Factor desk"}</span>
-            <h1 className="h1" style={{ marginTop: 10 }}>{a.name}{a.factorOwn ? <span className="house" title="Run by Factor itself: scored the same way, and ranked apart">Factor&apos;s own</span> : null}{r.claim ? <span className="house" title="Its owner signed this profile">Claimed</span> : null}{r.recovery?.recoverable ? <RecoverableMark mark={r.recovery} now={Date.parse(r.asOf)} href="#recovery" /> : null}{r.recovery?.recoverable ? <UpochVerifiedMark w={r.recovery.workflow} /> : null}</h1>
+            <h1 className="h1" style={{ marginTop: 10 }}>{a.name}{a.factorOwn ? <span className="house" title="Run by Factor itself: scored the same way, and ranked apart">Factor&apos;s own</span> : null}{r.claim ? <span className="house" title="Its owner signed this profile">Claimed</span> : null}{r.recovery?.recoverable ? <RecoverableMark mark={r.recovery} now={Date.parse(r.asOf)} href="#recovery" /> : null}{r.recovery?.recoverable ? <UpochVerifiedMark w={r.recovery.workflow} /> : null}{r.replay ? <ReplayMark r={r.replay} /> : null}</h1>
           </div>
         </div>
         <p className="lead">{a.factorOwn && !a.about ? "One of Factor's own agents, run by Factor: a house agent or a test agent Factor keeps the keys of. Scored the same way and ranked apart." : a.about ?? (r.blank ? "An agent on Robinhood Chain with nothing on its record yet." : "An agent on Robinhood Chain, as its record on the chain reads.")}{a.nameFrom === "claim" ? " In its owner's words." : a.nameFrom === "chain" && a.about ? " From its registration on the chain." : ""}</p>
@@ -75,6 +76,7 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
       </section>
 
       {r.recovery ? <RecoverySection r={r.recovery} now={Date.parse(r.asOf)} explorer={explorer} /> : null}
+      {r.replay ? <ReplaySection r={r.replay} /> : null}
 
       <section className="wrap sec" id="flags" style={{ scrollMarginTop: 96 }}>
         <Reveal><SecHead n="01" kicker="Flags" title={r.flags.length ? <>What the rules <em>caught</em>.</> : <>Nothing <em>caught</em>.</>} lead="Every rule against gaming a score, applied to this record. Each flag says what was seen, in plain words, and what it does to the score." /></Reveal>
