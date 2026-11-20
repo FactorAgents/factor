@@ -2531,7 +2531,9 @@ export class EngineApi {
     const claims = this.claimsAbout(v);
     // agent treasury (./treasury.ts): whether it shows, the order of a run and the totals
     const treasury = this.treasuryAbout(v);
-    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused, roster: this.rosterJson(v), hosted, pulse: pulseJson(v, 8), desk: this.deskJson(v), signups, activity, pay, subjobs, firms, plans, erc8004, openJobs, autoApply, verified, coins, lines, guarantees, bounties, milestones, everywhere, ask, copilot, reviews, hey, reports, vouching, claims, treasury, recoverable };
+    // live balance sheets (./sheets.ts): whether they show, the seal contract and the latest seal
+    const sheets = v.sheets?.on() ? { enabled: true, contract: v.config.sheets.contract, keeper: v.sheets.about().keeper, latest: v.sheets.about().latest } : { enabled: false, contract: v.config.sheets.contract, keeper: null, latest: null };
+    const base = { source: "engine" as const, asOf: new Date(v.now()).toISOString(), links, params: PARAMS, contracts, compute, accounts, paused, roster: this.rosterJson(v), hosted, pulse: pulseJson(v, 8), desk: this.deskJson(v), signups, activity, pay, subjobs, firms, plans, erc8004, openJobs, autoApply, verified, coins, lines, guarantees, bounties, milestones, everywhere, ask, copilot, reviews, hey, reports, vouching, claims, treasury, sheets, recoverable };
     if (!r) {
       return { ...base, launched: false, stats: { advancedEth: 0, settledJobs: 0, jobs: 0, poolEth: 0, reserveEth: 0, outEth: 0, heldEth: 0, burnedTokens: 0, supplyLeft: SUPPLY, agents: 0, demoJobs: 0, lostEth: 0, poolFromTradingEth: 0 }, burn: null, agents: [], jobs: [], events: [], burns: [] };
     }

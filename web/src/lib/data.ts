@@ -20,7 +20,8 @@ import { sampleReport, sampleReportsAbout, sampleReportsTop } from "./reportsSam
 import { sampleVouchList, withCoverVouches, withVouching, withVouchingState } from "./vouchingSample";
 import { sampleAgentClaims, sampleClaims, sampleClaimsAbout, sampleClaimsOfJob, withClaimsState } from "./claimsSample";
 import { sampleTreasury, withTreasuryState } from "./treasurySample";
-import type { TreasuryView } from "./types";
+import { sampleSheet, withSheetsState } from "./sheetsSample";
+import type { AgentSheet, TreasuryView } from "./types";
 import type { AgentClaims, ClaimView, ClaimsAbout } from "./types";
 
 const ENGINE = (process.env.FACTOR_ENGINE_URL ?? "").trim().replace(/\/+$/, "");
@@ -89,7 +90,7 @@ async function readState(): Promise<FactorState> {
 
 export const getState = cache(async (): Promise<FactorState> => {
   await connection(); // read when the page is asked for, never baked in when the site is built
-  if (SAMPLE) return withTreasuryState(withClaimsState(withVouchingState(sampleState())));
+  if (SAMPLE) return withSheetsState(withTreasuryState(withClaimsState(withVouchingState(sampleState()))));
   if (!ENGINE) return empty("none", true);
   const now = Date.now();
   const gen = liveGen();
@@ -571,6 +572,19 @@ export async function getAgentTreasury(address: string): Promise<TreasuryView | 
   if (!ENGINE) return null;
   try {
     return (await ask<{ treasury?: TreasuryView }>(`/v1/treasury/${address.toLowerCase()}`))?.treasury ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** An agent's balance sheet now, and as sealed in the latest hour with its proof. null: off, or no engine. */
+export async function getAgentSheet(address: string): Promise<AgentSheet | null> {
+  await connection();
+  if (!/^0x[0-9a-fA-F]{40}$/.test(address)) return null;
+  if (SAMPLE) return sampleSheet(address);
+  if (!ENGINE) return null;
+  try {
+    return await ask<AgentSheet>(`/v1/sheets/${address.toLowerCase()}`);
   } catch {
     return null;
   }

@@ -423,6 +423,7 @@ export interface FactorState {
   claims?: ClaimsAbout;
   /** the agent treasury (engine/src/treasury.ts): whether it is on, the contract, the order of a run and the totals */
   treasury?: TreasuryAbout;
+  sheets?: SheetsState;
 }
 
 /** One of a firm's agents and its part of the firm's work: the lead's is the firm's jobs, a member's the sub-jobs it took under them. */
@@ -884,3 +885,15 @@ export interface TreasuryAbout {
   rules: { minStep: string; maxClaims: number; day: number; order: string[] };
   totals: { treasuries: number; held: string; runs: number; repaid: string; compute: string; claims: string; guarantee: string; vouch: string; factorOwn: number } | null;
 }
+
+// ---------- live balance sheets (the engine's ./sheets.ts) ----------
+
+export interface SealView { hour: number; from: string; root: string; sheets: number; signature: string | null; signer: string | null; tx: string | null; txUrl: string | null; onChain: boolean; madeAt: string }
+export interface SheetsState { enabled: boolean; contract: string | null; keeper: string | null; latest: SealView | null }
+export interface SheetLineView { key: string; label: string; wei: string; eth: number; source: { contract: string | null; call: string }; detail?: string }
+export interface SheetView {
+  agent: string; name: string; parties: string[]; holds: SheetLineView[]; owes: SheetLineView[];
+  holdsWei: string; owesWei: string; netWei: string; holdsEth: number; owesEth: number; netEth: number; solvent: boolean; at: string;
+}
+export interface SealedSheet { hour: number; text: string; leaf: string; proof: string[]; root: string; signature: string | null; signer: string | null; tx: string | null; written: boolean }
+export interface AgentSheet { sheet: SheetView | null; sealed: SealedSheet | null; seal: SealView | null; contract: string | null }
