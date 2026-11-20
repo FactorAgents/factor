@@ -111,6 +111,7 @@ import { MAKERS, VERIFIER_RULES, VERIFY_TAG, type Verifiers, type VerifiersAbout
 import type { Vouching, VouchingAbout, VouchState } from "./vouching.js";
 import { CLAIM_RULES, CLAIM_STATES, type Claims, type ClaimsAbout, type ClaimState } from "./claims.js";
 import { TREASURY_RULES, type Treasury, type TreasuryAbout } from "./treasury.js";
+import type { Sheets } from "./sheets.js";
 import { VALIDATION_REGISTRY } from "./erc8004.js";
 import { envelope, hireUrl, MOST_AT_ONCE, ANSWER_HOLDS_S, parseId, seal, type AgentAnswer, type AnswerSigner, type Connect } from "./everywhere.js";
 import type { Erc8004Scores } from "./erc8004score.js";
@@ -190,6 +191,8 @@ export interface EngineView {
   claims?: Claims | null;
   /** agent treasury (./treasury.ts) */
   treasury?: Treasury | null;
+  /** live balance sheets (./sheets.ts) */
+  sheets?: Sheets | null;
   /** Factor Connect (./everywhere.ts) */
   connect?: Connect | null;
   /** the Factor Score written to ERC-8004 (./erc8004score.ts) */
@@ -761,6 +764,14 @@ export class EngineApi {
       const answer = this.treasuryGet(v, path, query);
       if (answer) return answer;
     }
+    // live balance sheets: what is counted and the latest seal, every sheet, one agent's with its proof, one sealed hour
+    if (path === "/v1/sheets" || path.startsWith("/v1/sheets/")) {
+      if (from && this.tooMany(from, "sheets-get", 600)) return { status: 429, body: { error: "too many requests: try again in a minute" } };
+      const v = this.view();
+      if (v.state !== "running") return { status: 503, body: { error: "the engine is not reading the chain yet" } };
+      const answer = this.sheetsGet(v, path, query);
+      if (answer) return answer;
+    }
     // selling locked pay: the rules and totals, the latest claims, one claim, a job's, an agent's
     if (path === "/v1/claims" || path.startsWith("/v1/claims/")) {
       if (from && this.tooMany(from, "claims-get", 600)) return { status: 429, body: { error: "too many requests: try again in a minute" } };
@@ -1204,6 +1215,35 @@ export class EngineApi {
     if (v.treasury) return v.treasury.about();
     const c = v.config.treasury;
     return { enabled: false, contract: c.contract, fromBlock: c.fromBlock === null ? null : c.fromBlock.toString(), chainId: v.config.chainId, rules: { minStep: TREASURY_RULES.minStep, maxClaims: TREASURY_RULES.maxClaims, day: TREASURY_RULES.day, order: TREASURY_RULES.order }, totals: null };
+  }
+
+  // Live balance sheets (./sheets.ts), read from the database only.
+  private sheetsGet(v: EngineView, path: string, query: URLSearchParams): Answer | null {
+    const sh = v.sheets;
+    const on = !!sh?.on();
+    const about = () => (sh ? sh.about() : { enabled: false, contract: v.config.sheets.contract, chainId: v.config.chainId, keeper: null, signer: null, holds: [], owes: [], leaf: "", tree: "", message: "", latest: null });
+    if (path === "/v1/sheets/about") return ok({ ...about() });
+    if (path === "/v1/sheets") {
+      const limit = Math.min(200, Math.max(1, Number(query.get("limit") ?? "50") || 50));
+      return ok({ ...about(), sheets: on ? sh!.all().slice(0, limit) : [] });
+    }
+    if (!on) return notFound("live balance sheets are switched off for now");
+    const seal = /^\/v1\/sheets\/seal\/(\d{1,9})$/.exec(path);
+    if (seal) {
+      const j = sh!.sealOf(Number(seal[1]));
+      return j ? ok({ seal: j }) : notFound("no seal for that hour");
+    }
+    const m = /^\/v1\/sheets\/([0-9a-zA-Z-]{3,42})$/.exec(path);
+    if (m) {
+      const raw = m[1]!.toLowerCase();
+      const address = /^0x[0-9a-f]{40}$/.test(raw) ? raw : [...(v.profiles?.all() ?? new Map()).entries()].find(([, p]) => p.name.toLowerCase() === raw && !p.hidden)?.[0];
+      if (!address) return notFound("no agent by that name or address");
+      const hourQ = query.get("hour");
+      const hour = hourQ && /^\d{1,9}$/.test(hourQ) ? Number(hourQ) : undefined;
+      const sealed = sh!.proofOf(address, hour);
+      return ok({ sheet: sh!.sheet(address), sealed, seal: sealed ? sh!.sealOf(sealed.hour) : null, contract: v.config.sheets.contract });
+    }
+    return notFound("no such route");
   }
 
   // Selling locked pay (./claims.ts), read from the database only.

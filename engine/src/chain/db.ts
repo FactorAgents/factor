@@ -750,6 +750,20 @@ CREATE INDEX IF NOT EXISTS claims_claims_account ON claims_claims (account, id);
 CREATE INDEX IF NOT EXISTS claims_claims_holder ON claims_claims (holder);
 CREATE INDEX IF NOT EXISTS claims_claims_state ON claims_claims (state);
 CREATE INDEX IF NOT EXISTS claims_claims_block ON claims_claims (block);
+-- Live balance sheets (../sheets.ts): each hour's seal, the root of every agent's sheet, its signature and the transaction
+-- that wrote it to the seal contract; leaves holds [agent, hashed text] pairs for the last week.
+CREATE TABLE IF NOT EXISTS sheets_seals (
+  hour INTEGER PRIMARY KEY,
+  root TEXT NOT NULL,
+  sheets INTEGER NOT NULL,
+  leaves TEXT NOT NULL DEFAULT '[]',
+  signature TEXT,
+  signer TEXT,
+  tx TEXT,
+  block INTEGER,
+  at INTEGER NOT NULL,
+  written_at INTEGER
+);
 -- Agent treasury (../treasury.ts): each treasury as its first log says it, and what is read of it since (what it holds, its
 -- rules, its totals, and the contract's preview of the next run), as JSON.
 CREATE TABLE IF NOT EXISTS treasury_agents (
@@ -792,7 +806,7 @@ CREATE TABLE IF NOT EXISTS job_titles (
 );
 `;
 
-export type ActionKind = "sweep" | "retry_split" | "claim_token" | "burn" | "settle_job" | "refund_job" | "collect" | "return_compute" | "skim" | "relay" | "erc8004" | "coin_sweep" | "line" | "guarantee" | "bounty" | "milestone" | "verifier" | "vouch" | "claims" | "treasury" | "erc8004_score" | "erc8004_report" | "unstick";
+export type ActionKind = "sweep" | "retry_split" | "claim_token" | "burn" | "settle_job" | "refund_job" | "collect" | "return_compute" | "skim" | "relay" | "erc8004" | "coin_sweep" | "line" | "guarantee" | "bounty" | "milestone" | "verifier" | "vouch" | "claims" | "treasury" | "sheets" | "erc8004_score" | "erc8004_report" | "unstick";
 export type ActionStatus = "dry" | "signed" | "sent" | "done" | "failed" | "replaced";
 
 export interface ActionRow {

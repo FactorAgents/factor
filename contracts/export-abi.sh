@@ -23,11 +23,11 @@ KIT="$HERE/../packages/kit/src/abi"
 mkdir -p "$OUT" "$WEB" "$KIT"
 forge build --silent || { echo "the contracts do not build"; exit 1; }
 STALE=0
-for pair in FactorDesk:factorDeskAbi:FactorDesk FactorSplitter:factorSplitterAbi:FactorSplitter FactorBurnPot:factorBurnPotAbi:FactorBurnPot FactorAccount:factorAccountAbi:FactorAccount FactorAccounts:factorAccountsAbi:FactorAccount AgentCoinLauncher:agentCoinLauncherAbi:AgentCoinLauncher AgentCoinSplitter:agentCoinSplitterAbi:AgentCoinSplitter FactorLine:factorLineAbi:FactorLine FactorLineAccount:factorLineAccountAbi:FactorLine FactorGuarantee:factorGuaranteeAbi:FactorGuarantee FactorBounty:factorBountyAbi:FactorBounty FactorMilestones:factorMilestonesAbi:FactorMilestones FactorVerifiers:factorVerifiersAbi:FactorVerifiers FactorVouch:factorVouchAbi:FactorVouch FactorClaims:factorClaimsAbi:FactorClaims FactorTreasury:factorTreasuryAbi:FactorTreasury; do
+for pair in FactorDesk:factorDeskAbi:FactorDesk FactorSplitter:factorSplitterAbi:FactorSplitter FactorBurnPot:factorBurnPotAbi:FactorBurnPot FactorAccount:factorAccountAbi:FactorAccount FactorAccounts:factorAccountsAbi:FactorAccount AgentCoinLauncher:agentCoinLauncherAbi:AgentCoinLauncher AgentCoinSplitter:agentCoinSplitterAbi:AgentCoinSplitter FactorLine:factorLineAbi:FactorLine FactorLineAccount:factorLineAccountAbi:FactorLine FactorGuarantee:factorGuaranteeAbi:FactorGuarantee FactorBounty:factorBountyAbi:FactorBounty FactorMilestones:factorMilestonesAbi:FactorMilestones FactorVerifiers:factorVerifiersAbi:FactorVerifiers FactorVouch:factorVouchAbi:FactorVouch FactorClaims:factorClaimsAbi:FactorClaims FactorTreasury:factorTreasuryAbi:FactorTreasury FactorSheets:factorSheetsAbi:FactorSheets; do
   NAME=${pair%%:*}; REST=${pair#*:}; CONST=${REST%%:*}; SOURCE=${REST##*:}
   FILE="$OUT/$NAME.ts"
   # the desk and the accounts are what a visitor or an agent calls: those go to the site and the kit as well
-  SHARED=0; case $NAME in FactorDesk|FactorAccount|FactorAccounts|AgentCoinLauncher|FactorLine|FactorLineAccount|FactorGuarantee|FactorBounty|FactorMilestones|FactorVerifiers|FactorVouch|FactorClaims|FactorTreasury) SHARED=1;; esac
+  SHARED=0; case $NAME in FactorDesk|FactorAccount|FactorAccounts|AgentCoinLauncher|FactorLine|FactorLineAccount|FactorGuarantee|FactorBounty|FactorMilestones|FactorVerifiers|FactorVouch|FactorClaims|FactorTreasury|FactorSheets) SHARED=1;; esac
   # a contract only the site reads would be set here; none is today
   WEBONLY=0
   NEW=$(python3 - "$HERE/out/$SOURCE.sol/$NAME.json" "$NAME" "$CONST" <<'PY'

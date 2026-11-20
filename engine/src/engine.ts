@@ -54,6 +54,7 @@ import { Verifiers, chainPriceOf, routerAsker, routerLookup } from "./verifiers.
 import { Vouching } from "./vouching.js";
 import { Claims } from "./claims.js";
 import { Treasury } from "./treasury.js";
+import { Sheets } from "./sheets.js";
 import { answerSigner, Connect, type AnswerSigner } from "./everywhere.js";
 import { Erc8004Scores } from "./erc8004score.js";
 import { Ask, askModelOf, type AskModel } from "./ask.js";
@@ -165,6 +166,8 @@ export class Engine {
   claims: Claims | null = null;
   /** agent treasury (./treasury.ts): treasuries read, and run by their agents' rules by the keeper */
   treasury: Treasury | null = null;
+  /** live balance sheets (./sheets.ts): every agent's open books, sealed hourly, the root written by the keeper */
+  sheets: Sheets | null = null;
   /** Factor Connect (./everywhere.ts): marketplaces, their hire links and the webhooks they are sent */
   connect: Connect | null = null;
   /** the Factor Score written to ERC-8004 (./erc8004score.ts) */
@@ -250,7 +253,7 @@ export class Engine {
     for (const [name, l] of this.loops) loops[name] = { lastRunAt: l.lastRunAt, lastOkAt: l.lastOkAt, runs: l.runs, failures: l.failures, waitMs: l.waitMs, backingOff: l.backingOff };
     return {
       config: this.config, state: this.state, problems: this.problems, warnings: this.warnings, lastError: this.lastError, loops, ctx: this.ctx, rpc: this.chain?.health() ?? null, now: this.now,
-      links: { pons: link(this.env.FACTOR_PONS_URL), github: link(this.env.FACTOR_GITHUB_URL), x: link(this.env.FACTOR_X_URL) }, dataDirSet: !!this.env.FACTOR_DATA_DIR?.trim(), profiles: this.profiles, gateway: this.gateway, accounts: this.accounts, house: this.house, demo: this.demo, pulse: this.pulse, deskMind: this.deskMind, launchList: this.launchList, activity: this.activity, matcher: this.matcher, pay: this.pay, subjobs: this.subjobs, recordSigner: this.recordSigner, firms: this.firms, plans: this.plans, erc8004: this.erc8004, openjobs: this.openjobs, autoapply: this.autoapply, verified: this.verified, coins: this.coins, lines: this.lines, guarantees: this.guarantees, bounties: this.bounties, milestones: this.milestones, verifiers: this.verifiers, vouching: this.vouching, claims: this.claims, treasury: this.treasury,
+      links: { pons: link(this.env.FACTOR_PONS_URL), github: link(this.env.FACTOR_GITHUB_URL), x: link(this.env.FACTOR_X_URL) }, dataDirSet: !!this.env.FACTOR_DATA_DIR?.trim(), profiles: this.profiles, gateway: this.gateway, accounts: this.accounts, house: this.house, demo: this.demo, pulse: this.pulse, deskMind: this.deskMind, launchList: this.launchList, activity: this.activity, matcher: this.matcher, pay: this.pay, subjobs: this.subjobs, recordSigner: this.recordSigner, firms: this.firms, plans: this.plans, erc8004: this.erc8004, openjobs: this.openjobs, autoapply: this.autoapply, verified: this.verified, coins: this.coins, lines: this.lines, guarantees: this.guarantees, bounties: this.bounties, milestones: this.milestones, verifiers: this.verifiers, vouching: this.vouching, claims: this.claims, treasury: this.treasury, sheets: this.sheets,
       connect: this.connect, erc8004Scores: this.erc8004Scores, answerSigner: this.answerSigner, ask: this.ask, copilot: this.copilot, reviews: this.reviews, hey: this.hey, reports: this.reports, reportsErc8004: this.reportsErc8004, recoverable: this.recoverable,
     };
   }
@@ -738,6 +741,24 @@ export class Engine {
     });
     this.ctx.treasury = this.treasury;
     this.accounts.treasury = () => (this.treasury?.reading() ? c.treasury.contract : null);
+    // live balance sheets: made whether or not they are on; nothing is read or sealed until SHEETS=on
+    this.sheets = new Sheets({
+      cfg: c.sheets, db, chain: this.chain, chainId: c.chainId, explorer: c.explorer, now: this.now, log: this.log,
+      names: () => this.profiles!.all(),
+      contracts: () => ({
+        desk: c.desk,
+        line: this.lines?.reading() ? c.lines.line : null,
+        guarantee: this.guarantees?.reading() ? c.guarantees.guarantee : null,
+        vouch: this.vouching?.reading() ? c.vouching.contract : null,
+        claims: this.claims?.reading() ? c.claims.contract : null,
+        treasury: this.treasury?.reading() ? c.treasury.contract : null,
+      }),
+      signer: () => this.answerSigner,
+      keeper: () => this.ctx?.facts.bot ?? null,
+      factorOwn: (a) => factorOwn(a) || c.reports.factorWallets.includes(a),
+    });
+    this.ctx.sheets = this.sheets;
+    if (c.sheets.enabled) this.log(`[sheets] on: every agent's balance sheet is read from the contracts and sealed each hour, signed${c.sheets.contract ? `, the root written to ${c.sheets.contract} by the keeper` : "; no seal contract is set, so nothing is written on chain"}`);
     if (c.treasury.enabled && c.treasury.note) this.log(`[treasury] NOT ON: ${c.treasury.note}`);
     else if (c.treasury.enabled) this.log(`[treasury] on: treasuries are read from ${c.treasury.contract}; the keeper runs one when its own preview says a run would do something, at most every ${c.treasury.everyMin} minutes each`);
     // HEY builder records: made whether or not they are on, so an agent's link is kept; HEY is asked nothing while off
@@ -1064,6 +1085,11 @@ export class Engine {
     if (this.treasury?.reading()) {
       if ((await this.treasury.watch(this.ctx, pass.head)).length && this.api) this.api.forget();
       await this.treasury.refresh();
+    }
+    // live balance sheets: the hour's seal once the hour has begun, and the written roots read back (./sheets.ts)
+    if (this.sheets?.on()) {
+      try { const said = await this.sheets.sealNow(); if (said) { this.log(`[sheets] ${said}`); this.api?.forget(); } } catch (e) { this.log(`[sheets] the seal failed: ${e instanceof Error ? e.message : String(e)}`); }
+      await this.sheets.refresh().catch(() => undefined);
     }
     // an open job whose rule is the best Factor Score is picked as soon as its moment has come (./openjobs.ts)
     try { this.openjobs?.pickDue(); } catch (e) { this.log(`[openjobs] picking failed: ${e instanceof Error ? e.message : String(e)}`); }

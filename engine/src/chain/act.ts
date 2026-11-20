@@ -65,7 +65,7 @@ import type { ActionKind, ActionRow } from "./db.js";
 import { ponsEscrowAbi } from "./pons.js";
 
 export type SendKind = Exclude<ActionKind, "unstick">;
-export const KINDS: SendKind[] = ["relay", "sweep", "coin_sweep", "retry_split", "claim_token", "burn", "guarantee", "bounty", "milestone", "verifier", "claims", "settle_job", "refund_job", "collect", "line", "vouch", "treasury", "return_compute", "skim", "erc8004", "erc8004_score", "erc8004_report"];
+export const KINDS: SendKind[] = ["relay", "sweep", "coin_sweep", "retry_split", "claim_token", "burn", "guarantee", "bounty", "milestone", "verifier", "claims", "settle_job", "refund_job", "collect", "line", "vouch", "treasury", "sheets", "return_compute", "skim", "erc8004", "erc8004_score", "erc8004_report"];
 // In dry mode nothing changes on the chain, so a trigger stays true: what would be sent is shown again this often.
 export const DRY_REPEAT_S = 1800;
 const BPS = 10_000n;
@@ -907,6 +907,14 @@ async function vouchStep(ctx: Ctx, head: Head): Promise<string> {
   return say(ctx, "vouch", await ctx.vouching.step(ctx, head, (kind, ref, call, detail, feeCap) => attempt(ctx, kind, ref, call, detail, feeCap)));
 }
 
+// ---------- live balance sheets ----------
+
+// The latest hour's root of every agent's balance sheet, written to the seal contract once (../sheets.ts).
+async function sheetsStep(ctx: Ctx, head: Head): Promise<string> {
+  if (!ctx.sheets) return say(ctx, "sheets", "live balance sheets are not switched on");
+  return say(ctx, "sheets", await ctx.sheets.step(ctx, head, (kind, ref, call, detail, feeCap) => attempt(ctx, kind, ref, call, detail, feeCap)));
+}
+
 // ---------- agent treasury ----------
 
 // A treasury whose preview says a run would do something is run (../treasury.ts decides; the attempt is the same as every
@@ -943,6 +951,7 @@ const STEPS: [SendKind, (ctx: Ctx, head: Head) => Promise<string>][] = [
   ["line", lineStep],
   ["vouch", vouchStep],
   ["treasury", treasuryStep],
+  ["sheets", sheetsStep],
   ["return_compute", returnCompute],
   ["skim", skim],
   ["erc8004", writeErc8004],

@@ -17,3 +17,4 @@ export { factorVerifiersAbi } from "./FactorVerifiers.js";
 export { factorVouchAbi } from "./FactorVouch.js";
 export { factorClaimsAbi } from "./FactorClaims.js";
 export { factorTreasuryAbi } from "./FactorTreasury.js";
+export { factorSheetsAbi } from "./FactorSheets.js";

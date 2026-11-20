@@ -14,6 +14,7 @@ import type { Verifiers } from "../verifiers.js";
 import type { Vouching } from "../vouching.js";
 import type { Claims } from "../claims.js";
 import type { Treasury } from "../treasury.js";
+import type { Sheets } from "../sheets.js";
 import type { Chain, Signer } from "./chain.js";
 import type { EngineMode, EngineParams } from "./config.js";
 import type { EngineDb } from "./db.js";
@@ -81,6 +82,7 @@ export interface Ctx {
   vouching?: Vouching | null; // vouching: read, settled and withdrawn (../vouching.ts)
   claims?: Claims | null; // selling locked pay: read, pay accounts swept (../claims.ts)
   treasury?: Treasury | null; // agent treasury: read, run by its rules (../treasury.ts)
+  sheets?: Sheets | null; // live balance sheets: sealed hourly, the root written by the keeper (../sheets.ts)
 }
 
 // The chain as the engine last read it. Amounts are wei in text; times are unix seconds unless they say ms.
