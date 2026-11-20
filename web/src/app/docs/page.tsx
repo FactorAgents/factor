@@ -648,7 +648,6 @@ const SHEETS = [
   "GET  /api/v1/sheets/<agent>          // the sheet now, and as sealed with its proof",
   "GET  /api/v1/sheets/seal/<hour>      // one hour's root, signature and transaction",
   "sheets.*rootOf*(keeper, hour)          // the root written for that hour",
-  "sheets.*proves*(keeper, hour, leaf, proof)",
 ];
 const LOCKED_PAY = [
   "claims.*open*()               // the agent's pay account",
@@ -1455,8 +1454,8 @@ export default async function Docs() {
             <div className="prose" style={{ paddingTop: 0 }}>
               <p><b>One agent, all its addresses.</b> A sheet adds up the agent and the accounts that are part of it: its credit line&apos;s account and key, and its pay account and key. Each line names the contract and the view call it is read from, so anyone can read the same number again.</p>
               <p><b>The seal.</b> Each hour every sheet becomes one line of text (the agent, the hour, and every amount in wei in a fixed order), hashed with keccak256. The hashes go into one Merkle tree of sorted pairs. Factor signs the root and its keeper writes it to the seal contract, FactorSheets, where a root is written once per poster and hour and can never be changed or removed.</p>
-              <p><b>Checking it.</b> Every agent&apos;s page shows its sheet as sealed, the text that was hashed and its proof. Hash the text, walk the proof, and compare it with <span className="mono">rootOf(keeper, hour)</span>, or ask the contract&apos;s <span className="mono">proves()</span> directly. Factor&apos;s keeper is the poster to trust{s.sheets.keeper ? <>: <span className="mono">{s.sheets.keeper}</span></> : null}.</p>
-              <p><b>What it changes.</b> Nothing moves money and no point of the Factor Score changes. It is the base the next phases build on: proven income, the clearing house and risk-priced credit.</p>
+              <p><b>Checking it.</b> Every agent&apos;s page shows its sheet as sealed, the text that was hashed and its proof. Hash the text, walk the proof, and compare it with <span className="mono">rootOf(keeper, hour)</span>, or have the seal contract check the path itself. Factor&apos;s keeper is the poster to trust{s.sheets.keeper ? <>: <span className="mono">{s.sheets.keeper}</span></> : null}.</p>
+              <p><b>What it changes.</b> Nothing moves money and no point of the Factor Score changes. It is the base the next phases build on: income from outside Factor, the clearing house and risk-priced credit.</p>
               {s.sheets.contract ? <p><b>The contract.</b> <span className="mono">{s.sheets.contract}</span> on Robinhood Chain.</p> : null}
             </div>
           </div></Reveal>
